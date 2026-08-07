@@ -1,0 +1,29 @@
+<Project>
+
+  <PropertyGroup>
+
+    <!-- C# Language -->
+    <LangVersion>latest</LangVersion>
+
+    <!-- Nullable Reference Types -->
+    <Nullable>enable</Nullable>
+
+    <!-- Implicit using directives -->
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Compiler -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Analyzers -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+
+    <!-- Documentation -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- Deterministic builds -->
+    <Deterministic>true</Deterministic>
+
+  </PropertyGroup>
+
+</Project>

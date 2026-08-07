@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="CONTRIBUTING.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props.disabled" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/DeskVault.AI/DeskVault.AI.csproj" Id="68c28725-aa89-4286-946d-e8e6596b22d4" />
+    <Project Path="src/DeskVault.Application/DeskVault.Application.csproj" />
+    <Project Path="src/DeskVault.Domain/DeskVault.Domain.csproj" />
+    <Project Path="src/DeskVault.Infrastructure/DeskVault.Infrastructure.csproj" Id="e734a97d-b5f3-4257-a9d4-09d72b83be36" />
+    <Project Path="src/DeskVault.Shared/DeskVault.Shared.csproj" Id="6a2dad05-0a8d-44d9-9c68-263c59de251f" />
+    <Project Path="src/DeskVault.UI/DeskVault.UI.csproj" Id="03017101-157b-43ce-afe3-3844e2822d59" />
+  </Folder>
+</Solution>
