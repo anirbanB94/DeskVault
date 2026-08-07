@@ -1,4 +1,5 @@
-﻿using DeskVault.Application.Interfaces;
+﻿using DeskVault.Application.Configurations;
+using DeskVault.Application.Interfaces;
 using DeskVault.Infrastructure.Services;
 using DeskVault.UI.Forms;
 using Microsoft.Extensions.Configuration;
@@ -19,7 +20,7 @@ internal static class HostConfigurator
 
         ConfigureLogging(builder);
 
-        ConfigureServices(builder.Services);
+        ConfigureServices(builder, builder.Services);
 
         return builder.Build();
     }
@@ -41,8 +42,15 @@ internal static class HostConfigurator
         builder.Services.AddSerilog(Log.Logger);
     }
 
-    private static void ConfigureServices(IServiceCollection services)
+    //private static void ConfigureServices(IServiceCollection services)
+    private static void ConfigureServices(HostApplicationBuilder builder, IServiceCollection services)
     {
+        services.Configure<ApplicationOptions>(builder.Configuration.GetSection(ApplicationOptions.SectionName));
+
+        services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
+
+        services.Configure<OllamaOptions>(builder.Configuration.GetSection(OllamaOptions.SectionName));
+
         services.AddSingleton<IApplicationInfoService, ApplicationInfoService>();
 
         services.AddTransient<MainForm>();

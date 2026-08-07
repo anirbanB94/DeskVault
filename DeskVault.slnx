@@ -4,7 +4,6 @@
     <File Path=".gitignore" />
     <File Path="CONTRIBUTING.md" />
     <File Path="Directory.Build.props" />
-    <File Path="Directory.Packages.props.disabled" />
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
