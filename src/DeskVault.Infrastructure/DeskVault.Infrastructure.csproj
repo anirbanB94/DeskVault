@@ -17,7 +17,6 @@
     <Folder Include="Logging\" />
     <Folder Include="Extensions\" />
     <Folder Include="Security\" />
-    <Folder Include="Repositories\" />
     <Folder Include="Persistence\" />
   </ItemGroup>
 

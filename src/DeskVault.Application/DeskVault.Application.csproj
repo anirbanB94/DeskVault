@@ -12,13 +12,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Commands\" />
-    <Folder Include="DTOs\" />
+    <Folder Include="Documents\DTOs\" />
     <Folder Include="Behaviors\" />
-    <Folder Include="Mappings\" />
+    <Folder Include="Documents\Mappings\" />
     <Folder Include="Services\" />
-    <Folder Include="Validators\" />
-    <Folder Include="Queries\" />
+    <Folder Include="Documents\Validators\" />
+    <Folder Include="Documents\Queries\" />
   </ItemGroup>
 
   <ItemGroup>

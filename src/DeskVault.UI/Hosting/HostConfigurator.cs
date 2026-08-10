@@ -1,7 +1,6 @@
 ﻿using DeskVault.Application;
 using DeskVault.Application.Configurations;
-using DeskVault.Application.Interfaces;
-using DeskVault.Infrastructure.Services;
+using DeskVault.Infrastructure;
 using DeskVault.UI.Forms;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,7 +53,7 @@ internal static class HostConfigurator
         services.AddApplication();
 
         // Infrastructure
-        services.AddSingleton<IApplicationInfoService, ApplicationInfoService>();
+        services.AddInfrastructure(configuration);
 
         // UI
         services.AddTransient<MainForm>();
