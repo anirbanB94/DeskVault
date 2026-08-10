@@ -11,4 +11,11 @@ public interface IDocumentRepository
     Task AddAsync(
         Document document,
         CancellationToken cancellationToken = default);
+
+    Task<Document?> GetByIdAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Document>> GetAllAsync(
+    CancellationToken cancellationToken = default);
 }

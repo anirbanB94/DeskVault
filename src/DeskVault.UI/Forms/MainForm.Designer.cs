@@ -1,39 +1,188 @@
-﻿namespace DeskVault.UI.Forms
+﻿namespace DeskVault.UI.Forms;
+
+partial class MainForm
 {
-    partial class MainForm
+    private System.ComponentModel.IContainer components = null;
+
+    private System.Windows.Forms.Panel headerPanel;
+    private System.Windows.Forms.Label titleLabel;
+    private System.Windows.Forms.Button importButton;
+    private System.Windows.Forms.Button openButton;
+    private System.Windows.Forms.Panel contentPanel;
+    private System.Windows.Forms.Label emptyStateLabel;
+    private System.Windows.Forms.ListBox documentListBox;
+    private System.Windows.Forms.StatusStrip statusStrip;
+    private System.Windows.Forms.ToolStripStatusLabel statusLabel;
+
+    protected override void Dispose(bool disposing)
     {
-        /// <summary>
-        /// Required designer variable.
-        /// </summary>
-        private System.ComponentModel.IContainer components = null;
-
-        /// <summary>
-        /// Clean up any resources being used.
-        /// </summary>
-        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
-        protected override void Dispose(bool disposing)
+        if (disposing && components != null)
         {
-            if (disposing && (components != null))
-            {
-                components.Dispose();
-            }
-            base.Dispose(disposing);
+            components.Dispose();
         }
 
-        #region Windows Form Designer generated code
-
-        /// <summary>
-        /// Required method for Designer support - do not modify
-        /// the contents of this method with the code editor.
-        /// </summary>
-        private void InitializeComponent()
-        {
-            this.components = new System.ComponentModel.Container();
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(800, 450);
-            this.Text = "MainForm";
-        }
-
-        #endregion
+        base.Dispose(disposing);
     }
+
+    #region Windows Form Designer generated code
+
+    private void InitializeComponent()
+    {
+        headerPanel = new Panel();
+        openButton = new Button();
+        importButton = new Button();
+        titleLabel = new Label();
+
+        contentPanel = new Panel();
+        documentListBox = new ListBox();
+        emptyStateLabel = new Label();
+
+        statusStrip = new StatusStrip();
+        statusLabel = new ToolStripStatusLabel();
+
+        headerPanel.SuspendLayout();
+        contentPanel.SuspendLayout();
+        statusStrip.SuspendLayout();
+        SuspendLayout();
+
+        // 
+        // headerPanel
+        // 
+        headerPanel.Controls.Add(openButton);
+        headerPanel.Controls.Add(importButton);
+        headerPanel.Controls.Add(titleLabel);
+        headerPanel.Dock = DockStyle.Top;
+        headerPanel.Location = new Point(0, 0);
+        headerPanel.Margin = new Padding(6);
+        headerPanel.Name = "headerPanel";
+        headerPanel.Padding = new Padding(30, 17, 30, 17);
+        headerPanel.Size = new Size(1857, 137);
+        headerPanel.TabIndex = 1;
+
+        // 
+        // openButton
+        // 
+        openButton.Dock = DockStyle.Right;
+        openButton.Enabled = false;
+        openButton.Location = new Point(1307, 17);
+        openButton.Margin = new Padding(6);
+        openButton.Name = "openButton";
+        openButton.Size = new Size(260, 103);
+        openButton.TabIndex = 0;
+        openButton.Text = "Open Document";
+        openButton.UseVisualStyleBackColor = true;
+
+        // 
+        // importButton
+        // 
+        importButton.Dock = DockStyle.Right;
+        importButton.Location = new Point(1567, 17);
+        importButton.Margin = new Padding(6);
+        importButton.Name = "importButton";
+        importButton.Size = new Size(260, 103);
+        importButton.TabIndex = 1;
+        importButton.Text = "Import Document";
+        importButton.UseVisualStyleBackColor = true;
+
+        // 
+        // titleLabel
+        // 
+        titleLabel.AutoSize = true;
+        titleLabel.Dock = DockStyle.Left;
+        titleLabel.Font = new Font("Segoe UI", 16F);
+        titleLabel.Location = new Point(30, 17);
+        titleLabel.Margin = new Padding(6, 0, 6, 0);
+        titleLabel.Name = "titleLabel";
+        titleLabel.Size = new Size(211, 59);
+        titleLabel.TabIndex = 2;
+        titleLabel.Text = "DeskVault";
+        titleLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+        // 
+        // contentPanel
+        // 
+        contentPanel.Controls.Add(documentListBox);
+        contentPanel.Controls.Add(emptyStateLabel);
+        contentPanel.Dock = DockStyle.Fill;
+        contentPanel.Location = new Point(0, 137);
+        contentPanel.Margin = new Padding(6);
+        contentPanel.Name = "contentPanel";
+        contentPanel.Padding = new Padding(30, 34, 30, 34);
+        contentPanel.Size = new Size(1857, 1208);
+        contentPanel.TabIndex = 0;
+
+        // 
+        // documentListBox
+        // 
+        documentListBox.Dock = DockStyle.Fill;
+        documentListBox.FormattingEnabled = true;
+        documentListBox.ItemHeight = 32;
+        documentListBox.Location = new Point(30, 34);
+        documentListBox.Name = "documentListBox";
+        documentListBox.Size = new Size(1797, 1140);
+        documentListBox.TabIndex = 1;
+        documentListBox.Visible = false;
+
+        // 
+        // emptyStateLabel
+        // 
+        emptyStateLabel.Dock = DockStyle.Fill;
+        emptyStateLabel.Font = new Font("Segoe UI", 12F);
+        emptyStateLabel.Location = new Point(30, 34);
+        emptyStateLabel.Margin = new Padding(6, 0, 6, 0);
+        emptyStateLabel.Name = "emptyStateLabel";
+        emptyStateLabel.Size = new Size(1797, 1140);
+        emptyStateLabel.TabIndex = 0;
+        emptyStateLabel.Text = "No documents imported yet.";
+        emptyStateLabel.TextAlign = ContentAlignment.MiddleCenter;
+
+        // 
+        // statusStrip
+        // 
+        statusStrip.ImageScalingSize = new Size(32, 32);
+        statusStrip.Items.AddRange(
+            new ToolStripItem[]
+            {
+                statusLabel
+            });
+        statusStrip.Location = new Point(0, 1345);
+        statusStrip.Name = "statusStrip";
+        statusStrip.Padding = new Padding(2, 0, 26, 0);
+        statusStrip.Size = new Size(1857, 42);
+        statusStrip.TabIndex = 2;
+
+        // 
+        // statusLabel
+        // 
+        statusLabel.Name = "statusLabel";
+        statusLabel.Size = new Size(78, 32);
+        statusLabel.Text = "Ready";
+
+        // 
+        // MainForm
+        // 
+        AutoScaleDimensions = new SizeF(13F, 32F);
+        AutoScaleMode = AutoScaleMode.Font;
+        ClientSize = new Size(1857, 1387);
+        Controls.Add(contentPanel);
+        Controls.Add(headerPanel);
+        Controls.Add(statusStrip);
+        Margin = new Padding(6);
+        MinimumSize = new Size(1463, 986);
+        Name = "MainForm";
+        StartPosition = FormStartPosition.CenterScreen;
+
+        headerPanel.ResumeLayout(false);
+        headerPanel.PerformLayout();
+
+        contentPanel.ResumeLayout(false);
+
+        statusStrip.ResumeLayout(false);
+        statusStrip.PerformLayout();
+
+        ResumeLayout(false);
+        PerformLayout();
+    }
+
+    #endregion
 }

@@ -1,4 +1,6 @@
 ﻿using DeskVault.Application.Documents.Commands.ImportDocument;
+using DeskVault.Application.Documents.Queries.ListDocuments;
+using DeskVault.Application.Documents.Queries.OpenDocument;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DeskVault.Application;
@@ -11,6 +13,10 @@ public static class DependencyInjection
         services.AddTransient<IImportDocumentValidator, ImportDocumentValidator>();
 
         services.AddTransient<ImportDocumentHandler>();
+
+        services.AddTransient<OpenDocumentHandler>();
+
+        services.AddTransient<ListDocumentsHandler>();
 
         return services;
     }

@@ -17,7 +17,13 @@ public static class DependencyInjection
 
         services.AddSingleton<IHashService, Sha256HashService>();
 
+        services.AddSingleton<IEncryptionKeyService, WindowsEncryptionKeyService>();
+
         services.AddSingleton<IStorageService, FileSystemStorageService>();
+
+        services.AddSingleton<DocumentEncryptionService>();
+
+        services.AddSingleton<IDocumentReader, EncryptedDocumentReader>();
 
         services.AddSingleton<IDocumentRepository, InMemoryDocumentRepository>();
 

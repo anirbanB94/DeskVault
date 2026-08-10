@@ -2,6 +2,8 @@
 using DeskVault.Application.Configurations;
 using DeskVault.Infrastructure;
 using DeskVault.UI.Forms;
+using DeskVault.UI.Presenters;
+using DeskVault.UI.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -57,5 +59,7 @@ internal static class HostConfigurator
 
         // UI
         services.AddTransient<MainForm>();
+        services.AddTransient<IDocumentViewer, DocumentViewer>();
+        services.AddTransient<MainFormPresenter>();
     }
 }

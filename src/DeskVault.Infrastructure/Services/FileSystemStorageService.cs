@@ -4,9 +4,16 @@ namespace DeskVault.Infrastructure.Services;
 
 public sealed class FileSystemStorageService : IStorageService
 {
-
     private const string RootFolder = "DeskVault";
     private const string DocumentsFolder = "Documents";
+
+    private readonly DocumentEncryptionService _encryptionService;
+
+    public FileSystemStorageService(
+        DocumentEncryptionService encryptionService)
+    {
+        _encryptionService = encryptionService;
+    }
 
     public async Task<string> StoreAsync(
         string sourceFilePath,
@@ -16,15 +23,19 @@ public sealed class FileSystemStorageService : IStorageService
         string localAppData = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData);
 
-        string rootDirectory = Path.Combine(localAppData, RootFolder);
-        string documentsDirectory = Path.Combine(rootDirectory, DocumentsFolder);
+        string rootDirectory = Path.Combine(
+            localAppData,
+            RootFolder);
+
+        string documentsDirectory = Path.Combine(
+            rootDirectory,
+            DocumentsFolder);
 
         Directory.CreateDirectory(documentsDirectory);
 
-        string extension = Path.GetExtension(sourceFilePath);
         string destinationFilePath = Path.Combine(
             documentsDirectory,
-            $"{documentId}{extension}");
+            $"{documentId}.dvault");
 
         await using var source = new FileStream(
             sourceFilePath,
@@ -36,13 +47,16 @@ public sealed class FileSystemStorageService : IStorageService
 
         await using var destination = new FileStream(
             destinationFilePath,
-            FileMode.Create,
+            FileMode.CreateNew,
             FileAccess.Write,
             FileShare.None,
             bufferSize: 81920,
             useAsync: true);
 
-        await source.CopyToAsync(destination, cancellationToken);
+        await _encryptionService.EncryptAsync(
+            source,
+            destination,
+            cancellationToken);
 
         return destinationFilePath;
     }
