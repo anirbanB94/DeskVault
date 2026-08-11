@@ -1,4 +1,4 @@
-﻿namespace DeskVault.Domain.Documents;
+namespace DeskVault.Domain.Documents;
 
 public sealed class Document
 {
@@ -35,11 +35,68 @@ public sealed class Document
     }
 
     public static Document Create(
-    Guid id,
-    string fileName,
-    string displayName,
-    string sha256Hash,
-    string storedFilePath)
+        Guid id,
+        string fileName,
+        string displayName,
+        string sha256Hash,
+        string storedFilePath)
+    {
+        Validate(
+            id,
+            fileName,
+            displayName,
+            sha256Hash,
+            storedFilePath);
+
+        return new Document(
+            id,
+            fileName,
+            displayName,
+            sha256Hash,
+            storedFilePath,
+            DateTime.UtcNow,
+            DocumentStatus.Imported);
+    }
+
+    public static Document Restore(
+        Guid id,
+        string fileName,
+        string displayName,
+        string sha256Hash,
+        string storedFilePath,
+        DateTime importedAt,
+        DocumentStatus status)
+    {
+        Validate(
+            id,
+            fileName,
+            displayName,
+            sha256Hash,
+            storedFilePath);
+
+        if (importedAt == default)
+        {
+            throw new ArgumentException(
+                "Imported date is required.",
+                nameof(importedAt));
+        }
+
+        return new Document(
+            id,
+            fileName,
+            displayName,
+            sha256Hash,
+            storedFilePath,
+            importedAt,
+            status);
+    }
+
+    private static void Validate(
+        Guid id,
+        string fileName,
+        string displayName,
+        string sha256Hash,
+        string storedFilePath)
     {
         if (id == Guid.Empty)
         {
@@ -75,14 +132,5 @@ public sealed class Document
                 "Stored file path is required.",
                 nameof(storedFilePath));
         }
-
-        return new Document(
-        id,
-        fileName,
-        displayName,
-        sha256Hash,
-        storedFilePath,
-        DateTime.UtcNow,
-        DocumentStatus.Imported);
     }
 }

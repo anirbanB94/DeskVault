@@ -1,0 +1,197 @@
+# ADR-0005: Persist Document Metadata with SQLite
+
+## Status 
+
+Accepted
+
+## Context
+
+DeskVault initially used an in-memory document repository to establish the document import vertical slice.
+
+While this was sufficient for the initial MVP workflow, document metadata was lost whenever the application exited. DeskVault therefore requires persistent local metadata so imported documents remain available across application restarts.
+
+The persistence solution should also preserve the existing architectural boundaries and provide a reasonable foundation for future document processing, search, indexing, and local AI capabilities.
+
+## Decision
+
+DeskVault will use **SQLite with Entity Framework Core** for persistent document metadata.
+
+The SQLite database will be stored under the user's local application-data directory:
+
+```text
+%LOCALAPPDATA%\DeskVault\DeskVault.db
+```
+
+Document content will remain outside the database as encrypted `.dvault` files.
+
+```text
+%LOCALAPPDATA%\DeskVault\
+├── DeskVault.db
+├── Documents\
+└── Security\
+```
+
+SQLite is responsible for document metadata, while the filesystem remains responsible for encrypted document content.
+
+## Architectural Boundaries
+
+The Application layer continues to depend on the repository abstraction:
+
+```text
+IDocumentRepository
+```
+
+Infrastructure provides the concrete implementation:
+
+```text
+Application
+    ↓
+IDocumentRepository
+    ↓
+SqliteDocumentRepository
+    ↓
+EF Core
+    ↓
+SQLite
+```
+
+EF Core and SQLite types remain inside Infrastructure and are not exposed through Domain or Application contracts.
+
+## Persistence Model
+
+The Domain `Document` is intentionally separate from the EF Core persistence entity.
+
+```text
+Domain
+└── Document
+
+Infrastructure
+└── DocumentEntity
+```
+
+Infrastructure is responsible for mapping between the persistence and domain representations.
+
+This prevents database-specific concerns from leaking into the Domain model.
+
+## DbContext Lifetime
+
+DeskVault is a WinForms desktop application and does not have a natural HTTP request scope.
+
+Infrastructure therefore uses:
+
+```text
+IDbContextFactory<DeskVaultDbContext>
+```
+
+The repository creates a short-lived `DbContext` for each persistence operation and disposes it when the operation completes.
+
+This keeps database context lifetime independent from the UI application's lifetime.
+
+## Database Constraints
+
+The document metadata table currently enforces:
+
+* `Id` as the primary key
+* required file name
+* required display name
+* required SHA-256 hash
+* unique SHA-256 hash
+* required import timestamp
+* required document status
+* required stored-file path
+* an index on `ImportedAt`
+
+The unique SHA-256 constraint provides a database-level safeguard against duplicate documents in addition to application-level duplicate detection.
+
+## Domain Restoration
+
+Creating a new document and restoring an existing persisted document are separate domain operations.
+
+```text
+Document.Create(...)
+    ↓
+Creates a new document
+
+Document.Restore(...)
+    ↓
+Restores existing persisted state
+```
+
+Restoration preserves persisted values such as the original import timestamp and document status rather than applying new-document defaults.
+
+## Database Initialization
+
+The MVP initializes the SQLite database during application startup using EF Core database creation support.
+
+A dedicated `DatabaseInitializer` keeps database initialization separate from dependency registration and the `DbContext`.
+
+As schema evolution becomes more important, the initialization strategy can transition to EF Core migrations.
+
+## Alternatives Considered
+
+### In-memory repository
+
+Rejected as the production persistence mechanism because data is lost when the application exits.
+
+It may remain useful for tests or isolated development scenarios.
+
+### Raw SQLite access
+
+Rejected for the current implementation because DeskVault is expected to grow beyond a single metadata table.
+
+EF Core provides a stronger foundation for future schema evolution, relationships, migrations, and query composition.
+
+### Server database
+
+Rejected for the MVP because DeskVault is intentionally local-first and offline-capable.
+
+A future server-backed implementation could be introduced behind the existing Application abstractions if a deployment scenario requires it.
+
+## Consequences
+
+### Positive
+
+* Document metadata survives application restarts.
+* SQLite provides local persistence without requiring a database server.
+* EF Core provides a path for future schema growth.
+* Domain and Application remain database-agnostic.
+* Encrypted document content remains separate from metadata.
+* Database-level uniqueness reinforces duplicate detection.
+* Persistence can evolve independently of the Domain model.
+
+### Negative
+
+* Infrastructure now has a database dependency.
+* SQLite schema evolution will eventually require migrations.
+* A separate persistence entity must be maintained alongside the Domain entity.
+* Database initialization adds startup work.
+
+These trade-offs are acceptable for the current MVP.
+
+## Result
+
+DeskVault now has a persistent local document metadata layer while retaining encrypted filesystem storage for document content.
+
+The resulting workflow is:
+
+```text
+Import
+    ↓
+Hash
+    ↓
+Duplicate detection
+    ↓
+Encrypt
+    ↓
+Store encrypted content
+    ↓
+Persist metadata
+    ↓
+Restart application
+    ↓
+Restore metadata
+    ↓
+Open and decrypt document
+```
+
+This establishes the persistence foundation for future document processing, search, embeddings, and local AI capabilities.

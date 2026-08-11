@@ -1,6 +1,9 @@
-﻿using DeskVault.Application.Interfaces;
+using DeskVault.Application.Interfaces;
+using DeskVault.Infrastructure.Persistence;
+using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Repositories;
 using DeskVault.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,6 +18,20 @@ public static class DependencyInjection
     {
         services.AddSingleton<IApplicationInfoService, ApplicationInfoService>();
 
+        services.AddSingleton<DeskVaultDataPaths>();
+
+        services.AddDbContextFactory<DeskVaultDbContext>(
+            (serviceProvider, options) =>
+            {
+                var paths =
+                    serviceProvider.GetRequiredService<DeskVaultDataPaths>();
+
+                options.UseSqlite(
+                    $"Data Source={paths.DatabasePath}");
+            });
+
+        services.AddSingleton<DatabaseInitializer>();
+
         services.AddSingleton<IHashService, Sha256HashService>();
 
         services.AddSingleton<IEncryptionKeyService, WindowsEncryptionKeyService>();
@@ -25,7 +42,9 @@ public static class DependencyInjection
 
         services.AddSingleton<IDocumentReader, EncryptedDocumentReader>();
 
-        services.AddSingleton<IDocumentRepository, InMemoryDocumentRepository>();
+        //services.AddSingleton<IDocumentRepository, InMemoryDocumentRepository>();
+
+        services.AddSingleton<IDocumentRepository, SqliteDocumentRepository>();
 
         return services;
     }

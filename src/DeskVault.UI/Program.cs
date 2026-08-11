@@ -1,3 +1,4 @@
+using DeskVault.Infrastructure.Persistence;
 using DeskVault.UI.Forms;
 using DeskVault.UI.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +15,13 @@ internal static class Program
         ApplicationConfiguration.Initialize();
 
         using var host = HostConfigurator.Build();
+
+        var databaseInitializer = host.Services.GetRequiredService<DatabaseInitializer>();
+
+        databaseInitializer
+            .InitializeAsync()
+            .GetAwaiter()
+            .GetResult();
 
         Log.Information("DeskVault application starting...");
 
