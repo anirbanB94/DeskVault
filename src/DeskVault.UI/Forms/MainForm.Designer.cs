@@ -1,4 +1,4 @@
-﻿namespace DeskVault.UI.Forms;
+namespace DeskVault.UI.Forms;
 
 partial class MainForm
 {
@@ -8,9 +8,10 @@ partial class MainForm
     private System.Windows.Forms.Label titleLabel;
     private System.Windows.Forms.Button importButton;
     private System.Windows.Forms.Button openButton;
+    private System.Windows.Forms.Button removeButton;
     private System.Windows.Forms.Panel contentPanel;
     private System.Windows.Forms.Label emptyStateLabel;
-    private System.Windows.Forms.ListBox documentListBox;
+    private System.Windows.Forms.DataGridView documentGridView;
     private System.Windows.Forms.StatusStrip statusStrip;
     private System.Windows.Forms.ToolStripStatusLabel statusLabel;
 
@@ -29,12 +30,13 @@ partial class MainForm
     private void InitializeComponent()
     {
         headerPanel = new Panel();
+        removeButton = new Button();
         openButton = new Button();
         importButton = new Button();
         titleLabel = new Label();
 
         contentPanel = new Panel();
-        documentListBox = new ListBox();
+        documentGridView = new DataGridView();
         emptyStateLabel = new Label();
 
         statusStrip = new StatusStrip();
@@ -42,22 +44,36 @@ partial class MainForm
 
         headerPanel.SuspendLayout();
         contentPanel.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize)documentGridView).BeginInit();
         statusStrip.SuspendLayout();
         SuspendLayout();
 
         // 
         // headerPanel
         // 
+        headerPanel.Controls.Add(removeButton);
         headerPanel.Controls.Add(openButton);
         headerPanel.Controls.Add(importButton);
         headerPanel.Controls.Add(titleLabel);
         headerPanel.Dock = DockStyle.Top;
         headerPanel.Location = new Point(0, 0);
-        headerPanel.Margin = new Padding(6);
         headerPanel.Name = "headerPanel";
         headerPanel.Padding = new Padding(30, 17, 30, 17);
         headerPanel.Size = new Size(1857, 137);
         headerPanel.TabIndex = 1;
+
+        // 
+        // removeButton
+        // 
+        removeButton.Dock = DockStyle.Right;
+        removeButton.Enabled = false;
+        removeButton.Location = new Point(1047, 17);
+        removeButton.Margin = new Padding(6);
+        removeButton.Name = "removeButton";
+        removeButton.Size = new Size(260, 103);
+        removeButton.TabIndex = 0;
+        removeButton.Text = "Remove";
+        removeButton.UseVisualStyleBackColor = true;
 
         // 
         // openButton
@@ -68,7 +84,7 @@ partial class MainForm
         openButton.Margin = new Padding(6);
         openButton.Name = "openButton";
         openButton.Size = new Size(260, 103);
-        openButton.TabIndex = 0;
+        openButton.TabIndex = 1;
         openButton.Text = "Open Document";
         openButton.UseVisualStyleBackColor = true;
 
@@ -80,7 +96,7 @@ partial class MainForm
         importButton.Margin = new Padding(6);
         importButton.Name = "importButton";
         importButton.Size = new Size(260, 103);
-        importButton.TabIndex = 1;
+        importButton.TabIndex = 2;
         importButton.Text = "Import Document";
         importButton.UseVisualStyleBackColor = true;
 
@@ -91,37 +107,44 @@ partial class MainForm
         titleLabel.Dock = DockStyle.Left;
         titleLabel.Font = new Font("Segoe UI", 16F);
         titleLabel.Location = new Point(30, 17);
-        titleLabel.Margin = new Padding(6, 0, 6, 0);
         titleLabel.Name = "titleLabel";
         titleLabel.Size = new Size(211, 59);
-        titleLabel.TabIndex = 2;
+        titleLabel.TabIndex = 3;
         titleLabel.Text = "DeskVault";
         titleLabel.TextAlign = ContentAlignment.MiddleLeft;
 
         // 
         // contentPanel
         // 
-        contentPanel.Controls.Add(documentListBox);
+        contentPanel.Controls.Add(documentGridView);
         contentPanel.Controls.Add(emptyStateLabel);
         contentPanel.Dock = DockStyle.Fill;
         contentPanel.Location = new Point(0, 137);
-        contentPanel.Margin = new Padding(6);
         contentPanel.Name = "contentPanel";
         contentPanel.Padding = new Padding(30, 34, 30, 34);
         contentPanel.Size = new Size(1857, 1208);
         contentPanel.TabIndex = 0;
 
         // 
-        // documentListBox
+        // documentGridView
         // 
-        documentListBox.Dock = DockStyle.Fill;
-        documentListBox.FormattingEnabled = true;
-        documentListBox.ItemHeight = 32;
-        documentListBox.Location = new Point(30, 34);
-        documentListBox.Name = "documentListBox";
-        documentListBox.Size = new Size(1797, 1140);
-        documentListBox.TabIndex = 1;
-        documentListBox.Visible = false;
+        documentGridView.AllowUserToAddRows = false;
+        documentGridView.AllowUserToDeleteRows = false;
+        documentGridView.AllowUserToResizeRows = false;
+        documentGridView.AutoGenerateColumns = false;
+        documentGridView.ColumnHeadersHeightSizeMode =
+            DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+        documentGridView.Dock = DockStyle.Fill;
+        documentGridView.Location = new Point(30, 34);
+        documentGridView.MultiSelect = false;
+        documentGridView.Name = "documentGridView";
+        documentGridView.ReadOnly = true;
+        documentGridView.RowHeadersVisible = false;
+        documentGridView.SelectionMode =
+            DataGridViewSelectionMode.FullRowSelect;
+        documentGridView.Size = new Size(1797, 1140);
+        documentGridView.TabIndex = 1;
+        documentGridView.Visible = false;
 
         // 
         // emptyStateLabel
@@ -129,7 +152,6 @@ partial class MainForm
         emptyStateLabel.Dock = DockStyle.Fill;
         emptyStateLabel.Font = new Font("Segoe UI", 12F);
         emptyStateLabel.Location = new Point(30, 34);
-        emptyStateLabel.Margin = new Padding(6, 0, 6, 0);
         emptyStateLabel.Name = "emptyStateLabel";
         emptyStateLabel.Size = new Size(1797, 1140);
         emptyStateLabel.TabIndex = 0;
@@ -167,7 +189,6 @@ partial class MainForm
         Controls.Add(contentPanel);
         Controls.Add(headerPanel);
         Controls.Add(statusStrip);
-        Margin = new Padding(6);
         MinimumSize = new Size(1463, 986);
         Name = "MainForm";
         StartPosition = FormStartPosition.CenterScreen;
@@ -176,6 +197,8 @@ partial class MainForm
         headerPanel.PerformLayout();
 
         contentPanel.ResumeLayout(false);
+
+        ((System.ComponentModel.ISupportInitialize)documentGridView).EndInit();
 
         statusStrip.ResumeLayout(false);
         statusStrip.PerformLayout();

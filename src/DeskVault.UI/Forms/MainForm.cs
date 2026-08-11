@@ -1,8 +1,10 @@
-﻿using DeskVault.Application.Interfaces;
 using DeskVault.Application.Documents.Commands.ImportDocument;
+using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
+using DeskVault.Application.Interfaces;
 using DeskVault.UI.Presenters;
+using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
 
@@ -15,11 +17,12 @@ public partial class MainForm : Form, IMainFormView
     private readonly MainFormPresenter _presenter;
 
     public MainForm(
-    IApplicationInfoService applicationInfo,
-    ImportDocumentHandler importDocumentHandler,
-    OpenDocumentHandler openDocumentHandler,
-    IDocumentViewer documentViewer,
-    ListDocumentsHandler listDocumentsHandler)
+        IApplicationInfoService applicationInfo,
+        ImportDocumentHandler importDocumentHandler,
+        RemoveDocumentHandler removeDocumentHandler,
+        OpenDocumentHandler openDocumentHandler,
+        IDocumentViewer documentViewer,
+        ListDocumentsHandler listDocumentsHandler)
     {
         InitializeComponent();
 
@@ -29,20 +32,34 @@ public partial class MainForm : Form, IMainFormView
         _presenter = new MainFormPresenter(
             this,
             importDocumentHandler,
+            removeDocumentHandler,
             openDocumentHandler,
             listDocumentsHandler);
 
         Text = $"{_applicationInfo.ApplicationName} v{_applicationInfo.Version}";
 
+        documentGridView.Columns.Add(
+            new DataGridViewTextBoxColumn
+            {
+                Name = "documentNameColumn",
+                HeaderText = "Document",
+                DataPropertyName = nameof(DocumentListItem.FileName),
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            });
+
         Load += MainForm_Load;
         importButton.Click += OnImportButtonClick;
         openButton.Click += OnOpenButtonClick;
-        documentListBox.SelectedIndexChanged += OnDocumentSelectionChanged;
+        removeButton.Click += OnRemoveButtonClick;
+        documentGridView.SelectionChanged += OnDocumentSelectionChanged;
+        documentGridView.CellDoubleClick += OnDocumentDoubleClick;
     }
 
     public event EventHandler? ImportRequested;
 
     public event EventHandler? OpenRequested;
+
+    public event EventHandler? RemoveRequested;
 
     public event EventHandler? DocumentSelectionChanged;
 
@@ -50,9 +67,20 @@ public partial class MainForm : Form, IMainFormView
     {
         get
         {
-            return documentListBox.SelectedItem
+            return documentGridView.CurrentRow?.DataBoundItem
                 is DocumentListItem item
                     ? item.Id
+                    : null;
+        }
+    }
+
+    public string? SelectedDocumentFileName
+    {
+        get
+        {
+            return documentGridView.CurrentRow?.DataBoundItem
+                is DocumentListItem item
+                    ? item.FileName
                     : null;
         }
     }
@@ -102,33 +130,59 @@ public partial class MainForm : Form, IMainFormView
             EventArgs.Empty);
     }
 
-    private void OnDocumentSelectionChanged(
+    private void OnRemoveButtonClick(
     object? sender,
     EventArgs e)
+    {
+        RemoveRequested?.Invoke(
+            this,
+            EventArgs.Empty);
+    }
+
+    private void OnDocumentSelectionChanged(
+        object? sender,
+        EventArgs e)
     {
         DocumentSelectionChanged?.Invoke(
             this,
             EventArgs.Empty);
     }
 
-    public void SetSelectedDocumentId(
-    Guid? documentId)
+    private void OnDocumentDoubleClick(
+        object? sender,
+        DataGridViewCellEventArgs e)
     {
-        if (documentId is null)
+        if (e.RowIndex < 0)
         {
-            documentListBox.ClearSelected();
             return;
         }
 
-        for (int index = 0;
-             index < documentListBox.Items.Count;
-             index++)
+        if (SelectedDocumentId is not null)
         {
-            if (documentListBox.Items[index]
-                is DocumentListItem item &&
+            OpenRequested?.Invoke(
+                this,
+                EventArgs.Empty);
+        }
+    }
+
+    public void SetSelectedDocumentId(
+        Guid? documentId)
+    {
+        if (documentId is null)
+        {
+            documentGridView.ClearSelection();
+            return;
+        }
+
+        foreach (DataGridViewRow row in documentGridView.Rows)
+        {
+            if (row.DataBoundItem is DocumentListItem item &&
                 item.Id == documentId.Value)
             {
-                documentListBox.SelectedIndex = index;
+                row.Selected = true;
+                documentGridView.CurrentCell =
+                    row.Cells[0];
+
                 return;
             }
         }
@@ -144,6 +198,12 @@ public partial class MainForm : Form, IMainFormView
         bool enabled)
     {
         openButton.Enabled = enabled;
+    }
+
+    public void SetRemoveEnabled(
+    bool enabled)
+    {
+        removeButton.Enabled = enabled;
     }
 
     public void SetStatus(
@@ -188,10 +248,24 @@ public partial class MainForm : Form, IMainFormView
             MessageBoxIcon.Error);
     }
 
-    public Task OpenDocumentAsync(
-        Stream documentStream,
-        string fileName,
-        CancellationToken cancellationToken = default)
+    public bool ConfirmRemoval(
+    string fileName)
+    {
+        var result = MessageBox.Show(
+            this,
+            UiMessages.ConfirmRemoveDocument(fileName),
+            UiMessages.RemoveDocumentTitle,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+
+        return result == DialogResult.Yes;
+    }
+
+    public Task ShowDocumentAsync(
+    Stream documentStream,
+    string fileName,
+    CancellationToken cancellationToken = default)
     {
         return _documentViewer.OpenAsync(
             documentStream,
@@ -200,34 +274,29 @@ public partial class MainForm : Form, IMainFormView
     }
 
     public void ShowDocuments(
-    IReadOnlyList<DocumentListItem> documents)
+        IReadOnlyList<DocumentListItem> documents)
     {
-        documentListBox.DataSource = null;
+        documentGridView.DataSource = null;
 
-        documentListBox.DataSource =
-            documents
-                .Select(document => new DocumentListItem(
-                    document.Id,
-                    document.FileName))
-                .ToList();
+        documentGridView.DataSource =
+            documents.ToList();
 
-        documentListBox.DisplayMember = nameof(
-            DocumentListItem.FileName);
-
-        documentListBox.ValueMember = nameof(
-            DocumentListItem.Id);
-
-        documentListBox.Visible = documents.Count > 0;
+        documentGridView.Visible = documents.Count > 0;
         emptyStateLabel.Visible = documents.Count == 0;
 
         if (documents.Count > 0)
         {
-            documentListBox.SelectedIndex = 0;
+            documentGridView.ClearSelection();
+
+            documentGridView.Rows[0].Selected = true;
+            documentGridView.CurrentCell =
+                documentGridView.Rows[0].Cells[0];
         }
     }
 
     public void ShowEmptyState()
     {
+        documentGridView.Visible = false;
         emptyStateLabel.Visible = true;
     }
 }

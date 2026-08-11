@@ -1,4 +1,4 @@
-﻿using DeskVault.Domain.Documents;
+using DeskVault.Domain.Documents;
 
 namespace DeskVault.Application.Interfaces;
 
@@ -17,5 +17,9 @@ public interface IDocumentRepository
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<Document>> GetAllAsync(
-    CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default);
 }

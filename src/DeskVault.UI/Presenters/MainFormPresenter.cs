@@ -1,6 +1,8 @@
-﻿using DeskVault.Application.Documents.Commands.ImportDocument;
+using DeskVault.Application.Documents.Commands.ImportDocument;
+using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
+using DeskVault.UI.Resources;
 using DeskVault.UI.Views;
 
 namespace DeskVault.UI.Presenters;
@@ -9,22 +11,26 @@ public sealed class MainFormPresenter
 {
     private readonly IMainFormView _view;
     private readonly ImportDocumentHandler _importDocumentHandler;
+    private readonly RemoveDocumentHandler _removeDocumentHandler;
     private readonly OpenDocumentHandler _openDocumentHandler;
     private readonly ListDocumentsHandler _listDocumentsHandler;
 
     public MainFormPresenter(
         IMainFormView view,
         ImportDocumentHandler importDocumentHandler,
+        RemoveDocumentHandler removeDocumentHandler,
         OpenDocumentHandler openDocumentHandler,
         ListDocumentsHandler listDocumentsHandler)
     {
         _view = view;
         _importDocumentHandler = importDocumentHandler;
+        _removeDocumentHandler = removeDocumentHandler;
         _openDocumentHandler = openDocumentHandler;
         _listDocumentsHandler = listDocumentsHandler;
 
         _view.ImportRequested += OnImportRequested;
         _view.OpenRequested += OnOpenRequested;
+        _view.RemoveRequested += OnRemoveRequested;
         _view.DocumentSelectionChanged += OnDocumentSelectionChanged;
     }
 
@@ -52,7 +58,7 @@ public sealed class MainFormPresenter
 
             _view.ShowDocuments(items);
 
-            var latestDocument = documents[^1];
+            var latestDocument = documents[0];
 
             _view.SetSelectedDocumentId(
                 latestDocument.Id);
@@ -167,7 +173,7 @@ public sealed class MainFormPresenter
                 await _openDocumentHandler.HandleAsync(
                     new OpenDocumentQuery(documentId));
 
-            await _view.OpenDocumentAsync(
+            await _view.ShowDocumentAsync(
                 result.Content,
                 result.FileName);
 
@@ -190,11 +196,110 @@ public sealed class MainFormPresenter
         }
     }
 
+    private async void OnRemoveRequested(
+    object? sender,
+    EventArgs e)
+    {
+        if (_view.SelectedDocumentId is not Guid documentId)
+        {
+            return;
+        }
+
+        string? fileName = _view.SelectedDocumentFileName;
+
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return;
+        }
+
+        if (!_view.ConfirmRemoval(fileName))
+        {
+            return;
+        }
+
+        _view.SetRemoveEnabled(false);
+        _view.SetOpenEnabled(false);
+        _view.SetImportEnabled(false);
+        _view.SetStatus("Removing document...");
+
+        try
+        {
+            var result =
+                await _removeDocumentHandler.HandleAsync(
+                    new RemoveDocumentCommand(documentId));
+
+            if (result.Status ==
+                RemoveDocumentResultStatus.Success)
+            {
+                var documents =
+                    await _listDocumentsHandler.HandleAsync(
+                        new ListDocumentsQuery());
+
+                var items = documents
+                    .Select(document => new DocumentListItem(
+                        document.Id,
+                        document.FileName))
+                    .ToList();
+
+                if (items.Count == 0)
+                {
+                    _view.ShowEmptyState();
+                    _view.SetOpenEnabled(false);
+                    _view.SetRemoveEnabled(false);
+                }
+                else
+                {
+                    _view.ShowDocuments(items);
+                    _view.SetOpenEnabled(
+                        _view.SelectedDocumentId.HasValue);
+                    _view.SetRemoveEnabled(
+                        _view.SelectedDocumentId.HasValue);
+                }
+
+                _view.SetStatus(result.Message);
+
+                _view.ShowInformation(
+                    result.Message,
+                    UiMessages.DocumentRemovedTitle);
+
+                return;
+            }
+
+            _view.SetStatus(result.Message);
+
+            _view.ShowWarning(
+                result.Message,
+                UiMessages.RemoveFailedTitle);
+        }
+        catch (Exception)
+        {
+            _view.SetStatus(
+                "Unable to remove document.");
+
+            _view.ShowError(
+                UiMessages.UnableToRemoveDocument,
+                "DeskVault");
+        }
+        finally
+        {
+            _view.SetImportEnabled(true);
+
+            _view.SetOpenEnabled(
+                _view.SelectedDocumentId.HasValue);
+
+            _view.SetRemoveEnabled(
+                _view.SelectedDocumentId.HasValue);
+        }
+    }
+
     private void OnDocumentSelectionChanged(
     object? sender,
     EventArgs e)
     {
-        _view.SetOpenEnabled(
-            _view.SelectedDocumentId.HasValue);
+        bool hasSelection =
+            _view.SelectedDocumentId.HasValue;
+
+        _view.SetOpenEnabled(hasSelection);
+        _view.SetRemoveEnabled(hasSelection);
     }
 }

@@ -1,4 +1,4 @@
-﻿using DeskVault.Application.Interfaces;
+using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 
 namespace DeskVault.Infrastructure.Repositories;
@@ -42,5 +42,22 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         IReadOnlyList<Document> documents = [.. _documents];
 
         return Task.FromResult(documents);
+    }
+
+    public Task DeleteAsync(
+    Guid documentId,
+    CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Document? document = _documents.FirstOrDefault(
+            x => x.Id == documentId);
+
+        if (document is not null)
+        {
+            _documents.Remove(document);
+        }
+
+        return Task.CompletedTask;
     }
 }

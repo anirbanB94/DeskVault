@@ -1,4 +1,4 @@
-﻿namespace DeskVault.UI.Views;
+namespace DeskVault.UI.Views;
 
 public interface IMainFormView
 {
@@ -6,9 +6,13 @@ public interface IMainFormView
 
     event EventHandler OpenRequested;
 
+    event EventHandler RemoveRequested;
+
     event EventHandler DocumentSelectionChanged;
-    
+
     Guid? SelectedDocumentId { get; }
+
+    string? SelectedDocumentFileName { get; }
 
     string? SelectedFilePath { get; }
 
@@ -17,6 +21,8 @@ public interface IMainFormView
     void SetImportEnabled(bool enabled);
 
     void SetOpenEnabled(bool enabled);
+
+    void SetRemoveEnabled(bool enabled);
 
     void SetStatus(string message);
 
@@ -28,17 +34,20 @@ public interface IMainFormView
         string message,
         string title);
 
+    bool ConfirmRemoval(
+    string fileName);
+
     void ShowError(
         string message,
         string title);
 
-    Task OpenDocumentAsync(
-    Stream documentStream,
-    string fileName,
-    CancellationToken cancellationToken = default);
+    Task ShowDocumentAsync(
+        Stream documentStream,
+        string fileName,
+        CancellationToken cancellationToken = default);
 
     void ShowDocuments(
-    IReadOnlyList<DocumentListItem> documents);
+        IReadOnlyList<DocumentListItem> documents);
 
     void ShowEmptyState();
 }

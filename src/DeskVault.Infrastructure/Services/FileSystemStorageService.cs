@@ -1,4 +1,4 @@
-﻿using DeskVault.Application.Interfaces;
+using DeskVault.Application.Interfaces;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -59,5 +59,23 @@ public sealed class FileSystemStorageService : IStorageService
             cancellationToken);
 
         return destinationFilePath;
+    }
+
+    public Task DeleteAsync(
+        string storedFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(storedFilePath))
+        {
+            throw new ArgumentException(
+                "Stored file path cannot be empty.",
+                nameof(storedFilePath));
+        }
+
+        File.Delete(storedFilePath);
+
+        return Task.CompletedTask;
     }
 }

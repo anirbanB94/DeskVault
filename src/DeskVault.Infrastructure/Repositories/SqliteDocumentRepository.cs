@@ -95,6 +95,30 @@ public sealed class SqliteDocumentRepository
             .ToList();
     }
 
+    public async Task DeleteAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var dbContext =
+            await _dbContextFactory.CreateDbContextAsync(
+                cancellationToken);
+
+        var entity = await dbContext.Documents
+            .FirstOrDefaultAsync(
+                document => document.Id == documentId,
+                cancellationToken);
+
+        if (entity is null)
+        {
+            return;
+        }
+
+        dbContext.Documents.Remove(entity);
+
+        await dbContext.SaveChangesAsync(
+            cancellationToken);
+    }
+
     private static Document ToDomain(
         DocumentEntity entity)
     {

@@ -1,9 +1,13 @@
-﻿namespace DeskVault.Application.Interfaces;
+namespace DeskVault.Application.Interfaces;
 
 public interface IStorageService
 {
     Task<string> StoreAsync(
         string sourceFilePath,
         Guid documentId,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(
+        string storedFilePath,
         CancellationToken cancellationToken = default);
 }

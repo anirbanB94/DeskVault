@@ -28,7 +28,6 @@
   <ItemGroup>
     <Folder Include="Controls\" />
     <Folder Include="Assets\" />
-    <Folder Include="Resources\" />
     <Folder Include="Themes\" />
     <Folder Include="Services\" />
   </ItemGroup>
