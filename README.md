@@ -16,35 +16,41 @@ DeskVault is currently in **MVP development**.
 
 ### Implemented
 
-* .NET 10 / WinForms desktop application
-* Clean separation across Domain, Application, Infrastructure, and UI
-* Document import workflow
-* SHA-256 based duplicate detection
-* Encrypted document storage using AES-GCM
-* Windows-protected encryption key management
-* Encrypted `.dvault` document artifacts
-* Persistent document metadata using SQLite
-* EF Core persistence infrastructure
-* Application restart persistence
-* Document listing and selection
-* Persistent document retrieval
-* Decryption and document opening
-* Local application-data storage under `%LOCALAPPDATA%\DeskVault`
-* Architecture Decision Records for significant architectural choices
+- .NET 10 / WinForms desktop application
+- Clean separation across Domain, Application, Infrastructure, and UI
+- Document import workflow
+- SHA-256 based duplicate detection
+- Encrypted document storage using AES-GCM
+- Windows-protected encryption key management
+- Encrypted `.dvault` document artifacts
+- Persistent document metadata using SQLite
+- EF Core persistence infrastructure
+- Application restart persistence
+- Document listing and selection
+- Persistent document retrieval
+- Decryption and document opening
+- Local application-data storage under `%LOCALAPPDATA%\DeskVault`
+- In-app document workspace foundation
+- Document workspace opening flow
+- Dedicated `DocumentViewForm` workspace
+- Workspace-oriented UI interaction model
+- Presenter-driven document workspace integration
+- Architecture Decision Records for significant architectural choices
 
 ### In Development
 
-* Improved desktop UI/UX
-* Document processing pipeline
-* Text extraction
-* Full-text and semantic search
-* Local embeddings
-* Retrieval-Augmented Generation (RAG)
-* Local AI integration through Ollama
-* Source-grounded knowledge retrieval
-* Additional security hardening
-* Automated test coverage
-* Database migrations and schema evolution
+- Document rendering inside the document workspace
+- Improved desktop UI/UX
+- Document processing pipeline
+- Text extraction
+- Full-text and semantic search
+- Local embeddings
+- Retrieval-Augmented Generation (RAG)
+- Local AI integration through Ollama
+- Source-grounded knowledge retrieval
+- Additional security hardening
+- Automated test coverage
+- Database migrations and schema evolution
 
 ## Architecture
 
@@ -54,6 +60,10 @@ DeskVault follows a layered architecture designed to keep infrastructure concern
 ┌──────────────────────────────────────────────┐
 │                  DeskVault UI                │
 │              WinForms + Presenter            │
+│                                              │
+│  MainForm                                    │
+│      │                                       │
+│      └── DocumentViewForm / Workspace        │
 └──────────────────────┬───────────────────────┘
                        │
                        ▼
@@ -82,6 +92,8 @@ DeskVault follows a layered architecture designed to keep infrastructure concern
 
 The Application layer depends on abstractions such as `IDocumentRepository`. Infrastructure provides the concrete implementations.
 
+The UI follows a presenter-oriented interaction model. The main document library remains responsible for document selection and document-level actions, while `DocumentViewForm` provides a dedicated document workspace boundary.
+
 This keeps persistence, encryption, filesystem access, and other platform-specific concerns outside the Domain and Application layers.
 
 ## Document Storage Model
@@ -89,28 +101,25 @@ This keeps persistence, encryption, filesystem access, and other platform-specif
 DeskVault separates **document content** from **document metadata**.
 
 ```text
-%LOCALAPPDATA%\DeskVault\
-│
+%LOCALAPPDATA%\DeskVault│
 ├── DeskVault.db
 │
-├── Documents\
-│   └── <document-id>.dvault
+├── Documents│   └── <document-id>.dvault
 │
-└── Security\
-    └── <protected security material>
+└── Security    └── <protected security material>
 ```
 
 ### SQLite
 
 SQLite stores document metadata such as:
 
-* Document ID
-* File name
-* Display name
-* SHA-256 hash
-* Import timestamp
-* Document status
-* Encrypted storage path
+- Document ID
+- File name
+- Display name
+- SHA-256 hash
+- Import timestamp
+- Document status
+- Encrypted storage path
 
 EF Core provides the persistence abstraction inside Infrastructure.
 
@@ -122,17 +131,64 @@ The application decrypts the stored content only when the document needs to be o
 
 This separation allows the metadata store and document-content storage to evolve independently.
 
+## Document Workspace
+
+DeskVault now provides an initial **in-app document workspace**.
+
+The current workspace establishes the UI boundary for document-centric interaction without prematurely implementing future workspace functionality.
+
+The current workspace includes:
+
+- Document identity
+- Dedicated document workspace window
+- Workspace header
+- Document content area
+- AI interaction entry point
+- Workspace actions menu
+- Close workspace action
+- Presenter-driven workspace opening
+
+The current implementation establishes the workspace shell and opening flow. **Document content rendering inside the workspace is not yet implemented.**
+
+The intended direction is:
+
+```text
+Main Document Library
+        │
+        │ Open Document
+        ▼
+OpenDocumentHandler
+        │
+        ▼
+IDocumentWorkspace
+        │
+        ▼
+DocumentViewForm
+        │
+        ├── Document Identity
+        ├── Document Content
+        ├── AI Assistant
+        └── Workspace Actions
+```
+
+The workspace architecture is intentionally designed to provide a path toward future capabilities such as related documents, persistent workspaces, multiple workspace windows, document rendering extensions, and local AI assistance without implementing those capabilities prematurely.
+
+The architectural decision is documented in:
+
+- `docs/adr/0006-in-app-document-workspace.md`
+- `docs/adr/0007-document-workspace-ui-and-interaction-model.md`
+
 ## Security Direction
 
 Security is a core architectural concern rather than a later add-on.
 
 The current implementation includes:
 
-* AES-GCM document encryption
-* SHA-256 content hashing
-* Windows-protected encryption key management
-* Local-only document storage
-* No requirement for cloud document storage
+- AES-GCM document encryption
+- SHA-256 content hashing
+- Windows-protected encryption key management
+- Local-only document storage
+- No requirement for cloud document storage
 
 Future security work will include additional hardening, validation, key-management improvements, and security-focused testing.
 
@@ -251,7 +307,11 @@ Document Queries
     ↓
 Persistent Metadata
     ↓
-UI Refinement
+Document Removal
+    ↓
+In-App Document Workspace
+    ↓
+Document Rendering
     ↓
 Document Processing
     ↓
@@ -270,4 +330,6 @@ Architectural decisions are documented through ADRs under `docs/adr/`.
 
 DeskVault is an actively developed portfolio project.
 
-The current MVP focuses on establishing a **secure, persistent, local document foundation**. AI-powered knowledge retrieval will be built on top of that foundation in subsequent development stages.
+The current MVP focuses on establishing a **secure, persistent, local document foundation with an in-app document workspace**.
+
+The workspace currently provides the document-centric UI foundation and opening flow, while document rendering, processing, search, and AI capabilities will be built on top of it in subsequent development stages.
