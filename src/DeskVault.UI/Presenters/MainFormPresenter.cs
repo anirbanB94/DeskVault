@@ -3,6 +3,7 @@ using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.UI.Resources;
+using DeskVault.UI.Services;
 using DeskVault.UI.Views;
 
 namespace DeskVault.UI.Presenters;
@@ -14,19 +15,22 @@ public sealed class MainFormPresenter
     private readonly RemoveDocumentHandler _removeDocumentHandler;
     private readonly OpenDocumentHandler _openDocumentHandler;
     private readonly ListDocumentsHandler _listDocumentsHandler;
+    private readonly IDocumentWorkspace _documentWorkspace;
 
     public MainFormPresenter(
         IMainFormView view,
         ImportDocumentHandler importDocumentHandler,
         RemoveDocumentHandler removeDocumentHandler,
         OpenDocumentHandler openDocumentHandler,
-        ListDocumentsHandler listDocumentsHandler)
+        ListDocumentsHandler listDocumentsHandler,
+        IDocumentWorkspace documentWorkspace)
     {
         _view = view;
         _importDocumentHandler = importDocumentHandler;
         _removeDocumentHandler = removeDocumentHandler;
         _openDocumentHandler = openDocumentHandler;
         _listDocumentsHandler = listDocumentsHandler;
+        _documentWorkspace = documentWorkspace;
 
         _view.ImportRequested += OnImportRequested;
         _view.OpenRequested += OnOpenRequested;
@@ -45,7 +49,7 @@ public sealed class MainFormPresenter
             {
                 _view.ShowEmptyState();
                 _view.SetOpenEnabled(false);
-                _view.SetStatus("Ready");
+                _view.SetStatus(UiMessages.ReadyStatus);
 
                 return;
             }
@@ -71,11 +75,11 @@ public sealed class MainFormPresenter
         catch (Exception)
         {
             _view.SetStatus(
-                "Unable to load documents.");
+                UiMessages.UnableToLoadDocumentsStatus);
 
             _view.ShowError(
-                "The imported documents could not be loaded.",
-                "DeskVault");
+                UiMessages.UnableToLoadDocuments,
+                UiMessages.DeskVaultTitle);
         }
     }
 
@@ -91,7 +95,8 @@ public sealed class MainFormPresenter
         }
 
         _view.SetImportEnabled(false);
-        _view.SetStatus("Importing document...");
+        _view.SetStatus(
+            UiMessages.ImportingDocumentStatus);
 
         try
         {
@@ -128,7 +133,7 @@ public sealed class MainFormPresenter
 
                 _view.ShowInformation(
                     result.Description,
-                    "Import Complete");
+                    UiMessages.ImportCompleteTitle);
 
                 return;
             }
@@ -138,16 +143,16 @@ public sealed class MainFormPresenter
 
             _view.ShowWarning(
                 result.Description,
-                "Import Failed");
+                UiMessages.ImportFailedTitle);
         }
         catch (Exception)
         {
             _view.SetStatus(
-                "Unable to import document.");
+                UiMessages.UnexpectedImportError);
 
             _view.ShowError(
-                "An unexpected error occurred while importing the document.",
-                "DeskVault");
+                UiMessages.UnexpectedImportError,
+                UiMessages.DeskVaultTitle);
         }
         finally
         {
@@ -165,7 +170,8 @@ public sealed class MainFormPresenter
         }
 
         _view.SetOpenEnabled(false);
-        _view.SetStatus("Opening document...");
+        _view.SetStatus(
+            UiMessages.OpeningDocumentStatus);
 
         try
         {
@@ -173,21 +179,21 @@ public sealed class MainFormPresenter
                 await _openDocumentHandler.HandleAsync(
                     new OpenDocumentQuery(documentId));
 
-            await _view.ShowDocumentAsync(
+            await _documentWorkspace.OpenAsync(
                 result.Content,
                 result.FileName);
 
             _view.SetStatus(
-                "Document opened.");
+                UiMessages.DocumentOpenedStatus);
         }
         catch (Exception)
         {
             _view.SetStatus(
-                "Unable to open document.");
+                UiMessages.UnableToOpenDocumentStatus);
 
             _view.ShowError(
-                "The document could not be opened.",
-                "Open Document");
+                UiMessages.UnableToOpenDocument,
+                UiMessages.OpenDocumentTitle);
         }
         finally
         {
@@ -197,15 +203,16 @@ public sealed class MainFormPresenter
     }
 
     private async void OnRemoveRequested(
-    object? sender,
-    EventArgs e)
+        object? sender,
+        EventArgs e)
     {
         if (_view.SelectedDocumentId is not Guid documentId)
         {
             return;
         }
 
-        string? fileName = _view.SelectedDocumentFileName;
+        string? fileName =
+            _view.SelectedDocumentFileName;
 
         if (string.IsNullOrWhiteSpace(fileName))
         {
@@ -220,7 +227,8 @@ public sealed class MainFormPresenter
         _view.SetRemoveEnabled(false);
         _view.SetOpenEnabled(false);
         _view.SetImportEnabled(false);
-        _view.SetStatus("Removing document...");
+        _view.SetStatus(
+            UiMessages.RemovingDocumentStatus);
 
         try
         {
@@ -274,11 +282,11 @@ public sealed class MainFormPresenter
         catch (Exception)
         {
             _view.SetStatus(
-                "Unable to remove document.");
+                UiMessages.UnableToRemoveDocumentStatus);
 
             _view.ShowError(
                 UiMessages.UnableToRemoveDocument,
-                "DeskVault");
+                UiMessages.DeskVaultTitle);
         }
         finally
         {
@@ -293,8 +301,8 @@ public sealed class MainFormPresenter
     }
 
     private void OnDocumentSelectionChanged(
-    object? sender,
-    EventArgs e)
+        object? sender,
+        EventArgs e)
     {
         bool hasSelection =
             _view.SelectedDocumentId.HasValue;

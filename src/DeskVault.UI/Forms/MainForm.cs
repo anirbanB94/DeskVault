@@ -13,7 +13,6 @@ namespace DeskVault.UI.Forms;
 public partial class MainForm : Form, IMainFormView
 {
     private readonly IApplicationInfoService _applicationInfo;
-    private readonly IDocumentViewer _documentViewer;
     private readonly MainFormPresenter _presenter;
 
     public MainForm(
@@ -21,28 +20,29 @@ public partial class MainForm : Form, IMainFormView
         ImportDocumentHandler importDocumentHandler,
         RemoveDocumentHandler removeDocumentHandler,
         OpenDocumentHandler openDocumentHandler,
-        IDocumentViewer documentViewer,
+        IDocumentWorkspace documentWorkspace,
         ListDocumentsHandler listDocumentsHandler)
     {
         InitializeComponent();
 
         _applicationInfo = applicationInfo;
-        _documentViewer = documentViewer;
 
         _presenter = new MainFormPresenter(
             this,
             importDocumentHandler,
             removeDocumentHandler,
             openDocumentHandler,
-            listDocumentsHandler);
+            listDocumentsHandler,
+            documentWorkspace);
 
-        Text = $"{_applicationInfo.ApplicationName} v{_applicationInfo.Version}";
+        Text =
+            $"{_applicationInfo.ApplicationName} v{_applicationInfo.Version}";
 
         documentGridView.Columns.Add(
             new DataGridViewTextBoxColumn
             {
                 Name = "documentNameColumn",
-                HeaderText = "Document",
+                HeaderText = UiMessages.DocumentColumnHeader,
                 DataPropertyName = nameof(DocumentListItem.FileName),
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
             });
@@ -91,12 +91,12 @@ public partial class MainForm : Form, IMainFormView
         {
             using var dialog = new OpenFileDialog
             {
-                Title = "Select a document to import",
+                Title = UiMessages.SelectDocumentToImportTitle,
                 CheckFileExists = true,
                 Multiselect = false,
                 Filter =
-                    "Supported Documents|*.pdf;*.docx;*.txt;*.md;*.csv|" +
-                    "All Files|*.*"
+                    UiMessages.SupportedDocumentsFilter +
+                    UiMessages.AllFilesFilter
             };
 
             return dialog.ShowDialog(this) == DialogResult.OK
@@ -131,8 +131,8 @@ public partial class MainForm : Form, IMainFormView
     }
 
     private void OnRemoveButtonClick(
-    object? sender,
-    EventArgs e)
+        object? sender,
+        EventArgs e)
     {
         RemoveRequested?.Invoke(
             this,
@@ -201,7 +201,7 @@ public partial class MainForm : Form, IMainFormView
     }
 
     public void SetRemoveEnabled(
-    bool enabled)
+        bool enabled)
     {
         removeButton.Enabled = enabled;
     }
@@ -249,7 +249,7 @@ public partial class MainForm : Form, IMainFormView
     }
 
     public bool ConfirmRemoval(
-    string fileName)
+        string fileName)
     {
         var result = MessageBox.Show(
             this,
@@ -260,17 +260,6 @@ public partial class MainForm : Form, IMainFormView
             MessageBoxDefaultButton.Button2);
 
         return result == DialogResult.Yes;
-    }
-
-    public Task ShowDocumentAsync(
-    Stream documentStream,
-    string fileName,
-    CancellationToken cancellationToken = default)
-    {
-        return _documentViewer.OpenAsync(
-            documentStream,
-            fileName,
-            cancellationToken);
     }
 
     public void ShowDocuments(

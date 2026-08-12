@@ -29,7 +29,6 @@
     <Folder Include="Controls\" />
     <Folder Include="Assets\" />
     <Folder Include="Themes\" />
-    <Folder Include="Services\" />
   </ItemGroup>
 
   <ItemGroup>

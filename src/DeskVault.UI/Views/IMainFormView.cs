@@ -35,16 +35,11 @@ public interface IMainFormView
         string title);
 
     bool ConfirmRemoval(
-    string fileName);
+        string fileName);
 
     void ShowError(
         string message,
         string title);
-
-    Task ShowDocumentAsync(
-        Stream documentStream,
-        string fileName,
-        CancellationToken cancellationToken = default);
 
     void ShowDocuments(
         IReadOnlyList<DocumentListItem> documents);
