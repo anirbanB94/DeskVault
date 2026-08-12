@@ -47,6 +47,15 @@ public static class UiMessages
     public const string DocumentWorkspaceMetadata =
         "Document Workspace";
 
+    public const string PreviewUnavailableTitle =
+        "Preview Unavailable";
+
+    public const string UnsupportedDocumentPreviewMessage =
+        "This document format is not supported for in-app preview.";
+
+    public const string OpenExternallyButton =
+        "Open Externally";
+
     public const string ReadyStatus =
         "Ready";
 
