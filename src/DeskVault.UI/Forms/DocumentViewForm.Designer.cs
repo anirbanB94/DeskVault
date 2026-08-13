@@ -15,6 +15,7 @@ partial class DocumentViewForm
     private Button closeButton = null!;
     private Panel documentContentPanel = null!;
     private Panel unsupportedPreviewPanel = null!;
+    private TableLayoutPanel unsupportedPreviewLayout = null!;
     private Label previewUnavailableLabel = null!;
     private Label unsupportedDocumentPreviewMessageLabel = null!;
     private Button openExternallyButton = null!;
@@ -52,6 +53,7 @@ partial class DocumentViewForm
         documentContentPanel = new Panel();
 
         unsupportedPreviewPanel = new Panel();
+        unsupportedPreviewLayout = new TableLayoutPanel();
         previewUnavailableLabel = new Label();
         unsupportedDocumentPreviewMessageLabel = new Label();
         openExternallyButton = new Button();
@@ -65,6 +67,7 @@ partial class DocumentViewForm
 
         workspaceHeaderPanel.SuspendLayout();
         unsupportedPreviewPanel.SuspendLayout();
+        unsupportedPreviewLayout.SuspendLayout();
         workspaceContextMenu.SuspendLayout();
         SuspendLayout();
 
@@ -170,11 +173,7 @@ partial class DocumentViewForm
         // unsupportedPreviewPanel
         //
         unsupportedPreviewPanel.Controls.Add(
-            openExternallyButton);
-        unsupportedPreviewPanel.Controls.Add(
-            unsupportedDocumentPreviewMessageLabel);
-        unsupportedPreviewPanel.Controls.Add(
-            previewUnavailableLabel);
+            unsupportedPreviewLayout);
         unsupportedPreviewPanel.Dock = DockStyle.Fill;
         unsupportedPreviewPanel.Location = new Point(0, 154);
         unsupportedPreviewPanel.Margin = new Padding(6);
@@ -185,18 +184,86 @@ partial class DocumentViewForm
         unsupportedPreviewPanel.Visible = false;
 
         //
+        // unsupportedPreviewLayout
+        //
+        unsupportedPreviewLayout.ColumnCount = 3;
+        unsupportedPreviewLayout.ColumnStyles.Add(
+            new ColumnStyle(
+                SizeType.Percent,
+                50F));
+        unsupportedPreviewLayout.ColumnStyles.Add(
+            new ColumnStyle(
+                SizeType.AutoSize));
+        unsupportedPreviewLayout.ColumnStyles.Add(
+            new ColumnStyle(
+                SizeType.Percent,
+                50F));
+
+        unsupportedPreviewLayout.Controls.Add(
+            previewUnavailableLabel,
+            1,
+            1);
+
+        unsupportedPreviewLayout.Controls.Add(
+            unsupportedDocumentPreviewMessageLabel,
+            1,
+            2);
+
+        unsupportedPreviewLayout.Controls.Add(
+            openExternallyButton,
+            1,
+            3);
+
+        unsupportedPreviewLayout.Dock = DockStyle.Fill;
+        unsupportedPreviewLayout.Location = new Point(40, 40);
+        unsupportedPreviewLayout.Margin = new Padding(0);
+        unsupportedPreviewLayout.Name =
+            "unsupportedPreviewLayout";
+        unsupportedPreviewLayout.RowCount = 5;
+
+        unsupportedPreviewLayout.RowStyles.Add(
+            new RowStyle(
+                SizeType.Percent,
+                50F));
+
+        unsupportedPreviewLayout.RowStyles.Add(
+            new RowStyle(
+                SizeType.AutoSize));
+
+        unsupportedPreviewLayout.RowStyles.Add(
+            new RowStyle(
+                SizeType.AutoSize));
+
+        unsupportedPreviewLayout.RowStyles.Add(
+            new RowStyle(
+                SizeType.AutoSize));
+
+        unsupportedPreviewLayout.RowStyles.Add(
+            new RowStyle(
+                SizeType.Percent,
+                50F));
+
+        unsupportedPreviewLayout.Size =
+            new Size(1591, 1046);
+
+        unsupportedPreviewLayout.TabIndex = 0;
+
+        //
         // previewUnavailableLabel
         //
+        previewUnavailableLabel.Anchor = AnchorStyles.None;
         previewUnavailableLabel.AutoSize = true;
         previewUnavailableLabel.Font = new Font(
             "Segoe UI",
             16F,
             FontStyle.Bold,
             GraphicsUnit.Point);
-        previewUnavailableLabel.Location = new Point(46, 46);
-        previewUnavailableLabel.Margin = new Padding(6, 0, 6, 0);
-        previewUnavailableLabel.Name = "previewUnavailableLabel";
-        previewUnavailableLabel.Size = new Size(280, 45);
+        previewUnavailableLabel.Margin =
+            new Padding(6, 0, 6, 12);
+        previewUnavailableLabel.Name =
+            "previewUnavailableLabel";
+        previewUnavailableLabel.Size =
+            new Size(280, 45);
         previewUnavailableLabel.TabIndex = 0;
         previewUnavailableLabel.Text =
             UiMessages.PreviewUnavailableTitle;
@@ -204,10 +271,11 @@ partial class DocumentViewForm
         //
         // unsupportedDocumentPreviewMessageLabel
         //
+        unsupportedDocumentPreviewMessageLabel.Anchor =
+            AnchorStyles.None;
         unsupportedDocumentPreviewMessageLabel.AutoSize = true;
-        unsupportedDocumentPreviewMessageLabel.Location = new Point(46, 111);
         unsupportedDocumentPreviewMessageLabel.Margin =
-            new Padding(6, 0, 6, 0);
+            new Padding(6, 0, 6, 16);
         unsupportedDocumentPreviewMessageLabel.Name =
             "unsupportedDocumentPreviewMessageLabel";
         unsupportedDocumentPreviewMessageLabel.Size =
@@ -219,11 +287,13 @@ partial class DocumentViewForm
         //
         // openExternallyButton
         //
+        openExternallyButton.Anchor = AnchorStyles.None;
         openExternallyButton.AutoSize = true;
-        openExternallyButton.Location = new Point(46, 169);
         openExternallyButton.Margin = new Padding(6);
-        openExternallyButton.Name = "openExternallyButton";
-        openExternallyButton.Size = new Size(190, 48);
+        openExternallyButton.Name =
+            "openExternallyButton";
+        openExternallyButton.Size =
+            new Size(190, 48);
         openExternallyButton.TabIndex = 2;
         openExternallyButton.Text =
             UiMessages.OpenExternallyButton;
@@ -234,7 +304,9 @@ partial class DocumentViewForm
         //
         // workspaceContextMenu
         //
-        workspaceContextMenu.ImageScalingSize = new Size(32, 32);
+        workspaceContextMenu.ImageScalingSize =
+            new Size(32, 32);
+
         workspaceContextMenu.Items.AddRange(
             new ToolStripItem[]
             {
@@ -244,8 +316,12 @@ partial class DocumentViewForm
                 removeDocumentMenuItem,
                 closeWorkspaceMenuItem
             });
-        workspaceContextMenu.Name = "workspaceContextMenu";
-        workspaceContextMenu.Size = new Size(347, 194);
+
+        workspaceContextMenu.Name =
+            "workspaceContextMenu";
+
+        workspaceContextMenu.Size =
+            new Size(347, 194);
 
         //
         // addRelatedDocumentsMenuItem
@@ -314,9 +390,14 @@ partial class DocumentViewForm
 
         workspaceHeaderPanel.ResumeLayout(false);
         workspaceHeaderPanel.PerformLayout();
+
+        unsupportedPreviewLayout.ResumeLayout(false);
+        unsupportedPreviewLayout.PerformLayout();
+
         unsupportedPreviewPanel.ResumeLayout(false);
-        unsupportedPreviewPanel.PerformLayout();
+
         workspaceContextMenu.ResumeLayout(false);
+
         ResumeLayout(false);
     }
 
