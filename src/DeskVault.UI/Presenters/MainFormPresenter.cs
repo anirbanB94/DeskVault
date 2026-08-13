@@ -180,6 +180,7 @@ public sealed class MainFormPresenter
                     new OpenDocumentQuery(documentId));
 
             await _documentWorkspace.OpenAsync(
+                documentId,
                 result.Content,
                 result.FileName);
 

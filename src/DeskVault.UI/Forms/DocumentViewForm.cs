@@ -23,11 +23,12 @@ public partial class DocumentViewForm :
     }
 
     public event EventHandler OpenExternallyRequested = null!;
+    public event EventHandler DocumentInformationRequested = null!;
 
     public async Task ShowDocumentAsync(
-    Stream documentStream,
-    string fileName,
-    CancellationToken cancellationToken = default)
+        Stream documentStream,
+        string fileName,
+        CancellationToken cancellationToken = default)
     {
         documentTitleLabel.Text = fileName;
         documentMetadataLabel.Text =
@@ -57,6 +58,27 @@ public partial class DocumentViewForm :
         Show();
         BringToFront();
         Activate();
+    }
+
+    public void ShowDocumentInformation(
+        string displayName,
+        string fileName,
+        string fileType,
+        DateTime importedAt,
+        string status,
+        string sha256Hash)
+    {
+        MessageBox.Show(
+            this,
+            $"Display Name: {displayName}{Environment.NewLine}" +
+            $"File Name: {fileName}{Environment.NewLine}" +
+            $"File Type: {fileType}{Environment.NewLine}" +
+            $"Imported At: {importedAt.ToLocalTime():g}{Environment.NewLine}" +
+            $"Status: {status}{Environment.NewLine}" +
+            $"SHA-256: {sha256Hash}",
+            UiMessages.DocumentInformation,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     public void ShowUnsupportedPreview(
@@ -111,6 +133,15 @@ public partial class DocumentViewForm :
             new Point(
                 0,
                 workspaceMenuButton.Height));
+    }
+
+    private void documentInformationMenuItem_Click(
+        object? sender,
+        EventArgs e)
+    {
+        DocumentInformationRequested?.Invoke(
+            this,
+            EventArgs.Empty);
     }
 
     private void closeButton_Click(

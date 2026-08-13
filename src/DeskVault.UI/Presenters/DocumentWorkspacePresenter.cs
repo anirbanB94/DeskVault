@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
@@ -10,30 +11,48 @@ public sealed class DocumentWorkspacePresenter :
     private readonly IDocumentWorkspaceView _view;
     private readonly IDocumentViewer _documentViewer;
 
+    private readonly GetDocumentHandler _getDocumentHandler;
+
+    private GetDocumentResult? _currentDocument;
+
     private Stream? _currentDocumentStream;
+
     private string? _currentFileName;
 
     public DocumentWorkspacePresenter(
         IDocumentWorkspaceView view,
-        IDocumentViewer documentViewer)
+        IDocumentViewer documentViewer,
+        GetDocumentHandler getDocumentHandler)
     {
         _view = view;
         _documentViewer = documentViewer;
+        _getDocumentHandler = getDocumentHandler;
 
         _view.OpenExternallyRequested +=
             OnOpenExternallyRequested;
+
+        _view.DocumentInformationRequested +=
+            OnDocumentInformationRequested;
     }
 
+
     public async Task OpenAsync(
+        Guid documentId,
         Stream documentStream,
         string fileName,
         CancellationToken cancellationToken = default)
     {
+
+        _currentDocument = await _getDocumentHandler.HandleAsync(
+            new GetDocumentQuery(documentId),
+            cancellationToken);
+
         _currentDocumentStream = documentStream;
         _currentFileName = fileName;
 
         try
         {
+
             await _view.ShowDocumentAsync(
                 documentStream,
                 fileName,
@@ -71,4 +90,28 @@ public sealed class DocumentWorkspacePresenter :
                 UiMessages.OpenDocumentTitle);
         }
     }
+
+    private void OnDocumentInformationRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (_currentDocument is null)
+        {
+            return;
+        }
+
+        string fileType =
+            Path.GetExtension(_currentDocument.FileName)
+                .TrimStart('.')
+                .ToUpperInvariant();
+
+        _view.ShowDocumentInformation(
+            _currentDocument.DisplayName,
+            _currentDocument.FileName,
+            fileType,
+            _currentDocument.ImportedAt,
+            _currentDocument.Status.ToString(),
+            _currentDocument.Sha256Hash);
+    }
+
 }

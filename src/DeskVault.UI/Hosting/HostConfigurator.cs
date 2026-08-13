@@ -1,5 +1,6 @@
 using DeskVault.Application;
 using DeskVault.Application.Configurations;
+using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Infrastructure;
 using DeskVault.UI.Forms;
 using DeskVault.UI.Presenters;
@@ -66,6 +67,7 @@ internal static class HostConfigurator
         services.AddTransient<IDocumentWorkspaceView>(provider => provider.GetRequiredService<DocumentViewForm>());
         services.AddTransient<IDocumentViewer, DocumentViewer>();
         services.AddTransient<IDocumentWorkspace, DocumentWorkspacePresenter>();
+        services.AddTransient<GetDocumentHandler>();
         services.AddTransient<IDocumentContentRenderer, TextDocumentContentRenderer>();
         services.AddTransient<IDocumentContentRendererResolver, DocumentContentRendererResolver>();
     }

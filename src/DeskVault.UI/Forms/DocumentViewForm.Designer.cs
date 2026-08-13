@@ -342,6 +342,8 @@ partial class DocumentViewForm
             new Size(346, 38);
         documentInformationMenuItem.Text =
             UiMessages.DocumentInformation;
+        documentInformationMenuItem.Click +=
+            documentInformationMenuItem_Click;
 
         //
         // saveWorkspaceMenuItem
