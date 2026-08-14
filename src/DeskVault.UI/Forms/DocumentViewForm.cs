@@ -23,7 +23,10 @@ public partial class DocumentViewForm :
     }
 
     public event EventHandler OpenExternallyRequested = null!;
+
     public event EventHandler DocumentInformationRequested = null!;
+
+    public event EventHandler RemoveDocumentRequested = null!;
 
     public async Task ShowDocumentAsync(
         Stream documentStream,
@@ -81,6 +84,20 @@ public partial class DocumentViewForm :
             MessageBoxIcon.Information);
     }
 
+    public bool ConfirmRemoval(
+        string fileName)
+    {
+        var result = MessageBox.Show(
+            this,
+            UiMessages.ConfirmRemoveDocument(fileName),
+            UiMessages.RemoveDocumentTitle,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+
+        return result == DialogResult.Yes;
+    }
+
     public void ShowUnsupportedPreview(
         string message)
     {
@@ -94,6 +111,11 @@ public partial class DocumentViewForm :
         Show();
         BringToFront();
         Activate();
+    }
+
+    public void CloseWorkspace()
+    {
+        Hide();
     }
 
     public void ShowError(
@@ -140,6 +162,15 @@ public partial class DocumentViewForm :
         EventArgs e)
     {
         DocumentInformationRequested?.Invoke(
+            this,
+            EventArgs.Empty);
+    }
+
+    private void removeDocumentMenuItem_Click(
+        object? sender,
+        EventArgs e)
+    {
+        RemoveDocumentRequested?.Invoke(
             this,
             EventArgs.Empty);
     }

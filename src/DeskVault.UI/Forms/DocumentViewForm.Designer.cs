@@ -364,6 +364,8 @@ partial class DocumentViewForm
             new Size(346, 38);
         removeDocumentMenuItem.Text =
             UiMessages.RemoveDocument;
+        removeDocumentMenuItem.Click +=
+            removeDocumentMenuItem_Click;
 
         //
         // closeWorkspaceMenuItem

@@ -6,6 +6,8 @@ public interface IDocumentWorkspaceView
 
     event EventHandler DocumentInformationRequested;
 
+    event EventHandler RemoveDocumentRequested;
+
     Task ShowDocumentAsync(
         Stream documentStream,
         string fileName,
@@ -21,6 +23,11 @@ public interface IDocumentWorkspaceView
         DateTime importedAt,
         string status,
         string sha256Hash);
+
+    bool ConfirmRemoval(
+        string fileName);
+
+    void CloseWorkspace();
 
     void ShowError(
         string message,

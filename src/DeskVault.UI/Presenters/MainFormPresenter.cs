@@ -36,41 +36,28 @@ public sealed class MainFormPresenter
         _view.OpenRequested += OnOpenRequested;
         _view.RemoveRequested += OnRemoveRequested;
         _view.DocumentSelectionChanged += OnDocumentSelectionChanged;
+        _documentWorkspace.DocumentRemoved += OnDocumentRemoved;
     }
 
     public async Task InitializeAsync()
     {
         try
         {
-            var documents = await _listDocumentsHandler.HandleAsync(
-                new ListDocumentsQuery());
+            var documentCount =
+                await RefreshDocumentsAsync();
 
-            if (documents.Count == 0)
+            if (documentCount == 0)
             {
-                _view.ShowEmptyState();
-                _view.SetOpenEnabled(false);
-                _view.SetStatus(UiMessages.ReadyStatus);
+                _view.SetStatus(
+                    UiMessages.ReadyStatus);
 
                 return;
             }
 
-            var items = documents
-                .Select(document => new DocumentListItem(
-                    document.Id,
-                    document.FileName))
-                .ToList();
-
-            _view.ShowDocuments(items);
-
-            var latestDocument = documents[0];
-
-            _view.SetSelectedDocumentId(
-                latestDocument.Id);
-
             _view.SetOpenEnabled(true);
 
             _view.SetStatus(
-                $"{documents.Count} document(s) imported.");
+                $"{documentCount} document(s) imported.");
         }
         catch (Exception)
         {
@@ -110,17 +97,7 @@ public sealed class MainFormPresenter
             if (result.Status ==
                 ImportDocumentResultStatus.Success)
             {
-                var documents =
-                    await _listDocumentsHandler.HandleAsync(
-                        new ListDocumentsQuery());
-
-                var items = documents
-                    .Select(document => new DocumentListItem(
-                        document.Id,
-                        document.FileName))
-                    .ToList();
-
-                _view.ShowDocuments(items);
+                await RefreshDocumentsAsync();
 
                 _view.SetSelectedDocumentId(
                     result.DocumentId);
@@ -240,30 +217,7 @@ public sealed class MainFormPresenter
             if (result.Status ==
                 RemoveDocumentResultStatus.Success)
             {
-                var documents =
-                    await _listDocumentsHandler.HandleAsync(
-                        new ListDocumentsQuery());
-
-                var items = documents
-                    .Select(document => new DocumentListItem(
-                        document.Id,
-                        document.FileName))
-                    .ToList();
-
-                if (items.Count == 0)
-                {
-                    _view.ShowEmptyState();
-                    _view.SetOpenEnabled(false);
-                    _view.SetRemoveEnabled(false);
-                }
-                else
-                {
-                    _view.ShowDocuments(items);
-                    _view.SetOpenEnabled(
-                        _view.SelectedDocumentId.HasValue);
-                    _view.SetRemoveEnabled(
-                        _view.SelectedDocumentId.HasValue);
-                }
+                await RefreshDocumentsAsync();
 
                 _view.SetStatus(result.Message);
 
@@ -301,6 +255,38 @@ public sealed class MainFormPresenter
         }
     }
 
+    private async Task<int> RefreshDocumentsAsync()
+    {
+        var documents =
+            await _listDocumentsHandler.HandleAsync(
+                new ListDocumentsQuery());
+
+        if (documents.Count == 0)
+        {
+            _view.ShowEmptyState();
+            _view.SetOpenEnabled(false);
+            _view.SetRemoveEnabled(false);
+
+            return 0;
+        }
+
+        var items = documents
+            .Select(document => new DocumentListItem(
+                document.Id,
+                document.FileName))
+            .ToList();
+
+        _view.ShowDocuments(items);
+
+        _view.SetOpenEnabled(
+            _view.SelectedDocumentId.HasValue);
+
+        _view.SetRemoveEnabled(
+            _view.SelectedDocumentId.HasValue);
+
+        return documents.Count;
+    }
+
     private void OnDocumentSelectionChanged(
         object? sender,
         EventArgs e)
@@ -310,5 +296,12 @@ public sealed class MainFormPresenter
 
         _view.SetOpenEnabled(hasSelection);
         _view.SetRemoveEnabled(hasSelection);
+    }
+
+    private async void OnDocumentRemoved(
+        object? sender,
+        EventArgs e)
+    {
+        await RefreshDocumentsAsync();
     }
 }

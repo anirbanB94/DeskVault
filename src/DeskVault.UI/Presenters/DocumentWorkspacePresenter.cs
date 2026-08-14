@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
@@ -9,9 +10,12 @@ public sealed class DocumentWorkspacePresenter :
     IDocumentWorkspace
 {
     private readonly IDocumentWorkspaceView _view;
+
     private readonly IDocumentViewer _documentViewer;
 
     private readonly GetDocumentHandler _getDocumentHandler;
+
+    private readonly RemoveDocumentHandler _removeDocumentHandler;
 
     private GetDocumentResult? _currentDocument;
 
@@ -19,20 +23,27 @@ public sealed class DocumentWorkspacePresenter :
 
     private string? _currentFileName;
 
+    public event EventHandler DocumentRemoved = null!;
+
     public DocumentWorkspacePresenter(
         IDocumentWorkspaceView view,
         IDocumentViewer documentViewer,
-        GetDocumentHandler getDocumentHandler)
+        GetDocumentHandler getDocumentHandler,
+        RemoveDocumentHandler removeDocumentHandler)
     {
         _view = view;
         _documentViewer = documentViewer;
         _getDocumentHandler = getDocumentHandler;
+        _removeDocumentHandler = removeDocumentHandler;
 
         _view.OpenExternallyRequested +=
             OnOpenExternallyRequested;
 
         _view.DocumentInformationRequested +=
             OnDocumentInformationRequested;
+
+        _view.RemoveDocumentRequested +=
+            OnRemoveDocumentRequested;
     }
 
 
@@ -112,6 +123,58 @@ public sealed class DocumentWorkspacePresenter :
             _currentDocument.ImportedAt,
             _currentDocument.Status.ToString(),
             _currentDocument.Sha256Hash);
+    }
+
+    private async void OnRemoveDocumentRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (_currentDocument is null)
+        {
+            return;
+        }
+
+        if (!_view.ConfirmRemoval(
+            _currentDocument.FileName))
+        {
+            return;
+        }
+
+        try
+        {
+            var result =
+                await _removeDocumentHandler.HandleAsync(
+                    new RemoveDocumentCommand(
+                        _currentDocument.Id));
+
+            if (result.Status ==
+                RemoveDocumentResultStatus.Success)
+            {
+                _currentDocumentStream?.Dispose();
+
+                _currentDocument = null;
+                _currentDocumentStream = null;
+                _currentFileName = null;
+
+                _view.CloseWorkspace();
+
+                DocumentRemoved?.Invoke(
+                    this,
+                    EventArgs.Empty);
+
+                return;
+            }
+
+            _view.ShowError(
+                result.Message,
+                UiMessages.RemoveFailedTitle);
+        }
+        catch (Exception)
+        {
+            _view.ShowError(
+                UiMessages.UnableToRemoveDocument,
+                UiMessages.DeskVaultTitle);
+        }
     }
 
 }
