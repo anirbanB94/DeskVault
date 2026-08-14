@@ -1,11 +1,6 @@
-using DeskVault.Application.Documents.Commands.ImportDocument;
-using DeskVault.Application.Documents.Commands.RemoveDocument;
-using DeskVault.Application.Documents.Queries.ListDocuments;
-using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
-using DeskVault.UI.Services;
 using DeskVault.UI.Views;
 
 namespace DeskVault.UI.Forms;
@@ -17,26 +12,15 @@ public partial class MainForm : Form, IMainFormView
 
     public MainForm(
         IApplicationInfoService applicationInfo,
-        ImportDocumentHandler importDocumentHandler,
-        RemoveDocumentHandler removeDocumentHandler,
-        OpenDocumentHandler openDocumentHandler,
-        IDocumentWorkspace documentWorkspace,
-        ListDocumentsHandler listDocumentsHandler)
+        IMainFormPresenterFactory presenterFactory)
     {
         InitializeComponent();
 
         _applicationInfo = applicationInfo;
 
-        _presenter = new MainFormPresenter(
-            this,
-            importDocumentHandler,
-            removeDocumentHandler,
-            openDocumentHandler,
-            listDocumentsHandler,
-            documentWorkspace);
+        _presenter = presenterFactory.Create(this);
 
-        Text =
-            $"{_applicationInfo.ApplicationName} v{_applicationInfo.Version}";
+        Text = $"{_applicationInfo.ApplicationName} v{_applicationInfo.Version}";
 
         documentGridView.Columns.Add(
             new DataGridViewTextBoxColumn

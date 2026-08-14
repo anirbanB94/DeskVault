@@ -62,7 +62,7 @@ internal static class HostConfigurator
 
         // UI
         services.AddTransient<MainForm>();
-        services.AddTransient<MainFormPresenter>();
+        services.AddTransient<IMainFormPresenterFactory, MainFormPresenterFactory>();
         services.AddTransient<DocumentViewForm>();
         services.AddTransient<IDocumentWorkspaceView>(provider => provider.GetRequiredService<DocumentViewForm>());
         services.AddTransient<IDocumentViewer, DocumentViewer>();
