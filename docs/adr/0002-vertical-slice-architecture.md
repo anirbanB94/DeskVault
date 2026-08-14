@@ -39,6 +39,19 @@ The architectural responsibilities remain separated:
 
 Dependency injection is configured at the composition root so that application code depends on abstractions rather than infrastructure implementations.
 
+### MVP presentation and composition
+
+The WinForms UI follows a Passive View MVP pattern.
+
+- Forms implement View interfaces.
+- Presenters depend on View interfaces rather than concrete Forms.
+- Presenters receive their View at construction time and subscribe to View events.
+- Forms must not receive concrete Application handlers merely to construct their Presenters.
+- Application and infrastructure dependencies are supplied through the composition root.
+- When a Presenter requires an already-created View instance, a Presenter factory may be used to compose the Presenter with that View while allowing its remaining dependencies to be supplied by dependency injection.
+- The View is not registered as its own View interface implementation when doing so would create a circular dependency.
+- Presenters must not use late View attachment as a substitute for a required View dependency.
+
 New features should generally be implemented as complete vertical slices through the required layers before being exposed through the UI.
 
 ## Consequences
