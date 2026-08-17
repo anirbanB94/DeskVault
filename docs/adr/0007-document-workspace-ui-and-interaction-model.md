@@ -143,11 +143,213 @@ The intended initial direction is:
 
 ```text
 TXT → in-app text renderer
-MD  → in-app text/Markdown renderer
+MD  → in-app Markdown renderer
 CSV → in-app structured/grid renderer
 ```
 
 PDF, DOCX, and other formats may initially use an explicit external-view fallback until an appropriate in-app renderer is introduced.
+
+### Renderer Extensibility
+
+The renderer boundary is the architectural extension point for future document formats.
+
+New formats must be introduced by adding a format-specific implementation of
+`IDocumentContentRenderer` and registering it through dependency injection.
+`DocumentViewForm`, `DocumentWorkspacePresenter`, and
+`DocumentContentRendererResolver` must not contain format-specific rendering
+logic.
+
+The intended progression is:
+
+```text
+TXT       → current in-app renderer
+Markdown  → current in-app renderer
+CSV       → next structured/grid renderer
+
+PDF       → future renderer
+DOCX      → future renderer
+XLSX      → future renderer
+PPTX      → future renderer
+```
+
+PDF and Microsoft Office formats are intentionally deferred. The architecture
+must nevertheless allow them to be added without changing the workspace
+orchestration contract.
+
+Rendering and document-content extraction are separate concerns. A future
+format may therefore have both a renderer for human viewing and an independent
+extractor for search, indexing, or AI processing.
+
+### Markdown Rendering Strategy
+
+Markdown will use `Markdig` as the parsing library and WebView2 as the initial
+rich presentation surface.
+
+The implementation will begin directly in
+`MarkdownDocumentContentRenderer`:
+
+```text
+Markdown file
+      ↓
+MarkdownDocumentContentRenderer
+      ↓
+Markdig
+      ↓
+controlled HTML
+      ↓
+WebView2
+      ↓
+documentContentPanel
+```
+
+WebView2 is an implementation detail of the Markdown renderer. It is not
+exposed through the document workspace presenter, view contract, or renderer
+resolver.
+
+The initial implementation deliberately follows a simple renderer-owned
+composition. If the Markdown presentation surface becomes sufficiently
+complex, the WebView2-hosting portion may later be extracted into a reusable
+`MarkdownViewerControl` without changing the `IDocumentContentRenderer`
+contract:
+
+```text
+Initial:
+
+DocumentViewForm
+      ↓
+IDocumentContentRenderer
+      ↓
+MarkdownDocumentContentRenderer
+      └── WebView2
+
+Future extraction:
+
+DocumentViewForm
+      ↓
+IDocumentContentRenderer
+      ↓
+MarkdownDocumentContentRenderer
+      ↓
+MarkdownViewerControl
+      └── WebView2
+```
+
+Imported Markdown is treated as untrusted document content.
+
+The Markdown renderer will use a controlled rendering policy. It will not
+automatically load remote resources, and external navigation will be handled
+through an explicit, controlled action rather than unrestricted automatic
+navigation.
+
+The renderer should support normal Markdown document features while avoiding
+premature implementation of a general-purpose HTML/browser framework.
+
+
+
+### Markdown Rendering Security and Presentation Policy
+
+Imported Markdown is treated as untrusted content. The Markdown renderer will
+apply defense-in-depth controls at both the Markdown parsing and presentation
+layers.
+
+The initial policy is:
+
+```text
+Raw HTML
+    ↓
+Disabled by Markdig
+
+JavaScript
+    ↓
+Disabled in WebView2
+
+Remote HTTP/HTTPS resources
+    ↓
+Blocked by WebView2 resource interception
+
+External HTTP/HTTPS navigation
+    ↓
+Cancelled unless the renderer policy explicitly permits it
+```
+
+The renderer exposes explicit policy options for future scalability:
+
+```text
+MarkdownRenderingOptions
+├── AllowRawHtml
+├── AllowExternalResources
+└── AllowExternalNavigation
+```
+
+The initial application configuration will keep all three disabled.
+
+`AllowRawHtml` controls whether the Markdig pipeline permits raw HTML.
+
+`AllowExternalResources` controls whether remote HTTP/HTTPS resource requests
+may be loaded by the WebView2 presentation surface.
+
+`AllowExternalNavigation` controls whether HTTP/HTTPS navigation is permitted
+by the renderer. Enabling this option must not be interpreted as turning the
+document viewer into an unrestricted browser. Any future external-navigation
+experience should remain an explicit, controlled user interaction.
+
+The renderer will also provide a DeskVault-controlled HTML presentation shell
+rather than relying on browser-default document styling. The shell owns
+typography, spacing, code blocks, tables, links, and other Markdown presentation
+styles. Its CSS variables provide a future seam for DeskVault light, dark,
+system, and accessibility-oriented themes without changing the renderer
+contract.
+
+### Markdown Renderer Lifecycle and Ownership
+
+The Markdown renderer owns the WebView2 control it creates for document
+presentation, while the workspace remains responsible for the host control
+and overall workspace lifecycle.
+
+When a renderer replaces existing content in the content host, existing child
+controls are explicitly disposed before the new renderer control is added.
+
+The renderer also disposes a newly created WebView2 control if initialization
+or rendering fails after the control has been attached to the host.
+
+Document streams remain owned by the caller. Renderers may read the supplied
+stream but must not close the underlying document stream as part of normal
+rendering.
+
+This preserves a consistent ownership boundary across multiple renderer
+implementations.
+
+### Renderer Registration and Composition
+
+Format-specific renderers are registered through dependency injection.
+
+The intended composition is:
+
+```text
+IDocumentContentRenderer
+├── TextDocumentContentRenderer
+└── MarkdownDocumentContentRenderer
+```
+
+The resolver discovers the registered implementations and selects the first
+renderer whose `CanRender` method accepts the document filename.
+
+Renderer-specific dependencies remain inside the renderer boundary. The
+workspace presenter and view contracts must not acquire dependencies on
+Markdig, WebView2, or other format-specific presentation technologies.
+
+This allows CSV to be introduced as another renderer without modifying the
+workspace orchestration:
+
+```text
+IDocumentContentRenderer
+├── TextDocumentContentRenderer
+├── MarkdownDocumentContentRenderer
+└── CsvDocumentContentRenderer
+```
+
+PDF and Microsoft Office renderers can later be added using the same boundary.
+
 
 ## Unsupported Formats
 
@@ -498,6 +700,48 @@ The following are architectural targets but are not required to be fully impleme
 
 The first implementation should establish the correct boundaries and interaction model without prematurely implementing all future functionality.
 
+### Use a legacy WinForms `WebBrowser` control for Markdown
+
+Rejected.
+
+Although it would provide a quick HTML presentation path, it would tie the
+modern Markdown workspace to a legacy browser technology. WebView2 provides a
+more appropriate current Windows presentation surface while remaining an
+implementation detail of the renderer.
+
+### Make `DocumentViewForm` directly depend on WebView2
+
+Rejected.
+
+The workspace form must remain independent of the Markdown presentation
+technology. Direct WebView2 coupling would make the workspace harder to
+extend and would blur the renderer boundary.
+
+### Create a reusable `MarkdownViewerControl` immediately
+
+Deferred.
+
+The first implementation will keep WebView2 inside
+`MarkdownDocumentContentRenderer`. A reusable viewer control can be extracted
+when the Markdown presentation surface develops enough behavior to justify
+the additional abstraction.
+
+### Render Markdown entirely with native WinForms controls
+
+Rejected for the initial Markdown implementation.
+
+A native renderer would require DeskVault to implement and maintain substantial
+formatting and layout behavior for headings, lists, code blocks, tables, links,
+and related Markdown features. Using Markdig plus WebView2 keeps that UI
+infrastructure focused while preserving the renderer boundary.
+
+### Trust imported Markdown as executable/active content
+
+Rejected.
+
+Imported documents are treated as untrusted content. Rendering must use a
+controlled policy and must not automatically load remote resources.
+
 ## Alternatives Considered
 
 ### Automatically persist every opened document as a workspace
@@ -569,7 +813,17 @@ The architecture will support multiple workspaces, but the first implementation 
 - Persistent workspace naming remains user-controlled.
 - Recent activity has a clear future model without expanding the current implementation.
 - Multiple workspace support can be introduced later without redesigning workspace identity.
+- New document renderers can be added without changing workspace orchestration.
+- Markdown rendering can evolve independently of the workspace contract.
+- Markdig provides a mature Markdown parsing boundary while WebView2 provides a rich presentation surface.
+- Markdown security/resource policy remains inside the renderer boundary.
+- Rendering and future extraction/AI processing remain separate concerns.
 - The current implementation remains intentionally scoped.
+
+- Markdown security controls are explicit and renderer-local, reducing the risk that imported content is treated as active or browser-like content.
+- The Markdown presentation shell provides a controlled visual surface and a future theming seam.
+- WebView2 remains an implementation detail, preserving the workspace and presenter contracts.
+- Renderer lifecycle and stream ownership are explicitly separated, reducing resource-lifetime ambiguity as additional renderers are introduced.
 
 ### Negative
 
@@ -580,6 +834,8 @@ The architecture will support multiple workspaces, but the first implementation 
 - Recent activity will require a separate persistence and retention implementation.
 - AI functionality will require additional Application and AI-layer capabilities.
 - Some document formats will initially lack in-app rendering.
+- WebView2 adds a UI/runtime dependency for rich Markdown presentation.
+- Markdown rendering requires an explicit security policy for HTML, links, and remote resources.
 
 These trade-offs are acceptable because they establish a scalable foundation while keeping the first implementation focused.
 
