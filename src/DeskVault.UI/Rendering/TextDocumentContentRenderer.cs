@@ -22,7 +22,9 @@ public sealed class TextDocumentContentRenderer
         using var reader = new StreamReader(
             documentStream,
             Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true);
+            detectEncodingFromByteOrderMarks: true,
+            bufferSize: 1024,
+            leaveOpen: true);
 
         string content = await reader.ReadToEndAsync(
             cancellationToken);
