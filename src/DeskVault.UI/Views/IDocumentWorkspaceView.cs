@@ -8,6 +8,8 @@ public interface IDocumentWorkspaceView
 
     event EventHandler RemoveDocumentRequested;
 
+    event EventHandler CloseWorkspaceRequested;
+
     Task ShowDocumentAsync(
         Stream documentStream,
         string fileName,

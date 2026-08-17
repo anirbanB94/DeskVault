@@ -44,6 +44,9 @@ public sealed class DocumentWorkspacePresenter :
 
         _view.RemoveDocumentRequested +=
             OnRemoveDocumentRequested;
+
+        _view.CloseWorkspaceRequested +=
+            OnCloseWorkspaceRequested;
     }
 
 
@@ -57,6 +60,8 @@ public sealed class DocumentWorkspacePresenter :
         _currentDocument = await _getDocumentHandler.HandleAsync(
             new GetDocumentQuery(documentId),
             cancellationToken);
+
+        _currentDocumentStream?.Dispose();
 
         _currentDocumentStream = documentStream;
         _currentFileName = fileName;
@@ -175,6 +180,13 @@ public sealed class DocumentWorkspacePresenter :
                 UiMessages.UnableToRemoveDocument,
                 UiMessages.DeskVaultTitle);
         }
+    }
+
+    private void OnCloseWorkspaceRequested(
+        object? sender,
+        EventArgs e)
+    {
+        _view.CloseWorkspace();
     }
 
 }

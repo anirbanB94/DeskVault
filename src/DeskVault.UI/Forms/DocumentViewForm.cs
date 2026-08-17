@@ -28,6 +28,8 @@ public partial class DocumentViewForm :
 
     public event EventHandler RemoveDocumentRequested = null!;
 
+    public event EventHandler CloseWorkspaceRequested = null!;
+
     public async Task ShowDocumentAsync(
         Stream documentStream,
         string fileName,
@@ -171,6 +173,15 @@ public partial class DocumentViewForm :
         EventArgs e)
     {
         RemoveDocumentRequested?.Invoke(
+            this,
+            EventArgs.Empty);
+    }
+
+    private void closeWorkspaceMenuItem_Click(
+        object? sender,
+        EventArgs e)
+    {
+        CloseWorkspaceRequested?.Invoke(
             this,
             EventArgs.Empty);
     }

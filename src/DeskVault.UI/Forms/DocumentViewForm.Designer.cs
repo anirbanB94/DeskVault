@@ -376,6 +376,8 @@ partial class DocumentViewForm
             new Size(346, 38);
         closeWorkspaceMenuItem.Text =
             UiMessages.CloseWorkspace;
+        closeWorkspaceMenuItem.Click +=
+            closeWorkspaceMenuItem_Click;
 
         //
         // DocumentViewForm
