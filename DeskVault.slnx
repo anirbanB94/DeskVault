@@ -15,4 +15,8 @@
     <Project Path="src/DeskVault.Shared/DeskVault.Shared.csproj" Id="6a2dad05-0a8d-44d9-9c68-263c59de251f" />
     <Project Path="src/DeskVault.UI/DeskVault.UI.csproj" Id="03017101-157b-43ce-afe3-3844e2822d59" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DeskVault.Application.Tests/DeskVault.Application.Tests.csproj" Id="bffed1d0-48f3-441b-b671-135746839464" />
+    <Project Path="tests/DeskVault.Infrastructure.Tests/DeskVault.Infrastructure.Tests.csproj" Id="56a8bbc0-9e84-4ea3-8fb3-01fe44a84e78" />
+  </Folder>
 </Solution>
