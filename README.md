@@ -35,11 +35,15 @@ DeskVault is currently in **MVP development**.
 - Dedicated `DocumentViewForm` workspace
 - Workspace-oriented UI interaction model
 - Presenter-driven document workspace integration
+- In-app TXT document rendering
+- In-app Markdown document rendering
+- Extensible document renderer abstraction and resolver
+- Secure Markdown rendering with controlled HTML, script, resource, and navigation policies
 - Architecture Decision Records for significant architectural choices
 
 ### In Development
 
-- Document rendering inside the document workspace
+- Additional document renderers such as CSV, PDF, and Office formats
 - Improved desktop UI/UX
 - Document processing pipeline
 - Text extraction
@@ -148,7 +152,7 @@ The current workspace includes:
 - Close workspace action
 - Presenter-driven workspace opening
 
-The current implementation establishes the workspace shell and opening flow. **Document content rendering inside the workspace is not yet implemented.**
+The current implementation establishes the workspace shell and opening flow, with TXT and Markdown documents rendered in-app through the extensible document renderer boundary.
 
 The intended direction is:
 
@@ -171,7 +175,9 @@ DocumentViewForm
         └── Workspace Actions
 ```
 
-The workspace architecture is intentionally designed to provide a path toward future capabilities such as related documents, persistent workspaces, multiple workspace windows, document rendering extensions, and local AI assistance without implementing those capabilities prematurely.
+The workspace architecture is intentionally designed to provide a path toward future capabilities such as related documents, persistent workspaces, multiple workspace windows, additional document renderers, and local AI assistance without implementing those capabilities prematurely.
+
+Document rendering is isolated behind `IDocumentContentRenderer`, allowing additional formats to be introduced without changing workspace orchestration. Markdown currently uses Markdig for parsing and WebView2 as its rich presentation surface, while renderer-specific security and presentation policies remain inside the UI rendering boundary.
 
 The architectural decision is documented in:
 
@@ -246,9 +252,11 @@ DeskVault is being developed around the following principles:
 | Document Encryption | AES-GCM                                 |
 | Key Protection      | Windows Data Protection                 |
 | Hashing             | SHA-256                                 |
-| Local AI Runtime    | Ollama                                  |
-| Planned Model       | Phi-4 Mini                              |
-| Architecture        | Layered / Clean Architecture principles |
+| Local AI Runtime      | Ollama                                  |
+| Planned Model         | Phi-4 Mini                              |
+| Markdown Parsing      | Markdig                                 |
+| Markdown Presentation | WebView2                                |
+| Architecture          | Layered / Clean Architecture principles |
 
 ## Project Structure
 
@@ -258,6 +266,7 @@ src/
 │   ├── Forms/
 │   ├── Hosting/
 │   ├── Presenters/
+│   ├── Rendering/
 │   ├── Services/
 │   └── Views/
 │
@@ -312,6 +321,9 @@ Document Removal
 In-App Document Workspace
     ↓
 Document Rendering
+    ├── TXT
+    ├── Markdown
+    └── CSV (next)
     ↓
 Document Processing
     ↓
@@ -330,6 +342,6 @@ Architectural decisions are documented through ADRs under `docs/adr/`.
 
 DeskVault is an actively developed portfolio project.
 
-The current MVP focuses on establishing a **secure, persistent, local document foundation with an in-app document workspace**.
+The current MVP focuses on establishing a **secure, persistent, local document foundation with an in-app document workspace and initial document rendering support**.
 
-The workspace currently provides the document-centric UI foundation and opening flow, while document rendering, processing, search, and AI capabilities will be built on top of it in subsequent development stages.
+The workspace currently provides the document-centric UI foundation and opening flow. TXT and Markdown rendering are implemented, while additional renderers, document processing, search, and AI capabilities remain on the roadmap.
