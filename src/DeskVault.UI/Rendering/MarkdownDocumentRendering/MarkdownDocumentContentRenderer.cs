@@ -1,9 +1,10 @@
 using Markdig;
+using Microsoft.Extensions.Options;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using System.Text;
 
-namespace DeskVault.UI.Rendering;
+namespace DeskVault.UI.Rendering.MarkdownDocumentRendering;
 
 public sealed class MarkdownDocumentContentRenderer
     : IDocumentContentRenderer
@@ -12,10 +13,12 @@ public sealed class MarkdownDocumentContentRenderer
 
     private readonly MarkdownPipeline _pipeline;
 
+    public int Priority => 0;
+
     public MarkdownDocumentContentRenderer(
-        MarkdownRenderingOptions options)
+        IOptions<MarkdownRenderingOptions> options)
     {
-        _options = options;
+        _options = options.Value;
 
         var pipelineBuilder =
             new MarkdownPipelineBuilder()
@@ -61,7 +64,7 @@ public sealed class MarkdownDocumentContentRenderer
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        ClearContentHost(contentHost);
+        DocumentContentHost.Clear(contentHost);
 
         var webView = new WebView2
         {
@@ -143,22 +146,6 @@ public sealed class MarkdownDocumentContentRenderer
             webView.Dispose();
             throw;
         }
-    }
-
-    private static void ClearContentHost(
-        Control contentHost)
-    {
-        Control[] existingControls =
-            contentHost.Controls
-                .Cast<Control>()
-                .ToArray();
-
-        foreach (Control control in existingControls)
-        {
-            control.Dispose();
-        }
-
-        contentHost.Controls.Clear();
     }
 
     private static string WrapHtmlDocument(

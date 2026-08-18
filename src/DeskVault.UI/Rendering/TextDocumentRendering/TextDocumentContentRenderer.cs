@@ -1,10 +1,12 @@
 using System.Text;
 
-namespace DeskVault.UI.Rendering;
+namespace DeskVault.UI.Rendering.TextDocumentRendering;
 
 public sealed class TextDocumentContentRenderer
     : IDocumentContentRenderer
 {
+    public int Priority => 0;
+
     public bool CanRender(string fileName)
     {
         return string.Equals(
@@ -29,6 +31,10 @@ public sealed class TextDocumentContentRenderer
         string content = await reader.ReadToEndAsync(
             cancellationToken);
 
+        cancellationToken.ThrowIfCancellationRequested();
+
+        DocumentContentHost.Clear(contentHost);
+
         var textBox = new TextBox
         {
             Multiline = true,
@@ -39,7 +45,7 @@ public sealed class TextDocumentContentRenderer
             WordWrap = false
         };
 
-        contentHost.Controls.Clear();
         contentHost.Controls.Add(textBox);
     }
+
 }

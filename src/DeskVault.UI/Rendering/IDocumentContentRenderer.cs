@@ -2,6 +2,8 @@ namespace DeskVault.UI.Rendering;
 
 public interface IDocumentContentRenderer
 {
+    int Priority { get; }
+
     bool CanRender(string fileName);
 
     Task RenderAsync(

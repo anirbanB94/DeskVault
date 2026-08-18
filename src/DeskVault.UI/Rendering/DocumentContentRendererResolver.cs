@@ -8,7 +8,10 @@ public sealed class DocumentContentRendererResolver
     public DocumentContentRendererResolver(
         IEnumerable<IDocumentContentRenderer> renderers)
     {
-        _renderers = renderers.ToList();
+        _renderers =
+            renderers
+            .OrderByDescending(renderer => renderer.Priority)
+            .ToList();
     }
 
     public IDocumentContentRenderer Resolve(string fileName)
