@@ -1,35 +1,42 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 
 namespace DeskVault.Infrastructure.Services;
 
-public sealed class WindowsEncryptionKeyService : IEncryptionKeyService
+public sealed class WindowsEncryptionKeyService :
+    IEncryptionKeyService
 {
-    private const string RootFolder = "DeskVault";
-    private const string KeyFolder = "Security";
     private const string KeyFileName = "master.key";
+
+    private readonly DeskVaultDataPaths _dataPaths;
+
+    public WindowsEncryptionKeyService(
+        DeskVaultDataPaths dataPaths)
+    {
+        _dataPaths = dataPaths;
+    }
 
     public async Task<byte[]> GetOrCreateKeyAsync(
         CancellationToken cancellationToken = default)
     {
-        string localAppData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        string securityDirectory = Path.Combine(
-            localAppData,
-            RootFolder,
-            KeyFolder);
+        string securityDirectory =
+            _dataPaths.SecurityDirectory;
 
-        Directory.CreateDirectory(securityDirectory);
+        Directory.CreateDirectory(
+            securityDirectory);
 
-        string keyFilePath = Path.Combine(
-            securityDirectory,
-            KeyFileName);
+        string keyFilePath =
+            Path.Combine(
+                securityDirectory,
+                KeyFileName);
 
         if (File.Exists(keyFilePath))
         {
-            byte[] protectedKeyFromFile = await File.ReadAllBytesAsync(
-                keyFilePath,
-                cancellationToken);
+            byte[] protectedKeyFromFile =
+                await File.ReadAllBytesAsync(
+                    keyFilePath,
+                    cancellationToken);
 
             return ProtectedData.Unprotect(
                 protectedKeyFromFile,
@@ -37,12 +44,14 @@ public sealed class WindowsEncryptionKeyService : IEncryptionKeyService
                 DataProtectionScope.CurrentUser);
         }
 
-        byte[] key = RandomNumberGenerator.GetBytes(32);
+        byte[] key =
+            RandomNumberGenerator.GetBytes(32);
 
-        byte[] protectedKey = ProtectedData.Protect(
-            key,
-            null,
-            DataProtectionScope.CurrentUser);
+        byte[] protectedKey =
+            ProtectedData.Protect(
+                key,
+                null,
+                DataProtectionScope.CurrentUser);
 
         await File.WriteAllBytesAsync(
             keyFilePath,

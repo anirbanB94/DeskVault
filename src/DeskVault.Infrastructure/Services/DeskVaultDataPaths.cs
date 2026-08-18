@@ -19,11 +19,14 @@ public sealed class DeskVaultDataPaths
             RootDirectory,
             "Security");
 
-    public DeskVaultDataPaths()
+    public DeskVaultDataPaths(
+        string? rootDirectory = null)
     {
-        RootDirectory = Path.Combine(
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData),
-            "DeskVault");
+        RootDirectory =
+            rootDirectory ??
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "DeskVault");
     }
 }
