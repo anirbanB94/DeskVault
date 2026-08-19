@@ -1,3 +1,5 @@
+using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Parsing.Csv;
 using DeskVault.UI.Rendering;
@@ -18,7 +20,12 @@ public sealed class DocumentContentRendererResolverTests
             new IDocumentContentRenderer[]
             {
                 new TextDocumentContentRenderer(
-                    new TextDocumentTextExtractor())
+                    new DocumentTextExtractorResolver(
+                        new IDocumentTextExtractor[]
+                        {
+                            new TextDocumentTextExtractor(),
+                            new MarkdownDocumentTextExtractor()
+                        }))
             };
 
         var resolver =
@@ -40,7 +47,13 @@ public sealed class DocumentContentRendererResolverTests
             {
                 new MarkdownDocumentContentRenderer(
                     Options.Create(
-                        new MarkdownRenderingOptions()))
+                        new MarkdownRenderingOptions()),
+                    new DocumentTextExtractorResolver(
+                        new IDocumentTextExtractor[]
+                        {
+                            new TextDocumentTextExtractor(),
+                            new MarkdownDocumentTextExtractor()
+                        }))
             };
 
         var resolver =
@@ -90,7 +103,12 @@ public sealed class DocumentContentRendererResolverTests
             new IDocumentContentRenderer[]
             {
                 new TextDocumentContentRenderer(
-                    new TextDocumentTextExtractor())
+                    new DocumentTextExtractorResolver(
+                        new IDocumentTextExtractor[]
+                        {
+                            new TextDocumentTextExtractor(),
+                            new MarkdownDocumentTextExtractor()
+                        }))
             };
 
         var resolver =
@@ -116,7 +134,13 @@ public sealed class DocumentContentRendererResolverTests
             {
                 new MarkdownDocumentContentRenderer(
                     Options.Create(
-                        new MarkdownRenderingOptions()))
+                        new MarkdownRenderingOptions()),
+                    new DocumentTextExtractorResolver(
+                        new IDocumentTextExtractor[]
+                        {
+                            new TextDocumentTextExtractor(),
+                            new MarkdownDocumentTextExtractor()
+                        }))
             };
 
         var resolver =
@@ -171,11 +195,22 @@ public sealed class DocumentContentRendererResolverTests
             new IDocumentContentRenderer[]
             {
                 new TextDocumentContentRenderer(
-                    new TextDocumentTextExtractor()),
+                    new DocumentTextExtractorResolver(
+                        new IDocumentTextExtractor[]
+                        {
+                            new TextDocumentTextExtractor(),
+                            new MarkdownDocumentTextExtractor()
+                        })),
 
                 new MarkdownDocumentContentRenderer(
                     Options.Create(
-                        new MarkdownRenderingOptions())),
+                        new MarkdownRenderingOptions()),
+                    new DocumentTextExtractorResolver(
+                        new IDocumentTextExtractor[]
+                        {
+                            new TextDocumentTextExtractor(),
+                            new MarkdownDocumentTextExtractor()
+                        })),
 
                 new CsvDocumentContentRenderer(
                     new CsvDocumentParser(
@@ -202,11 +237,22 @@ public sealed class DocumentContentRendererResolverTests
             new IDocumentContentRenderer[]
             {
                 new TextDocumentContentRenderer(
-                    new TextDocumentTextExtractor()),
+                    new DocumentTextExtractorResolver(
+                        new IDocumentTextExtractor[]
+                        {
+                            new TextDocumentTextExtractor(),
+                            new MarkdownDocumentTextExtractor()
+                        })),
 
                 new MarkdownDocumentContentRenderer(
                     Options.Create(
-                        new MarkdownRenderingOptions())),
+                        new MarkdownRenderingOptions()),
+                    new DocumentTextExtractorResolver(
+                        new IDocumentTextExtractor[]
+                        {
+                            new TextDocumentTextExtractor(),
+                            new MarkdownDocumentTextExtractor()
+                        })),
 
                 new CsvDocumentContentRenderer(
                     new CsvDocumentParser(
@@ -255,8 +301,8 @@ public sealed class DocumentContentRendererResolverTests
             new DocumentContentRendererResolver(
                 new IDocumentContentRenderer[]
                 {
-                lowPriorityRenderer.Object,
-                highPriorityRenderer.Object
+                    lowPriorityRenderer.Object,
+                    highPriorityRenderer.Object
                 });
 
         IDocumentContentRenderer renderer =

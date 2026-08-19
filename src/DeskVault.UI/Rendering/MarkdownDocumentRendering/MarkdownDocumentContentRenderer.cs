@@ -1,8 +1,8 @@
+using DeskVault.Application.Documents.Extraction;
 using Markdig;
 using Microsoft.Extensions.Options;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
-using System.Text;
 
 namespace DeskVault.UI.Rendering.MarkdownDocumentRendering;
 
@@ -11,14 +11,18 @@ public sealed class MarkdownDocumentContentRenderer
 {
     private readonly MarkdownRenderingOptions _options;
 
+    private readonly DocumentTextExtractorResolver _extractorResolver;
+
     private readonly MarkdownPipeline _pipeline;
 
     public int Priority => 0;
 
     public MarkdownDocumentContentRenderer(
-        IOptions<MarkdownRenderingOptions> options)
+        IOptions<MarkdownRenderingOptions> options,
+        DocumentTextExtractorResolver extractorResolver)
     {
         _options = options.Value;
+        _extractorResolver = extractorResolver;
 
         var pipelineBuilder =
             new MarkdownPipelineBuilder()
@@ -46,15 +50,17 @@ public sealed class MarkdownDocumentContentRenderer
         string fileName,
         CancellationToken cancellationToken = default)
     {
-        using var reader = new StreamReader(
-            documentStream,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true,
-            bufferSize: 1024,
-            leaveOpen: true);
 
-        string markdown = await reader.ReadToEndAsync(
-            cancellationToken);
+        IDocumentTextExtractor extractor =
+            _extractorResolver.Resolve(fileName);
+
+        DocumentTextExtractionResult extractionResult =
+            await extractor.ExtractAsync(
+                documentStream,
+                fileName,
+                cancellationToken);
+
+        string markdown = extractionResult.Text;
 
         string html = Markdown.ToHtml(
             markdown,

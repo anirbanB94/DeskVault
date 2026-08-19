@@ -6,15 +6,15 @@ namespace DeskVault.UI.Rendering.TextDocumentRendering;
 public sealed class TextDocumentContentRenderer
     : IDocumentContentRenderer
 {
-    private readonly TextDocumentTextExtractor _extractor;
-
-    public TextDocumentContentRenderer(
-        TextDocumentTextExtractor extractor)
-    {
-        _extractor = extractor;
-    }
+    private readonly DocumentTextExtractorResolver _extractorResolver;
 
     public int Priority => 0;
+
+    public TextDocumentContentRenderer(
+        DocumentTextExtractorResolver extractorResolver)
+    {
+        _extractorResolver = extractorResolver;
+    }
 
     public bool CanRender(string fileName)
     {
@@ -30,13 +30,15 @@ public sealed class TextDocumentContentRenderer
         string fileName,
         CancellationToken cancellationToken = default)
     {
-        DocumentTextExtractionResult extractionResult =
-            await _extractor.ExtractAsync(
+
+        IDocumentTextExtractor extractor =
+            _extractorResolver.Resolve(fileName);
+
+        DocumentTextExtractionResult result =
+            await _extractorResolver.Resolve(fileName).ExtractAsync(
                 documentStream,
                 fileName,
                 cancellationToken);
-
-        string content = extractionResult.Text;
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -48,7 +50,7 @@ public sealed class TextDocumentContentRenderer
             ReadOnly = true,
             ScrollBars = ScrollBars.Both,
             Dock = DockStyle.Fill,
-            Text = content,
+            Text = result.Text,
             WordWrap = false
         };
 
