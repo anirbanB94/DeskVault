@@ -5,6 +5,9 @@ using DeskVault.Infrastructure;
 using DeskVault.UI.Forms;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Rendering;
+using DeskVault.UI.Rendering.CsvDocumentRendering;
+using DeskVault.UI.Rendering.MarkdownDocumentRendering;
+using DeskVault.UI.Rendering.TextDocumentRendering;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Configuration;
@@ -68,6 +71,14 @@ internal static class HostConfigurator
             configuration.GetSection(
                 OllamaOptions.SectionName));
 
+        services.Configure<CsvParsingOptions>(
+            configuration.GetSection(
+                CsvParsingOptions.SectionName));
+
+        services.Configure<MarkdownRenderingOptions>(
+            configuration.GetSection(
+                MarkdownRenderingOptions.SectionName));
+
         // Application
         services.AddApplication();
 
@@ -86,17 +97,11 @@ internal static class HostConfigurator
 
         // Document rendering
         services.AddTransient<IDocumentContentRenderer, TextDocumentContentRenderer>();
-
-        services.AddSingleton(
-            new MarkdownRenderingOptions
-            {
-                AllowRawHtml = false,
-                AllowExternalResources = false,
-                AllowExternalNavigation = false
-            });
-
         services.AddTransient<IDocumentContentRenderer, MarkdownDocumentContentRenderer>();
-
+        services.AddTransient<CsvDocumentParser>();
+        services.AddTransient<
+            IDocumentContentRenderer,
+            CsvDocumentContentRenderer>();
         services.AddTransient<IDocumentContentRendererResolver, DocumentContentRendererResolver>();
     }
 }
