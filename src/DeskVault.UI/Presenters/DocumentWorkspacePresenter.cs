@@ -49,17 +49,16 @@ public sealed class DocumentWorkspacePresenter :
             OnCloseWorkspaceRequested;
     }
 
-
     public async Task OpenAsync(
         Guid documentId,
         Stream documentStream,
         string fileName,
         CancellationToken cancellationToken = default)
     {
-
-        _currentDocument = await _getDocumentHandler.HandleAsync(
-            new GetDocumentQuery(documentId),
-            cancellationToken);
+        _currentDocument =
+            await _getDocumentHandler.HandleAsync(
+                new GetDocumentQuery(documentId),
+                cancellationToken);
 
         _currentDocumentStream?.Dispose();
 
@@ -68,7 +67,6 @@ public sealed class DocumentWorkspacePresenter :
 
         try
         {
-
             await _view.ShowDocumentAsync(
                 documentStream,
                 fileName,
@@ -78,6 +76,16 @@ public sealed class DocumentWorkspacePresenter :
         {
             _view.ShowUnsupportedPreview(
                 UiMessages.UnsupportedDocumentPreviewMessage);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            _view.ShowError(
+                UiMessages.UnableToOpenDocument,
+                UiMessages.DeskVaultTitle);
         }
     }
 

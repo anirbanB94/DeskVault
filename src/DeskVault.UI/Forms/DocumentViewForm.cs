@@ -43,22 +43,14 @@ public partial class DocumentViewForm :
         documentContentPanel.Visible = true;
         documentContentPanel.BringToFront();
 
-        try
-        {
-            IDocumentContentRenderer renderer =
-                _rendererResolver.Resolve(fileName);
+        IDocumentContentRenderer renderer =
+            _rendererResolver.Resolve(fileName);
 
-            await renderer.RenderAsync(
-                documentContentPanel,
-                documentStream,
-                fileName,
-                cancellationToken);
-        }
-        catch (NotSupportedException)
-        {
-            ShowUnsupportedPreview(
-                UiMessages.UnsupportedDocumentPreviewMessage);
-        }
+        await renderer.RenderAsync(
+            documentContentPanel,
+            documentStream,
+            fileName,
+            cancellationToken);
 
         Show();
         BringToFront();
