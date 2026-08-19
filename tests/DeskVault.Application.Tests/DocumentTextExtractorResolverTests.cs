@@ -1,4 +1,5 @@
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 
@@ -14,7 +15,8 @@ public sealed class DocumentTextExtractorResolverTests
                 new IDocumentTextExtractor[]
                 {
                     new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor()
+                    new MarkdownDocumentTextExtractor(),
+                    new CsvDocumentTextExtractor()
                 });
 
         IDocumentTextExtractor extractor =
@@ -32,13 +34,33 @@ public sealed class DocumentTextExtractorResolverTests
                 new IDocumentTextExtractor[]
                 {
                     new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor()
+                    new MarkdownDocumentTextExtractor(),
+                    new CsvDocumentTextExtractor()
                 });
 
         IDocumentTextExtractor extractor =
             resolver.Resolve("README.md");
 
         Assert.IsType<MarkdownDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Fact]
+    public void Resolve_CsvFile_ReturnsCsvExtractor()
+    {
+        var resolver =
+            new DocumentTextExtractorResolver(
+                new IDocumentTextExtractor[]
+                {
+                    new TextDocumentTextExtractor(),
+                    new MarkdownDocumentTextExtractor(),
+                    new CsvDocumentTextExtractor()
+                });
+
+        IDocumentTextExtractor extractor =
+            resolver.Resolve("data.csv");
+
+        Assert.IsType<CsvDocumentTextExtractor>(
             extractor);
     }
 
@@ -54,7 +76,8 @@ public sealed class DocumentTextExtractorResolverTests
                 new IDocumentTextExtractor[]
                 {
                     new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor()
+                    new MarkdownDocumentTextExtractor(),
+                    new CsvDocumentTextExtractor()
                 });
 
         NotSupportedException exception =
@@ -78,13 +101,37 @@ public sealed class DocumentTextExtractorResolverTests
                 new IDocumentTextExtractor[]
                 {
                     new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor()
+                    new MarkdownDocumentTextExtractor(),
+                    new CsvDocumentTextExtractor()
                 });
 
         IDocumentTextExtractor extractor =
             resolver.Resolve(fileName);
 
         Assert.IsType<MarkdownDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Theory]
+    [InlineData("data.CSV")]
+    [InlineData("data.Csv")]
+    [InlineData("data.cSv")]
+    public void Resolve_CsvExtension_IsCaseInsensitive(
+        string fileName)
+    {
+        var resolver =
+            new DocumentTextExtractorResolver(
+                new IDocumentTextExtractor[]
+                {
+                    new TextDocumentTextExtractor(),
+                    new MarkdownDocumentTextExtractor(),
+                    new CsvDocumentTextExtractor()
+                });
+
+        IDocumentTextExtractor extractor =
+            resolver.Resolve(fileName);
+
+        Assert.IsType<CsvDocumentTextExtractor>(
             extractor);
     }
 }
