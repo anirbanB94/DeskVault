@@ -1,7 +1,6 @@
-using DeskVault.UI.Rendering.CsvDocumentRendering;
-using Microsoft.Extensions.Options;
+using DeskVault.Application.Documents.Parsing.Csv;
 
-namespace DeskVault.UI.Tests;
+namespace DeskVault.Application.Tests;
 
 public sealed class CsvParsingOptionsTests
 {

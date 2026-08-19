@@ -1,4 +1,4 @@
-namespace DeskVault.UI.Rendering.CsvDocumentRendering;
+namespace DeskVault.Application.Documents.Parsing.Csv;
 
 public sealed class CsvParsingOptions
 {

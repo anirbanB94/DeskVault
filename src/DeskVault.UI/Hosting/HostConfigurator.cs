@@ -1,5 +1,6 @@
 using DeskVault.Application;
 using DeskVault.Application.Configurations;
+using DeskVault.Application.Documents.Parsing.Csv;
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Infrastructure;
 using DeskVault.UI.Forms;
@@ -13,6 +14,7 @@ using DeskVault.UI.Views;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 namespace DeskVault.UI.Hosting;
@@ -98,7 +100,13 @@ internal static class HostConfigurator
         // Document rendering
         services.AddTransient<IDocumentContentRenderer, TextDocumentContentRenderer>();
         services.AddTransient<IDocumentContentRenderer, MarkdownDocumentContentRenderer>();
-        services.AddTransient<CsvDocumentParser>();
+        services.AddTransient<CsvDocumentParser>(
+            provider =>
+            new CsvDocumentParser(
+                provider
+                .GetRequiredService<
+                    IOptions<CsvParsingOptions>>()
+                .Value));
         services.AddTransient<
             IDocumentContentRenderer,
             CsvDocumentContentRenderer>();

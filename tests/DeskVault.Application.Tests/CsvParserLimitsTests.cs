@@ -1,7 +1,6 @@
-using DeskVault.UI.Rendering.CsvDocumentRendering;
-using Microsoft.Extensions.Options;
+using DeskVault.Application.Documents.Parsing.Csv;
 
-namespace DeskVault.UI.Tests;
+namespace DeskVault.Application.Tests;
 
 public sealed class CsvParserLimitsTests
 {
@@ -24,11 +23,10 @@ public sealed class CsvParserLimitsTests
 
         var parser =
             new CsvDocumentParser(
-                Options.Create(
-                    new CsvParsingOptions
-                    {
-                        MaxRows = 3
-                    }));
+                new CsvParsingOptions
+                {
+                    MaxRows = 3
+                });
 
         CsvDocument document =
             await parser.ParseAsync(stream);
@@ -72,11 +70,10 @@ public sealed class CsvParserLimitsTests
 
         var parser =
             new CsvDocumentParser(
-                Options.Create(
-                    new CsvParsingOptions
-                    {
-                        MaxRows = 10
-                    }));
+                new CsvParsingOptions
+                {
+                    MaxRows = 10
+                });
 
         CsvDocument document =
             await parser.ParseAsync(stream);
@@ -109,11 +106,10 @@ public sealed class CsvParserLimitsTests
 
         var parser =
             new CsvDocumentParser(
-                Options.Create(
-                    new CsvParsingOptions
-                    {
-                        MaxRows = null
-                    }));
+                new CsvParsingOptions
+                {
+                    MaxRows = null
+                });
 
         CsvDocument document =
             await parser.ParseAsync(stream);
@@ -143,11 +139,10 @@ public sealed class CsvParserLimitsTests
 
         var parser =
             new CsvDocumentParser(
-                Options.Create(
-                    new CsvParsingOptions
-                    {
-                        MaxRows = 3
-                    }));
+                new CsvParsingOptions
+                {
+                    MaxRows = 3
+                });
 
         CsvDocument document =
             await parser.ParseAsync(stream);
@@ -176,11 +171,10 @@ public sealed class CsvParserLimitsTests
 
         var parser =
             new CsvDocumentParser(
-                Options.Create(
-                    new CsvParsingOptions
-                    {
-                        MaxRows = 0
-                    }));
+                new CsvParsingOptions
+                {
+                    MaxRows = 0
+                });
 
         CsvDocument document =
             await parser.ParseAsync(stream);

@@ -1,18 +1,17 @@
 using CsvHelper;
-using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Text;
 
-namespace DeskVault.UI.Rendering.CsvDocumentRendering;
+namespace DeskVault.Application.Documents.Parsing.Csv;
 
 public sealed class CsvDocumentParser
 {
     private readonly CsvParsingOptions _options;
 
     public CsvDocumentParser(
-        IOptions<CsvParsingOptions> options)
+        CsvParsingOptions options)
     {
-        _options = options.Value;
+        _options = options;
     }
 
     public async Task<CsvDocument> ParseAsync(
