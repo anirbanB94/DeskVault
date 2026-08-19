@@ -323,6 +323,25 @@ Additional renderers can be introduced independently as the application grows.
 
 Formats without an appropriate in-app renderer may temporarily use the existing external-view fallback.
 
+## Current Implementation
+
+The initial structured CSV rendering path has now been implemented.
+
+CSV documents are parsed into a structured `CsvDocument` representation before being passed to the UI renderer.
+
+The representation preserves:
+
+- column definitions
+- row values
+- structural warnings
+- preview-limit state
+
+CSV rendering is implemented through `CsvDocumentContentRenderer` and resolved through the existing document-content-renderer boundary.
+
+CSV parsing supports bounded preview materialization through `CsvParsingOptions`, with configuration supplied through the `CsvParsing` configuration section.
+
+The renderer displays structural warnings without altering the underlying document representation.
+
 ## AI Workspace
 
 The document workspace will reserve a dedicated area for future local AI functionality.
