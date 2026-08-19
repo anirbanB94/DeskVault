@@ -10,12 +10,17 @@ public sealed class DocumentEncryptionServiceTests
     public async Task EncryptAndDecryptAsync_WhenContentIsValid_RestoresOriginalContent()
     {
         byte[] key = RandomNumberGenerator.GetBytes(32);
+
         byte[] originalContent =
             Encoding.UTF8.GetBytes(
                 "DeskVault encryption test document.");
 
-        var keyService = new TestEncryptionKeyService(key);
-        var service = new DocumentEncryptionService(keyService);
+        var keyService =
+            new TestEncryptionKeyService(key);
+
+        var service =
+            new DocumentEncryptionService(
+                keyService);
 
         await using var source =
             new MemoryStream(originalContent);
@@ -23,14 +28,18 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(source, encrypted);
+        await service.EncryptAsync(
+            source,
+            encrypted);
 
         encrypted.Position = 0;
 
         await using var decrypted =
             new MemoryStream();
 
-        await service.DecryptAsync(encrypted, decrypted);
+        await service.DecryptAsync(
+            encrypted,
+            decrypted);
 
         Assert.Equal(
             originalContent,
@@ -40,10 +49,15 @@ public sealed class DocumentEncryptionServiceTests
     [Fact]
     public async Task EncryptAsync_WritesDeskVaultFormatHeader()
     {
-        byte[] key = RandomNumberGenerator.GetBytes(32);
+        byte[] key =
+            RandomNumberGenerator.GetBytes(32);
 
-        var keyService = new TestEncryptionKeyService(key);
-        var service = new DocumentEncryptionService(keyService);
+        var keyService =
+            new TestEncryptionKeyService(key);
+
+        var service =
+            new DocumentEncryptionService(
+                keyService);
 
         await using var source =
             new MemoryStream(
@@ -52,11 +66,15 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(source, encrypted);
+        await service.EncryptAsync(
+            source,
+            encrypted);
 
-        byte[] result = encrypted.ToArray();
+        byte[] result =
+            encrypted.ToArray();
 
-        Assert.True(result.Length >= 8);
+        Assert.True(
+            result.Length >= 8);
 
         Assert.Equal(
             (byte)0x54,
@@ -76,16 +94,23 @@ public sealed class DocumentEncryptionServiceTests
 
         Assert.Equal(
             2u,
-            BitConverter.ToUInt32(result, 4));
+            BitConverter.ToUInt32(
+                result,
+                4));
     }
 
     [Fact]
     public async Task DecryptAsync_WhenMagicIsInvalid_ThrowsCryptographicException()
     {
-        byte[] key = RandomNumberGenerator.GetBytes(32);
+        byte[] key =
+            RandomNumberGenerator.GetBytes(32);
 
-        var keyService = new TestEncryptionKeyService(key);
-        var service = new DocumentEncryptionService(keyService);
+        var keyService =
+            new TestEncryptionKeyService(key);
+
+        var service =
+            new DocumentEncryptionService(
+                keyService);
 
         byte[] invalidHeader =
         [
@@ -100,18 +125,24 @@ public sealed class DocumentEncryptionServiceTests
             new MemoryStream();
 
         await Assert.ThrowsAsync<CryptographicException>(
-            () => service.DecryptAsync(
-                source,
-                destination));
+            () =>
+                service.DecryptAsync(
+                    source,
+                    destination));
     }
 
     [Fact]
     public async Task DecryptAsync_WhenVersionIsUnsupported_ThrowsCryptographicException()
     {
-        byte[] key = RandomNumberGenerator.GetBytes(32);
+        byte[] key =
+            RandomNumberGenerator.GetBytes(32);
 
-        var keyService = new TestEncryptionKeyService(key);
-        var service = new DocumentEncryptionService(keyService);
+        var keyService =
+            new TestEncryptionKeyService(key);
+
+        var service =
+            new DocumentEncryptionService(
+                keyService);
 
         byte[] unsupportedVersionHeader =
         [
@@ -120,22 +151,124 @@ public sealed class DocumentEncryptionServiceTests
         ];
 
         await using var source =
-            new MemoryStream(unsupportedVersionHeader);
+            new MemoryStream(
+                unsupportedVersionHeader);
 
         await using var destination =
             new MemoryStream();
 
         await Assert.ThrowsAsync<CryptographicException>(
-            () => service.DecryptAsync(
-                source,
-                destination));
+            () =>
+                service.DecryptAsync(
+                    source,
+                    destination));
     }
 
-    private sealed class TestEncryptionKeyService : IEncryptionKeyService
+    [Fact]
+    public async Task DecryptAsync_WhenCiphertextIsTampered_ThrowsCryptographicException()
+    {
+        byte[] key =
+            RandomNumberGenerator.GetBytes(32);
+
+        var keyService =
+            new TestEncryptionKeyService(key);
+
+        var service =
+            new DocumentEncryptionService(
+                keyService);
+
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "Sensitive DeskVault document content.");
+
+        await using var source =
+            new MemoryStream(originalContent);
+
+        await using var encrypted =
+            new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted);
+
+        byte[] encryptedBytes =
+            encrypted.ToArray();
+
+        Assert.True(
+            encryptedBytes.Length > 24);
+
+        encryptedBytes[^1] ^= 0xFF;
+
+        await using var tamperedSource =
+            new MemoryStream(encryptedBytes);
+
+        await using var destination =
+            new MemoryStream();
+
+        await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
+            () =>
+                service.DecryptAsync(
+                    tamperedSource,
+                    destination));
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenEncryptedDocumentIsTruncated_ThrowsCryptographicException()
+    {
+        byte[] key =
+            RandomNumberGenerator.GetBytes(32);
+
+        var keyService =
+            new TestEncryptionKeyService(key);
+
+        var service =
+            new DocumentEncryptionService(
+                keyService);
+
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "DeskVault truncated document test.");
+
+        await using var source =
+            new MemoryStream(originalContent);
+
+        await using var encrypted =
+            new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted);
+
+        byte[] encryptedBytes =
+            encrypted.ToArray();
+
+        Assert.True(
+            encryptedBytes.Length > 8);
+
+        byte[] truncatedBytes =
+            encryptedBytes[..^1];
+
+        await using var truncatedSource =
+            new MemoryStream(
+                truncatedBytes);
+
+        await using var destination =
+            new MemoryStream();
+
+        await Assert.ThrowsAsync<CryptographicException>(
+            () =>
+                service.DecryptAsync(
+                    truncatedSource,
+                    destination));
+    }
+
+    private sealed class TestEncryptionKeyService :
+        IEncryptionKeyService
     {
         private readonly byte[] _key;
 
-        public TestEncryptionKeyService(byte[] key)
+        public TestEncryptionKeyService(
+            byte[] key)
         {
             _key = key;
         }
@@ -143,7 +276,8 @@ public sealed class DocumentEncryptionServiceTests
         public Task<byte[]> GetOrCreateKeyAsync(
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(_key);
+            return Task.FromResult(
+                _key);
         }
     }
 }

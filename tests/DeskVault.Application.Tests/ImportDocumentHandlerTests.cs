@@ -277,6 +277,52 @@ public sealed class ImportDocumentHandlerTests
         Assert.False(repository.AddWasCalled);
     }
 
+    [Fact]
+    public async Task HandleAsync_WhenRepositoryAddThrowsIOException_ReturnsStorageFailed()
+    {
+        var validator = new TestImportDocumentValidator(
+            new ImportDocumentResult(
+                ImportDocumentResultStatus.Success,
+                null,
+                "Validation successful."));
+
+        var hashService = new TestHashService(
+            "test-hash");
+
+        var storageService = new TestStorageService(
+            "stored/document.dvault");
+
+        var repository = new TestDocumentRepository
+        {
+            AddException =
+                new IOException(
+                    "Metadata storage operation failed.")
+        };
+
+        var handler = new ImportDocumentHandler(
+            validator,
+            hashService,
+            storageService,
+            repository);
+
+        ImportDocumentResult result =
+            await handler.HandleAsync(
+                new ImportDocumentCommand(
+                    "document.txt",
+                    null));
+
+        Assert.Equal(
+            ImportDocumentResultStatus.StorageFailed,
+            result.Status);
+
+        Assert.Equal(
+            "Metadata storage operation failed.",
+            result.Description);
+
+        Assert.True(storageService.WasCalled);
+        Assert.True(repository.AddWasCalled);
+    }
+
     private sealed class TestImportDocumentValidator
         : IImportDocumentValidator
     {
@@ -364,6 +410,8 @@ public sealed class ImportDocumentHandlerTests
 
         public Document? AddedDocument { get; private set; }
 
+        public Exception? AddException { get; set; }
+
         public Task<bool> ExistsByHashAsync(
             string sha256Hash,
             CancellationToken cancellationToken = default)
@@ -377,6 +425,11 @@ public sealed class ImportDocumentHandlerTests
         {
             AddWasCalled = true;
             AddedDocument = document;
+
+            if (AddException is not null)
+            {
+                throw AddException;
+            }
 
             return Task.CompletedTask;
         }
