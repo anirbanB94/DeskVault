@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Parsing.Csv;
 using DeskVault.UI.Rendering;
 using DeskVault.UI.Rendering.CsvDocumentRendering;
@@ -16,7 +17,8 @@ public sealed class DocumentContentRendererResolverTests
         var renderers =
             new IDocumentContentRenderer[]
             {
-                new TextDocumentContentRenderer()
+                new TextDocumentContentRenderer(
+                    new TextDocumentTextExtractor())
             };
 
         var resolver =
@@ -87,7 +89,8 @@ public sealed class DocumentContentRendererResolverTests
         var renderers =
             new IDocumentContentRenderer[]
             {
-                new TextDocumentContentRenderer()
+                new TextDocumentContentRenderer(
+                    new TextDocumentTextExtractor())
             };
 
         var resolver =
@@ -167,7 +170,8 @@ public sealed class DocumentContentRendererResolverTests
         var renderers =
             new IDocumentContentRenderer[]
             {
-                new TextDocumentContentRenderer(),
+                new TextDocumentContentRenderer(
+                    new TextDocumentTextExtractor()),
 
                 new MarkdownDocumentContentRenderer(
                     Options.Create(
@@ -197,7 +201,8 @@ public sealed class DocumentContentRendererResolverTests
         var renderers =
             new IDocumentContentRenderer[]
             {
-                new TextDocumentContentRenderer(),
+                new TextDocumentContentRenderer(
+                    new TextDocumentTextExtractor()),
 
                 new MarkdownDocumentContentRenderer(
                     Options.Create(

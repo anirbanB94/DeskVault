@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
+using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,8 @@ public static class DependencyInjection
         services.AddTransient<ListDocumentsHandler>();
 
         services.AddTransient<RemoveDocumentHandler>();
+
+        services.AddTransient<TextDocumentTextExtractor>();
 
         return services;
     }

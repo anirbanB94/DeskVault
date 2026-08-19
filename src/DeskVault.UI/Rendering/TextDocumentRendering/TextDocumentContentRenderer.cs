@@ -1,10 +1,19 @@
-using System.Text;
+using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Extraction.TextDocument;
 
 namespace DeskVault.UI.Rendering.TextDocumentRendering;
 
 public sealed class TextDocumentContentRenderer
     : IDocumentContentRenderer
 {
+    private readonly TextDocumentTextExtractor _extractor;
+
+    public TextDocumentContentRenderer(
+        TextDocumentTextExtractor extractor)
+    {
+        _extractor = extractor;
+    }
+
     public int Priority => 0;
 
     public bool CanRender(string fileName)
@@ -21,15 +30,13 @@ public sealed class TextDocumentContentRenderer
         string fileName,
         CancellationToken cancellationToken = default)
     {
-        using var reader = new StreamReader(
-            documentStream,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true,
-            bufferSize: 1024,
-            leaveOpen: true);
+        DocumentTextExtractionResult extractionResult =
+            await _extractor.ExtractAsync(
+                documentStream,
+                fileName,
+                cancellationToken);
 
-        string content = await reader.ReadToEndAsync(
-            cancellationToken);
+        string content = extractionResult.Text;
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -47,5 +54,4 @@ public sealed class TextDocumentContentRenderer
 
         contentHost.Controls.Add(textBox);
     }
-
 }
