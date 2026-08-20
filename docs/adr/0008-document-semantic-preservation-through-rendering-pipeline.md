@@ -648,6 +648,121 @@ The intended meanings are:
 
 This separation prevents the document's overall lifecycle from becoming overloaded with execution-specific concerns.
 
+## Processing Orchestration Boundary
+
+Document processing orchestration belongs in the Application layer.
+
+The orchestrator is responsible for coordinating the processing stages in
+their defined order:
+
+```text
+Read
+  ↓
+Extract
+  ↓
+Normalize
+  ↓
+Chunk
+  ↓
+Persist derived result
+```
+
+The orchestrator must coordinate these capabilities through application
+contracts rather than depending directly on UI rendering components.
+
+The processing workflow must therefore remain usable by:
+
+```text
+Interactive application flow
+```
+
+and, in the future:
+
+```text
+Background processing worker
+```
+
+without changing the semantic-processing boundary.
+
+The orchestrator must not:
+
+- parse source formats itself
+- contain format-specific extraction logic
+- render document content
+- depend on UI controls
+- treat rendered output as processing input
+- silently replace processing failures with partial success
+
+The existing asynchronous contracts are retained throughout the
+processing pipeline. Cancellation must flow from the orchestration entry
+point through reading, extraction, normalization, and chunking.
+
+For MVP 1, processing may be invoked synchronously by the application
+workflow even though the processing contracts are asynchronous. A
+background-job framework is not required to establish this boundary.
+
+## Processing State Ownership
+
+Processing execution state belongs to the processing workflow, not to the
+document renderer and not to the document's general lifecycle status.
+
+The application-level processing boundary owns the transition:
+
+```text
+Pending
+   ↓
+Processing
+   ├──────────────→ Completed
+   │
+   └──────────────→ Failed
+```
+
+Only the processing workflow should make these transitions.
+
+A renderer may observe processing information for presentation, but it must
+not change processing state as a side effect of rendering.
+
+`DocumentStatus` remains responsible for the document's broader lifecycle.
+Processing state remains responsible for the execution state of document
+processing.
+
+This separation allows later background execution, retries, and
+observability without overloading the document lifecycle model.
+
+## Processing Completion and Derived-Result Publication
+
+A document must not become visibly `Completed` while its derived processing
+result is known to be incomplete or invalid.
+
+Conceptually:
+
+```text
+Processing
+    ↓
+Extract
+    ↓
+Normalize
+    ↓
+Chunk
+    ↓
+Persist derived result successfully
+    ↓
+Completed
+```
+
+If a processing attempt fails before the derived result is successfully
+published, the attempt remains `Failed` and the application must not
+present the partial attempt as the current successful processing result.
+
+The exact transactional or replacement mechanism is a persistence
+implementation concern. The observable application-level rule is:
+
+> A successful processing result is published as a coherent derived result,
+> and a failed attempt must not masquerade as a successful one.
+
+This rule supports idempotent retries and prevents partially written chunks
+from becoming authoritative search or AI input.
+
 ## Processing Pipeline
 
 Document processing will follow the existing semantic-preservation boundary:
