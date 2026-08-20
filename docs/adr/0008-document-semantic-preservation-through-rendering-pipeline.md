@@ -897,6 +897,38 @@ The existing `DocumentStatus` remains the document lifecycle status and is not e
 
 The exact persistence schema may evolve as processing capabilities grow, provided these semantic boundaries remain intact.
 
+## MVP 1 Processing Boundary
+
+For MVP 1, the processing architecture will establish the application-level
+processing boundary without requiring a background-job framework.
+
+Processing may be invoked synchronously by the application workflow while
+retaining asynchronous contracts and cancellation support.
+
+The MVP 1 processing implementation should therefore establish:
+
+- application-level processing orchestration
+- deterministic extraction, normalization, and chunking
+- coherent persistence of the current derived result
+- idempotent replacement of derived content
+- cancellation propagation
+
+The following capabilities remain future extensions of the same boundary:
+
+- background worker execution
+- durable retry scheduling
+- richer processing observability
+- embeddings and vector indexing
+- AI / RAG orchestration
+
+Processing-state semantics remain distinct from `DocumentStatus` and must not
+be represented as completed UI state unless the underlying processing result
+has been successfully published.
+
+The processing boundary must remain suitable for later background execution
+without requiring a redesign of the document semantic model or rendering
+layer.
+
 ## Security Considerations
 
 The semantic-preservation boundary also provides a security boundary.
