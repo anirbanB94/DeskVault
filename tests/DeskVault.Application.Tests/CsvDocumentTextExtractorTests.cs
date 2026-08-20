@@ -222,4 +222,27 @@ public sealed class CsvDocumentTextExtractorTests
             "document.csv",
             cancellationToken);
     }
+
+    [Fact]
+    public async Task ExtractAsync_LeavesInputStreamOpen()
+    {
+        const string csv =
+            """
+            Id,Name
+            1,Alice
+            """;
+
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(csv));
+
+        var extractor =
+            new CsvDocumentTextExtractor();
+
+        await extractor.ExtractAsync(
+            stream,
+            "document.csv");
+
+        Assert.True(stream.CanRead);
+    }
 }

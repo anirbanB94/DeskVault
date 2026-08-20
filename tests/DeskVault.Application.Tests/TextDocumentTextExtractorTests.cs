@@ -1,4 +1,5 @@
 using DeskVault.Application.Documents.Extraction.TextDocument;
+using DeskVault.Application.Tests.TestInfrastructure;
 using System.Text;
 
 namespace DeskVault.Application.Tests;
@@ -143,5 +144,26 @@ public sealed class TextDocumentTextExtractorTests
                     stream,
                     "notes.txt",
                     cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_InputStreamReadFailure_PropagatesException()
+    {
+        using var stream =
+            new ThrowingReadStream();
+
+        var extractor =
+            new TextDocumentTextExtractor();
+
+        var exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    extractor.ExtractAsync(
+                        stream,
+                        "notes.txt"));
+
+        Assert.Equal(
+            "Simulated document read failure.",
+            exception.Message);
     }
 }

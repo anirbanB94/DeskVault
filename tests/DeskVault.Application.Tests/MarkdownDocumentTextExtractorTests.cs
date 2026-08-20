@@ -1,6 +1,7 @@
 using System.Text;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
+using DeskVault.Application.Tests.TestInfrastructure;
 
 namespace DeskVault.Application.Tests;
 
@@ -99,5 +100,41 @@ public sealed class MarkdownDocumentTextExtractorTests
                 stream,
                 "document.md",
                 cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_LeavesInputStreamOpen()
+    {
+        const string markdown =
+            "# DeskVault\n\n" +
+            "Stream lifetime test.";
+
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(markdown));
+
+        await _extractor.ExtractAsync(
+            stream,
+            "document.md");
+
+        Assert.True(stream.CanRead);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_InputStreamReadFailure_PropagatesException()
+    {
+        using var stream =
+            new ThrowingReadStream();
+
+        var exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    _extractor.ExtractAsync(
+                        stream,
+                        "document.md"));
+
+        Assert.Equal(
+            "Simulated document read failure.",
+            exception.Message);
     }
 }
