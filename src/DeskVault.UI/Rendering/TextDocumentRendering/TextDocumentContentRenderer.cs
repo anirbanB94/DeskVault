@@ -35,7 +35,7 @@ public sealed class TextDocumentContentRenderer
             _extractorResolver.Resolve(fileName);
 
         DocumentTextExtractionResult result =
-            await _extractorResolver.Resolve(fileName).ExtractAsync(
+            await extractor.ExtractAsync(
                 documentStream,
                 fileName,
                 cancellationToken);
