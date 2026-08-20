@@ -14,6 +14,9 @@ public sealed class DeskVaultDbContext : DbContext
     public DbSet<DocumentEntity> Documents =>
         Set<DocumentEntity>();
 
+    public DbSet<DocumentChunkEntity> DocumentChunks =>
+        Set<DocumentChunkEntity>();
+
     protected override void OnModelCreating(
         ModelBuilder modelBuilder)
     {
