@@ -603,6 +603,185 @@ Format-specific resources such as WebView2 controls remain owned by the renderer
 
 This prevents document-processing components from unexpectedly closing resources owned by higher-level workflows.
 
+
+
+## Document Processing Lifecycle
+
+The semantic-preservation boundary also governs the lifecycle of application-level document processing.
+
+Document lifecycle and processing lifecycle are separate concepts.
+
+The existing document lifecycle remains represented by `DocumentStatus`:
+
+```text
+Imported
+Processing
+Indexed
+Available
+Archived
+Deleted
+```
+
+Processing execution state must not be inferred solely from the document lifecycle status.
+
+A separate processing state is used to describe the state of a particular processing attempt:
+
+```text
+Pending
+    ↓
+Processing
+    ├──────────────→ Completed
+    │
+    └──────────────→ Failed
+                         │
+                         │ retry
+                         ▼
+                     Processing
+```
+
+The intended meanings are:
+
+- `Pending` — processing is scheduled or requested but has not successfully started.
+- `Processing` — a processing attempt is currently executing.
+- `Completed` — extraction, normalization, and chunking completed successfully for the current processing result.
+- `Failed` — the processing attempt stopped before successful completion and retained failure information for diagnosis and retry.
+
+This separation prevents the document's overall lifecycle from becoming overloaded with execution-specific concerns.
+
+## Processing Pipeline
+
+Document processing will follow the existing semantic-preservation boundary:
+
+```text
+Stored Document
+      ↓
+Document Reader
+      ↓
+Decrypted / Readable Stream
+      ↓
+Parser / Extractor
+      ↓
+Structured Document Representation
+      ↓
+Normalization
+      ↓
+Chunking
+      ↓
+Persisted Derived Representation
+```
+
+The processing pipeline must consume application-level document-processing results rather than rendered UI output.
+
+The existing `IDocumentReader` boundary is responsible for obtaining a readable document stream. The caller owns the returned stream and is responsible for disposing it.
+
+Extraction remains responsible for interpreting source content.
+
+Normalization may produce a downstream representation suitable for consistent processing while preserving the semantic information required by downstream consumers.
+
+Chunking produces derived units for future indexing, retrieval, and AI workflows.
+
+Rendering remains an independent consumer and must not become a required stage of document processing.
+
+## Failure and Retry Semantics
+
+Processing failures must remain distinguishable from successful completion.
+
+A failed processing record should preserve bounded diagnostic information sufficient to understand the failure and determine whether a retry is appropriate.
+
+Processing attempts should retain, where applicable:
+
+- processing state
+- attempt count
+- last attempted timestamp
+- completion timestamp
+- bounded failure information
+
+Exceptions must not be used as the persisted processing model.
+
+A retry transitions a failed processing record back into active processing:
+
+```text
+Failed
+  ↓ retry
+Processing
+```
+
+Retry behavior must be safe to repeat.
+
+A failed attempt must not cause a later successful retry to accumulate duplicate derived content.
+
+## Idempotent Derived Content
+
+Derived document content is not an append-only record of processing attempts.
+
+For a successfully processed document, the persisted derived representation represents the current successful processing result.
+
+If processing is retried after failure, the implementation must prevent duplicate chunks or other derived records from being created.
+
+Conceptually:
+
+```text
+Failed
+  ↓
+Retry
+  ↓
+Rebuild / replace derived result
+  ↓
+Completed
+```
+
+If a document is already `Completed`, repeating the same processing operation must not create duplicate derived content.
+
+The exact transactional and replacement strategy is an implementation concern, but the observable semantic requirement is that retries are idempotent.
+
+## Background Processing Readiness
+
+The processing architecture must remain suitable for future background execution without requiring the document model or rendering layer to become coupled to a particular job framework.
+
+Persisted `Pending`, `Processing`, `Completed`, and `Failed` states provide durable processing visibility and allow a future worker to acquire pending work.
+
+The initial implementation does not require a background-job framework.
+
+The application processing contract should therefore be usable by both:
+
+```text
+Interactive invocation
+```
+
+and:
+
+```text
+Future background worker
+```
+
+without changing the document semantic model.
+
+Cancellation remains part of the processing contract and must be propagated through reading, extraction, normalization, and chunking.
+
+A cancellation request must not be silently recorded as a generic processing failure unless the application explicitly defines cancellation as a failure outcome.
+
+## Processing Persistence Boundary
+
+Processing execution metadata and derived chunks are persistence concerns associated with document processing, but they must remain independent from presentation state.
+
+The intended relationship is:
+
+```text
+Document
+   │
+   ├── 1 : 1 → Processing State
+   │
+   └── 1 : N → Document Chunks
+```
+
+The processing record owns execution-specific information such as state, attempts, timestamps, and bounded failure information.
+
+Chunk records own derived content and ordering information required by downstream search and AI workflows.
+
+The existing `DocumentStatus` remains the document lifecycle status and is not expanded to contain retry counters, exception details, or chunk-processing metadata.
+
+The exact persistence schema may evolve as processing capabilities grow, provided these semantic boundaries remain intact.
+
 ## Security Considerations
 
 The semantic-preservation boundary also provides a security boundary.
