@@ -22,4 +22,8 @@ public interface IDocumentRepository
     Task DeleteAsync(
         Guid documentId,
         CancellationToken cancellationToken = default);
+
+    Task UpdateAsync(
+        Document document,
+        CancellationToken cancellationToken = default);
 }

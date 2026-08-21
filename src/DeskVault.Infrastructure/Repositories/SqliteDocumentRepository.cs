@@ -119,6 +119,36 @@ public sealed class SqliteDocumentRepository
             cancellationToken);
     }
 
+    public async Task UpdateAsync(
+        Document document,
+        CancellationToken cancellationToken = default)
+    {
+        await using var dbContext =
+            await _dbContextFactory.CreateDbContextAsync(
+                cancellationToken);
+
+        var entity = await dbContext.Documents
+            .FirstOrDefaultAsync(
+                existing => existing.Id == document.Id,
+                cancellationToken);
+
+        if (entity is null)
+        {
+            throw new InvalidOperationException(
+                $"Document '{document.Id}' was not found.");
+        }
+
+        entity.FileName = document.FileName;
+        entity.DisplayName = document.DisplayName;
+        entity.Sha256Hash = document.Sha256Hash;
+        entity.ImportedAt = document.ImportedAt;
+        entity.Status = (int)document.Status;
+        entity.StoredFilePath = document.StoredFilePath;
+
+        await dbContext.SaveChangesAsync(
+            cancellationToken);
+    }
+
     private static Document ToDomain(
         DocumentEntity entity)
     {

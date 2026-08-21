@@ -11,6 +11,8 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         string sha256Hash,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         bool exists = _documents.Any(
             x => x.Sha256Hash == sha256Hash);
 
@@ -21,6 +23,10 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         Document document,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(document);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         _documents.Add(document);
 
         return Task.CompletedTask;
@@ -30,8 +36,11 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         Guid documentId,
         CancellationToken cancellationToken = default)
     {
-        Document? document = _documents.FirstOrDefault(
-            x => x.Id == documentId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Document? document =
+            _documents.FirstOrDefault(
+                x => x.Id == documentId);
 
         return Task.FromResult(document);
     }
@@ -39,19 +48,46 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
     public Task<IReadOnlyList<Document>> GetAllAsync(
         CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<Document> documents = [.. _documents];
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IReadOnlyList<Document> documents =
+            [.. _documents];
 
         return Task.FromResult(documents);
     }
 
+    public Task UpdateAsync(
+        Document document,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        int index =
+            _documents.FindIndex(
+                x => x.Id == document.Id);
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"Document '{document.Id}' was not found.");
+        }
+
+        _documents[index] = document;
+
+        return Task.CompletedTask;
+    }
+
     public Task DeleteAsync(
-    Guid documentId,
-    CancellationToken cancellationToken = default)
+        Guid documentId,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        Document? document = _documents.FirstOrDefault(
-            x => x.Id == documentId);
+        Document? document =
+            _documents.FirstOrDefault(
+                x => x.Id == documentId);
 
         if (document is not null)
         {
