@@ -90,6 +90,20 @@ public sealed class Document
             importedAt,
             status);
     }
+    public void MarkProcessing()
+    {
+        Status = DocumentStatus.Processing;
+    }
+
+    public void MarkIndexed()
+    {
+        Status = DocumentStatus.Indexed;
+    }
+
+    public void MarkAvailable()
+    {
+        Status = DocumentStatus.Available;
+    }
 
     private static void Validate(
         Guid id,
