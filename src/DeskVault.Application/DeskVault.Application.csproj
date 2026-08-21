@@ -17,7 +17,6 @@
     <Folder Include="Documents\Mappings\" />
     <Folder Include="Services\" />
     <Folder Include="Documents\Validators\" />
-    <Folder Include="Documents\Queries\" />
   </ItemGroup>
 
   <ItemGroup>

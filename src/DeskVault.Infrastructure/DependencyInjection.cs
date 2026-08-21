@@ -45,6 +45,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IDocumentProcessingStore, SqliteDocumentProcessingStore>();
 
+        services.AddSingleton<IDocumentSearchStore, SqliteDocumentSearchStore>();
+
         return services;
     }
 }
