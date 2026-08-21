@@ -3,7 +3,6 @@ using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Repositories;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -158,6 +157,35 @@ public sealed class SqliteDocumentRepositoryTests
             new SqliteDocumentRepository(factory);
 
         await repository.DeleteAsync(Guid.NewGuid());
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WhenDocumentStatusChanges_PersistsUpdatedStatus()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        IDbContextFactory<DeskVaultDbContext> factory =
+            CreateFactory(connection);
+
+        var repository =
+            new SqliteDocumentRepository(factory);
+
+        Document document = CreateDocument();
+
+        await repository.AddAsync(document);
+
+        document.MarkProcessing();
+
+        await repository.UpdateAsync(document);
+
+        Document? result =
+            await repository.GetByIdAsync(document.Id);
+
+        Assert.NotNull(result);
+        Assert.Equal(
+            DocumentStatus.Processing,
+            result.Status);
     }
 
     private static Document CreateDocument()
