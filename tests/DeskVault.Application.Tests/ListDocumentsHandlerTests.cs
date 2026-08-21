@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using Moq;
 
 namespace DeskVault.Application.Tests;
 
@@ -9,13 +10,15 @@ public sealed class ListDocumentsHandlerTests
     [Fact]
     public async Task HandleAsync_ReturnsDocumentsFromRepository()
     {
-        Document firstDocument = CreateDocument(
-            "first.txt",
-            "First Document");
+        Document firstDocument =
+            CreateDocument(
+                "first.txt",
+                "First Document");
 
-        Document secondDocument = CreateDocument(
-            "second.md",
-            "Second Document");
+        Document secondDocument =
+            CreateDocument(
+                "second.md",
+                "Second Document");
 
         IReadOnlyList<Document> expected =
         [
@@ -24,10 +27,16 @@ public sealed class ListDocumentsHandlerTests
         ];
 
         var repository =
-            new TestDocumentRepository(expected);
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
 
         var handler =
-            new ListDocumentsHandler(repository);
+            new ListDocumentsHandler(
+                repository.Object);
 
         IReadOnlyList<Document> result =
             await handler.HandleAsync(
@@ -36,6 +45,11 @@ public sealed class ListDocumentsHandlerTests
         Assert.Equal(
             expected,
             result);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     private static Document CreateDocument(
@@ -48,51 +62,5 @@ public sealed class ListDocumentsHandlerTests
             displayName,
             $"{fileName}-hash",
             $"{fileName}.dvault");
-    }
-
-    private sealed class TestDocumentRepository
-        : IDocumentRepository
-    {
-        private readonly IReadOnlyList<Document> _documents;
-
-        public TestDocumentRepository(
-            IReadOnlyList<Document> documents)
-        {
-            _documents = documents;
-        }
-
-        public Task<bool> ExistsByHashAsync(
-            string sha256Hash,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task AddAsync(
-            Document document,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<Document?> GetByIdAsync(
-            Guid documentId,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult<Document?>(null);
-        }
-
-        public Task<IReadOnlyList<Document>> GetAllAsync(
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(_documents);
-        }
-
-        public Task DeleteAsync(
-            Guid documentId,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
     }
 }

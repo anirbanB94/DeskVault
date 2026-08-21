@@ -5,6 +5,7 @@ using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using Moq;
 
 namespace DeskVault.Application.Tests;
 
@@ -14,7 +15,13 @@ public sealed class ProcessDocumentHandlerTests
     public async Task HandleAsync_WhenDocumentDoesNotExist_ReturnsNotFound()
     {
         var repository =
-            new TestDocumentRepository();
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Document?)null);
 
         var reader =
             new TestDocumentReader();
@@ -38,7 +45,7 @@ public sealed class ProcessDocumentHandlerTests
 
         var handler =
             new ProcessDocumentHandler(
-                repository,
+                repository.Object,
                 reader,
                 resolver,
                 normalizer,
@@ -65,10 +72,16 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.False(
             extractor.WasCalled);
+
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
-    public async Task HandleAsync_WhenDocumentExists_ProcessesAndStoresChunks()
+    public async Task HandleAsync_WhenDocumentExists_ProcessesAndUpdatesStatusLifecycle()
     {
         Document document =
             Document.Create(
@@ -79,7 +92,13 @@ public sealed class ProcessDocumentHandlerTests
                 "document.dvault");
 
         var repository =
-            new TestDocumentRepository(document);
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
 
         var reader =
             new TestDocumentReader();
@@ -101,9 +120,22 @@ public sealed class ProcessDocumentHandlerTests
         var processingStore =
             new TestDocumentProcessingStore();
 
+        var statusHistory =
+            new List<DocumentStatus>();
+
+        repository
+            .Setup(x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (updatedDocument, _) =>
+                    statusHistory.Add(
+                        updatedDocument.Status))
+            .Returns(Task.CompletedTask);
+
         var handler =
             new ProcessDocumentHandler(
-                repository,
+                repository.Object,
                 reader,
                 resolver,
                 normalizer,
@@ -151,6 +183,24 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Equal(
             "First paragraph.\n\nSecond paragraph.",
             processingStore.ReplacedChunks[0].Text);
+
+        Assert.Equal(
+            [
+                DocumentStatus.Processing,
+                DocumentStatus.Indexed,
+                DocumentStatus.Available
+            ],
+            statusHistory);
+
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(3));
+
+        Assert.Equal(
+            DocumentStatus.Available,
+            document.Status);
     }
 
     [Fact]
@@ -165,7 +215,13 @@ public sealed class ProcessDocumentHandlerTests
                 "document.dvault");
 
         var repository =
-            new TestDocumentRepository(document);
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
 
         var reader =
             new TestDocumentReader();
@@ -189,7 +245,7 @@ public sealed class ProcessDocumentHandlerTests
 
         var handler =
             new ProcessDocumentHandler(
-                repository,
+                repository.Object,
                 reader,
                 resolver,
                 normalizer,
@@ -230,7 +286,7 @@ public sealed class ProcessDocumentHandlerTests
     public async Task HandleAsync_WhenCancellationIsRequestedBeforeProcessing_ThrowsOperationCanceledException()
     {
         var repository =
-            new TestDocumentRepository();
+            new Mock<IDocumentRepository>();
 
         var reader =
             new TestDocumentReader();
@@ -254,7 +310,7 @@ public sealed class ProcessDocumentHandlerTests
 
         var handler =
             new ProcessDocumentHandler(
-                repository,
+                repository.Object,
                 reader,
                 resolver,
                 normalizer,
@@ -282,8 +338,19 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Equal(
             0,
             processingStore.ReplaceCallCount);
-    }
 
+        repository.Verify(
+            x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 
     [Fact]
     public async Task ProcessAsync_WhenDocumentExists_CompletesSuccessfully()
@@ -297,7 +364,13 @@ public sealed class ProcessDocumentHandlerTests
                 "document.dvault");
 
         var repository =
-            new TestDocumentRepository(document);
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
 
         var reader =
             new TestDocumentReader();
@@ -321,7 +394,7 @@ public sealed class ProcessDocumentHandlerTests
 
         var handler =
             new ProcessDocumentHandler(
-                repository,
+                repository.Object,
                 reader,
                 resolver,
                 normalizer,
@@ -345,13 +418,29 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Single(
             processingStore.ReplacedChunks);
+
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(3));
+
+        Assert.Equal(
+            DocumentStatus.Available,
+            document.Status);
     }
 
     [Fact]
     public async Task ProcessAsync_WhenDocumentDoesNotExist_ThrowsFileNotFoundException()
     {
         var repository =
-            new TestDocumentRepository();
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Document?)null);
 
         var reader =
             new TestDocumentReader();
@@ -375,7 +464,7 @@ public sealed class ProcessDocumentHandlerTests
 
         var handler =
             new ProcessDocumentHandler(
-                repository,
+                repository.Object,
                 reader,
                 resolver,
                 normalizer,
@@ -400,66 +489,12 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.False(
             extractor.WasCalled);
-    }
 
-    private sealed class TestDocumentRepository
-        : IDocumentRepository
-    {
-        private readonly Document? _document;
-
-        public TestDocumentRepository(
-            Document? document = null)
-        {
-            _document = document;
-        }
-
-        public Task<bool> ExistsByHashAsync(
-            string sha256Hash,
-            CancellationToken cancellationToken = default)
-        {
-            bool exists =
-                _document?.Sha256Hash == sha256Hash;
-
-            return Task.FromResult(exists);
-        }
-
-        public Task AddAsync(
-            Document document,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<Document?> GetByIdAsync(
-            Guid documentId,
-            CancellationToken cancellationToken = default)
-        {
-            Document? result =
-                _document?.Id == documentId
-                    ? _document
-                    : null;
-
-            return Task.FromResult(result);
-        }
-
-        public Task<IReadOnlyList<Document>> GetAllAsync(
-            CancellationToken cancellationToken = default)
-        {
-            IReadOnlyList<Document> documents =
-                _document is null
-                    ? []
-                    : [_document];
-
-            return Task.FromResult(
-                documents);
-        }
-
-        public Task DeleteAsync(
-            Guid documentId,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     private sealed class TestDocumentReader

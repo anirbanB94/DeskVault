@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using Moq;
 
 namespace DeskVault.Application.Tests;
 
@@ -14,20 +15,28 @@ public sealed class GetDocumentHandlerTests
         DateTime importedAt =
             new(2026, 8, 17, 10, 30, 0, DateTimeKind.Utc);
 
-        Document document = Document.Restore(
-            documentId,
-            "document.txt",
-            "Test Document",
-            "sha256-test-hash",
-            "document.dvault",
-            importedAt,
-            DocumentStatus.Imported);
+        Document document =
+            Document.Restore(
+                documentId,
+                "document.txt",
+                "Test Document",
+                "sha256-test-hash",
+                "document.dvault",
+                importedAt,
+                DocumentStatus.Imported);
 
         var repository =
-            new TestDocumentRepository(document);
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
 
         var handler =
-            new GetDocumentHandler(repository);
+            new GetDocumentHandler(
+                repository.Object);
 
         GetDocumentResult result =
             await handler.HandleAsync(
@@ -56,66 +65,40 @@ public sealed class GetDocumentHandlerTests
         Assert.Equal(
             document.Status,
             result.Status);
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
     public async Task HandleAsync_WhenDocumentDoesNotExist_ThrowsFileNotFoundException()
     {
         var repository =
-            new TestDocumentRepository(null);
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Document?)null);
 
         var handler =
-            new GetDocumentHandler(repository);
+            new GetDocumentHandler(
+                repository.Object);
 
         await Assert.ThrowsAsync<FileNotFoundException>(
-            () => handler.HandleAsync(
-                new GetDocumentQuery(Guid.NewGuid())));
-    }
+            () =>
+                handler.HandleAsync(
+                    new GetDocumentQuery(
+                        Guid.NewGuid())));
 
-    private sealed class TestDocumentRepository
-        : IDocumentRepository
-    {
-        private readonly Document? _document;
-
-        public TestDocumentRepository(
-            Document? document)
-        {
-            _document = document;
-        }
-
-        public Task<bool> ExistsByHashAsync(
-            string sha256Hash,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task AddAsync(
-            Document document,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<Document?> GetByIdAsync(
-            Guid documentId,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(_document);
-        }
-
-        public Task<IReadOnlyList<Document>> GetAllAsync(
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult<IReadOnlyList<Document>>(
-                Array.Empty<Document>());
-        }
-
-        public Task DeleteAsync(
-            Guid documentId,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
+        repository.Verify(
+            x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }
