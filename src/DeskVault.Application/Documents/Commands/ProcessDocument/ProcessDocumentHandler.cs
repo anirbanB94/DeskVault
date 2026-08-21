@@ -2,6 +2,7 @@ using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Interfaces;
+using DeskVault.Domain.Documents;
 
 namespace DeskVault.Application.Documents.Commands.ProcessDocument;
 
@@ -49,6 +50,12 @@ public sealed class ProcessDocumentHandler
                 "The requested document could not be found.");
         }
 
+        document.MarkProcessing();
+
+        await _documentRepository.UpdateAsync(
+            document,
+            cancellationToken);
+
         var extractor =
             _extractorResolver.Resolve(
                 document.FileName);
@@ -77,6 +84,18 @@ public sealed class ProcessDocumentHandler
         await _processingStore.ReplaceChunksAsync(
             document.Id,
             chunks,
+            cancellationToken);
+
+        document.MarkIndexed();
+
+        await _documentRepository.UpdateAsync(
+            document,
+            cancellationToken);
+
+        document.MarkAvailable();
+
+        await _documentRepository.UpdateAsync(
+            document,
             cancellationToken);
 
         return new ProcessDocumentResult(
