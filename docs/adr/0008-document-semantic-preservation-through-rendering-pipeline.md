@@ -83,7 +83,7 @@ The architectural rule is:
 
 > **Parsing and extraction establish the structured meaning available to the application. Rendering consumes that representation for presentation and must not become the source of truth for document semantics.**
 
-The intended pipeline is:
+The intended document-processing architecture is:
 
 ```text
 Source Document
@@ -91,12 +91,28 @@ Source Document
 Parser / Extractor
       ↓
 Structured Document Representation
-      ↓
-┌───────────────┬────────────────┬─────────────────┐
-│               │                │                 │
-▼               ▼                ▼                 ▼
-Rendering     Search          Indexing       AI / Retrieval
+      ├── Rendering
+      └── Knowledge Processing
+              ↓
+          Normalization
+              ↓
+            Chunking
+              ↓
+      Persisted Derived Representation
+              ├── Search / Indexing
+              └── Future AI / Retrieval
 ```
+
+The structured source representation and the persisted derived
+representation are distinct concepts.
+
+The structured source representation preserves source semantics required
+for presentation and further processing.
+
+Normalization and chunking produce a derived representation optimized for
+consistent downstream knowledge operations. The derived representation
+must remain traceable to its source document and must not be treated as a
+replacement for the original source semantics.
 
 The structured representation may be format-specific when the source format has meaningful structure that cannot be safely reduced to generic text.
 
@@ -531,7 +547,8 @@ The goal is to preserve enough source meaning that rendering, search, and AI can
 
 ## Application Layer Boundary
 
-The Application layer should expose document-processing capabilities through abstractions appropriate to the use case.
+The Application layer should expose document-processing capabilities
+through abstractions appropriate to the use case.
 
 The UI must not access format-specific infrastructure directly.
 
@@ -547,9 +564,17 @@ Document processing abstraction
 Infrastructure / format library
 ```
 
-The exact placement of parsers may evolve as the architecture matures, but format-specific implementation details must not leak into presentation orchestration.
+The exact placement of parsers may evolve as the architecture matures, but
+format-specific implementation details must not leak into presentation
+orchestration.
 
-The UI renderer may depend on the structured representation it needs for presentation, but it should not own source parsing when parsing is a reusable application capability.
+The UI renderer may depend on the structured representation it needs for
+presentation, but it should not own source parsing when parsing is a
+reusable application capability.
+
+Knowledge-processing consumers should likewise consume application-level
+processing results and persisted derived representations rather than
+scraping rendered UI output.
 
 ## Error Handling
 
@@ -972,6 +997,72 @@ Ignore previous instructions...
 must remain document data.
 
 It must not become an application instruction merely because an AI subsystem consumes the representation.
+
+## Current MVP 1 Implementation Boundary
+
+The semantic-preservation and processing architecture described by this ADR
+is now implemented through the MVP 1 document knowledge pipeline.
+
+The current flow is:
+
+```text
+Stored Document
+      ↓
+Document Reader
+      ↓
+Readable / Decrypted Stream
+      ↓
+Extraction
+      ↓
+Normalization
+      ↓
+Chunking
+      ↓
+Persisted Document Chunks
+      ↓
+Keyword Search
+```
+
+The current implementation establishes:
+
+- TXT extraction
+- Markdown extraction
+- CSV extraction
+- extraction failure-boundary handling
+- normalization
+- deterministic chunking
+- processing orchestration
+- processing execution state
+- cancellation propagation
+- retry/idempotent derived-result replacement
+- document-to-chunk persistence
+- coherent publication of the current successful derived result
+- initial local keyword/chunk search
+
+The processing workflow remains independent of rendering. A document does
+not need to be rendered in order to be processed for search or future AI
+use.
+
+For MVP 1, processing may be invoked synchronously by the application
+workflow. The processing contracts remain asynchronous and cancellation-
+aware so that a future background worker can use the same application
+boundary.
+
+The following are future extensions of this boundary and are not required
+for MVP 1:
+
+- background worker execution
+- durable retry scheduling
+- richer processing observability
+- embeddings
+- vector indexing
+- hybrid search
+- RAG
+- local AI assistant orchestration
+
+The processing lifecycle remains separate from `DocumentStatus`, and
+processing state is not derived from renderer state or UI presentation.
+
 
 ## Alternatives Considered
 

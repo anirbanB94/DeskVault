@@ -44,6 +44,82 @@ The intended header structure is:
 
 The exact visual styling may evolve during implementation, but the header will preserve the distinction between navigation, document identity, workspace actions, and AI access.
 
+## Current Implementation and Deferred Scope
+
+The interaction model described by this ADR establishes both the current
+workspace architecture and the intended direction for future workspace
+capabilities. The current MVP 1 implementation is intentionally narrower.
+
+Currently implemented:
+
+- `DocumentViewForm` as the dedicated document workspace
+- workspace header and document identity
+- document content area
+- document information
+- workspace close interaction
+- document removal
+- loading/error/unsupported-format presentation boundaries
+- renderer resolution through `IDocumentContentRendererResolver`
+- TXT rendering
+- Markdown rendering with the documented security policy
+- CSV structured/grid rendering
+- renderer-owned presentation resources and lifecycle
+- separation between document lifecycle and workspace lifecycle
+
+The following capabilities remain future or deferred and must not be
+interpreted as implemented:
+
+- functional AI assistant interaction
+- related-document management
+- persistent named workspaces
+- workspace recovery
+- Recent activity
+- multiple simultaneous workspace windows
+- automatic workspace persistence
+- primary-document reassignment in multi-document workspaces
+- PDF and DOCX in-app renderers
+
+The future interaction model remains useful as an architectural direction,
+but MVP 1 does not require implementing those capabilities.
+
+### Current MVP 1 Workspace Boundary
+
+For the current MVP 1 implementation, the workspace is primarily a
+single-document viewing and document-management experience:
+
+```text
+Document Library
+      ↓
+DocumentViewForm
+      ├── Document identity
+      ├── Document content
+      ├── Document Information
+      └── Workspace actions
+```
+
+The renderer boundary remains the extension point for additional document
+formats, while document extraction and knowledge processing remain separate
+from presentation.
+
+The processing pipeline does not depend on the workspace UI:
+
+```text
+Document
+   ↓
+Extraction
+   ↓
+Normalization
+   ↓
+Chunking
+   ↓
+Persisted Derived Representation
+   ↓
+Search / Future AI
+```
+
+This distinction prevents future search or AI functionality from becoming
+dependent on rendered controls such as `DataGridView` or WebView2.
+
 ## Workspace Header
 
 The workspace header will provide:

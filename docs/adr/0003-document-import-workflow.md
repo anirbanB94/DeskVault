@@ -18,6 +18,44 @@ The import workflow crosses multiple architectural boundaries:
 
 The workflow must remain independent of the UI so that the same use case can later be triggered by other application entry points such as background processing or an API.
 
+## Current Processing Boundary
+
+The document import workflow establishes the stored document and its
+persistent document state. Import does not perform the subsequent document
+knowledge-processing pipeline.
+
+After a document has been successfully imported and persisted, subsequent
+processing is a separate Application-layer workflow. That workflow may
+read the stored document, extract its content, normalize it, chunk it, and
+persist the resulting derived representation.
+
+Conceptually:
+
+```text
+Document Import
+    ↓
+Stored Document
+    ↓
+Separate Document Processing Workflow
+    ↓
+Extract
+    ↓
+Normalize
+    ↓
+Chunk
+    ↓
+Persist Derived Result
+```
+
+The processing lifecycle, orchestration boundary, processing state,
+cancellation, retry/idempotency requirements, and document-to-chunk
+persistence are governed by ADR-0008.
+
+This separation keeps document acquisition and storage independent from
+document knowledge processing. The import use case remains responsible for
+establishing the document; the processing workflow is responsible for
+creating derived knowledge representations from that stored document.
+
 ## Decision
 
 DeskVault will implement document import as an Application-layer command use case.

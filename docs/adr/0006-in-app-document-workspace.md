@@ -106,6 +106,56 @@ The AI assistant area will initially provide the structural foundation for futur
 
 Future AI capabilities may operate over the primary document and its related documents as a shared processing and retrieval context.
 
+## Current Implementation and Deferred Scope
+
+The architectural direction described by this ADR remains valid, but the
+workspace implementation is intentionally narrower than the long-term
+workspace model described above.
+
+The currently implemented workspace provides:
+
+```text
+MainForm
+    ↓
+DocumentViewForm
+    ├── Document content
+    ├── Document information
+    └── Workspace actions
+```
+
+The current implementation includes:
+
+- a dedicated document workspace
+- application-managed document opening
+- workspace open/close lifecycle
+- document information
+- document removal
+- format-specific rendering through the renderer abstraction
+- TXT, Markdown, and CSV in-app rendering
+- an explicit fallback for unsupported formats
+- renderer lifecycle and resource ownership boundaries
+
+The following capabilities remain future or deferred scope and are not
+required by the current MVP 1 implementation:
+
+- related-document grouping
+- persistent named workspaces
+- multiple simultaneous workspace windows
+- workspace recovery
+- Recent activity
+- a functional local AI assistant
+- retrieval, RAG, or AI interaction inside the workspace
+- PDF and DOCX in-app rendering
+
+These future capabilities remain architectural directions established by
+this ADR. They must not be interpreted as implemented functionality.
+
+The current MVP 1 workspace therefore establishes the document-centric
+workspace and rendering boundaries without requiring the complete
+multi-document, persistent-workspace, or AI-assisted experience described
+as the long-term direction.
+
+
 ## Architectural Boundaries
 
 `MainForm` remains responsible for the application shell and document-library workflow.

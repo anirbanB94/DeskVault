@@ -33,6 +33,90 @@ Document content will remain outside the database as encrypted `.dvault` files.
 
 SQLite is responsible for document metadata, while the filesystem remains responsible for encrypted document content.
 
+## Expanded Processing Persistence Boundary
+
+The SQLite persistence boundary now extends beyond document metadata to
+support the MVP 1 document-processing workflow.
+
+Document metadata remains persisted through the existing document
+repository boundary. In addition, document processing requires persistence
+for:
+
+- processing execution state
+- processing attempt information required by the processing workflow
+- the relationship between a document and its derived chunks
+- persisted document chunks representing the current successful derived
+  processing result
+
+Conceptually:
+
+```text
+SQLite Persistence
+├── Document metadata
+├── Processing state
+└── Document chunks
+```
+
+The relationship is:
+
+```text
+Document
+   │
+   ├── processing state
+   │
+   └── derived chunks
+```
+
+Processing execution state and derived chunks are persistence concerns
+associated with document processing, but they remain separate from the
+document's general lifecycle status and from presentation state.
+
+The processing workflow is responsible for publishing a coherent derived
+result. Derived chunks must be replaceable so that retries or repeated
+processing do not accumulate duplicate content.
+
+The exact processing orchestration and lifecycle rules are defined by
+ADR-0008. This ADR establishes only the persistence responsibility and
+SQLite boundary for those processing results.
+
+The existing Application/Infrastructure separation remains unchanged:
+
+```text
+Application
+    ↓
+Application-defined persistence abstractions
+    ↓
+Infrastructure
+    ↓
+EF Core
+    ↓
+SQLite
+```
+
+EF Core and SQLite-specific types remain inside Infrastructure.
+
+## Current Persistence Scope
+
+The current MVP 1 persistence foundation therefore supports:
+
+```text
+Document
+    ↓
+Persistent metadata
+    ↓
+Processing state
+    ↓
+Derived document chunks
+```
+
+Encrypted source document content remains stored separately as encrypted
+filesystem content and is not moved into SQLite.
+
+This extension does not change the original decision to use SQLite with
+Entity Framework Core for local persistence. It extends the persistence
+model to support the document knowledge-processing pipeline established by
+ADR-0008.
+
 ## Architectural Boundaries
 
 The Application layer continues to depend on the repository abstraction:
