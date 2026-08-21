@@ -2,6 +2,7 @@ using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
+using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
@@ -15,6 +16,7 @@ public sealed class MainFormPresenter
     private readonly RemoveDocumentHandler _removeDocumentHandler;
     private readonly OpenDocumentHandler _openDocumentHandler;
     private readonly ListDocumentsHandler _listDocumentsHandler;
+    private readonly SearchDocumentsHandler _searchDocumentsHandler;
     private readonly IDocumentWorkspace _documentWorkspace;
 
     public MainFormPresenter(
@@ -23,6 +25,7 @@ public sealed class MainFormPresenter
         RemoveDocumentHandler removeDocumentHandler,
         OpenDocumentHandler openDocumentHandler,
         ListDocumentsHandler listDocumentsHandler,
+        SearchDocumentsHandler searchDocumentsHandler,
         IDocumentWorkspace documentWorkspace)
     {
         _view = view;
@@ -30,12 +33,14 @@ public sealed class MainFormPresenter
         _removeDocumentHandler = removeDocumentHandler;
         _openDocumentHandler = openDocumentHandler;
         _listDocumentsHandler = listDocumentsHandler;
+        _searchDocumentsHandler = searchDocumentsHandler;
         _documentWorkspace = documentWorkspace;
 
         _view.ImportRequested += OnImportRequested;
         _view.OpenRequested += OnOpenRequested;
         _view.RemoveRequested += OnRemoveRequested;
         _view.DocumentSelectionChanged += OnDocumentSelectionChanged;
+        _view.SearchRequested += OnSearchRequested;
         _documentWorkspace.DocumentRemoved += OnDocumentRemoved;
     }
 
@@ -252,6 +257,60 @@ public sealed class MainFormPresenter
 
             _view.SetRemoveEnabled(
                 _view.SelectedDocumentId.HasValue);
+        }
+    }
+
+    private async void OnSearchRequested(
+        object? sender,
+        EventArgs e)
+    {
+        try
+        {
+            string searchText =
+                _view.SearchText.Trim();
+
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                await RefreshDocumentsAsync();
+                return;
+            }
+
+            var results =
+                await _searchDocumentsHandler.HandleAsync(
+                    new SearchDocumentsQuery(searchText));
+
+            var documents = results
+                .GroupBy(result => result.DocumentId)
+                .Select(group => group.First())
+                .Select(result => new DocumentListItem(
+                    result.DocumentId,
+                    result.FileName))
+                .ToList();
+
+            if (documents.Count == 0)
+            {
+                _view.ShowEmptyState();
+                _view.SetOpenEnabled(false);
+                _view.SetRemoveEnabled(false);
+                return;
+            }
+
+            _view.ShowDocuments(documents);
+
+            _view.SetOpenEnabled(
+                _view.SelectedDocumentId.HasValue);
+
+            _view.SetRemoveEnabled(
+                _view.SelectedDocumentId.HasValue);
+        }
+        catch (Exception ex)
+        {
+            _view.SetStatus(
+                $"Search failed: {ex.Message}");
+
+            _view.ShowError(
+                ex.ToString(),
+                UiMessages.DeskVaultTitle);
         }
     }
 

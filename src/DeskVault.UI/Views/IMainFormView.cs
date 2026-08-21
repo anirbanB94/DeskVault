@@ -10,11 +10,15 @@ public interface IMainFormView
 
     event EventHandler DocumentSelectionChanged;
 
+    event EventHandler SearchRequested;
+
     Guid? SelectedDocumentId { get; }
 
     string? SelectedDocumentFileName { get; }
 
     string? SelectedFilePath { get; }
+
+    string SearchText { get; }
 
     void SetSelectedDocumentId(Guid? documentId);
 

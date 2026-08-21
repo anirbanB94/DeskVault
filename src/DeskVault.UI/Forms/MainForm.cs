@@ -35,6 +35,8 @@ public partial class MainForm : Form, IMainFormView
         importButton.Click += OnImportButtonClick;
         openButton.Click += OnOpenButtonClick;
         removeButton.Click += OnRemoveButtonClick;
+        searchButton.Click += OnSearchButtonClick;
+        searchTextBox.KeyDown += OnSearchTextBoxKeyDown;
         documentGridView.SelectionChanged += OnDocumentSelectionChanged;
         documentGridView.CellDoubleClick += OnDocumentDoubleClick;
     }
@@ -46,6 +48,8 @@ public partial class MainForm : Form, IMainFormView
     public event EventHandler? RemoveRequested;
 
     public event EventHandler? DocumentSelectionChanged;
+
+    public event EventHandler? SearchRequested;
 
     public Guid? SelectedDocumentId
     {
@@ -89,6 +93,11 @@ public partial class MainForm : Form, IMainFormView
         }
     }
 
+    public string SearchText
+    {
+        get => searchTextBox.Text;
+    }
+
     private async void MainForm_Load(
         object? sender,
         EventArgs e)
@@ -119,6 +128,31 @@ public partial class MainForm : Form, IMainFormView
         EventArgs e)
     {
         RemoveRequested?.Invoke(
+            this,
+            EventArgs.Empty);
+    }
+
+    private void OnSearchButtonClick(
+        object? sender,
+        EventArgs e)
+    {
+        SearchRequested?.Invoke(
+            this,
+            EventArgs.Empty);
+    }
+
+    private void OnSearchTextBoxKeyDown(
+        object? sender,
+        KeyEventArgs e)
+    {
+        if (e.KeyCode != Keys.Enter)
+        {
+            return;
+        }
+
+        e.SuppressKeyPress = true;
+
+        SearchRequested?.Invoke(
             this,
             EventArgs.Empty);
     }
