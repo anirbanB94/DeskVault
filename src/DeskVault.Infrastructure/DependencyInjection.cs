@@ -1,12 +1,3 @@
-using DeskVault.Application.Documents.Chunking;
-using DeskVault.Application.Documents.Commands.ImportDocument;
-using DeskVault.Application.Documents.Commands.ProcessDocument;
-using DeskVault.Application.Documents.Extraction;
-using DeskVault.Application.Documents.Extraction.CSVDocument;
-using DeskVault.Application.Documents.Extraction.MarkdownDocument;
-using DeskVault.Application.Documents.Extraction.TextDocument;
-using DeskVault.Application.Documents.Normalization;
-using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Interfaces;
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
@@ -53,28 +44,6 @@ public static class DependencyInjection
         services.AddSingleton<IDocumentRepository, SqliteDocumentRepository>();
 
         services.AddSingleton<IDocumentProcessingStore, SqliteDocumentProcessingStore>();
-
-        services.AddSingleton<IImportDocumentValidator, ImportDocumentValidator>();
-
-        services.AddSingleton<ImportDocumentHandler>();
-
-        services.AddSingleton<ProcessDocumentHandler>();
-
-        services.AddSingleton<IDocumentProcessingService, DocumentProcessingService>();
-
-        services.AddSingleton<IDocumentTextNormalizer, DocumentTextNormalizer>();
-
-        services.AddSingleton<IDocumentTextChunker>(
-            _ => new DocumentTextChunker(
-                maxChunkSize: 4000));
-
-        services.AddSingleton<IDocumentTextExtractor, TextDocumentTextExtractor>();
-
-        services.AddSingleton<IDocumentTextExtractor, MarkdownDocumentTextExtractor>();
-
-        services.AddSingleton<IDocumentTextExtractor, CsvDocumentTextExtractor>();
-
-        services.AddSingleton<DocumentTextExtractorResolver>();
 
         return services;
     }

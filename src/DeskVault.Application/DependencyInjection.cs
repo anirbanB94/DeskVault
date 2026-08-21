@@ -1,11 +1,16 @@
+using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
+using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
+using DeskVault.Application.Documents.Normalization;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
+using DeskVault.Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DeskVault.Application;
@@ -15,23 +20,33 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(
         this IServiceCollection services)
     {
-        services.AddTransient<IImportDocumentValidator, ImportDocumentValidator>();
+        services.AddSingleton<IImportDocumentValidator, ImportDocumentValidator>();
 
-        services.AddTransient<ImportDocumentHandler>();
+        services.AddSingleton<ImportDocumentHandler>();
 
-        services.AddTransient<OpenDocumentHandler>();
+        services.AddSingleton<OpenDocumentHandler>();
 
-        services.AddTransient<ListDocumentsHandler>();
+        services.AddSingleton<ListDocumentsHandler>();
 
-        services.AddTransient<RemoveDocumentHandler>();
+        services.AddSingleton<RemoveDocumentHandler>();
 
-        services.AddTransient<IDocumentTextExtractor, TextDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor, TextDocumentTextExtractor>();
 
-        services.AddTransient<IDocumentTextExtractor, MarkdownDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor, MarkdownDocumentTextExtractor>();
 
-        services.AddTransient<IDocumentTextExtractor, CsvDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor, CsvDocumentTextExtractor>();
 
-        services.AddTransient<DocumentTextExtractorResolver>();
+        services.AddSingleton<DocumentTextExtractorResolver>();
+
+        services.AddSingleton<ProcessDocumentHandler>();
+
+        services.AddSingleton<IDocumentProcessingService, DocumentProcessingService>();
+
+        services.AddSingleton<IDocumentTextNormalizer, DocumentTextNormalizer>();
+
+        services.AddSingleton<IDocumentTextChunker>(
+            _ => new DocumentTextChunker(
+                maxChunkSize: 4000));
 
         return services;
     }
