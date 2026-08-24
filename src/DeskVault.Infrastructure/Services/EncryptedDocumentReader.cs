@@ -1,38 +1,66 @@
-﻿using DeskVault.Application.Interfaces;
+using DeskVault.Application.Interfaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Services;
 
 public sealed class EncryptedDocumentReader : IDocumentReader
 {
     private readonly DocumentEncryptionService _encryptionService;
+    private readonly ILogger<EncryptedDocumentReader> _logger;
 
     public EncryptedDocumentReader(
-        DocumentEncryptionService encryptionService)
+        DocumentEncryptionService encryptionService,
+        ILogger<EncryptedDocumentReader> logger)
     {
         _encryptionService = encryptionService;
+        _logger = logger;
     }
 
     public async Task<Stream> OpenReadAsync(
         string storedFilePath,
         CancellationToken cancellationToken = default)
     {
-        await using var source = new FileStream(
-            storedFilePath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 81920,
-            useAsync: true);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var decryptedStream = new MemoryStream();
+        _logger.LogInformation(
+            LogMessages.DocumentReaderStarted);
 
-        await _encryptionService.DecryptAsync(
-            source,
-            decryptedStream,
-            cancellationToken);
+        try
+        {
+            await using var source = new FileStream(
+                storedFilePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                useAsync: true);
 
-        decryptedStream.Position = 0;
+            var decryptedStream = new MemoryStream();
 
-        return decryptedStream;
+            await _encryptionService.DecryptAsync(
+                source,
+                decryptedStream,
+                cancellationToken);
+
+            decryptedStream.Position = 0;
+
+            _logger.LogInformation(
+                LogMessages.DocumentReaderCompleted);
+
+            return decryptedStream;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentReaderFailed);
+
+            throw;
+        }
     }
 }

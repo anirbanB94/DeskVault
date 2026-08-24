@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using DeskVault.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -26,11 +27,13 @@ public sealed class EncryptedDocumentReaderTests
 
         var encryptionService =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         var reader =
             new EncryptedDocumentReader(
-                encryptionService);
+                encryptionService,
+                NullLogger<EncryptedDocumentReader>.Instance);
 
         try
         {
@@ -95,11 +98,13 @@ public sealed class EncryptedDocumentReaderTests
 
         var encryptionService =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         var reader =
             new EncryptedDocumentReader(
-                encryptionService);
+                encryptionService,
+                NullLogger<EncryptedDocumentReader>.Instance);
 
         try
         {
@@ -155,11 +160,13 @@ public sealed class EncryptedDocumentReaderTests
 
         var encryptionService =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         var reader =
             new EncryptedDocumentReader(
-                encryptionService);
+                encryptionService,
+                NullLogger<EncryptedDocumentReader>.Instance);
 
         string filePath =
             Path.Combine(

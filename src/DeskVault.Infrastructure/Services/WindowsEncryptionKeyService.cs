@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -8,11 +10,14 @@ public sealed class WindowsEncryptionKeyService :
     private const string KeyFileName = "master.key";
 
     private readonly DeskVaultDataPaths _dataPaths;
+    private readonly ILogger<WindowsEncryptionKeyService> _logger;
 
     public WindowsEncryptionKeyService(
-        DeskVaultDataPaths dataPaths)
+        DeskVaultDataPaths dataPaths,
+        ILogger<WindowsEncryptionKeyService> logger)
     {
         _dataPaths = dataPaths;
+        _logger = logger;
     }
 
     public async Task<byte[]> GetOrCreateKeyAsync(
@@ -20,44 +25,77 @@ public sealed class WindowsEncryptionKeyService :
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string securityDirectory =
-            _dataPaths.SecurityDirectory;
+        _logger.LogInformation(
+            LogMessages.EncryptionKeyRetrievalStarted);
 
-        Directory.CreateDirectory(
-            securityDirectory);
-
-        string keyFilePath =
-            Path.Combine(
-                securityDirectory,
-                KeyFileName);
-
-        if (File.Exists(keyFilePath))
+        try
         {
-            byte[] protectedKeyFromFile =
-                await File.ReadAllBytesAsync(
-                    keyFilePath,
-                    cancellationToken);
+            string securityDirectory =
+                _dataPaths.SecurityDirectory;
 
-            return ProtectedData.Unprotect(
-                protectedKeyFromFile,
-                null,
-                DataProtectionScope.CurrentUser);
+            Directory.CreateDirectory(
+                securityDirectory);
+
+            string keyFilePath =
+                Path.Combine(
+                    securityDirectory,
+                    KeyFileName);
+
+            if (File.Exists(keyFilePath))
+            {
+                byte[] protectedKeyFromFile =
+                    await File.ReadAllBytesAsync(
+                        keyFilePath,
+                        cancellationToken);
+
+                byte[] key =
+                    ProtectedData.Unprotect(
+                        protectedKeyFromFile,
+                        null,
+                        DataProtectionScope.CurrentUser);
+
+                _logger.LogInformation(
+                    LogMessages.EncryptionKeyLoaded);
+
+                _logger.LogInformation(
+                    LogMessages.EncryptionKeyOperationCompleted);
+
+                return key;
+            }
+
+            byte[] newKey =
+                RandomNumberGenerator.GetBytes(32);
+
+            byte[] protectedKey =
+                ProtectedData.Protect(
+                    newKey,
+                    null,
+                    DataProtectionScope.CurrentUser);
+
+            await File.WriteAllBytesAsync(
+                keyFilePath,
+                protectedKey,
+                cancellationToken);
+
+            _logger.LogInformation(
+                LogMessages.EncryptionKeyCreated);
+
+            _logger.LogInformation(
+                LogMessages.EncryptionKeyOperationCompleted);
+
+            return newKey;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.EncryptionKeyOperationFailed);
 
-        byte[] key =
-            RandomNumberGenerator.GetBytes(32);
-
-        byte[] protectedKey =
-            ProtectedData.Protect(
-                key,
-                null,
-                DataProtectionScope.CurrentUser);
-
-        await File.WriteAllBytesAsync(
-            keyFilePath,
-            protectedKey,
-            cancellationToken);
-
-        return key;
+            throw;
+        }
     }
 }

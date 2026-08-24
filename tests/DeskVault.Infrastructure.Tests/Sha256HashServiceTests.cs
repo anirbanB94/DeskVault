@@ -1,12 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
 using DeskVault.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
 public sealed class Sha256HashServiceTests
 {
-    private readonly Sha256HashService _service = new();
+    private readonly Sha256HashService _service = new(NullLogger<Sha256HashService>.Instance);
 
     [Fact]
     public async Task ComputeSha256Async_WhenFileContainsKnownContent_ReturnsExpectedHash()

@@ -3,6 +3,7 @@ using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Repositories;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -18,7 +19,7 @@ public sealed class SqliteDocumentRepositoryTests
             CreateFactory(connection);
 
         var repository =
-            new SqliteDocumentRepository(factory);
+            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
 
         Document document = CreateDocument();
 
@@ -47,7 +48,7 @@ public sealed class SqliteDocumentRepositoryTests
             CreateFactory(connection);
 
         var repository =
-            new SqliteDocumentRepository(factory);
+            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
 
         Document document = CreateDocument();
 
@@ -70,7 +71,7 @@ public sealed class SqliteDocumentRepositoryTests
             CreateFactory(connection);
 
         var repository =
-            new SqliteDocumentRepository(factory);
+            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
 
         bool exists =
             await repository.ExistsByHashAsync(
@@ -89,7 +90,7 @@ public sealed class SqliteDocumentRepositoryTests
             CreateFactory(connection);
 
         var repository =
-            new SqliteDocumentRepository(factory);
+            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
 
         Document older = Document.Restore(
             Guid.NewGuid(),
@@ -130,7 +131,7 @@ public sealed class SqliteDocumentRepositoryTests
             CreateFactory(connection);
 
         var repository =
-            new SqliteDocumentRepository(factory);
+            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
 
         Document document = CreateDocument();
 
@@ -154,7 +155,7 @@ public sealed class SqliteDocumentRepositoryTests
             CreateFactory(connection);
 
         var repository =
-            new SqliteDocumentRepository(factory);
+            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
 
         await repository.DeleteAsync(Guid.NewGuid());
     }
@@ -169,7 +170,7 @@ public sealed class SqliteDocumentRepositoryTests
             CreateFactory(connection);
 
         var repository =
-            new SqliteDocumentRepository(factory);
+            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
 
         Document document = CreateDocument();
 

@@ -1,5 +1,7 @@
 using DeskVault.Infrastructure.Persistence.Context;
+using DeskVault.Shared.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Persistence;
 
@@ -12,47 +14,85 @@ public sealed class DatabaseInitializer
         "10.0.10";
 
     private readonly IDbContextFactory<DeskVaultDbContext> _dbContextFactory;
+    private readonly ILogger<DatabaseInitializer> _logger;
 
     public DatabaseInitializer(
-        IDbContextFactory<DeskVaultDbContext> dbContextFactory)
+        IDbContextFactory<DeskVaultDbContext> dbContextFactory,
+        ILogger<DatabaseInitializer> logger)
     {
         _dbContextFactory = dbContextFactory;
+        _logger = logger;
     }
 
     public async Task InitializeAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var dbContext =
-            await _dbContextFactory.CreateDbContextAsync(
-                cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        if (!await dbContext.Database.CanConnectAsync(
-                cancellationToken))
+        _logger.LogInformation(
+            LogMessages.DatabaseInitializationStarted);
+
+        try
         {
+            await using var dbContext =
+                await _dbContextFactory.CreateDbContextAsync(
+                    cancellationToken);
+
+            if (!await dbContext.Database.CanConnectAsync(
+                    cancellationToken))
+            {
+                _logger.LogInformation(
+                    LogMessages.DatabaseConnectionUnavailable);
+
+                await dbContext.Database.MigrateAsync(
+                    cancellationToken);
+
+                _logger.LogInformation(
+                    LogMessages.DatabaseInitializationCompleted);
+
+                return;
+            }
+
+            _logger.LogInformation(
+                LogMessages.DatabaseConnectionAvailable);
+
+            var migrationsTableExists =
+                await HasMigrationsHistoryTableAsync(
+                    dbContext,
+                    cancellationToken);
+
+            if (!migrationsTableExists)
+            {
+                _logger.LogInformation(
+                    LogMessages.DatabaseMigrationsHistoryInitializing);
+
+                await CreateMigrationsHistoryTableAsync(
+                    dbContext,
+                    cancellationToken);
+
+                await RecordInitialMigrationAsync(
+                    dbContext,
+                    cancellationToken);
+            }
+
             await dbContext.Database.MigrateAsync(
                 cancellationToken);
 
-            return;
+            _logger.LogInformation(
+                LogMessages.DatabaseInitializationCompleted);
         }
-
-        var migrationsTableExists =
-            await HasMigrationsHistoryTableAsync(
-                dbContext,
-                cancellationToken);
-
-        if (!migrationsTableExists)
+        catch (OperationCanceledException)
         {
-            await CreateMigrationsHistoryTableAsync(
-                dbContext,
-                cancellationToken);
-
-            await RecordInitialMigrationAsync(
-                dbContext,
-                cancellationToken);
+            throw;
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DatabaseInitializationFailed);
 
-        await dbContext.Database.MigrateAsync(
-            cancellationToken);
+            throw;
+        }
     }
 
     private static async Task<bool> HasMigrationsHistoryTableAsync(

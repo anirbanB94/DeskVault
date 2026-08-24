@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using DeskVault.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -19,7 +20,8 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             var service =
                 new WindowsEncryptionKeyService(
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<WindowsEncryptionKeyService>.Instance);
 
             byte[] key =
                 await service.GetOrCreateKeyAsync();
@@ -68,7 +70,8 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             var service =
                 new WindowsEncryptionKeyService(
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<WindowsEncryptionKeyService>.Instance);
 
             byte[] firstKey =
                 await service.GetOrCreateKeyAsync();
@@ -101,7 +104,8 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             var service =
                 new WindowsEncryptionKeyService(
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<WindowsEncryptionKeyService>.Instance);
 
             Assert.False(
                 Directory.Exists(
@@ -134,7 +138,8 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             var service =
                 new WindowsEncryptionKeyService(
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<WindowsEncryptionKeyService>.Instance);
 
             using var cancellationTokenSource =
                 new CancellationTokenSource();

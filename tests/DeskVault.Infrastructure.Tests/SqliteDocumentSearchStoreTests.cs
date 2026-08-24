@@ -7,6 +7,7 @@ using DeskVault.Infrastructure.Repositories;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -28,7 +29,7 @@ public sealed class SqliteDocumentSearchStoreTests
             CreateFactory(connection);
 
         var processingStore =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
@@ -47,7 +48,7 @@ public sealed class SqliteDocumentSearchStoreTests
             ]);
 
         var searchStore =
-            new SqliteDocumentSearchStore(factory);
+            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
 
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync("searchable");
@@ -94,7 +95,7 @@ public sealed class SqliteDocumentSearchStoreTests
             CreateFactory(connection);
 
         var processingStore =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
@@ -105,7 +106,7 @@ public sealed class SqliteDocumentSearchStoreTests
             ]);
 
         var searchStore =
-            new SqliteDocumentSearchStore(factory);
+            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
 
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
@@ -136,7 +137,7 @@ public sealed class SqliteDocumentSearchStoreTests
             CreateFactory(connection);
 
         var processingStore =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         await processingStore.ReplaceChunksAsync(
             secondDocument.Id,
@@ -163,7 +164,7 @@ public sealed class SqliteDocumentSearchStoreTests
             ]);
 
         var searchStore =
-            new SqliteDocumentSearchStore(factory);
+            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
 
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync("matching");
@@ -215,7 +216,7 @@ public sealed class SqliteDocumentSearchStoreTests
             CreateFactory(connection);
 
         var searchStore =
-            new SqliteDocumentSearchStore(factory);
+            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
 
         await Assert.ThrowsAsync<ArgumentException>(
             () =>
@@ -232,7 +233,7 @@ public sealed class SqliteDocumentSearchStoreTests
             CreateFactory(connection);
 
         var searchStore =
-            new SqliteDocumentSearchStore(factory);
+            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();

@@ -6,6 +6,7 @@ using DeskVault.Infrastructure.Repositories;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -24,7 +25,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateFactory(connection);
 
         var store =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         await store.ReplaceChunksAsync(
             document.Id,
@@ -83,7 +84,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateFactory(connection);
 
         var store =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         await store.ReplaceChunksAsync(
             document.Id,
@@ -169,7 +170,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateFactory(connection);
 
         var store =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         await store.ReplaceChunksAsync(
             document.Id,
@@ -233,7 +234,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateFactory(connection);
 
         var store =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         IReadOnlyList<DocumentChunk> expected =
         [
@@ -292,7 +293,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateFactory(connection);
 
         var store =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         await store.ReplaceChunksAsync(
             document.Id,
@@ -325,7 +326,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateFactory(connection);
 
         var store =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -357,10 +358,10 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateFactory(connection);
 
         var processingStore =
-            new SqliteDocumentProcessingStore(factory);
+            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
 
         var documentRepository =
-            new SqliteDocumentRepository(factory);
+            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
 
         await processingStore.ReplaceChunksAsync(
             document.Id,

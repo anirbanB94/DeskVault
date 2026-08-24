@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using DeskVault.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -20,7 +21,8 @@ public sealed class DocumentEncryptionServiceTests
 
         var service =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         await using var source =
             new MemoryStream(originalContent);
@@ -57,7 +59,8 @@ public sealed class DocumentEncryptionServiceTests
 
         var service =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         await using var source =
             new MemoryStream(
@@ -110,7 +113,8 @@ public sealed class DocumentEncryptionServiceTests
 
         var service =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         byte[] invalidHeader =
         [
@@ -142,7 +146,8 @@ public sealed class DocumentEncryptionServiceTests
 
         var service =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         byte[] unsupportedVersionHeader =
         [
@@ -175,7 +180,8 @@ public sealed class DocumentEncryptionServiceTests
 
         var service =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         byte[] originalContent =
             Encoding.UTF8.GetBytes(
@@ -223,7 +229,8 @@ public sealed class DocumentEncryptionServiceTests
 
         var service =
             new DocumentEncryptionService(
-                keyService);
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
 
         byte[] originalContent =
             Encoding.UTF8.GetBytes(

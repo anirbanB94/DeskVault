@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using DeskVault.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -25,12 +26,14 @@ public sealed class FileSystemStorageServiceTests
 
             var encryptionService =
                 new DocumentEncryptionService(
-                    keyService);
+                    keyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     encryptionService,
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<FileSystemStorageService>.Instance);
 
             string sourceFilePath =
                 Path.Combine(
@@ -93,12 +96,14 @@ public sealed class FileSystemStorageServiceTests
 
             var encryptionService =
                 new DocumentEncryptionService(
-                    keyService);
+                    keyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     encryptionService,
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<FileSystemStorageService>.Instance);
 
             string sourceFilePath =
                 Path.Combine(
@@ -163,12 +168,14 @@ public sealed class FileSystemStorageServiceTests
 
             var encryptionService =
                 new DocumentEncryptionService(
-                    keyService);
+                    keyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     encryptionService,
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<FileSystemStorageService>.Instance);
 
             string sourceFilePath =
                 Path.Combine(
@@ -216,12 +223,14 @@ public sealed class FileSystemStorageServiceTests
 
             var encryptionService =
                 new DocumentEncryptionService(
-                    keyService);
+                    keyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     encryptionService,
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<FileSystemStorageService>.Instance);
 
             string missingSource =
                 Path.Combine(
@@ -271,12 +280,14 @@ public sealed class FileSystemStorageServiceTests
 
             var encryptionService =
                 new DocumentEncryptionService(
-                    keyService);
+                    keyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     encryptionService,
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<FileSystemStorageService>.Instance);
 
             await storageService.DeleteAsync(
                 filePath);
@@ -309,12 +320,14 @@ public sealed class FileSystemStorageServiceTests
 
             var encryptionService =
                 new DocumentEncryptionService(
-                    keyService);
+                    keyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     encryptionService,
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<FileSystemStorageService>.Instance);
 
             await Assert.ThrowsAsync<ArgumentException>(
                 () =>
@@ -346,12 +359,14 @@ public sealed class FileSystemStorageServiceTests
 
             var encryptionService =
                 new DocumentEncryptionService(
-                    keyService);
+                    keyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     encryptionService,
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<FileSystemStorageService>.Instance);
 
             using var cancellationTokenSource =
                 new CancellationTokenSource();
@@ -391,12 +406,14 @@ public sealed class FileSystemStorageServiceTests
 
             var encryptionService =
                 new DocumentEncryptionService(
-                    keyService);
+                    keyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     encryptionService,
-                    dataPaths);
+                    dataPaths,
+                    NullLogger<FileSystemStorageService>.Instance);
 
             string missingFilePath =
                 Path.Combine(

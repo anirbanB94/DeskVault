@@ -2,7 +2,9 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
+using DeskVault.Shared.Resources;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Repositories;
 
@@ -10,11 +12,14 @@ public sealed class SqliteDocumentRepository
     : IDocumentRepository
 {
     private readonly IDbContextFactory<DeskVaultDbContext> _dbContextFactory;
+    private readonly ILogger<SqliteDocumentRepository> _logger;
 
     public SqliteDocumentRepository(
-        IDbContextFactory<DeskVaultDbContext> dbContextFactory)
+        IDbContextFactory<DeskVaultDbContext> dbContextFactory,
+        ILogger<SqliteDocumentRepository> logger)
     {
         _dbContextFactory = dbContextFactory;
+        _logger = logger;
     }
 
     public async Task<bool> ExistsByHashAsync(
@@ -35,6 +40,9 @@ public sealed class SqliteDocumentRepository
         Document document,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation(
+            LogMessages.DocumentRepositoryAddStarted);
+
         await using var dbContext =
             await _dbContextFactory.CreateDbContextAsync(
                 cancellationToken);
@@ -56,6 +64,9 @@ public sealed class SqliteDocumentRepository
 
         await dbContext.SaveChangesAsync(
             cancellationToken);
+
+        _logger.LogInformation(
+            LogMessages.DocumentRepositoryAddCompleted);
     }
 
     public async Task<Document?> GetByIdAsync(
@@ -117,6 +128,9 @@ public sealed class SqliteDocumentRepository
 
         await dbContext.SaveChangesAsync(
             cancellationToken);
+
+        _logger.LogInformation(
+            LogMessages.DocumentRepositoryDeleteCompleted);
     }
 
     public async Task UpdateAsync(
@@ -134,6 +148,9 @@ public sealed class SqliteDocumentRepository
 
         if (entity is null)
         {
+            _logger.LogWarning(
+                LogMessages.DocumentRepositoryUpdateNotFound);
+
             throw new InvalidOperationException(
                 $"Document '{document.Id}' was not found.");
         }
@@ -147,6 +164,9 @@ public sealed class SqliteDocumentRepository
 
         await dbContext.SaveChangesAsync(
             cancellationToken);
+
+        _logger.LogInformation(
+            LogMessages.DocumentRepositoryUpdateCompleted);
     }
 
     private static Document ToDomain(

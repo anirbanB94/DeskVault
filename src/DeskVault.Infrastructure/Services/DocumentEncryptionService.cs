@@ -1,5 +1,7 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Security.Cryptography;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -14,11 +16,14 @@ public sealed class DocumentEncryptionService
     private const uint FormatVersion = 2;
 
     private readonly IEncryptionKeyService _keyService;
+    private readonly ILogger<DocumentEncryptionService> _logger;
 
     public DocumentEncryptionService(
-        IEncryptionKeyService keyService)
+        IEncryptionKeyService keyService,
+        ILogger<DocumentEncryptionService> logger)
     {
         _keyService = keyService;
+        _logger = logger;
     }
 
     public async Task EncryptAsync(
@@ -26,56 +31,80 @@ public sealed class DocumentEncryptionService
         Stream destination,
         CancellationToken cancellationToken = default)
     {
-        byte[] key = await _keyService.GetOrCreateKeyAsync(
-            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        await WriteHeaderAsync(
-            destination,
-            cancellationToken);
+        _logger.LogInformation(
+            LogMessages.DocumentEncryptionStarted);
 
-        byte[] buffer = new byte[ChunkSize];
-
-        using var aes = new AesGcm(key, TagSize);
-
-        int bytesRead;
-
-        while ((bytesRead = await source.ReadAsync(
-            buffer.AsMemory(0, buffer.Length),
-            cancellationToken)) > 0)
+        try
         {
-            byte[] nonce = RandomNumberGenerator.GetBytes(
-                NonceSize);
+            byte[] key =
+                await _keyService.GetOrCreateKeyAsync(
+                    cancellationToken);
 
-            byte[] ciphertext = new byte[bytesRead];
-            byte[] tag = new byte[TagSize];
-
-            aes.Encrypt(
-                nonce,
-                buffer.AsSpan(0, bytesRead),
-                ciphertext,
-                tag);
-
-            byte[] length = new byte[sizeof(int)];
-
-            BinaryPrimitives.WriteInt32LittleEndian(
-                length,
-                bytesRead);
-
-            await destination.WriteAsync(
-                length,
+            await WriteHeaderAsync(
+                destination,
                 cancellationToken);
 
-            await destination.WriteAsync(
-                nonce,
-                cancellationToken);
+            byte[] buffer = new byte[ChunkSize];
 
-            await destination.WriteAsync(
-                tag,
-                cancellationToken);
+            using var aes = new AesGcm(key, TagSize);
 
-            await destination.WriteAsync(
-                ciphertext,
-                cancellationToken);
+            int bytesRead;
+
+            while ((bytesRead = await source.ReadAsync(
+                buffer.AsMemory(0, buffer.Length),
+                cancellationToken)) > 0)
+            {
+                byte[] nonce = RandomNumberGenerator.GetBytes(
+                    NonceSize);
+
+                byte[] ciphertext = new byte[bytesRead];
+                byte[] tag = new byte[TagSize];
+
+                aes.Encrypt(
+                    nonce,
+                    buffer.AsSpan(0, bytesRead),
+                    ciphertext,
+                    tag);
+
+                byte[] length = new byte[sizeof(int)];
+
+                BinaryPrimitives.WriteInt32LittleEndian(
+                    length,
+                    bytesRead);
+
+                await destination.WriteAsync(
+                    length,
+                    cancellationToken);
+
+                await destination.WriteAsync(
+                    nonce,
+                    cancellationToken);
+
+                await destination.WriteAsync(
+                    tag,
+                    cancellationToken);
+
+                await destination.WriteAsync(
+                    ciphertext,
+                    cancellationToken);
+            }
+
+            _logger.LogInformation(
+                LogMessages.DocumentEncryptionCompleted);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentEncryptionFailed);
+
+            throw;
         }
     }
 
@@ -84,63 +113,89 @@ public sealed class DocumentEncryptionService
         Stream destination,
         CancellationToken cancellationToken = default)
     {
-        byte[] key = await _keyService.GetOrCreateKeyAsync(
-            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        await ReadAndValidateHeaderAsync(
-            source,
-            cancellationToken);
+        _logger.LogInformation(
+            LogMessages.DocumentDecryptionStarted);
 
-        using var aes = new AesGcm(key, TagSize);
-
-        byte[] lengthBuffer = new byte[sizeof(int)];
-        byte[] nonce = new byte[NonceSize];
-        byte[] tag = new byte[TagSize];
-
-        while (await TryReadAsync(
-            source,
-            lengthBuffer,
-            cancellationToken))
+        try
         {
-            int ciphertextLength =
-                BinaryPrimitives.ReadInt32LittleEndian(
-                    lengthBuffer);
+            byte[] key =
+                await _keyService.GetOrCreateKeyAsync(
+                    cancellationToken);
 
-            if (ciphertextLength <= 0 ||
-                ciphertextLength > ChunkSize)
+            await ReadAndValidateHeaderAsync(
+                source,
+                cancellationToken);
+
+            using var aes = new AesGcm(key, TagSize);
+
+            byte[] lengthBuffer = new byte[sizeof(int)];
+            byte[] nonce = new byte[NonceSize];
+            byte[] tag = new byte[TagSize];
+
+            while (await TryReadAsync(
+                source,
+                lengthBuffer,
+                cancellationToken))
             {
-                throw new CryptographicException(
-                    "The encrypted document contains an invalid chunk.");
+                int ciphertextLength =
+                    BinaryPrimitives.ReadInt32LittleEndian(
+                        lengthBuffer);
+
+                if (ciphertextLength <= 0 ||
+                    ciphertextLength > ChunkSize)
+                {
+                    throw new CryptographicException(
+                        "The encrypted document contains an invalid chunk.");
+                }
+
+                await ReadExactlyAsync(
+                    source,
+                    nonce,
+                    cancellationToken);
+
+                await ReadExactlyAsync(
+                    source,
+                    tag,
+                    cancellationToken);
+
+                byte[] ciphertext =
+                    new byte[ciphertextLength];
+
+                await ReadExactlyAsync(
+                    source,
+                    ciphertext,
+                    cancellationToken);
+
+                byte[] plaintext =
+                    new byte[ciphertextLength];
+
+                aes.Decrypt(
+                    nonce,
+                    ciphertext,
+                    tag,
+                    plaintext);
+
+                await destination.WriteAsync(
+                    plaintext,
+                    cancellationToken);
             }
 
-            await ReadExactlyAsync(
-                source,
-                nonce,
-                cancellationToken);
+            _logger.LogInformation(
+                LogMessages.DocumentDecryptionCompleted);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentDecryptionFailed);
 
-            await ReadExactlyAsync(
-                source,
-                tag,
-                cancellationToken);
-
-            byte[] ciphertext = new byte[ciphertextLength];
-
-            await ReadExactlyAsync(
-                source,
-                ciphertext,
-                cancellationToken);
-
-            byte[] plaintext = new byte[ciphertextLength];
-
-            aes.Decrypt(
-                nonce,
-                ciphertext,
-                tag,
-                plaintext);
-
-            await destination.WriteAsync(
-                plaintext,
-                cancellationToken);
+            throw;
         }
     }
 
@@ -174,11 +229,13 @@ public sealed class DocumentEncryptionService
             header,
             cancellationToken);
 
-        uint magic = BinaryPrimitives.ReadUInt32LittleEndian(
-            header.AsSpan(0, 4));
+        uint magic =
+            BinaryPrimitives.ReadUInt32LittleEndian(
+                header.AsSpan(0, 4));
 
-        uint version = BinaryPrimitives.ReadUInt32LittleEndian(
-            header.AsSpan(4, 4));
+        uint version =
+            BinaryPrimitives.ReadUInt32LittleEndian(
+                header.AsSpan(4, 4));
 
         if (magic != FileMagic)
         {

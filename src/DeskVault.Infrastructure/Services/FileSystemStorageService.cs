@@ -1,4 +1,6 @@
 using DeskVault.Application.Interfaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -8,12 +10,16 @@ public sealed class FileSystemStorageService : IStorageService
 
     private readonly DeskVaultDataPaths _dataPaths;
 
+    private readonly ILogger<FileSystemStorageService> _logger;
+
     public FileSystemStorageService(
         DocumentEncryptionService encryptionService,
-        DeskVaultDataPaths dataPaths)
+        DeskVaultDataPaths dataPaths,
+        ILogger<FileSystemStorageService> logger)
     {
         _encryptionService = encryptionService;
         _dataPaths = dataPaths;
+        _logger = logger;
     }
 
     public async Task<string> StoreAsync(
@@ -21,41 +27,64 @@ public sealed class FileSystemStorageService : IStorageService
         Guid documentId,
         CancellationToken cancellationToken = default)
     {
-        string documentsDirectory =
-            _dataPaths.DocumentsDirectory;
+        cancellationToken.ThrowIfCancellationRequested();
 
-        Directory.CreateDirectory(
-            documentsDirectory);
+        _logger.LogInformation(
+            LogMessages.DocumentStorageStarted);
 
-        string destinationFilePath =
-            Path.Combine(
-                documentsDirectory,
-                $"{documentId}.dvault");
+        try
+        {
+            string documentsDirectory =
+                _dataPaths.DocumentsDirectory;
 
-        await using var source =
-            new FileStream(
-                sourceFilePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                bufferSize: 81920,
-                useAsync: true);
+            Directory.CreateDirectory(
+                documentsDirectory);
 
-        await using var destination =
-            new FileStream(
-                destinationFilePath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 81920,
-                useAsync: true);
+            string destinationFilePath =
+                Path.Combine(
+                    documentsDirectory,
+                    $"{documentId}.dvault");
 
-        await _encryptionService.EncryptAsync(
-            source,
-            destination,
-            cancellationToken);
+            await using var source =
+                new FileStream(
+                    sourceFilePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 81920,
+                    useAsync: true);
 
-        return destinationFilePath;
+            await using var destination =
+                new FileStream(
+                    destinationFilePath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 81920,
+                    useAsync: true);
+
+            await _encryptionService.EncryptAsync(
+                source,
+                destination,
+                cancellationToken);
+
+            _logger.LogInformation(
+                LogMessages.DocumentStorageCompleted);
+
+            return destinationFilePath;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentStorageFailed);
+
+            throw;
+        }
     }
 
     public Task DeleteAsync(
@@ -72,9 +101,23 @@ public sealed class FileSystemStorageService : IStorageService
                 nameof(storedFilePath));
         }
 
-        File.Delete(
-            storedFilePath);
+        try
+        {
+            File.Delete(
+                storedFilePath);
 
-        return Task.CompletedTask;
+            _logger.LogInformation(
+                LogMessages.DocumentStorageDeletionCompleted);
+
+            return Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentStorageDeletionFailed);
+
+            throw;
+        }
     }
 }

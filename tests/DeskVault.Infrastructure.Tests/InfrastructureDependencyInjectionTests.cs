@@ -3,6 +3,7 @@ using DeskVault.Infrastructure.Repositories;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -18,6 +19,8 @@ public sealed class InfrastructureDependencyInjectionTests
             new ConfigurationBuilder()
                 .Build();
 
+        services.AddLogging();
+
         services.AddInfrastructure(
             configuration);
 
@@ -32,7 +35,6 @@ public sealed class InfrastructureDependencyInjectionTests
 
         Assert.NotNull(
             serviceProvider.GetRequiredService<IDocumentReader>());
-
     }
 
     [Fact]
@@ -44,6 +46,8 @@ public sealed class InfrastructureDependencyInjectionTests
         IConfiguration configuration =
             new ConfigurationBuilder()
                 .Build();
+
+        services.AddLogging();
 
         services.AddInfrastructure(
             configuration);
@@ -59,6 +63,5 @@ public sealed class InfrastructureDependencyInjectionTests
 
         Assert.IsType<EncryptedDocumentReader>(
             serviceProvider.GetRequiredService<IDocumentReader>());
-
     }
 }
