@@ -1,5 +1,5 @@
 using DeskVault.Application.Interfaces;
-using DeskVault.Application.Resources;
+using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Documents.Queries.GetDocument;

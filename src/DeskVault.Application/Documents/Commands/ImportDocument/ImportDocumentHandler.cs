@@ -1,5 +1,5 @@
 using DeskVault.Application.Interfaces;
-using DeskVault.Application.Resources;
+using DeskVault.Shared.Resources;
 using DeskVault.Domain.Documents;
 using Microsoft.Extensions.Logging;
 

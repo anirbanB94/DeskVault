@@ -2,7 +2,7 @@ using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Interfaces;
-using DeskVault.Application.Resources;
+using DeskVault.Shared.Resources;
 using DeskVault.Domain.Documents;
 using Microsoft.Extensions.Logging;
 
