@@ -123,25 +123,30 @@ public sealed class MainFormPresenterTests
                 hashService.Object,
                 storageService.Object,
                 repository.Object,
-                processingService.Object);
+                processingService.Object,
+                NullLogger<ImportDocumentHandler>.Instance);
 
         var removeDocumentHandler =
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService.Object);
+                storageService.Object,
+                NullLogger<RemoveDocumentHandler>.Instance);
 
         var openDocumentHandler =
             new OpenDocumentHandler(
                 repository.Object,
-                documentReader.Object);
+                documentReader.Object,
+                NullLogger<OpenDocumentHandler>.Instance);
 
         var listDocumentsHandler =
             new ListDocumentsHandler(
-                repository.Object);
+                repository.Object,
+                NullLogger<ListDocumentsHandler>.Instance);
 
         var searchDocumentsHandler =
             new SearchDocumentsHandler(
-                searchStore.Object);
+                searchStore.Object,
+                NullLogger<SearchDocumentsHandler>.Instance);
 
         return new MainFormPresenter(
             view.Object,

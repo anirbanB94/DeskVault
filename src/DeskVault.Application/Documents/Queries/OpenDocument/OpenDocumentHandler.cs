@@ -1,4 +1,6 @@
-﻿using DeskVault.Application.Interfaces;
+using DeskVault.Application.Interfaces;
+using DeskVault.Application.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Documents.Queries.OpenDocument;
 
@@ -6,13 +8,16 @@ public sealed class OpenDocumentHandler
 {
     private readonly IDocumentRepository _repository;
     private readonly IDocumentReader _documentReader;
+    private readonly ILogger<OpenDocumentHandler> _logger;
 
     public OpenDocumentHandler(
         IDocumentRepository repository,
-        IDocumentReader documentReader)
+        IDocumentReader documentReader,
+        ILogger<OpenDocumentHandler> logger)
     {
         _repository = repository;
         _documentReader = documentReader;
+        _logger = logger;
     }
 
     public async Task<OpenDocumentResult> HandleAsync(
@@ -25,6 +30,9 @@ public sealed class OpenDocumentHandler
 
         if (document is null)
         {
+            _logger.LogWarning(
+                LogMessages.DocumentOpenNotFound);
+
             throw new FileNotFoundException(
                 "The requested document could not be found.");
         }
@@ -32,6 +40,9 @@ public sealed class OpenDocumentHandler
         Stream content = await _documentReader.OpenReadAsync(
             document.StoredFilePath,
             cancellationToken);
+
+        _logger.LogInformation(
+            LogMessages.DocumentOpenCompleted);
 
         return new OpenDocumentResult(
             content,

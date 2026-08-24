@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -10,7 +11,8 @@ public sealed class GetDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentExists_ReturnsDocumentResult()
     {
-        Guid documentId = Guid.NewGuid();
+        Guid documentId =
+            Guid.NewGuid();
 
         DateTime importedAt =
             new(2026, 8, 17, 10, 30, 0, DateTimeKind.Utc);
@@ -36,7 +38,8 @@ public sealed class GetDocumentHandlerTests
 
         var handler =
             new GetDocumentHandler(
-                repository.Object);
+                repository.Object,
+                NullLogger<GetDocumentHandler>.Instance);
 
         GetDocumentResult result =
             await handler.HandleAsync(
@@ -87,7 +90,8 @@ public sealed class GetDocumentHandlerTests
 
         var handler =
             new GetDocumentHandler(
-                repository.Object);
+                repository.Object,
+                NullLogger<GetDocumentHandler>.Instance);
 
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>

@@ -1,5 +1,7 @@
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Resources;
 using DeskVault.Domain.Documents;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Documents.Commands.ImportDocument;
 
@@ -10,19 +12,22 @@ public sealed class ImportDocumentHandler
     private readonly IStorageService _storageService;
     private readonly IDocumentRepository _repository;
     private readonly IDocumentProcessingService _documentProcessingService;
+    private readonly ILogger<ImportDocumentHandler> _logger;
 
     public ImportDocumentHandler(
         IImportDocumentValidator validator,
         IHashService hashService,
         IStorageService storageService,
         IDocumentRepository repository,
-        IDocumentProcessingService documentProcessingService)
+        IDocumentProcessingService documentProcessingService,
+        ILogger<ImportDocumentHandler> logger)
     {
         _validator = validator;
         _hashService = hashService;
         _storageService = storageService;
         _repository = repository;
         _documentProcessingService = documentProcessingService;
+        _logger = logger;
     }
 
     public async Task<ImportDocumentResult> HandleAsync(
@@ -31,12 +36,18 @@ public sealed class ImportDocumentHandler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        _logger.LogInformation(
+            LogMessages.DocumentImportStarted);
+
         var validationResult =
             _validator.Validate(command);
 
         if (validationResult.Status !=
             ImportDocumentResultStatus.Success)
         {
+            _logger.LogWarning(
+                LogMessages.DocumentImportValidationRejected);
+
             return validationResult;
         }
 
@@ -52,6 +63,9 @@ public sealed class ImportDocumentHandler
 
         if (exists)
         {
+            _logger.LogWarning(
+                LogMessages.DocumentImportDuplicate);
+
             return new ImportDocumentResult(
                 ImportDocumentResultStatus.Duplicate,
                 null,
@@ -93,6 +107,9 @@ public sealed class ImportDocumentHandler
                 document.Id,
                 cancellationToken);
 
+            _logger.LogInformation(
+                LogMessages.DocumentImportCompleted);
+
             return new ImportDocumentResult(
                 ImportDocumentResultStatus.Success,
                 document.Id,
@@ -100,6 +117,10 @@ public sealed class ImportDocumentHandler
         }
         catch (IOException ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentImportStorageFailed);
+
             return new ImportDocumentResult(
                 ImportDocumentResultStatus.StorageFailed,
                 null,
@@ -107,6 +128,10 @@ public sealed class ImportDocumentHandler
         }
         catch (UnauthorizedAccessException ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentImportStorageFailed);
+
             return new ImportDocumentResult(
                 ImportDocumentResultStatus.StorageFailed,
                 null,

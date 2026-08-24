@@ -781,10 +781,12 @@ public sealed class DocumentWorkspacePresenterTests
             view.Object,
             documentViewer.Object,
             new GetDocumentHandler(
-                repository.Object),
+                repository.Object,
+                NullLogger<GetDocumentHandler>.Instance),
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService.Object),
+                storageService.Object,
+                NullLogger<RemoveDocumentHandler>.Instance),
             NullLogger<DocumentWorkspacePresenter>.Instance);
     }
 

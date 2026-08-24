@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -35,7 +36,8 @@ public sealed class ImportDocumentHandlerTests
                 hashService,
                 storageService,
                 repository.Object,
-                processingService.Object);
+                processingService.Object,
+                NullLogger<ImportDocumentHandler>.Instance);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -102,7 +104,8 @@ public sealed class ImportDocumentHandlerTests
                 hashService,
                 storageService,
                 repository.Object,
-                processingService.Object);
+                processingService.Object,
+                NullLogger<ImportDocumentHandler>.Instance);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -189,7 +192,8 @@ public sealed class ImportDocumentHandlerTests
                 hashService,
                 storageService,
                 repository.Object,
-                processingService.Object);
+                processingService.Object,
+                NullLogger<ImportDocumentHandler>.Instance);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -291,7 +295,8 @@ public sealed class ImportDocumentHandlerTests
                 hashService,
                 storageService,
                 repository.Object,
-                processingService.Object);
+                processingService.Object,
+                NullLogger<ImportDocumentHandler>.Instance);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -356,7 +361,8 @@ public sealed class ImportDocumentHandlerTests
                 hashService,
                 storageService,
                 repository.Object,
-                processingService.Object);
+                processingService.Object,
+                NullLogger<ImportDocumentHandler>.Instance);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -425,7 +431,8 @@ public sealed class ImportDocumentHandlerTests
                 hashService,
                 storageService,
                 repository.Object,
-                processingService.Object);
+                processingService.Object,
+                NullLogger<ImportDocumentHandler>.Instance);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -498,7 +505,8 @@ public sealed class ImportDocumentHandlerTests
                 hashService,
                 storageService,
                 repository.Object,
-                processingService.Object);
+                processingService.Object,
+                NullLogger<ImportDocumentHandler>.Instance);
 
         ImportDocumentResult result =
             await handler.HandleAsync(

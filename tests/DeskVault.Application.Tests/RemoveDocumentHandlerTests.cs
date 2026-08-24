@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -28,7 +29,8 @@ public sealed class RemoveDocumentHandlerTests
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService);
+                storageService,
+                NullLogger<RemoveDocumentHandler>.Instance);
 
         RemoveDocumentResult result =
             await handler.HandleAsync(
@@ -79,7 +81,8 @@ public sealed class RemoveDocumentHandlerTests
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService);
+                storageService,
+                NullLogger<RemoveDocumentHandler>.Instance);
 
         RemoveDocumentResult result =
             await handler.HandleAsync(
@@ -125,7 +128,8 @@ public sealed class RemoveDocumentHandlerTests
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService);
+                storageService,
+                NullLogger<RemoveDocumentHandler>.Instance);
 
         RemoveDocumentResult result =
             await handler.HandleAsync(
@@ -179,7 +183,8 @@ public sealed class RemoveDocumentHandlerTests
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService);
+                storageService,
+                NullLogger<RemoveDocumentHandler>.Instance);
 
         RemoveDocumentResult result =
             await handler.HandleAsync(
@@ -230,7 +235,8 @@ public sealed class RemoveDocumentHandlerTests
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService);
+                storageService,
+                NullLogger<RemoveDocumentHandler>.Instance);
 
         RemoveDocumentResult result =
             await handler.HandleAsync(
@@ -248,8 +254,8 @@ public sealed class RemoveDocumentHandlerTests
         Assert.DoesNotContain(
             repository.Invocations,
             invocation =>
-            invocation.Method.Name ==
-            nameof(IDocumentRepository.DeleteAsync));
+                invocation.Method.Name ==
+                nameof(IDocumentRepository.DeleteAsync));
     }
 
     [Fact]
@@ -281,7 +287,8 @@ public sealed class RemoveDocumentHandlerTests
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService);
+                storageService,
+                NullLogger<RemoveDocumentHandler>.Instance);
 
         RemoveDocumentResult result =
             await handler.HandleAsync(
@@ -299,8 +306,8 @@ public sealed class RemoveDocumentHandlerTests
         Assert.Contains(
             repository.Invocations,
             invocation =>
-            invocation.Method.Name ==
-            nameof(IDocumentRepository.DeleteAsync));
+                invocation.Method.Name ==
+                nameof(IDocumentRepository.DeleteAsync));
     }
 
     private static Document CreateDocument()

@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Application.Tests;
 
@@ -22,7 +23,9 @@ public sealed class SearchDocumentsHandlerTests
             new TestDocumentSearchStore(expected);
 
         var handler =
-            new SearchDocumentsHandler(store);
+            new SearchDocumentsHandler(
+                store,
+                NullLogger<SearchDocumentsHandler>.Instance);
 
         IReadOnlyList<SearchDocumentsResult> result =
             await handler.HandleAsync(
@@ -48,7 +51,9 @@ public sealed class SearchDocumentsHandlerTests
                 cancellationToken);
 
         var handler =
-            new SearchDocumentsHandler(store);
+            new SearchDocumentsHandler(
+                store,
+                NullLogger<SearchDocumentsHandler>.Instance);
 
         cancellationTokenSource.Cancel();
 

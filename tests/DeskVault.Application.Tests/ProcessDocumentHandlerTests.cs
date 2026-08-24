@@ -5,6 +5,7 @@ using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -50,7 +51,8 @@ public sealed class ProcessDocumentHandlerTests
                 resolver,
                 normalizer,
                 chunker,
-                processingStore);
+                processingStore,
+                NullLogger<ProcessDocumentHandler>.Instance);
 
         ProcessDocumentResult result =
             await handler.HandleAsync(
@@ -140,7 +142,8 @@ public sealed class ProcessDocumentHandlerTests
                 resolver,
                 normalizer,
                 chunker,
-                processingStore);
+                processingStore,
+                NullLogger<ProcessDocumentHandler>.Instance);
 
         ProcessDocumentResult result =
             await handler.HandleAsync(
@@ -250,7 +253,8 @@ public sealed class ProcessDocumentHandlerTests
                 resolver,
                 normalizer,
                 chunker,
-                processingStore);
+                processingStore,
+                NullLogger<ProcessDocumentHandler>.Instance);
 
         ProcessDocumentResult result =
             await handler.HandleAsync(
@@ -315,7 +319,8 @@ public sealed class ProcessDocumentHandlerTests
                 resolver,
                 normalizer,
                 chunker,
-                processingStore);
+                processingStore,
+                NullLogger<ProcessDocumentHandler>.Instance);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -399,7 +404,8 @@ public sealed class ProcessDocumentHandlerTests
                 resolver,
                 normalizer,
                 chunker,
-                processingStore);
+                processingStore,
+                NullLogger<ProcessDocumentHandler>.Instance);
 
         var service =
             new DocumentProcessingService(
@@ -469,7 +475,8 @@ public sealed class ProcessDocumentHandlerTests
                 resolver,
                 normalizer,
                 chunker,
-                processingStore);
+                processingStore,
+                NullLogger<ProcessDocumentHandler>.Instance);
 
         var service =
             new DocumentProcessingService(

@@ -1,15 +1,20 @@
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Documents.Queries.GetDocument;
 
 public sealed class GetDocumentHandler
 {
     private readonly IDocumentRepository _repository;
+    private readonly ILogger<GetDocumentHandler> _logger;
 
     public GetDocumentHandler(
-        IDocumentRepository repository)
+        IDocumentRepository repository,
+        ILogger<GetDocumentHandler> logger)
     {
         _repository = repository;
+        _logger = logger;
     }
 
     public async Task<GetDocumentResult> HandleAsync(
@@ -22,6 +27,9 @@ public sealed class GetDocumentHandler
 
         if (document is null)
         {
+            _logger.LogWarning(
+                LogMessages.DocumentRetrievalNotFound);
+
             throw new FileNotFoundException(
                 "The requested document could not be found.");
         }

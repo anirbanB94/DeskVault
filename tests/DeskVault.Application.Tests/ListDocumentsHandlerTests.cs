@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -36,7 +37,8 @@ public sealed class ListDocumentsHandlerTests
 
         var handler =
             new ListDocumentsHandler(
-                repository.Object);
+                repository.Object,
+                NullLogger<ListDocumentsHandler>.Instance);
 
         IReadOnlyList<Document> result =
             await handler.HandleAsync(
