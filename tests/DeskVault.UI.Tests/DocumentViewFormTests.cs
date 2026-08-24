@@ -9,42 +9,50 @@ public sealed class DocumentViewFormTests
     [Fact]
     public async Task ShowDocumentAsync_UnsupportedRenderer_PropagatesNotSupportedException()
     {
+        const string fileName =
+            "document.pdf";
+
+        const string expectedMessage =
+            "No document renderer is available for 'document.pdf'.";
+
         var resolver =
             new Mock<IDocumentContentRendererResolver>();
 
         resolver
-            .Setup(x => x.Resolve("document.pdf"))
+            .Setup(x => x.Resolve(fileName))
             .Throws(
                 new NotSupportedException(
-                    "No document renderer is available for 'document.pdf'."));
+                    expectedMessage));
 
         using var form =
             new DocumentViewForm(
                 resolver.Object);
 
         using var stream =
-            new MemoryStream(
-                "test document"u8.ToArray());
+            CreateDocumentStream();
 
         NotSupportedException exception =
             await Assert.ThrowsAsync<NotSupportedException>(
                 () =>
                     form.ShowDocumentAsync(
                         stream,
-                        "document.pdf"));
+                        fileName));
 
         Assert.Equal(
-            "No document renderer is available for 'document.pdf'.",
+            expectedMessage,
             exception.Message);
 
         resolver.Verify(
-            x => x.Resolve("document.pdf"),
+            x => x.Resolve(fileName),
             Times.Once);
     }
 
     [Fact]
     public async Task ShowDocumentAsync_SupportedRenderer_CallsRenderAsync()
     {
+        const string fileName =
+            "document.csv";
+
         var resolver =
             new Mock<IDocumentContentRendererResolver>();
 
@@ -52,7 +60,7 @@ public sealed class DocumentViewFormTests
             new Mock<IDocumentContentRenderer>();
 
         resolver
-            .Setup(x => x.Resolve("document.csv"))
+            .Setup(x => x.Resolve(fileName))
             .Returns(renderer.Object);
 
         using var form =
@@ -60,22 +68,21 @@ public sealed class DocumentViewFormTests
                 resolver.Object);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await form.ShowDocumentAsync(
             stream,
-            "document.csv");
+            fileName);
 
         resolver.Verify(
-            x => x.Resolve("document.csv"),
+            x => x.Resolve(fileName),
             Times.Once);
 
         renderer.Verify(
             x => x.RenderAsync(
                 It.IsAny<Control>(),
                 stream,
-                "document.csv",
+                fileName,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -83,6 +90,9 @@ public sealed class DocumentViewFormTests
     [Fact]
     public async Task ShowDocumentAsync_RendererIsCancelled_PropagatesCancellation()
     {
+        const string fileName =
+            "document.csv";
+
         using var cancellationTokenSource =
             new CancellationTokenSource();
 
@@ -96,14 +106,14 @@ public sealed class DocumentViewFormTests
             new Mock<IDocumentContentRenderer>();
 
         resolver
-            .Setup(x => x.Resolve("document.csv"))
+            .Setup(x => x.Resolve(fileName))
             .Returns(renderer.Object);
 
         renderer
             .Setup(x => x.RenderAsync(
                 It.IsAny<Control>(),
                 It.IsAny<Stream>(),
-                "document.csv",
+                fileName,
                 cancellationToken))
             .ThrowsAsync(
                 new OperationCanceledException(
@@ -114,28 +124,33 @@ public sealed class DocumentViewFormTests
                 resolver.Object);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         cancellationTokenSource.Cancel();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
                 form.ShowDocumentAsync(
                     stream,
-                    "document.csv",
+                    fileName,
                     cancellationToken));
 
         resolver.Verify(
-            x => x.Resolve("document.csv"),
+            x => x.Resolve(fileName),
             Times.Once);
 
         renderer.Verify(
             x => x.RenderAsync(
                 It.IsAny<Control>(),
                 It.IsAny<Stream>(),
-                "document.csv",
+                fileName,
                 cancellationToken),
             Times.Once);
+    }
+
+    private static MemoryStream CreateDocumentStream()
+    {
+        return new MemoryStream(
+            "Id,Name\r\n1,Alice\r\n"u8.ToArray());
     }
 }

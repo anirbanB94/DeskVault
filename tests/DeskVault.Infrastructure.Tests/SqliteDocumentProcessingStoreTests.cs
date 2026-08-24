@@ -21,11 +21,8 @@ public sealed class SqliteDocumentProcessingStoreTests
         Document document =
             CreateAndPersistDocument(connection);
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var store =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateStore(connection);
 
         await store.ReplaceChunksAsync(
             document.Id,
@@ -80,11 +77,8 @@ public sealed class SqliteDocumentProcessingStoreTests
         Document document =
             CreateAndPersistDocument(connection);
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var store =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateStore(connection);
 
         await store.ReplaceChunksAsync(
             document.Id,
@@ -156,7 +150,6 @@ public sealed class SqliteDocumentProcessingStoreTests
                 chunk.Text == "Old second chunk.");
     }
 
-
     [Fact]
     public async Task ReplaceChunksAsync_WhenReplacementFails_RollsBackToPreviousChunks()
     {
@@ -166,11 +159,8 @@ public sealed class SqliteDocumentProcessingStoreTests
         Document document =
             CreateAndPersistDocument(connection);
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var store =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateStore(connection);
 
         await store.ReplaceChunksAsync(
             document.Id,
@@ -221,6 +211,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             "Original second chunk.",
             chunks[1].Text);
     }
+
     [Fact]
     public async Task ReplaceChunksAsync_PreservesChunkOrderAndText()
     {
@@ -230,11 +221,8 @@ public sealed class SqliteDocumentProcessingStoreTests
         Document document =
             CreateAndPersistDocument(connection);
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var store =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateStore(connection);
 
         IReadOnlyList<DocumentChunk> expected =
         [
@@ -289,11 +277,8 @@ public sealed class SqliteDocumentProcessingStoreTests
         Document document =
             CreateAndPersistDocument(connection);
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var store =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateStore(connection);
 
         await store.ReplaceChunksAsync(
             document.Id,
@@ -310,7 +295,8 @@ public sealed class SqliteDocumentProcessingStoreTests
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(connection);
 
-        Assert.Empty(chunks);
+        Assert.Empty(
+            chunks);
     }
 
     [Fact]
@@ -322,11 +308,8 @@ public sealed class SqliteDocumentProcessingStoreTests
         Document document =
             CreateAndPersistDocument(connection);
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var store =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateStore(connection);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -354,14 +337,13 @@ public sealed class SqliteDocumentProcessingStoreTests
         Document document =
             CreateAndPersistDocument(connection);
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var processingStore =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateStore(connection);
 
         var documentRepository =
-            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
+            new SqliteDocumentRepository(
+                CreateFactory(connection),
+                NullLogger<SqliteDocumentRepository>.Instance);
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
@@ -388,7 +370,16 @@ public sealed class SqliteDocumentProcessingStoreTests
         List<DocumentChunkEntity> afterDelete =
             await GetChunksAsync(connection);
 
-        Assert.Empty(afterDelete);
+        Assert.Empty(
+            afterDelete);
+    }
+
+    private static SqliteDocumentProcessingStore CreateStore(
+        SqliteConnection connection)
+    {
+        return new SqliteDocumentProcessingStore(
+            CreateFactory(connection),
+            NullLogger<SqliteDocumentProcessingStore>.Instance);
     }
 
     private static Document CreateAndPersistDocument(
@@ -403,10 +394,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 "document.dvault");
 
         using var context =
-            new DeskVaultDbContext(
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(connection)
-                    .Options);
+            CreateContext(connection);
 
         context.Documents.Add(
             new DocumentEntity
@@ -428,11 +416,8 @@ public sealed class SqliteDocumentProcessingStoreTests
     private static async Task<List<DocumentChunkEntity>> GetChunksAsync(
         SqliteConnection connection)
     {
-        using var context =
-            new DeskVaultDbContext(
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(connection)
-                    .Options);
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
 
         return await context.DocumentChunks
             .AsNoTracking()
@@ -450,10 +435,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         connection.Open();
 
         using var context =
-            new DeskVaultDbContext(
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(connection)
-                    .Options);
+            CreateContext(connection);
 
         context.Database.EnsureCreated();
 
@@ -463,7 +445,20 @@ public sealed class SqliteDocumentProcessingStoreTests
     private static IDbContextFactory<DeskVaultDbContext> CreateFactory(
         SqliteConnection connection)
     {
-        return new TestDbContextFactory(connection);
+        return new TestDbContextFactory(
+            connection);
+    }
+
+    private static DeskVaultDbContext CreateContext(
+        SqliteConnection connection)
+    {
+        DbContextOptions<DeskVaultDbContext> options =
+            new DbContextOptionsBuilder<DeskVaultDbContext>()
+                .UseSqlite(connection)
+                .Options;
+
+        return new DeskVaultDbContext(
+            options);
     }
 
     private sealed class TestDbContextFactory
@@ -485,18 +480,16 @@ public sealed class SqliteDocumentProcessingStoreTests
         public Task<DeskVaultDbContext> CreateDbContextAsync(
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             return Task.FromResult(
                 CreateContext());
         }
 
         private DeskVaultDbContext CreateContext()
         {
-            DbContextOptions<DeskVaultDbContext> options =
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(_connection)
-                    .Options;
-
-            return new DeskVaultDbContext(options);
+            return SqliteDocumentProcessingStoreTests.CreateContext(
+                _connection);
         }
     }
 }

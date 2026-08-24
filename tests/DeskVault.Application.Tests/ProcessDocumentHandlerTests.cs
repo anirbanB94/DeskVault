@@ -15,8 +15,7 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentDoesNotExist_ReturnsNotFound()
     {
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -24,38 +23,10 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((Document?)null);
 
-        var reader =
-            new TestDocumentReader();
-
-        var extractor =
-            new TestDocumentTextExtractor();
-
-        var resolver =
-            new DocumentTextExtractorResolver(
-                [extractor]);
-
-        var normalizer =
-            new DocumentTextNormalizer();
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 100);
-
-        var processingStore =
-            new TestDocumentProcessingStore();
-
-        var handler =
-            new ProcessDocumentHandler(
-                repository.Object,
-                reader,
-                resolver,
-                normalizer,
-                chunker,
-                processingStore,
-                NullLogger<ProcessDocumentHandler>.Instance);
+        var processingContext = CreateProcessingContext(repository);
 
         ProcessDocumentResult result =
-            await handler.HandleAsync(
+            await processingContext.Handler.HandleAsync(
                 new ProcessDocumentCommand(
                     Guid.NewGuid()));
 
@@ -63,17 +34,16 @@ public sealed class ProcessDocumentHandlerTests
             ProcessDocumentResultStatus.NotFound,
             result.Status);
 
-        Assert.Null(
-            result.DocumentId);
+        Assert.Null(result.DocumentId);
 
         Assert.Empty(
-            processingStore.ReplacedChunks);
+            processingContext.ProcessingStore.ReplacedChunks);
 
         Assert.False(
-            reader.WasOpened);
+            processingContext.Reader.WasOpened);
 
         Assert.False(
-            extractor.WasCalled);
+            processingContext.Extractor.WasCalled);
 
         repository.Verify(
             x => x.UpdateAsync(
@@ -85,16 +55,9 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentExists_ProcessesAndUpdatesStatusLifecycle()
     {
-        Document document =
-            Document.Create(
-                Guid.NewGuid(),
-                "document.txt",
-                "Test Document",
-                "sha256-test-hash",
-                "document.dvault");
+        Document document = CreateDocument();
 
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -102,28 +65,12 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
-        var reader =
-            new TestDocumentReader();
-
-        var extractor =
-            new TestDocumentTextExtractor();
-
-        var resolver =
-            new DocumentTextExtractorResolver(
-                [extractor]);
-
-        var normalizer =
-            new DocumentTextNormalizer();
-
-        var chunker =
-            new DocumentTextChunker(
+        var processingContext =
+            CreateProcessingContext(
+                repository,
                 maxChunkSize: 100);
 
-        var processingStore =
-            new TestDocumentProcessingStore();
-
-        var statusHistory =
-            new List<DocumentStatus>();
+        var statusHistory = new List<DocumentStatus>();
 
         repository
             .Setup(x => x.UpdateAsync(
@@ -135,18 +82,8 @@ public sealed class ProcessDocumentHandlerTests
                         updatedDocument.Status))
             .Returns(Task.CompletedTask);
 
-        var handler =
-            new ProcessDocumentHandler(
-                repository.Object,
-                reader,
-                resolver,
-                normalizer,
-                chunker,
-                processingStore,
-                NullLogger<ProcessDocumentHandler>.Instance);
-
         ProcessDocumentResult result =
-            await handler.HandleAsync(
+            await processingContext.Handler.HandleAsync(
                 new ProcessDocumentCommand(
                     document.Id));
 
@@ -159,33 +96,33 @@ public sealed class ProcessDocumentHandlerTests
             result.DocumentId);
 
         Assert.True(
-            reader.WasOpened);
+            processingContext.Reader.WasOpened);
 
         Assert.True(
-            extractor.WasCalled);
+            processingContext.Extractor.WasCalled);
 
         Assert.Equal(
             document.FileName,
-            extractor.FileName);
+            processingContext.Extractor.FileName);
 
         Assert.Equal(
             1,
-            processingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.ReplaceCallCount);
 
         Assert.Equal(
             document.Id,
-            processingStore.DocumentId);
+            processingContext.ProcessingStore.DocumentId);
 
         Assert.Single(
-            processingStore.ReplacedChunks);
+            processingContext.ProcessingStore.ReplacedChunks);
 
         Assert.Equal(
             0,
-            processingStore.ReplacedChunks[0].Order);
+            processingContext.ProcessingStore.ReplacedChunks[0].Order);
 
         Assert.Equal(
             "First paragraph.\n\nSecond paragraph.",
-            processingStore.ReplacedChunks[0].Text);
+            processingContext.ProcessingStore.ReplacedChunks[0].Text);
 
         Assert.Equal(
             [
@@ -209,16 +146,9 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenProcessingProducesMultipleChunks_PreservesChunkOrder()
     {
-        Document document =
-            Document.Create(
-                Guid.NewGuid(),
-                "document.txt",
-                "Test Document",
-                "sha256-test-hash",
-                "document.dvault");
+        Document document = CreateDocument();
 
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -226,38 +156,13 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
-        var reader =
-            new TestDocumentReader();
-
-        var extractor =
-            new TestDocumentTextExtractor();
-
-        var resolver =
-            new DocumentTextExtractorResolver(
-                [extractor]);
-
-        var normalizer =
-            new DocumentTextNormalizer();
-
-        var chunker =
-            new DocumentTextChunker(
+        var processingContext =
+            CreateProcessingContext(
+                repository,
                 maxChunkSize: 17);
 
-        var processingStore =
-            new TestDocumentProcessingStore();
-
-        var handler =
-            new ProcessDocumentHandler(
-                repository.Object,
-                reader,
-                resolver,
-                normalizer,
-                chunker,
-                processingStore,
-                NullLogger<ProcessDocumentHandler>.Instance);
-
         ProcessDocumentResult result =
-            await handler.HandleAsync(
+            await processingContext.Handler.HandleAsync(
                 new ProcessDocumentCommand(
                     document.Id));
 
@@ -267,60 +172,32 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             2,
-            processingStore.ReplacedChunks.Count);
+            processingContext.ProcessingStore.ReplacedChunks.Count);
 
         Assert.Equal(
             0,
-            processingStore.ReplacedChunks[0].Order);
+            processingContext.ProcessingStore.ReplacedChunks[0].Order);
 
         Assert.Equal(
             1,
-            processingStore.ReplacedChunks[1].Order);
+            processingContext.ProcessingStore.ReplacedChunks[1].Order);
 
         Assert.Equal(
             "First paragraph.",
-            processingStore.ReplacedChunks[0].Text);
+            processingContext.ProcessingStore.ReplacedChunks[0].Text);
 
         Assert.Equal(
             "Second paragraph.",
-            processingStore.ReplacedChunks[1].Text);
+            processingContext.ProcessingStore.ReplacedChunks[1].Text);
     }
 
     [Fact]
     public async Task HandleAsync_WhenCancellationIsRequestedBeforeProcessing_ThrowsOperationCanceledException()
     {
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
 
-        var reader =
-            new TestDocumentReader();
-
-        var extractor =
-            new TestDocumentTextExtractor();
-
-        var resolver =
-            new DocumentTextExtractorResolver(
-                [extractor]);
-
-        var normalizer =
-            new DocumentTextNormalizer();
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 100);
-
-        var processingStore =
-            new TestDocumentProcessingStore();
-
-        var handler =
-            new ProcessDocumentHandler(
-                repository.Object,
-                reader,
-                resolver,
-                normalizer,
-                chunker,
-                processingStore,
-                NullLogger<ProcessDocumentHandler>.Instance);
+        var processingContext =
+            CreateProcessingContext(repository);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -329,20 +206,20 @@ public sealed class ProcessDocumentHandlerTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
-                handler.HandleAsync(
+                processingContext.Handler.HandleAsync(
                     new ProcessDocumentCommand(
                         Guid.NewGuid()),
                     cancellationTokenSource.Token));
 
         Assert.False(
-            reader.WasOpened);
+            processingContext.Reader.WasOpened);
 
         Assert.False(
-            extractor.WasCalled);
+            processingContext.Extractor.WasCalled);
 
         Assert.Equal(
             0,
-            processingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.ReplaceCallCount);
 
         repository.Verify(
             x => x.GetByIdAsync(
@@ -360,16 +237,9 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task ProcessAsync_WhenDocumentExists_CompletesSuccessfully()
     {
-        Document document =
-            Document.Create(
-                Guid.NewGuid(),
-                "document.txt",
-                "Test Document",
-                "sha256-test-hash",
-                "document.dvault");
+        Document document = CreateDocument();
 
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -377,53 +247,26 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
-        var reader =
-            new TestDocumentReader();
-
-        var extractor =
-            new TestDocumentTextExtractor();
-
-        var resolver =
-            new DocumentTextExtractorResolver(
-                [extractor]);
-
-        var normalizer =
-            new DocumentTextNormalizer();
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 100);
-
-        var processingStore =
-            new TestDocumentProcessingStore();
-
-        var handler =
-            new ProcessDocumentHandler(
-                repository.Object,
-                reader,
-                resolver,
-                normalizer,
-                chunker,
-                processingStore,
-                NullLogger<ProcessDocumentHandler>.Instance);
+        var processingContext =
+            CreateProcessingContext(repository);
 
         var service =
             new DocumentProcessingService(
-                handler);
+                processingContext.Handler);
 
         await service.ProcessAsync(
             document.Id);
 
         Assert.Equal(
             document.Id,
-            processingStore.DocumentId);
+            processingContext.ProcessingStore.DocumentId);
 
         Assert.Equal(
             1,
-            processingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.ReplaceCallCount);
 
         Assert.Single(
-            processingStore.ReplacedChunks);
+            processingContext.ProcessingStore.ReplacedChunks);
 
         repository.Verify(
             x => x.UpdateAsync(
@@ -439,8 +282,7 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task ProcessAsync_WhenDocumentDoesNotExist_ThrowsFileNotFoundException()
     {
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -448,6 +290,49 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((Document?)null);
 
+        var processingContext =
+            CreateProcessingContext(repository);
+
+        var service =
+            new DocumentProcessingService(
+                processingContext.Handler);
+
+        await Assert.ThrowsAsync<FileNotFoundException>(
+            () =>
+                service.ProcessAsync(
+                    Guid.NewGuid()));
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.ReplaceCallCount);
+
+        Assert.False(
+            processingContext.Reader.WasOpened);
+
+        Assert.False(
+            processingContext.Extractor.WasCalled);
+
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    private static Document CreateDocument()
+    {
+        return Document.Create(
+            Guid.NewGuid(),
+            "document.txt",
+            "Test Document",
+            "sha256-test-hash",
+            "document.dvault");
+    }
+
+    private static ProcessingContext CreateProcessingContext(
+        Mock<IDocumentRepository> repository,
+        int maxChunkSize = 100)
+    {
         var reader =
             new TestDocumentReader();
 
@@ -463,7 +348,7 @@ public sealed class ProcessDocumentHandlerTests
 
         var chunker =
             new DocumentTextChunker(
-                maxChunkSize: 100);
+                maxChunkSize);
 
         var processingStore =
             new TestDocumentProcessingStore();
@@ -478,31 +363,18 @@ public sealed class ProcessDocumentHandlerTests
                 processingStore,
                 NullLogger<ProcessDocumentHandler>.Instance);
 
-        var service =
-            new DocumentProcessingService(
-                handler);
-
-        await Assert.ThrowsAsync<FileNotFoundException>(
-            () =>
-                service.ProcessAsync(
-                    Guid.NewGuid()));
-
-        Assert.Equal(
-            0,
-            processingStore.ReplaceCallCount);
-
-        Assert.False(
-            reader.WasOpened);
-
-        Assert.False(
-            extractor.WasCalled);
-
-        repository.Verify(
-            x => x.UpdateAsync(
-                It.IsAny<Document>(),
-                It.IsAny<CancellationToken>()),
-            Times.Never);
+        return new ProcessingContext(
+            handler,
+            reader,
+            extractor,
+            processingStore);
     }
+
+    private sealed record ProcessingContext(
+        ProcessDocumentHandler Handler,
+        TestDocumentReader Reader,
+        TestDocumentTextExtractor Extractor,
+        TestDocumentProcessingStore ProcessingStore);
 
     private sealed class TestDocumentReader
         : IDocumentReader
@@ -520,8 +392,7 @@ public sealed class ProcessDocumentHandlerTests
             Stream stream =
                 new MemoryStream();
 
-            return Task.FromResult(
-                stream);
+            return Task.FromResult(stream);
         }
     }
 

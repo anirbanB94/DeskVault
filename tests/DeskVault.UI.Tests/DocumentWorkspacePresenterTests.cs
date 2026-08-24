@@ -19,19 +19,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.csv");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -50,18 +45,17 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "document.csv");
+            document.FileName);
 
         view.Verify(
             x => x.ShowDocumentAsync(
                 stream,
-                "document.csv",
+                document.FileName,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -72,19 +66,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.pdf");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -95,7 +84,7 @@ public sealed class DocumentWorkspacePresenterTests
         view
             .Setup(x => x.ShowDocumentAsync(
                 It.IsAny<Stream>(),
-                "document.pdf",
+                document.FileName,
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new NotSupportedException());
@@ -111,13 +100,12 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "unsupported document"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "document.pdf");
+            document.FileName);
 
         view.Verify(
             x => x.ShowUnsupportedPreview(
@@ -131,19 +119,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.csv");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -160,7 +143,7 @@ public sealed class DocumentWorkspacePresenterTests
         view
             .Setup(x => x.ShowDocumentAsync(
                 It.IsAny<Stream>(),
-                "document.csv",
+                document.FileName,
                 cancellationToken))
             .ThrowsAsync(
                 new OperationCanceledException(
@@ -177,15 +160,16 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
                 presenter.OpenAsync(
                     documentId,
                     stream,
-                    "document.csv",
+                    document.FileName,
                     cancellationToken));
     }
 
@@ -195,19 +179,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.csv");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -218,7 +197,7 @@ public sealed class DocumentWorkspacePresenterTests
         view
             .Setup(x => x.ShowDocumentAsync(
                 It.IsAny<Stream>(),
-                "document.csv",
+                document.FileName,
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new IOException(
@@ -235,13 +214,12 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "document.csv");
+            document.FileName);
 
         view.Verify(
             x => x.ShowError(
@@ -256,19 +234,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.csv");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -287,21 +260,21 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "document.csv");
+            document.FileName);
 
-        stream.Position = stream.Length;
+        stream.Position =
+            stream.Length;
 
         view.Raise(
             x => x.OpenExternallyRequested += null,
             EventArgs.Empty);
 
-        await Task.Delay(100);
+        await WaitForBackgroundOperationAsync();
 
         Assert.Equal(
             0,
@@ -310,7 +283,7 @@ public sealed class DocumentWorkspacePresenterTests
         documentViewer.Verify(
             x => x.OpenAsync(
                 stream,
-                "document.csv"),
+                document.FileName),
             Times.Once);
     }
 
@@ -340,7 +313,7 @@ public sealed class DocumentWorkspacePresenterTests
             x => x.OpenExternallyRequested += null,
             EventArgs.Empty);
 
-        await Task.Delay(100);
+        await WaitForBackgroundOperationAsync();
 
         documentViewer.Verify(
             x => x.OpenAsync(
@@ -355,19 +328,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.csv");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -381,7 +349,7 @@ public sealed class DocumentWorkspacePresenterTests
         documentViewer
             .Setup(x => x.OpenAsync(
                 It.IsAny<Stream>(),
-                "document.csv"))
+                document.FileName))
             .ThrowsAsync(
                 new IOException(
                     "Unable to open document."));
@@ -394,19 +362,18 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "document.csv");
+            document.FileName);
 
         view.Raise(
             x => x.OpenExternallyRequested += null,
             EventArgs.Empty);
 
-        await Task.Delay(100);
+        await WaitForBackgroundOperationAsync();
 
         view.Verify(
             x => x.ShowError(
@@ -421,19 +388,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.csv");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -443,7 +405,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         view
             .Setup(x => x.ConfirmRemoval(
-                "document.csv"))
+                document.FileName))
             .Returns(false);
 
         var documentViewer =
@@ -457,23 +419,22 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "document.csv");
+            document.FileName);
 
         view.Raise(
             x => x.RemoveDocumentRequested += null,
             EventArgs.Empty);
 
-        await Task.Delay(100);
+        await WaitForBackgroundOperationAsync();
 
         view.Verify(
             x => x.ConfirmRemoval(
-                "document.csv"),
+                document.FileName),
             Times.Once);
 
         storageService.Verify(
@@ -499,19 +460,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.csv");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         repository
             .Setup(x => x.DeleteAsync(
@@ -533,7 +489,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         view
             .Setup(x => x.ConfirmRemoval(
-                "document.csv"))
+                document.FileName))
             .Returns(true);
 
         var documentViewer =
@@ -556,19 +512,18 @@ public sealed class DocumentWorkspacePresenterTests
             };
 
         var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "document.csv");
+            document.FileName);
 
         view.Raise(
             x => x.RemoveDocumentRequested += null,
             EventArgs.Empty);
 
-        await Task.Delay(100);
+        await WaitForBackgroundOperationAsync();
 
         Assert.False(
             stream.CanRead);
@@ -599,19 +554,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "document.csv");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -629,7 +579,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         view
             .Setup(x => x.ConfirmRemoval(
-                "document.csv"))
+                document.FileName))
             .Returns(true);
 
         var documentViewer =
@@ -643,19 +593,18 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "document.csv");
+            document.FileName);
 
         view.Raise(
             x => x.RemoveDocumentRequested += null,
             EventArgs.Empty);
 
-        await Task.Delay(100);
+        await WaitForBackgroundOperationAsync();
 
         view.Verify(
             x => x.ShowError(
@@ -680,19 +629,14 @@ public sealed class DocumentWorkspacePresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        var document =
+        Document document =
             CreateDocument(
                 documentId,
                 "Report.CSV");
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var storageService =
             new Mock<IStorageService>();
@@ -711,13 +655,12 @@ public sealed class DocumentWorkspacePresenterTests
                 storageService);
 
         using var stream =
-            new MemoryStream(
-                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+            CreateDocumentStream();
 
         await presenter.OpenAsync(
             documentId,
             stream,
-            "Report.CSV");
+            document.FileName);
 
         view.Raise(
             x => x.DocumentInformationRequested += null,
@@ -771,6 +714,21 @@ public sealed class DocumentWorkspacePresenterTests
             Times.Never);
     }
 
+    private static Mock<IDocumentRepository> CreateRepository(
+        Document document)
+    {
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        return repository;
+    }
+
     private static DocumentWorkspacePresenter CreatePresenter(
         Mock<IDocumentWorkspaceView> view,
         Mock<IDocumentViewer> documentViewer,
@@ -797,8 +755,21 @@ public sealed class DocumentWorkspacePresenterTests
         return Document.Create(
             id,
             fileName,
-            Path.GetFileNameWithoutExtension(fileName),
+            Path.GetFileNameWithoutExtension(
+                fileName),
             "test-sha256",
             $"Data\\{id}\\{fileName}");
+    }
+
+    private static MemoryStream CreateDocumentStream()
+    {
+        return new MemoryStream(
+            "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+    }
+
+    private static async Task WaitForBackgroundOperationAsync()
+    {
+        await Task.Delay(
+            100);
     }
 }

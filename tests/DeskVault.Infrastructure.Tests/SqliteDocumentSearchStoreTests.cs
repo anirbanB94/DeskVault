@@ -6,7 +6,6 @@ using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Infrastructure.Repositories;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
@@ -25,11 +24,8 @@ public sealed class SqliteDocumentSearchStoreTests
                 "searchable.txt",
                 "Searchable Document");
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var processingStore =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateProcessingStore(connection);
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
@@ -48,15 +44,14 @@ public sealed class SqliteDocumentSearchStoreTests
             ]);
 
         var searchStore =
-            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
+            CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync("searchable");
-
-        Assert.Single(results);
+            await searchStore.SearchAsync(
+                "searchable");
 
         SearchDocumentsResult result =
-            results[0];
+            Assert.Single(results);
 
         Assert.Equal(
             document.Id,
@@ -91,11 +86,8 @@ public sealed class SqliteDocumentSearchStoreTests
                 "document.txt",
                 "Test Document");
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var processingStore =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateProcessingStore(connection);
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
@@ -106,13 +98,14 @@ public sealed class SqliteDocumentSearchStoreTests
             ]);
 
         var searchStore =
-            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
+            CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 "does-not-exist");
 
-        Assert.Empty(results);
+        Assert.Empty(
+            results);
     }
 
     [Fact]
@@ -133,11 +126,8 @@ public sealed class SqliteDocumentSearchStoreTests
                 "second.txt",
                 "Beta Document");
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var processingStore =
-            new SqliteDocumentProcessingStore(factory, NullLogger<SqliteDocumentProcessingStore>.Instance);
+            CreateProcessingStore(connection);
 
         await processingStore.ReplaceChunksAsync(
             secondDocument.Id,
@@ -164,46 +154,39 @@ public sealed class SqliteDocumentSearchStoreTests
             ]);
 
         var searchStore =
-            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
+            CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync("matching");
+            await searchStore.SearchAsync(
+                "matching");
 
         Assert.Equal(
             4,
             results.Count);
 
-        Assert.Equal(
-            firstDocument.Id,
-            results[0].DocumentId);
-
-        Assert.Equal(
+        AssertResult(
+            results[0],
+            firstDocument,
             0,
-            results[0].ChunkOrder);
+            "Alpha matching content first.");
 
-        Assert.Equal(
-            firstDocument.Id,
-            results[1].DocumentId);
-
-        Assert.Equal(
+        AssertResult(
+            results[1],
+            firstDocument,
             1,
-            results[1].ChunkOrder);
+            "Alpha matching content second.");
 
-        Assert.Equal(
-            secondDocument.Id,
-            results[2].DocumentId);
-
-        Assert.Equal(
+        AssertResult(
+            results[2],
+            secondDocument,
             0,
-            results[2].ChunkOrder);
+            "Beta matching content first.");
 
-        Assert.Equal(
-            secondDocument.Id,
-            results[3].DocumentId);
-
-        Assert.Equal(
+        AssertResult(
+            results[3],
+            secondDocument,
             1,
-            results[3].ChunkOrder);
+            "Beta matching content second.");
     }
 
     [Fact]
@@ -212,15 +195,13 @@ public sealed class SqliteDocumentSearchStoreTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var searchStore =
-            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
+            CreateSearchStore(connection);
 
         await Assert.ThrowsAsync<ArgumentException>(
             () =>
-                searchStore.SearchAsync("   "));
+                searchStore.SearchAsync(
+                    "   "));
     }
 
     [Fact]
@@ -229,11 +210,8 @@ public sealed class SqliteDocumentSearchStoreTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var searchStore =
-            new SqliteDocumentSearchStore(factory, NullLogger<SqliteDocumentSearchStore>.Instance);
+            CreateSearchStore(connection);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -245,6 +223,49 @@ public sealed class SqliteDocumentSearchStoreTests
                 searchStore.SearchAsync(
                     "matching",
                     cancellationTokenSource.Token));
+    }
+
+    private static void AssertResult(
+        SearchDocumentsResult result,
+        Document expectedDocument,
+        int expectedChunkOrder,
+        string expectedChunkText)
+    {
+        Assert.Equal(
+            expectedDocument.Id,
+            result.DocumentId);
+
+        Assert.Equal(
+            expectedDocument.FileName,
+            result.FileName);
+
+        Assert.Equal(
+            expectedDocument.DisplayName,
+            result.DisplayName);
+
+        Assert.Equal(
+            expectedChunkOrder,
+            result.ChunkOrder);
+
+        Assert.Equal(
+            expectedChunkText,
+            result.ChunkText);
+    }
+
+    private static SqliteDocumentProcessingStore CreateProcessingStore(
+        SqliteConnection connection)
+    {
+        return new SqliteDocumentProcessingStore(
+            CreateFactory(connection),
+            NullLogger<SqliteDocumentProcessingStore>.Instance);
+    }
+
+    private static SqliteDocumentSearchStore CreateSearchStore(
+        SqliteConnection connection)
+    {
+        return new SqliteDocumentSearchStore(
+            CreateFactory(connection),
+            NullLogger<SqliteDocumentSearchStore>.Instance);
     }
 
     private static Document CreateAndPersistDocument(
@@ -261,10 +282,7 @@ public sealed class SqliteDocumentSearchStoreTests
                 $"{Guid.NewGuid():N}.dvault");
 
         using var context =
-            new DeskVaultDbContext(
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(connection)
-                    .Options);
+            CreateContext(connection);
 
         context.Documents.Add(
             new DocumentEntity
@@ -292,20 +310,30 @@ public sealed class SqliteDocumentSearchStoreTests
         connection.Open();
 
         using var context =
-            new DeskVaultDbContext(
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(connection)
-                    .Options);
+            CreateContext(connection);
 
         context.Database.EnsureCreated();
 
         return connection;
     }
 
+    private static DeskVaultDbContext CreateContext(
+        SqliteConnection connection)
+    {
+        DbContextOptions<DeskVaultDbContext> options =
+            new DbContextOptionsBuilder<DeskVaultDbContext>()
+                .UseSqlite(connection)
+                .Options;
+
+        return new DeskVaultDbContext(
+            options);
+    }
+
     private static IDbContextFactory<DeskVaultDbContext> CreateFactory(
         SqliteConnection connection)
     {
-        return new TestDbContextFactory(connection);
+        return new TestDbContextFactory(
+            connection);
     }
 
     private sealed class TestDbContextFactory
@@ -327,18 +355,16 @@ public sealed class SqliteDocumentSearchStoreTests
         public Task<DeskVaultDbContext> CreateDbContextAsync(
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             return Task.FromResult(
                 CreateContext());
         }
 
         private DeskVaultDbContext CreateContext()
         {
-            DbContextOptions<DeskVaultDbContext> options =
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(_connection)
-                    .Options;
-
-            return new DeskVaultDbContext(options);
+            return SqliteDocumentSearchStoreTests.CreateContext(
+                _connection);
         }
     }
 }

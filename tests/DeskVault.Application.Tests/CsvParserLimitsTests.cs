@@ -17,40 +17,22 @@ public sealed class CsvParserLimitsTests
             5,Ethan
             """;
 
-        using var stream =
-            new MemoryStream(
-                System.Text.Encoding.UTF8.GetBytes(csv));
-
-        var parser =
-            new CsvDocumentParser(
-                new CsvParsingOptions
-                {
-                    MaxRows = 3
-                });
-
         CsvDocument document =
-            await parser.ParseAsync(stream);
+            await ParseAsync(
+                csv,
+                maxRows: 3);
 
         Assert.Equal(3, document.Rows.Count);
 
         Assert.Equal(
-            "1",
-            document.Rows[0][0]);
+            ["1", "2", "3"],
+            document.Rows.Select(row => row[0]).ToArray());
 
         Assert.Equal(
-            "3",
-            document.Rows[2][0]);
+            ["Alice", "Bob", "Charlie"],
+            document.Rows.Select(row => row[1]).ToArray());
 
-        Assert.Equal(
-            "Alice",
-            document.Rows[0][1]);
-
-        Assert.Equal(
-            "Charlie",
-            document.Rows[2][1]);
-
-        Assert.True(
-            document.HasMoreRows);
+        Assert.True(document.HasMoreRows);
     }
 
     [Fact]
@@ -64,29 +46,14 @@ public sealed class CsvParserLimitsTests
             3,Charlie
             """;
 
-        using var stream =
-            new MemoryStream(
-                System.Text.Encoding.UTF8.GetBytes(csv));
-
-        var parser =
-            new CsvDocumentParser(
-                new CsvParsingOptions
-                {
-                    MaxRows = 10
-                });
-
         CsvDocument document =
-            await parser.ParseAsync(stream);
+            await ParseAsync(
+                csv,
+                maxRows: 10);
 
-        Assert.Equal(
-            3,
-            document.Rows.Count);
-
-        Assert.False(
-            document.HasMoreRows);
-
-        Assert.Empty(
-            document.Warnings);
+        Assert.Equal(3, document.Rows.Count);
+        Assert.False(document.HasMoreRows);
+        Assert.Empty(document.Warnings);
     }
 
     [Fact]
@@ -100,26 +67,11 @@ public sealed class CsvParserLimitsTests
             3,Charlie
             """;
 
-        using var stream =
-            new MemoryStream(
-                System.Text.Encoding.UTF8.GetBytes(csv));
-
-        var parser =
-            new CsvDocumentParser(
-                new CsvParsingOptions
-                {
-                    MaxRows = null
-                });
-
         CsvDocument document =
-            await parser.ParseAsync(stream);
+            await ParseAsync(csv);
 
-        Assert.Equal(
-            3,
-            document.Rows.Count);
-
-        Assert.False(
-            document.HasMoreRows);
+        Assert.Equal(3, document.Rows.Count);
+        Assert.False(document.HasMoreRows);
     }
 
     [Fact]
@@ -133,26 +85,13 @@ public sealed class CsvParserLimitsTests
             3,Charlie
             """;
 
-        using var stream =
-            new MemoryStream(
-                System.Text.Encoding.UTF8.GetBytes(csv));
-
-        var parser =
-            new CsvDocumentParser(
-                new CsvParsingOptions
-                {
-                    MaxRows = 3
-                });
-
         CsvDocument document =
-            await parser.ParseAsync(stream);
+            await ParseAsync(
+                csv,
+                maxRows: 3);
 
-        Assert.Equal(
-            3,
-            document.Rows.Count);
-
-        Assert.False(
-            document.HasMoreRows);
+        Assert.Equal(3, document.Rows.Count);
+        Assert.False(document.HasMoreRows);
     }
 
     [Fact]
@@ -165,7 +104,21 @@ public sealed class CsvParserLimitsTests
             2,Bob
             """;
 
-        using var stream =
+        CsvDocument document =
+            await ParseAsync(
+                csv,
+                maxRows: 0);
+
+        Assert.Empty(document.Rows);
+        Assert.True(document.HasMoreRows);
+        Assert.Equal(2, document.Columns.Count);
+    }
+
+    private static async Task<CsvDocument> ParseAsync(
+        string csv,
+        int? maxRows = null)
+    {
+        await using var stream =
             new MemoryStream(
                 System.Text.Encoding.UTF8.GetBytes(csv));
 
@@ -173,20 +126,9 @@ public sealed class CsvParserLimitsTests
             new CsvDocumentParser(
                 new CsvParsingOptions
                 {
-                    MaxRows = 0
+                    MaxRows = maxRows
                 });
 
-        CsvDocument document =
-            await parser.ParseAsync(stream);
-
-        Assert.Empty(
-            document.Rows);
-
-        Assert.True(
-            document.HasMoreRows);
-
-        Assert.Equal(
-            2,
-            document.Columns.Count);
+        return await parser.ParseAsync(stream);
     }
 }

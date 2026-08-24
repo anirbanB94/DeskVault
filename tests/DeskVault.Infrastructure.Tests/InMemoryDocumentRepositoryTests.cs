@@ -9,7 +9,7 @@ public sealed class InMemoryDocumentRepositoryTests
     public async Task AddAsync_WhenDocumentIsValid_CanRetrieveDocument()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         Document document =
             CreateDocument();
@@ -22,21 +22,27 @@ public sealed class InMemoryDocumentRepositoryTests
                 document.Id);
 
         Assert.NotNull(result);
+
         Assert.Equal(
             document.Id,
             result.Id);
+
         Assert.Equal(
             document.FileName,
             result.FileName);
+
         Assert.Equal(
             document.DisplayName,
             result.DisplayName);
+
         Assert.Equal(
             document.Sha256Hash,
             result.Sha256Hash);
+
         Assert.Equal(
             document.StoredFilePath,
             result.StoredFilePath);
+
         Assert.Equal(
             document.Status,
             result.Status);
@@ -46,7 +52,7 @@ public sealed class InMemoryDocumentRepositoryTests
     public async Task ExistsByHashAsync_WhenHashExists_ReturnsTrue()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         Document document =
             CreateDocument();
@@ -58,27 +64,29 @@ public sealed class InMemoryDocumentRepositoryTests
             await repository.ExistsByHashAsync(
                 document.Sha256Hash);
 
-        Assert.True(exists);
+        Assert.True(
+            exists);
     }
 
     [Fact]
     public async Task ExistsByHashAsync_WhenHashDoesNotExist_ReturnsFalse()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         bool exists =
             await repository.ExistsByHashAsync(
                 "missing-hash");
 
-        Assert.False(exists);
+        Assert.False(
+            exists);
     }
 
     [Fact]
     public async Task GetAllAsync_ReturnsAllDocuments()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         Document first =
             CreateDocument();
@@ -91,8 +99,11 @@ public sealed class InMemoryDocumentRepositoryTests
                 "second-hash",
                 "second.dvault");
 
-        await repository.AddAsync(first);
-        await repository.AddAsync(second);
+        await repository.AddAsync(
+            first);
+
+        await repository.AddAsync(
+            second);
 
         IReadOnlyList<Document> documents =
             await repository.GetAllAsync();
@@ -114,7 +125,7 @@ public sealed class InMemoryDocumentRepositoryTests
     public async Task UpdateAsync_WhenDocumentExists_PersistsUpdatedDocument()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         Document document =
             CreateDocument();
@@ -142,7 +153,7 @@ public sealed class InMemoryDocumentRepositoryTests
     public async Task UpdateAsync_WhenDocumentDoesNotExist_ThrowsInvalidOperationException()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         Document document =
             CreateDocument();
@@ -157,7 +168,7 @@ public sealed class InMemoryDocumentRepositoryTests
     public async Task DeleteAsync_WhenDocumentExists_RemovesDocument()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         Document document =
             CreateDocument();
@@ -172,14 +183,15 @@ public sealed class InMemoryDocumentRepositoryTests
             await repository.GetByIdAsync(
                 document.Id);
 
-        Assert.Null(result);
+        Assert.Null(
+            result);
     }
 
     [Fact]
     public async Task DeleteAsync_WhenDocumentDoesNotExist_DoesNotThrow()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         await repository.DeleteAsync(
             Guid.NewGuid());
@@ -189,7 +201,7 @@ public sealed class InMemoryDocumentRepositoryTests
     public async Task UpdateAsync_WhenCancellationIsRequested_ThrowsOperationCanceledException()
     {
         var repository =
-            new InMemoryDocumentRepository();
+            CreateRepository();
 
         Document document =
             CreateDocument();
@@ -207,6 +219,11 @@ public sealed class InMemoryDocumentRepositoryTests
                 repository.UpdateAsync(
                     document,
                     cancellationTokenSource.Token));
+    }
+
+    private static InMemoryDocumentRepository CreateRepository()
+    {
+        return new InMemoryDocumentRepository();
     }
 
     private static Document CreateDocument()

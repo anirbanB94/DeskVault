@@ -18,26 +18,18 @@ public sealed class ImportDocumentHandlerTests
                     null,
                     "File path is required."));
 
-        var hashService =
-            new TestHashService();
-
-        var storageService =
-            new TestStorageService();
-
-        var repository =
-            new Mock<IDocumentRepository>();
-
-        var processingService =
-            new Mock<IDocumentProcessingService>();
+        var hashService = new TestHashService();
+        var storageService = new TestStorageService();
+        var repository = new Mock<IDocumentRepository>();
+        var processingService = new Mock<IDocumentProcessingService>();
 
         var handler =
-            new ImportDocumentHandler(
+            CreateHandler(
                 validator,
                 hashService,
                 storageService,
-                repository.Object,
-                processingService.Object,
-                NullLogger<ImportDocumentHandler>.Instance);
+                repository,
+                processingService);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -72,22 +64,11 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentIsDuplicate_ReturnsDuplicateResult()
     {
-        var validator =
-            new TestImportDocumentValidator(
-                new ImportDocumentResult(
-                    ImportDocumentResultStatus.Success,
-                    null,
-                    "Validation successful."));
-
-        var hashService =
-            new TestHashService(
-                "duplicate-hash");
-
-        var storageService =
-            new TestStorageService();
-
-        var repository =
-            new Mock<IDocumentRepository>();
+        var validator = CreateSuccessfulValidator();
+        var hashService = new TestHashService("duplicate-hash");
+        var storageService = new TestStorageService();
+        var repository = new Mock<IDocumentRepository>();
+        var processingService = new Mock<IDocumentProcessingService>();
 
         repository
             .Setup(x => x.ExistsByHashAsync(
@@ -95,17 +76,13 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var processingService =
-            new Mock<IDocumentProcessingService>();
-
         var handler =
-            new ImportDocumentHandler(
+            CreateHandler(
                 validator,
                 hashService,
                 storageService,
-                repository.Object,
-                processingService.Object,
-                NullLogger<ImportDocumentHandler>.Instance);
+                repository,
+                processingService);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -148,23 +125,13 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenImportSucceeds_PersistsDocument()
     {
-        var validator =
-            new TestImportDocumentValidator(
-                new ImportDocumentResult(
-                    ImportDocumentResultStatus.Success,
-                    null,
-                    "Validation successful."));
-
-        var hashService =
-            new TestHashService(
-                "test-hash");
-
+        var validator = CreateSuccessfulValidator();
+        var hashService = new TestHashService("test-hash");
         var storageService =
-            new TestStorageService(
-                "stored/document.dvault");
+            new TestStorageService("stored/document.dvault");
 
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
+        var processingService = new Mock<IDocumentProcessingService>();
 
         repository
             .Setup(x => x.ExistsByHashAsync(
@@ -183,17 +150,13 @@ public sealed class ImportDocumentHandlerTests
                     addedDocument = document)
             .Returns(Task.CompletedTask);
 
-        var processingService =
-            new Mock<IDocumentProcessingService>();
-
         var handler =
-            new ImportDocumentHandler(
+            CreateHandler(
                 validator,
                 hashService,
                 storageService,
-                repository.Object,
-                processingService.Object,
-                NullLogger<ImportDocumentHandler>.Instance);
+                repository,
+                processingService);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -251,23 +214,13 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDisplayNameIsNotProvided_DerivesDisplayNameFromFileName()
     {
-        var validator =
-            new TestImportDocumentValidator(
-                new ImportDocumentResult(
-                    ImportDocumentResultStatus.Success,
-                    null,
-                    "Validation successful."));
-
-        var hashService =
-            new TestHashService(
-                "test-hash");
-
+        var validator = CreateSuccessfulValidator();
+        var hashService = new TestHashService("test-hash");
         var storageService =
-            new TestStorageService(
-                "stored/document.dvault");
+            new TestStorageService("stored/document.dvault");
 
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
+        var processingService = new Mock<IDocumentProcessingService>();
 
         repository
             .Setup(x => x.ExistsByHashAsync(
@@ -286,17 +239,13 @@ public sealed class ImportDocumentHandlerTests
                     addedDocument = document)
             .Returns(Task.CompletedTask);
 
-        var processingService =
-            new Mock<IDocumentProcessingService>();
-
         var handler =
-            new ImportDocumentHandler(
+            CreateHandler(
                 validator,
                 hashService,
                 storageService,
-                repository.Object,
-                processingService.Object,
-                NullLogger<ImportDocumentHandler>.Instance);
+                repository,
+                processingService);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -324,16 +273,8 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenStorageThrowsIOException_ReturnsStorageFailed()
     {
-        var validator =
-            new TestImportDocumentValidator(
-                new ImportDocumentResult(
-                    ImportDocumentResultStatus.Success,
-                    null,
-                    "Validation successful."));
-
-        var hashService =
-            new TestHashService(
-                "test-hash");
+        var validator = CreateSuccessfulValidator();
+        var hashService = new TestHashService("test-hash");
 
         var storageService =
             new TestStorageService
@@ -343,26 +284,20 @@ public sealed class ImportDocumentHandlerTests
                         "Storage operation failed.")
             };
 
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
+        var processingService = new Mock<IDocumentProcessingService>();
 
-        repository
-            .Setup(x => x.ExistsByHashAsync(
-                "test-hash",
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        var processingService =
-            new Mock<IDocumentProcessingService>();
+        SetupRepositoryForImport(
+            repository,
+            "test-hash");
 
         var handler =
-            new ImportDocumentHandler(
+            CreateHandler(
                 validator,
                 hashService,
                 storageService,
-                repository.Object,
-                processingService.Object,
-                NullLogger<ImportDocumentHandler>.Instance);
+                repository,
+                processingService);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -394,16 +329,8 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenStorageThrowsUnauthorizedAccessException_ReturnsStorageFailed()
     {
-        var validator =
-            new TestImportDocumentValidator(
-                new ImportDocumentResult(
-                    ImportDocumentResultStatus.Success,
-                    null,
-                    "Validation successful."));
-
-        var hashService =
-            new TestHashService(
-                "test-hash");
+        var validator = CreateSuccessfulValidator();
+        var hashService = new TestHashService("test-hash");
 
         var storageService =
             new TestStorageService
@@ -413,26 +340,20 @@ public sealed class ImportDocumentHandlerTests
                         "Access denied.")
             };
 
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
+        var processingService = new Mock<IDocumentProcessingService>();
 
-        repository
-            .Setup(x => x.ExistsByHashAsync(
-                "test-hash",
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        var processingService =
-            new Mock<IDocumentProcessingService>();
+        SetupRepositoryForImport(
+            repository,
+            "test-hash");
 
         var handler =
-            new ImportDocumentHandler(
+            CreateHandler(
                 validator,
                 hashService,
                 storageService,
-                repository.Object,
-                processingService.Object,
-                NullLogger<ImportDocumentHandler>.Instance);
+                repository,
+                processingService);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -464,29 +385,19 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenRepositoryAddThrowsIOException_ReturnsStorageFailed()
     {
-        var validator =
-            new TestImportDocumentValidator(
-                new ImportDocumentResult(
-                    ImportDocumentResultStatus.Success,
-                    null,
-                    "Validation successful."));
-
-        var hashService =
-            new TestHashService(
-                "test-hash");
+        var validator = CreateSuccessfulValidator();
+        var hashService = new TestHashService("test-hash");
 
         var storageService =
             new TestStorageService(
                 "stored/document.dvault");
 
-        var repository =
-            new Mock<IDocumentRepository>();
+        var repository = new Mock<IDocumentRepository>();
+        var processingService = new Mock<IDocumentProcessingService>();
 
-        repository
-            .Setup(x => x.ExistsByHashAsync(
-                "test-hash",
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+        SetupRepositoryForImport(
+            repository,
+            "test-hash");
 
         repository
             .Setup(x => x.AddAsync(
@@ -496,17 +407,13 @@ public sealed class ImportDocumentHandlerTests
                 new IOException(
                     "Metadata storage operation failed."));
 
-        var processingService =
-            new Mock<IDocumentProcessingService>();
-
         var handler =
-            new ImportDocumentHandler(
+            CreateHandler(
                 validator,
                 hashService,
                 storageService,
-                repository.Object,
-                processingService.Object,
-                NullLogger<ImportDocumentHandler>.Instance);
+                repository,
+                processingService);
 
         ImportDocumentResult result =
             await handler.HandleAsync(
@@ -536,6 +443,42 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    private static TestImportDocumentValidator CreateSuccessfulValidator()
+    {
+        return new TestImportDocumentValidator(
+            new ImportDocumentResult(
+                ImportDocumentResultStatus.Success,
+                null,
+                "Validation successful."));
+    }
+
+    private static void SetupRepositoryForImport(
+        Mock<IDocumentRepository> repository,
+        string hash)
+    {
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                hash,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+    }
+
+    private static ImportDocumentHandler CreateHandler(
+        IImportDocumentValidator validator,
+        IHashService hashService,
+        IStorageService storageService,
+        Mock<IDocumentRepository> repository,
+        Mock<IDocumentProcessingService> processingService)
+    {
+        return new ImportDocumentHandler(
+            validator,
+            hashService,
+            storageService,
+            repository.Object,
+            processingService.Object,
+            NullLogger<ImportDocumentHandler>.Instance);
     }
 
     private sealed class TestImportDocumentValidator

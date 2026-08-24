@@ -13,7 +13,8 @@ public sealed class MarkdownDocumentTextExtractorTests
     public void CanExtract_MarkdownFile_ReturnsTrue()
     {
         Assert.True(
-            _extractor.CanExtract("README.md"));
+            _extractor.CanExtract(
+                "README.md"));
     }
 
     [Theory]
@@ -24,7 +25,8 @@ public sealed class MarkdownDocumentTextExtractorTests
         string fileName)
     {
         Assert.True(
-            _extractor.CanExtract(fileName));
+            _extractor.CanExtract(
+                fileName));
     }
 
     [Theory]
@@ -35,7 +37,8 @@ public sealed class MarkdownDocumentTextExtractorTests
         string fileName)
     {
         Assert.False(
-            _extractor.CanExtract(fileName));
+            _extractor.CanExtract(
+                fileName));
     }
 
     [Fact]
@@ -49,7 +52,8 @@ public sealed class MarkdownDocumentTextExtractorTests
 
         using var stream =
             new MemoryStream(
-                Encoding.UTF8.GetBytes(markdown));
+                Encoding.UTF8.GetBytes(
+                    markdown));
 
         DocumentTextExtractionResult result =
             await _extractor.ExtractAsync(
@@ -71,7 +75,8 @@ public sealed class MarkdownDocumentTextExtractorTests
 
         using var stream =
             new MemoryStream(
-                Encoding.UTF8.GetBytes(markdown));
+                Encoding.UTF8.GetBytes(
+                    markdown));
 
         DocumentTextExtractionResult result =
             await _extractor.ExtractAsync(
@@ -88,7 +93,8 @@ public sealed class MarkdownDocumentTextExtractorTests
     {
         using var stream =
             new MemoryStream(
-                Encoding.UTF8.GetBytes("# Test"));
+                Encoding.UTF8.GetBytes(
+                    "# Test"));
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -96,10 +102,11 @@ public sealed class MarkdownDocumentTextExtractorTests
         cancellationTokenSource.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => _extractor.ExtractAsync(
-                stream,
-                "document.md",
-                cancellationTokenSource.Token));
+            () =>
+                _extractor.ExtractAsync(
+                    stream,
+                    "document.md",
+                    cancellationTokenSource.Token));
     }
 
     [Fact]
@@ -111,13 +118,15 @@ public sealed class MarkdownDocumentTextExtractorTests
 
         await using var stream =
             new MemoryStream(
-                Encoding.UTF8.GetBytes(markdown));
+                Encoding.UTF8.GetBytes(
+                    markdown));
 
         await _extractor.ExtractAsync(
             stream,
             "document.md");
 
-        Assert.True(stream.CanRead);
+        Assert.True(
+            stream.CanRead);
     }
 
     [Fact]
@@ -126,7 +135,7 @@ public sealed class MarkdownDocumentTextExtractorTests
         using var stream =
             new ThrowingReadStream();
 
-        var exception =
+        InvalidOperationException exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
                     _extractor.ExtractAsync(

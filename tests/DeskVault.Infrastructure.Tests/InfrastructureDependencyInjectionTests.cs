@@ -12,20 +12,8 @@ public sealed class InfrastructureDependencyInjectionTests
     [Fact]
     public void AddInfrastructure_RegistersDocumentProcessingPipeline()
     {
-        var services =
-            new ServiceCollection();
-
-        IConfiguration configuration =
-            new ConfigurationBuilder()
-                .Build();
-
-        services.AddLogging();
-
-        services.AddInfrastructure(
-            configuration);
-
         using ServiceProvider serviceProvider =
-            services.BuildServiceProvider();
+            CreateServiceProvider();
 
         Assert.NotNull(
             serviceProvider.GetRequiredService<IDocumentRepository>());
@@ -40,6 +28,21 @@ public sealed class InfrastructureDependencyInjectionTests
     [Fact]
     public void AddInfrastructure_RegistersExpectedConcreteImplementations()
     {
+        using ServiceProvider serviceProvider =
+            CreateServiceProvider();
+
+        Assert.IsType<SqliteDocumentRepository>(
+            serviceProvider.GetRequiredService<IDocumentRepository>());
+
+        Assert.IsType<SqliteDocumentProcessingStore>(
+            serviceProvider.GetRequiredService<IDocumentProcessingStore>());
+
+        Assert.IsType<EncryptedDocumentReader>(
+            serviceProvider.GetRequiredService<IDocumentReader>());
+    }
+
+    private static ServiceProvider CreateServiceProvider()
+    {
         var services =
             new ServiceCollection();
 
@@ -52,16 +55,6 @@ public sealed class InfrastructureDependencyInjectionTests
         services.AddInfrastructure(
             configuration);
 
-        using ServiceProvider serviceProvider =
-            services.BuildServiceProvider();
-
-        Assert.IsType<SqliteDocumentRepository>(
-            serviceProvider.GetRequiredService<IDocumentRepository>());
-
-        Assert.IsType<SqliteDocumentProcessingStore>(
-            serviceProvider.GetRequiredService<IDocumentProcessingStore>());
-
-        Assert.IsType<EncryptedDocumentReader>(
-            serviceProvider.GetRequiredService<IDocumentReader>());
+        return services.BuildServiceProvider();
     }
 }

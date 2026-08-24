@@ -15,27 +15,48 @@ public sealed class SqliteDocumentRepositoryTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var repository =
-            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
+            CreateRepository(connection);
 
-        Document document = CreateDocument();
+        Document document =
+            CreateDocument();
 
-        await repository.AddAsync(document);
+        await repository.AddAsync(
+            document);
 
         Document? result =
-            await repository.GetByIdAsync(document.Id);
+            await repository.GetByIdAsync(
+                document.Id);
 
         Assert.NotNull(result);
-        Assert.Equal(document.Id, result.Id);
-        Assert.Equal(document.FileName, result.FileName);
-        Assert.Equal(document.DisplayName, result.DisplayName);
-        Assert.Equal(document.Sha256Hash, result.Sha256Hash);
-        Assert.Equal(document.StoredFilePath, result.StoredFilePath);
-        Assert.Equal(document.ImportedAt, result.ImportedAt);
-        Assert.Equal(document.Status, result.Status);
+
+        Assert.Equal(
+            document.Id,
+            result.Id);
+
+        Assert.Equal(
+            document.FileName,
+            result.FileName);
+
+        Assert.Equal(
+            document.DisplayName,
+            result.DisplayName);
+
+        Assert.Equal(
+            document.Sha256Hash,
+            result.Sha256Hash);
+
+        Assert.Equal(
+            document.StoredFilePath,
+            result.StoredFilePath);
+
+        Assert.Equal(
+            document.ImportedAt,
+            result.ImportedAt);
+
+        Assert.Equal(
+            document.Status,
+            result.Status);
     }
 
     [Fact]
@@ -44,21 +65,21 @@ public sealed class SqliteDocumentRepositoryTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var repository =
-            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
+            CreateRepository(connection);
 
-        Document document = CreateDocument();
+        Document document =
+            CreateDocument();
 
-        await repository.AddAsync(document);
+        await repository.AddAsync(
+            document);
 
         bool exists =
             await repository.ExistsByHashAsync(
                 document.Sha256Hash);
 
-        Assert.True(exists);
+        Assert.True(
+            exists);
     }
 
     [Fact]
@@ -67,17 +88,15 @@ public sealed class SqliteDocumentRepositoryTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var repository =
-            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
+            CreateRepository(connection);
 
         bool exists =
             await repository.ExistsByHashAsync(
                 "missing-hash");
 
-        Assert.False(exists);
+        Assert.False(
+            exists);
     }
 
     [Fact]
@@ -86,39 +105,52 @@ public sealed class SqliteDocumentRepositoryTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var repository =
-            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
+            CreateRepository(connection);
 
-        Document older = Document.Restore(
-            Guid.NewGuid(),
-            "older.txt",
-            "Older Document",
-            "hash-older",
-            "older.dvault",
-            DateTime.UtcNow.AddMinutes(-5),
-            DocumentStatus.Imported);
+        DateTime importedAt =
+            DateTime.UtcNow;
 
-        Document newer = Document.Restore(
-            Guid.NewGuid(),
-            "newer.txt",
-            "Newer Document",
-            "hash-newer",
-            "newer.dvault",
-            DateTime.UtcNow,
-            DocumentStatus.Imported);
+        Document older =
+            Document.Restore(
+                Guid.NewGuid(),
+                "older.txt",
+                "Older Document",
+                "hash-older",
+                "older.dvault",
+                importedAt.AddMinutes(-5),
+                DocumentStatus.Imported);
 
-        await repository.AddAsync(older);
-        await repository.AddAsync(newer);
+        Document newer =
+            Document.Restore(
+                Guid.NewGuid(),
+                "newer.txt",
+                "Newer Document",
+                "hash-newer",
+                "newer.dvault",
+                importedAt,
+                DocumentStatus.Imported);
+
+        await repository.AddAsync(
+            older);
+
+        await repository.AddAsync(
+            newer);
 
         IReadOnlyList<Document> documents =
             await repository.GetAllAsync();
 
-        Assert.Equal(2, documents.Count);
-        Assert.Equal(newer.Id, documents[0].Id);
-        Assert.Equal(older.Id, documents[1].Id);
+        Assert.Equal(
+            2,
+            documents.Count);
+
+        Assert.Equal(
+            newer.Id,
+            documents[0].Id);
+
+        Assert.Equal(
+            older.Id,
+            documents[1].Id);
     }
 
     [Fact]
@@ -127,22 +159,24 @@ public sealed class SqliteDocumentRepositoryTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var repository =
-            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
+            CreateRepository(connection);
 
-        Document document = CreateDocument();
+        Document document =
+            CreateDocument();
 
-        await repository.AddAsync(document);
+        await repository.AddAsync(
+            document);
 
-        await repository.DeleteAsync(document.Id);
+        await repository.DeleteAsync(
+            document.Id);
 
         Document? result =
-            await repository.GetByIdAsync(document.Id);
+            await repository.GetByIdAsync(
+                document.Id);
 
-        Assert.Null(result);
+        Assert.Null(
+            result);
     }
 
     [Fact]
@@ -151,13 +185,11 @@ public sealed class SqliteDocumentRepositoryTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var repository =
-            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
+            CreateRepository(connection);
 
-        await repository.DeleteAsync(Guid.NewGuid());
+        await repository.DeleteAsync(
+            Guid.NewGuid());
     }
 
     [Fact]
@@ -166,27 +198,82 @@ public sealed class SqliteDocumentRepositoryTests
         await using SqliteConnection connection =
             CreateConnection();
 
-        IDbContextFactory<DeskVaultDbContext> factory =
-            CreateFactory(connection);
-
         var repository =
-            new SqliteDocumentRepository(factory, NullLogger<SqliteDocumentRepository>.Instance);
+            CreateRepository(connection);
 
-        Document document = CreateDocument();
+        Document document =
+            CreateDocument();
 
-        await repository.AddAsync(document);
+        await repository.AddAsync(
+            document);
 
         document.MarkProcessing();
 
-        await repository.UpdateAsync(document);
+        await repository.UpdateAsync(
+            document);
 
         Document? result =
-            await repository.GetByIdAsync(document.Id);
+            await repository.GetByIdAsync(
+                document.Id);
 
         Assert.NotNull(result);
+
         Assert.Equal(
             DocumentStatus.Processing,
             result.Status);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_WhenCancellationIsRequested_ThrowsOperationCanceledException()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () =>
+                repository.GetByIdAsync(
+                    Guid.NewGuid(),
+                    cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task AddAsync_WhenCancellationIsRequested_ThrowsOperationCanceledException()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        Document document =
+            CreateDocument();
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () =>
+                repository.AddAsync(
+                    document,
+                    cancellationTokenSource.Token));
+    }
+
+    private static SqliteDocumentRepository CreateRepository(
+        SqliteConnection connection)
+    {
+        return new SqliteDocumentRepository(
+            CreateFactory(connection),
+            NullLogger<SqliteDocumentRepository>.Instance);
     }
 
     private static Document CreateDocument()
@@ -195,22 +282,20 @@ public sealed class SqliteDocumentRepositoryTests
             Guid.NewGuid(),
             "document.txt",
             "Test Document",
-            "sha256-test-hash",
+            $"sha256-test-hash-{Guid.NewGuid():N}",
             "document.dvault");
     }
 
     private static SqliteConnection CreateConnection()
     {
         var connection =
-            new SqliteConnection("Data Source=:memory:");
+            new SqliteConnection(
+                "Data Source=:memory:");
 
         connection.Open();
 
         using var context =
-            new DeskVaultDbContext(
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(connection)
-                    .Options);
+            CreateContext(connection);
 
         context.Database.EnsureCreated();
 
@@ -220,7 +305,20 @@ public sealed class SqliteDocumentRepositoryTests
     private static IDbContextFactory<DeskVaultDbContext> CreateFactory(
         SqliteConnection connection)
     {
-        return new TestDbContextFactory(connection);
+        return new TestDbContextFactory(
+            connection);
+    }
+
+    private static DeskVaultDbContext CreateContext(
+        SqliteConnection connection)
+    {
+        DbContextOptions<DeskVaultDbContext> options =
+            new DbContextOptionsBuilder<DeskVaultDbContext>()
+                .UseSqlite(connection)
+                .Options;
+
+        return new DeskVaultDbContext(
+            options);
     }
 
     private sealed class TestDbContextFactory
@@ -242,17 +340,16 @@ public sealed class SqliteDocumentRepositoryTests
         public Task<DeskVaultDbContext> CreateDbContextAsync(
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(CreateContext());
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                CreateContext());
         }
 
         private DeskVaultDbContext CreateContext()
         {
-            DbContextOptions<DeskVaultDbContext> options =
-                new DbContextOptionsBuilder<DeskVaultDbContext>()
-                    .UseSqlite(_connection)
-                    .Options;
-
-            return new DeskVaultDbContext(options);
+            return SqliteDocumentRepositoryTests.CreateContext(
+                _connection);
         }
     }
 }

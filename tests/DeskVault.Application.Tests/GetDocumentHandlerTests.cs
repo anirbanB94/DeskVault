@@ -11,35 +11,23 @@ public sealed class GetDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentExists_ReturnsDocumentResult()
     {
-        Guid documentId =
-            Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
 
         DateTime importedAt =
             new(2026, 8, 17, 10, 30, 0, DateTimeKind.Utc);
 
         Document document =
-            Document.Restore(
+            CreateDocument(
                 documentId,
-                "document.txt",
-                "Test Document",
-                "sha256-test-hash",
-                "document.dvault",
-                importedAt,
-                DocumentStatus.Imported);
+                importedAt);
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
+            CreateRepository(
                 documentId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+                document);
 
         var handler =
-            new GetDocumentHandler(
-                repository.Object,
-                NullLogger<GetDocumentHandler>.Instance);
+            CreateHandler(repository);
 
         GetDocumentResult result =
             await handler.HandleAsync(
@@ -89,9 +77,7 @@ public sealed class GetDocumentHandlerTests
             .ReturnsAsync((Document?)null);
 
         var handler =
-            new GetDocumentHandler(
-                repository.Object,
-                NullLogger<GetDocumentHandler>.Instance);
+            CreateHandler(repository);
 
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>
@@ -104,5 +90,43 @@ public sealed class GetDocumentHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    private static Document CreateDocument(
+        Guid documentId,
+        DateTime importedAt)
+    {
+        return Document.Restore(
+            documentId,
+            "document.txt",
+            "Test Document",
+            "sha256-test-hash",
+            "document.dvault",
+            importedAt,
+            DocumentStatus.Imported);
+    }
+
+    private static Mock<IDocumentRepository> CreateRepository(
+        Guid documentId,
+        Document document)
+    {
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        return repository;
+    }
+
+    private static GetDocumentHandler CreateHandler(
+        Mock<IDocumentRepository> repository)
+    {
+        return new GetDocumentHandler(
+            repository.Object,
+            NullLogger<GetDocumentHandler>.Instance);
     }
 }

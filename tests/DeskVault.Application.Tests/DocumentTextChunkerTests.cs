@@ -5,20 +5,14 @@ namespace DeskVault.Application.Tests;
 
 public sealed class DocumentTextChunkerTests
 {
+    private const int DefaultMaxChunkSize = 1000;
+    private const int SmallMaxChunkSize = 20;
+
     [Fact]
     public async Task ChunkAsync_EmptyText_ReturnsNoChunks()
     {
-        var normalizationResult =
-            new DocumentTextNormalizationResult(
-                string.Empty);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 1000);
-
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(string.Empty);
 
         Assert.Empty(chunks);
     }
@@ -29,27 +23,14 @@ public sealed class DocumentTextChunkerTests
         const string text =
             "DeskVault keeps documents searchable.";
 
-        var normalizationResult =
-            new DocumentTextNormalizationResult(text);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 1000);
-
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(text);
 
-        var chunk =
+        DocumentChunk chunk =
             Assert.Single(chunks);
 
-        Assert.Equal(
-            0,
-            chunk.Order);
-
-        Assert.Equal(
-            text,
-            chunk.Text);
+        Assert.Equal(0, chunk.Order);
+        Assert.Equal(text, chunk.Text);
     }
 
     [Fact]
@@ -64,23 +45,13 @@ public sealed class DocumentTextChunkerTests
             Third paragraph.
             """;
 
-        var normalizationResult =
-            new DocumentTextNormalizationResult(text);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 1000);
-
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(text);
 
-        var chunk =
+        DocumentChunk chunk =
             Assert.Single(chunks);
 
-        Assert.Equal(
-            text,
-            chunk.Text);
+        Assert.Equal(text, chunk.Text);
     }
 
     [Fact]
@@ -93,93 +64,55 @@ public sealed class DocumentTextChunkerTests
             "Second paragraph.";
 
         string text =
-            firstParagraph +
-            "\n\n" +
-            secondParagraph;
-
-        var normalizationResult =
-            new DocumentTextNormalizationResult(text);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: secondParagraph.Length);
+            $"{firstParagraph}\n\n{secondParagraph}";
 
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(
+                text,
+                secondParagraph.Length);
+
+        Assert.Equal(2, chunks.Count);
 
         Assert.Equal(
-            2,
-            chunks.Count);
+            [0, 1],
+            chunks.Select(chunk => chunk.Order).ToArray());
 
         Assert.Equal(
-            0,
-            chunks[0].Order);
-
-        Assert.Equal(
-            1,
-            chunks[1].Order);
-
-        Assert.Equal(
-            firstParagraph,
-            chunks[0].Text);
-
-        Assert.Equal(
-            secondParagraph,
-            chunks[1].Text);
+            [firstParagraph, secondParagraph],
+            chunks.Select(chunk => chunk.Text).ToArray());
     }
 
     [Fact]
     public async Task ChunkAsync_OversizedParagraph_SplitsIntoBoundedChunks()
     {
-        const string text =
-            "One two three four five six seven eight nine ten.";
-
-        var normalizationResult =
-            new DocumentTextNormalizationResult(text);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 20);
-
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(
+                OversizedText,
+                SmallMaxChunkSize);
 
-        Assert.True(
-            chunks.Count > 1);
+        Assert.True(chunks.Count > 1);
 
         Assert.All(
             chunks,
             chunk =>
                 Assert.True(
-                    chunk.Text.Length <= 20));
+                    chunk.Text.Length <= SmallMaxChunkSize));
     }
 
     [Fact]
     public async Task ChunkAsync_OversizedParagraph_PreservesEveryCharacter()
     {
-        const string text =
-            "One two three four five six seven eight nine ten.";
-
-        var normalizationResult =
-            new DocumentTextNormalizationResult(text);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 20);
-
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(
+                OversizedText,
+                SmallMaxChunkSize);
 
         string combined =
             string.Concat(
-                chunks.Select(
-                    chunk => chunk.Text));
+                chunks.Select(chunk => chunk.Text));
 
         string expected =
-            text.Replace(
+            OversizedText.Replace(
                 " ",
                 string.Empty,
                 StringComparison.Ordinal);
@@ -190,36 +123,20 @@ public sealed class DocumentTextChunkerTests
                 string.Empty,
                 StringComparison.Ordinal);
 
-        Assert.Equal(
-            expected,
-            actual);
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
     public async Task ChunkAsync_OversizedParagraph_ChunksAreOrdered()
     {
-        const string text =
-            "One two three four five six seven eight nine ten.";
-
-        var normalizationResult =
-            new DocumentTextNormalizationResult(text);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 20);
-
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(
+                OversizedText,
+                SmallMaxChunkSize);
 
-        for (int index = 0;
-             index < chunks.Count;
-             index++)
-        {
-            Assert.Equal(
-                index,
-                chunks[index].Order);
-        }
+        Assert.Equal(
+            Enumerable.Range(0, chunks.Count),
+            chunks.Select(chunk => chunk.Order));
     }
 
     [Fact]
@@ -233,16 +150,8 @@ public sealed class DocumentTextChunkerTests
             Second paragraph.
             """;
 
-        var normalizationResult =
-            new DocumentTextNormalizationResult(text);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 1000);
-
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(text);
 
         Assert.NotEmpty(chunks);
 
@@ -250,8 +159,7 @@ public sealed class DocumentTextChunkerTests
             chunks,
             chunk =>
                 Assert.False(
-                    string.IsNullOrEmpty(
-                        chunk.Text)));
+                    string.IsNullOrEmpty(chunk.Text)));
     }
 
     [Fact]
@@ -267,43 +175,25 @@ public sealed class DocumentTextChunkerTests
             """;
 
         var normalizationResult =
-            new DocumentTextNormalizationResult(text);
+            CreateNormalizationResult(text);
 
         var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 20);
+            CreateChunker(SmallMaxChunkSize);
 
         IReadOnlyList<DocumentChunk> first =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult);
 
         IReadOnlyList<DocumentChunk> second =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult);
 
-        Assert.Equal(
-            first.Count,
-            second.Count);
-
-        for (int index = 0;
-             index < first.Count;
-             index++)
-        {
-            Assert.Equal(
-                first[index].Order,
-                second[index].Order);
-
-            Assert.Equal(
-                first[index].Text,
-                second[index].Text);
-        }
+        Assert.Equal(first, second);
     }
 
     [Fact]
     public async Task ChunkAsync_WhenCancellationRequested_ThrowsOperationCanceledException()
     {
         var normalizationResult =
-            new DocumentTextNormalizationResult(
+            CreateNormalizationResult(
                 "Cancellation test.");
 
         using var cancellationTokenSource =
@@ -311,13 +201,9 @@ public sealed class DocumentTextChunkerTests
 
         cancellationTokenSource.Cancel();
 
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 1000);
-
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
-                chunker.ChunkAsync(
+                CreateChunker().ChunkAsync(
                     normalizationResult,
                     cancellationTokenSource.Token));
     }
@@ -325,27 +211,17 @@ public sealed class DocumentTextChunkerTests
     [Fact]
     public async Task ChunkAsync_OversizedParagraph_PreservesExactCharacters()
     {
-        const string text =
-            "One two three four five six seven eight nine ten.";
-
-        var normalizationResult =
-            new DocumentTextNormalizationResult(text);
-
-        var chunker =
-            new DocumentTextChunker(
-                maxChunkSize: 20);
-
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await ChunkAsync(
+                OversizedText,
+                SmallMaxChunkSize);
 
         string combined =
             string.Concat(
-                chunks.Select(
-                    chunk => chunk.Text));
+                chunks.Select(chunk => chunk.Text));
 
         Assert.Equal(
-            text,
+            OversizedText,
             combined);
     }
 
@@ -355,8 +231,7 @@ public sealed class DocumentTextChunkerTests
         ArgumentOutOfRangeException exception =
             Assert.Throws<ArgumentOutOfRangeException>(
                 () =>
-                    new DocumentTextChunker(
-                        maxChunkSize: 0));
+                    CreateChunker(0));
 
         Assert.Equal(
             "maxChunkSize",
@@ -369,11 +244,35 @@ public sealed class DocumentTextChunkerTests
         ArgumentOutOfRangeException exception =
             Assert.Throws<ArgumentOutOfRangeException>(
                 () =>
-                    new DocumentTextChunker(
-                        maxChunkSize: -1));
+                    CreateChunker(-1));
 
         Assert.Equal(
             "maxChunkSize",
             exception.ParamName);
+    }
+
+    private static readonly string OversizedText =
+        "One two three four five six seven eight nine ten.";
+
+    private static DocumentTextChunker CreateChunker(
+        int maxChunkSize = DefaultMaxChunkSize)
+    {
+        return new DocumentTextChunker(maxChunkSize);
+    }
+
+    private static DocumentTextNormalizationResult CreateNormalizationResult(
+        string text)
+    {
+        return new DocumentTextNormalizationResult(text);
+    }
+
+    private static async Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
+        string text,
+        int maxChunkSize = DefaultMaxChunkSize,
+        CancellationToken cancellationToken = default)
+    {
+        return await CreateChunker(maxChunkSize).ChunkAsync(
+            CreateNormalizationResult(text),
+            cancellationToken);
     }
 }

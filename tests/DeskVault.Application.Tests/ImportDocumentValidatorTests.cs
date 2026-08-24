@@ -9,11 +9,13 @@ public sealed class ImportDocumentValidatorTests
     [Fact]
     public void Validate_WhenFilePathIsEmpty_ReturnsValidationFailed()
     {
-        ImportDocumentCommand command = new(
-            string.Empty,
-            null);
+        ImportDocumentCommand command =
+            new(
+                string.Empty,
+                null);
 
-        ImportDocumentResult result = _validator.Validate(command);
+        ImportDocumentResult result =
+            _validator.Validate(command);
 
         Assert.Equal(
             ImportDocumentResultStatus.ValidationFailed,
@@ -27,15 +29,16 @@ public sealed class ImportDocumentValidatorTests
     [Fact]
     public void Validate_WhenFileDoesNotExist_ReturnsFileNotFound()
     {
-        string filePath = Path.Combine(
-            Path.GetTempPath(),
-            $"{Guid.NewGuid():N}.txt");
+        string filePath =
+            CreateTemporaryFilePath(".txt");
 
-        ImportDocumentCommand command = new(
-            filePath,
-            null);
+        ImportDocumentCommand command =
+            new(
+                filePath,
+                null);
 
-        ImportDocumentResult result = _validator.Validate(command);
+        ImportDocumentResult result =
+            _validator.Validate(command);
 
         Assert.Equal(
             ImportDocumentResultStatus.FileNotFound,
@@ -49,17 +52,19 @@ public sealed class ImportDocumentValidatorTests
     [Fact]
     public void Validate_WhenFileTypeIsUnsupported_ReturnsUnsupportedFileType()
     {
-        string filePath = Path.Combine(
-            Path.GetTempPath(),
-            $"{Guid.NewGuid():N}.exe");
-
-        File.WriteAllText(filePath, "test");
+        string filePath =
+            CreateTemporaryFilePath(".exe");
 
         try
         {
-            ImportDocumentCommand command = new(
+            File.WriteAllText(
                 filePath,
-                null);
+                "test");
+
+            ImportDocumentCommand command =
+                new(
+                    filePath,
+                    null);
 
             ImportDocumentResult result =
                 _validator.Validate(command);
@@ -74,24 +79,26 @@ public sealed class ImportDocumentValidatorTests
         }
         finally
         {
-            File.Delete(filePath);
+            DeleteFileIfExists(filePath);
         }
     }
 
     [Fact]
     public void Validate_WhenSupportedFileIsEmpty_ReturnsValidationFailed()
     {
-        string filePath = Path.Combine(
-            Path.GetTempPath(),
-            $"{Guid.NewGuid():N}.txt");
-
-        File.WriteAllText(filePath, string.Empty);
+        string filePath =
+            CreateTemporaryFilePath(".txt");
 
         try
         {
-            ImportDocumentCommand command = new(
+            File.WriteAllText(
                 filePath,
-                null);
+                string.Empty);
+
+            ImportDocumentCommand command =
+                new(
+                    filePath,
+                    null);
 
             ImportDocumentResult result =
                 _validator.Validate(command);
@@ -106,24 +113,26 @@ public sealed class ImportDocumentValidatorTests
         }
         finally
         {
-            File.Delete(filePath);
+            DeleteFileIfExists(filePath);
         }
     }
 
     [Fact]
     public void Validate_WhenSupportedFileIsNonEmpty_ReturnsSuccess()
     {
-        string filePath = Path.Combine(
-            Path.GetTempPath(),
-            $"{Guid.NewGuid():N}.txt");
-
-        File.WriteAllText(filePath, "DeskVault test document");
+        string filePath =
+            CreateTemporaryFilePath(".txt");
 
         try
         {
-            ImportDocumentCommand command = new(
+            File.WriteAllText(
                 filePath,
-                null);
+                "DeskVault test document");
+
+            ImportDocumentCommand command =
+                new(
+                    filePath,
+                    null);
 
             ImportDocumentResult result =
                 _validator.Validate(command);
@@ -137,6 +146,23 @@ public sealed class ImportDocumentValidatorTests
                 result.Description);
         }
         finally
+        {
+            DeleteFileIfExists(filePath);
+        }
+    }
+
+    private static string CreateTemporaryFilePath(
+        string extension)
+    {
+        return Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}{extension}");
+    }
+
+    private static void DeleteFileIfExists(
+        string filePath)
+    {
+        if (File.Exists(filePath))
         {
             File.Delete(filePath);
         }

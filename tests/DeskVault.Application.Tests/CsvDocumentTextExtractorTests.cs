@@ -6,6 +6,8 @@ namespace DeskVault.Application.Tests;
 
 public sealed class CsvDocumentTextExtractorTests
 {
+    private const string DocumentFileName = "document.csv";
+
     [Fact]
     public async Task ExtractAsync_NormalCsv_ReturnsHeaderAwareText()
     {
@@ -185,11 +187,8 @@ public sealed class CsvDocumentTextExtractorTests
     public void CanExtract_CsvExtension_IsCaseInsensitive(
         string fileName)
     {
-        var extractor =
-            new CsvDocumentTextExtractor();
-
         Assert.True(
-            extractor.CanExtract(fileName));
+            CreateExtractor().CanExtract(fileName));
     }
 
     [Theory]
@@ -199,28 +198,8 @@ public sealed class CsvDocumentTextExtractorTests
     public void CanExtract_NonCsvExtension_ReturnsFalse(
         string fileName)
     {
-        var extractor =
-            new CsvDocumentTextExtractor();
-
         Assert.False(
-            extractor.CanExtract(fileName));
-    }
-
-    private static async Task<DocumentTextExtractionResult> ExtractAsync(
-        string csv,
-        CancellationToken cancellationToken = default)
-    {
-        using var stream =
-            new MemoryStream(
-                Encoding.UTF8.GetBytes(csv));
-
-        var extractor =
-            new CsvDocumentTextExtractor();
-
-        return await extractor.ExtractAsync(
-            stream,
-            "document.csv",
-            cancellationToken);
+            CreateExtractor().CanExtract(fileName));
     }
 
     [Fact]
@@ -236,13 +215,30 @@ public sealed class CsvDocumentTextExtractorTests
             new MemoryStream(
                 Encoding.UTF8.GetBytes(csv));
 
-        var extractor =
-            new CsvDocumentTextExtractor();
-
-        await extractor.ExtractAsync(
+        await CreateExtractor().ExtractAsync(
             stream,
-            "document.csv");
+            DocumentFileName);
 
-        Assert.True(stream.CanRead);
+        Assert.True(
+            stream.CanRead);
+    }
+
+    private static CsvDocumentTextExtractor CreateExtractor()
+    {
+        return new CsvDocumentTextExtractor();
+    }
+
+    private static async Task<DocumentTextExtractionResult> ExtractAsync(
+        string csv,
+        CancellationToken cancellationToken = default)
+    {
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(csv));
+
+        return await CreateExtractor().ExtractAsync(
+            stream,
+            DocumentFileName,
+            cancellationToken);
     }
 }

@@ -7,20 +7,22 @@ namespace DeskVault.Application.Tests;
 
 public sealed class DocumentTextExtractorResolverTests
 {
+    private static DocumentTextExtractorResolver CreateResolver()
+    {
+        return new DocumentTextExtractorResolver(
+            new IDocumentTextExtractor[]
+            {
+                new TextDocumentTextExtractor(),
+                new MarkdownDocumentTextExtractor(),
+                new CsvDocumentTextExtractor()
+            });
+    }
+
     [Fact]
     public void Resolve_TxtFile_ReturnsTextExtractor()
     {
-        var resolver =
-            new DocumentTextExtractorResolver(
-                new IDocumentTextExtractor[]
-                {
-                    new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor(),
-                    new CsvDocumentTextExtractor()
-                });
-
         IDocumentTextExtractor extractor =
-            resolver.Resolve("notes.txt");
+            CreateResolver().Resolve("notes.txt");
 
         Assert.IsType<TextDocumentTextExtractor>(
             extractor);
@@ -29,17 +31,8 @@ public sealed class DocumentTextExtractorResolverTests
     [Fact]
     public void Resolve_MarkdownFile_ReturnsMarkdownExtractor()
     {
-        var resolver =
-            new DocumentTextExtractorResolver(
-                new IDocumentTextExtractor[]
-                {
-                    new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor(),
-                    new CsvDocumentTextExtractor()
-                });
-
         IDocumentTextExtractor extractor =
-            resolver.Resolve("README.md");
+            CreateResolver().Resolve("README.md");
 
         Assert.IsType<MarkdownDocumentTextExtractor>(
             extractor);
@@ -48,17 +41,8 @@ public sealed class DocumentTextExtractorResolverTests
     [Fact]
     public void Resolve_CsvFile_ReturnsCsvExtractor()
     {
-        var resolver =
-            new DocumentTextExtractorResolver(
-                new IDocumentTextExtractor[]
-                {
-                    new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor(),
-                    new CsvDocumentTextExtractor()
-                });
-
         IDocumentTextExtractor extractor =
-            resolver.Resolve("data.csv");
+            CreateResolver().Resolve("data.csv");
 
         Assert.IsType<CsvDocumentTextExtractor>(
             extractor);
@@ -71,18 +55,9 @@ public sealed class DocumentTextExtractorResolverTests
     public void Resolve_UnsupportedFile_ThrowsNotSupportedException(
         string fileName)
     {
-        var resolver =
-            new DocumentTextExtractorResolver(
-                new IDocumentTextExtractor[]
-                {
-                    new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor(),
-                    new CsvDocumentTextExtractor()
-                });
-
         NotSupportedException exception =
             Assert.Throws<NotSupportedException>(
-                () => resolver.Resolve(fileName));
+                () => CreateResolver().Resolve(fileName));
 
         Assert.Equal(
             $"No document text extractor is available for '{fileName}'.",
@@ -96,17 +71,8 @@ public sealed class DocumentTextExtractorResolverTests
     public void Resolve_MarkdownExtension_IsCaseInsensitive(
         string fileName)
     {
-        var resolver =
-            new DocumentTextExtractorResolver(
-                new IDocumentTextExtractor[]
-                {
-                    new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor(),
-                    new CsvDocumentTextExtractor()
-                });
-
         IDocumentTextExtractor extractor =
-            resolver.Resolve(fileName);
+            CreateResolver().Resolve(fileName);
 
         Assert.IsType<MarkdownDocumentTextExtractor>(
             extractor);
@@ -119,17 +85,8 @@ public sealed class DocumentTextExtractorResolverTests
     public void Resolve_CsvExtension_IsCaseInsensitive(
         string fileName)
     {
-        var resolver =
-            new DocumentTextExtractorResolver(
-                new IDocumentTextExtractor[]
-                {
-                    new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor(),
-                    new CsvDocumentTextExtractor()
-                });
-
         IDocumentTextExtractor extractor =
-            resolver.Resolve(fileName);
+            CreateResolver().Resolve(fileName);
 
         Assert.IsType<CsvDocumentTextExtractor>(
             extractor);

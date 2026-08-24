@@ -4,6 +4,15 @@ namespace DeskVault.Application.Tests;
 
 public sealed class CsvDocumentParserTests
 {
+    private static CsvDocumentParser CreateParser()
+    {
+        return new CsvDocumentParser(
+            new CsvParsingOptions
+            {
+                MaxRows = null
+            });
+    }
+
     [Fact]
     public async Task ParseAsync_NormalCsv_PreservesColumnsAndRows()
     {
@@ -18,25 +27,18 @@ public sealed class CsvDocumentParserTests
             await ParseAsync(csv);
 
         Assert.Equal(3, document.Columns.Count);
-
         Assert.Equal(
-            new CsvDocumentColumn(0, "Id"),
-            document.Columns[0]);
-
-        Assert.Equal(
-            new CsvDocumentColumn(1, "Name"),
-            document.Columns[1]);
-
-        Assert.Equal(
-            new CsvDocumentColumn(2, "Department"),
-            document.Columns[2]);
+            [
+                new CsvDocumentColumn(0, "Id"),
+                new CsvDocumentColumn(1, "Name"),
+                new CsvDocumentColumn(2, "Department")
+            ],
+            document.Columns);
 
         Assert.Equal(2, document.Rows.Count);
-
         Assert.Equal(
             new[] { "1001", "Alice Johnson", "Engineering" },
             document.Rows[0]);
-
         Assert.Equal(
             new[] { "1002", "Bob Smith", "Design" },
             document.Rows[1]);
@@ -64,15 +66,12 @@ public sealed class CsvDocumentParserTests
         Assert.Equal(
             "Smith, John",
             document.Rows[0][1]);
-
         Assert.Equal(
             "Requires review, approval pending",
             document.Rows[0][2]);
-
         Assert.Equal(
             "Patel, Diana",
             document.Rows[1][1]);
-
         Assert.Equal(
             "Completed, archived",
             document.Rows[1][2]);
@@ -98,17 +97,9 @@ public sealed class CsvDocumentParserTests
         Assert.Equal(4, document.Columns.Count);
         Assert.Equal(3, document.Rows.Count);
 
-        Assert.Equal(
-            string.Empty,
-            document.Rows[0][2]);
-
-        Assert.Equal(
-            string.Empty,
-            document.Rows[1][1]);
-
-        Assert.Equal(
-            string.Empty,
-            document.Rows[2][3]);
+        Assert.Equal(string.Empty, document.Rows[0][2]);
+        Assert.Equal(string.Empty, document.Rows[1][1]);
+        Assert.Equal(string.Empty, document.Rows[2][3]);
 
         Assert.Empty(document.Warnings);
         Assert.False(document.HasMoreRows);
@@ -130,20 +121,12 @@ public sealed class CsvDocumentParserTests
         Assert.Equal(4, document.Columns.Count);
         Assert.Equal(2, document.Rows.Count);
 
-        Assert.Equal(
-            string.Empty,
-            document.Rows[0][3]);
-
-        Assert.Equal(
-            "Active",
-            document.Rows[1][3]);
+        Assert.Equal(string.Empty, document.Rows[0][3]);
+        Assert.Equal("Active", document.Rows[1][3]);
 
         Assert.Single(document.Warnings);
 
-        Assert.Equal(
-            2,
-            document.Warnings[0].RowNumber);
-
+        Assert.Equal(2, document.Warnings[0].RowNumber);
         Assert.Equal(
             "Row 2 contains 3 field(s), but the header contains 4 column(s).",
             document.Warnings[0].Message);
@@ -165,27 +148,21 @@ public sealed class CsvDocumentParserTests
             await ParseAsync(csv);
 
         Assert.Equal(4, document.Columns.Count);
-
         Assert.Equal(
             "Unnamed Column 4",
             document.Columns[3].Header);
 
         Assert.Equal(2, document.Rows.Count);
-
         Assert.Equal(
             "Unexpected value",
             document.Rows[0][3]);
-
         Assert.Equal(
             string.Empty,
             document.Rows[1][3]);
 
         Assert.Single(document.Warnings);
 
-        Assert.Equal(
-            2,
-            document.Warnings[0].RowNumber);
-
+        Assert.Equal(2, document.Warnings[0].RowNumber);
         Assert.Equal(
             "Row 2 contains 4 field(s), but the header contains 3 column(s).",
             document.Warnings[0].Message);
@@ -210,40 +187,25 @@ public sealed class CsvDocumentParserTests
 
         Assert.Equal(5, document.Columns.Count);
         Assert.Equal(4, document.Rows.Count);
-
         Assert.Equal(2, document.Warnings.Count);
 
         Assert.Equal(
-            2,
-            document.Warnings[0].RowNumber);
-
-        Assert.Equal(
-            4,
-            document.Warnings[1].RowNumber);
+            [2, 4],
+            document.Warnings
+                .Select(warning => warning.RowNumber)
+                .ToArray());
 
         Assert.Equal(
             "Row 2 contains 4 field(s), but the header contains 5 column(s).",
             document.Warnings[0].Message);
-
         Assert.Equal(
             "Row 4 contains 3 field(s), but the header contains 5 column(s).",
             document.Warnings[1].Message);
 
-        Assert.Equal(
-            string.Empty,
-            document.Rows[0][4]);
-
-        Assert.Equal(
-            "Complete",
-            document.Rows[1][4]);
-
-        Assert.Equal(
-            string.Empty,
-            document.Rows[2][3]);
-
-        Assert.Equal(
-            "Archived",
-            document.Rows[3][4]);
+        Assert.Equal(string.Empty, document.Rows[0][4]);
+        Assert.Equal("Complete", document.Rows[1][4]);
+        Assert.Equal(string.Empty, document.Rows[2][3]);
+        Assert.Equal("Archived", document.Rows[3][4]);
 
         Assert.False(document.HasMoreRows);
     }
@@ -261,22 +223,15 @@ public sealed class CsvDocumentParserTests
             await ParseAsync(csv);
 
         Assert.Equal(3, document.Columns.Count);
-
         Assert.Equal(
-            "Id",
-            document.Columns[0].Header);
+            [
+                new CsvDocumentColumn(0, "Id"),
+                new CsvDocumentColumn(1, "Unnamed Column 2"),
+                new CsvDocumentColumn(2, "Status")
+            ],
+            document.Columns);
 
-        Assert.Equal(
-            "Unnamed Column 2",
-            document.Columns[1].Header);
-
-        Assert.Equal(
-            "Status",
-            document.Columns[2].Header);
-
-        Assert.Equal(
-            "Alice",
-            document.Rows[0][1]);
+        Assert.Equal("Alice", document.Rows[0][1]);
 
         Assert.Empty(document.Warnings);
         Assert.False(document.HasMoreRows);
@@ -285,10 +240,8 @@ public sealed class CsvDocumentParserTests
     [Fact]
     public async Task ParseAsync_EmptyDocument_ReturnsEmptyDocument()
     {
-        const string csv = "";
-
         CsvDocument document =
-            await ParseAsync(csv);
+            await ParseAsync(string.Empty);
 
         Assert.Empty(document.Columns);
         Assert.Empty(document.Rows);
@@ -322,18 +275,11 @@ public sealed class CsvDocumentParserTests
         string csv,
         CancellationToken cancellationToken = default)
     {
-        using var stream =
+        await using var stream =
             new MemoryStream(
                 System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var parser =
-            new CsvDocumentParser(
-                new CsvParsingOptions
-                {
-                    MaxRows = null
-                });
-
-        return await parser.ParseAsync(
+        return await CreateParser().ParseAsync(
             stream,
             cancellationToken);
     }

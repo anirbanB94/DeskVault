@@ -16,21 +16,9 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_TxtFile_ReturnsTextRenderer()
     {
-        var renderers =
-            new IDocumentContentRenderer[]
-            {
-                new TextDocumentContentRenderer(
-                    new DocumentTextExtractorResolver(
-                        new IDocumentTextExtractor[]
-                        {
-                            new TextDocumentTextExtractor(),
-                            new MarkdownDocumentTextExtractor()
-                        }))
-            };
-
         var resolver =
-            new DocumentContentRendererResolver(
-                renderers);
+            CreateResolver(
+                CreateTextRenderer());
 
         IDocumentContentRenderer renderer =
             resolver.Resolve("notes.txt");
@@ -42,23 +30,9 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_MarkdownFile_ReturnsMarkdownRenderer()
     {
-        var renderers =
-            new IDocumentContentRenderer[]
-            {
-                new MarkdownDocumentContentRenderer(
-                    Options.Create(
-                        new MarkdownRenderingOptions()),
-                    new DocumentTextExtractorResolver(
-                        new IDocumentTextExtractor[]
-                        {
-                            new TextDocumentTextExtractor(),
-                            new MarkdownDocumentTextExtractor()
-                        }))
-            };
-
         var resolver =
-            new DocumentContentRendererResolver(
-                renderers);
+            CreateResolver(
+                CreateMarkdownRenderer());
 
         IDocumentContentRenderer renderer =
             resolver.Resolve("README.md");
@@ -70,20 +44,9 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_CsvFile_ReturnsCsvRenderer()
     {
-        var csvParser =
-            new CsvDocumentParser(
-                new CsvParsingOptions());
-
-        var renderers =
-            new IDocumentContentRenderer[]
-            {
-                new CsvDocumentContentRenderer(
-                    csvParser)
-            };
-
         var resolver =
-            new DocumentContentRendererResolver(
-                renderers);
+            CreateResolver(
+                CreateCsvRenderer());
 
         IDocumentContentRenderer renderer =
             resolver.Resolve("data.csv");
@@ -99,21 +62,9 @@ public sealed class DocumentContentRendererResolverTests
     public void Resolve_TxtExtension_IsCaseInsensitive(
         string fileName)
     {
-        var renderers =
-            new IDocumentContentRenderer[]
-            {
-                new TextDocumentContentRenderer(
-                    new DocumentTextExtractorResolver(
-                        new IDocumentTextExtractor[]
-                        {
-                            new TextDocumentTextExtractor(),
-                            new MarkdownDocumentTextExtractor()
-                        }))
-            };
-
         var resolver =
-            new DocumentContentRendererResolver(
-                renderers);
+            CreateResolver(
+                CreateTextRenderer());
 
         IDocumentContentRenderer renderer =
             resolver.Resolve(fileName);
@@ -129,23 +80,9 @@ public sealed class DocumentContentRendererResolverTests
     public void Resolve_MarkdownExtension_IsCaseInsensitive(
         string fileName)
     {
-        var renderers =
-            new IDocumentContentRenderer[]
-            {
-                new MarkdownDocumentContentRenderer(
-                    Options.Create(
-                        new MarkdownRenderingOptions()),
-                    new DocumentTextExtractorResolver(
-                        new IDocumentTextExtractor[]
-                        {
-                            new TextDocumentTextExtractor(),
-                            new MarkdownDocumentTextExtractor()
-                        }))
-            };
-
         var resolver =
-            new DocumentContentRendererResolver(
-                renderers);
+            CreateResolver(
+                CreateMarkdownRenderer());
 
         IDocumentContentRenderer renderer =
             resolver.Resolve(fileName);
@@ -161,20 +98,9 @@ public sealed class DocumentContentRendererResolverTests
     public void Resolve_CsvExtension_IsCaseInsensitive(
         string fileName)
     {
-        var csvParser =
-            new CsvDocumentParser(
-                new CsvParsingOptions());
-
-        var renderers =
-            new IDocumentContentRenderer[]
-            {
-                new CsvDocumentContentRenderer(
-                    csvParser)
-            };
-
         var resolver =
-            new DocumentContentRendererResolver(
-                renderers);
+            CreateResolver(
+                CreateCsvRenderer());
 
         IDocumentContentRenderer renderer =
             resolver.Resolve(fileName);
@@ -191,35 +117,11 @@ public sealed class DocumentContentRendererResolverTests
     public void Resolve_UnsupportedExtension_ThrowsNotSupportedException(
         string fileName)
     {
-        var renderers =
-            new IDocumentContentRenderer[]
-            {
-                new TextDocumentContentRenderer(
-                    new DocumentTextExtractorResolver(
-                        new IDocumentTextExtractor[]
-                        {
-                            new TextDocumentTextExtractor(),
-                            new MarkdownDocumentTextExtractor()
-                        })),
-
-                new MarkdownDocumentContentRenderer(
-                    Options.Create(
-                        new MarkdownRenderingOptions()),
-                    new DocumentTextExtractorResolver(
-                        new IDocumentTextExtractor[]
-                        {
-                            new TextDocumentTextExtractor(),
-                            new MarkdownDocumentTextExtractor()
-                        })),
-
-                new CsvDocumentContentRenderer(
-                    new CsvDocumentParser(
-                        new CsvParsingOptions()))
-            };
-
         var resolver =
-            new DocumentContentRendererResolver(
-                renderers);
+            CreateResolver(
+                CreateTextRenderer(),
+                CreateMarkdownRenderer(),
+                CreateCsvRenderer());
 
         NotSupportedException exception =
             Assert.Throws<NotSupportedException>(
@@ -233,35 +135,11 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_EmptyFileName_ThrowsNotSupportedException()
     {
-        var renderers =
-            new IDocumentContentRenderer[]
-            {
-                new TextDocumentContentRenderer(
-                    new DocumentTextExtractorResolver(
-                        new IDocumentTextExtractor[]
-                        {
-                            new TextDocumentTextExtractor(),
-                            new MarkdownDocumentTextExtractor()
-                        })),
-
-                new MarkdownDocumentContentRenderer(
-                    Options.Create(
-                        new MarkdownRenderingOptions()),
-                    new DocumentTextExtractorResolver(
-                        new IDocumentTextExtractor[]
-                        {
-                            new TextDocumentTextExtractor(),
-                            new MarkdownDocumentTextExtractor()
-                        })),
-
-                new CsvDocumentContentRenderer(
-                    new CsvDocumentParser(
-                        new CsvParsingOptions()))
-            };
-
         var resolver =
-            new DocumentContentRendererResolver(
-                renderers);
+            CreateResolver(
+                CreateTextRenderer(),
+                CreateMarkdownRenderer(),
+                CreateCsvRenderer());
 
         NotSupportedException exception =
             Assert.Throws<NotSupportedException>(
@@ -298,12 +176,9 @@ public sealed class DocumentContentRendererResolverTests
             .Returns(true);
 
         var resolver =
-            new DocumentContentRendererResolver(
-                new IDocumentContentRenderer[]
-                {
-                    lowPriorityRenderer.Object,
-                    highPriorityRenderer.Object
-                });
+            CreateResolver(
+                lowPriorityRenderer.Object,
+                highPriorityRenderer.Object);
 
         IDocumentContentRenderer renderer =
             resolver.Resolve("document.test");
@@ -311,5 +186,42 @@ public sealed class DocumentContentRendererResolverTests
         Assert.Same(
             highPriorityRenderer.Object,
             renderer);
+    }
+
+    private static DocumentContentRendererResolver CreateResolver(
+        params IDocumentContentRenderer[] renderers)
+    {
+        return new DocumentContentRendererResolver(
+            renderers);
+    }
+
+    private static TextDocumentContentRenderer CreateTextRenderer()
+    {
+        return new TextDocumentContentRenderer(
+            CreateTextExtractorResolver());
+    }
+
+    private static MarkdownDocumentContentRenderer CreateMarkdownRenderer()
+    {
+        return new MarkdownDocumentContentRenderer(
+            Options.Create(
+                new MarkdownRenderingOptions()),
+            CreateTextExtractorResolver());
+    }
+
+    private static CsvDocumentContentRenderer CreateCsvRenderer()
+    {
+        return new CsvDocumentContentRenderer(
+            new CsvDocumentParser(
+                new CsvParsingOptions()));
+    }
+
+    private static DocumentTextExtractorResolver CreateTextExtractorResolver()
+    {
+        return new DocumentTextExtractorResolver(
+            [
+                new TextDocumentTextExtractor(),
+                new MarkdownDocumentTextExtractor()
+            ]);
     }
 }

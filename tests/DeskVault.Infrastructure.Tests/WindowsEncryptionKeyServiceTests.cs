@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -19,9 +18,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                     rootDirectory);
 
             var service =
-                new WindowsEncryptionKeyService(
-                    dataPaths,
-                    NullLogger<WindowsEncryptionKeyService>.Instance);
+                CreateService(dataPaths);
 
             byte[] key =
                 await service.GetOrCreateKeyAsync();
@@ -31,9 +28,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                 key.Length);
 
             string keyFilePath =
-                Path.Combine(
-                    dataPaths.SecurityDirectory,
-                    "master.key");
+                GetKeyFilePath(dataPaths);
 
             Assert.True(
                 File.Exists(keyFilePath));
@@ -69,9 +64,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                     rootDirectory);
 
             var service =
-                new WindowsEncryptionKeyService(
-                    dataPaths,
-                    NullLogger<WindowsEncryptionKeyService>.Instance);
+                CreateService(dataPaths);
 
             byte[] firstKey =
                 await service.GetOrCreateKeyAsync();
@@ -103,9 +96,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                     rootDirectory);
 
             var service =
-                new WindowsEncryptionKeyService(
-                    dataPaths,
-                    NullLogger<WindowsEncryptionKeyService>.Instance);
+                CreateService(dataPaths);
 
             Assert.False(
                 Directory.Exists(
@@ -137,16 +128,14 @@ public sealed class WindowsEncryptionKeyServiceTests
                     rootDirectory);
 
             var service =
-                new WindowsEncryptionKeyService(
-                    dataPaths,
-                    NullLogger<WindowsEncryptionKeyService>.Instance);
+                CreateService(dataPaths);
 
             using var cancellationTokenSource =
                 new CancellationTokenSource();
 
             cancellationTokenSource.Cancel();
 
-            await Assert.ThrowsAsync<OperationCanceledException>(
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () =>
                     service.GetOrCreateKeyAsync(
                         cancellationTokenSource.Token));
@@ -156,6 +145,22 @@ public sealed class WindowsEncryptionKeyServiceTests
             DeleteTemporaryDirectory(
                 rootDirectory);
         }
+    }
+
+    private static WindowsEncryptionKeyService CreateService(
+        DeskVaultDataPaths dataPaths)
+    {
+        return new WindowsEncryptionKeyService(
+            dataPaths,
+            NullLogger<WindowsEncryptionKeyService>.Instance);
+    }
+
+    private static string GetKeyFilePath(
+        DeskVaultDataPaths dataPaths)
+    {
+        return Path.Combine(
+            dataPaths.SecurityDirectory,
+            "master.key");
     }
 
     private static string CreateTemporaryDirectory()

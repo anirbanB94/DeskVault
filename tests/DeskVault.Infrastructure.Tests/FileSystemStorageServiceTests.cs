@@ -18,22 +18,9 @@ public sealed class FileSystemStorageServiceTests
                 new DeskVaultDataPaths(
                     rootDirectory);
 
-            byte[] key =
-                RandomNumberGenerator.GetBytes(32);
-
-            var keyService =
-                new TestEncryptionKeyService(key);
-
-            var encryptionService =
-                new DocumentEncryptionService(
-                    keyService,
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
-                    dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
 
             string sourceFilePath =
                 Path.Combine(
@@ -88,22 +75,13 @@ public sealed class FileSystemStorageServiceTests
                 new DeskVaultDataPaths(
                     rootDirectory);
 
-            byte[] key =
-                RandomNumberGenerator.GetBytes(32);
+            DocumentEncryptionService encryptionService =
+                CreateEncryptionService();
 
-            var keyService =
-                new TestEncryptionKeyService(key);
-
-            var encryptionService =
-                new DocumentEncryptionService(
-                    keyService,
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
+            FileSystemStorageService storageService =
+                CreateStorageService(
                     dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+                    encryptionService);
 
             string sourceFilePath =
                 Path.Combine(
@@ -162,20 +140,9 @@ public sealed class FileSystemStorageServiceTests
                 new DeskVaultDataPaths(
                     rootDirectory);
 
-            var keyService =
-                new TestEncryptionKeyService(
-                    RandomNumberGenerator.GetBytes(32));
-
-            var encryptionService =
-                new DocumentEncryptionService(
-                    keyService,
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
-                    dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
 
             string sourceFilePath =
                 Path.Combine(
@@ -217,20 +184,9 @@ public sealed class FileSystemStorageServiceTests
                 new DeskVaultDataPaths(
                     rootDirectory);
 
-            var keyService =
-                new TestEncryptionKeyService(
-                    RandomNumberGenerator.GetBytes(32));
-
-            var encryptionService =
-                new DocumentEncryptionService(
-                    keyService,
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
-                    dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
 
             string missingSource =
                 Path.Combine(
@@ -242,6 +198,50 @@ public sealed class FileSystemStorageServiceTests
                     storageService.StoreAsync(
                         missingSource,
                         Guid.NewGuid()));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task StoreAsync_Cancelled_ThrowsOperationCanceledException()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
+
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "source.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "DeskVault cancellation test.");
+
+            using var cancellationTokenSource =
+                new CancellationTokenSource();
+
+            cancellationTokenSource.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () =>
+                    storageService.StoreAsync(
+                        sourceFilePath,
+                        Guid.NewGuid(),
+                        cancellationTokenSource.Token));
         }
         finally
         {
@@ -274,20 +274,9 @@ public sealed class FileSystemStorageServiceTests
                 filePath,
                 "encrypted-content");
 
-            var keyService =
-                new TestEncryptionKeyService(
-                    RandomNumberGenerator.GetBytes(32));
-
-            var encryptionService =
-                new DocumentEncryptionService(
-                    keyService,
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
-                    dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
 
             await storageService.DeleteAsync(
                 filePath);
@@ -314,20 +303,9 @@ public sealed class FileSystemStorageServiceTests
                 new DeskVaultDataPaths(
                     rootDirectory);
 
-            var keyService =
-                new TestEncryptionKeyService(
-                    RandomNumberGenerator.GetBytes(32));
-
-            var encryptionService =
-                new DocumentEncryptionService(
-                    keyService,
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
-                    dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
 
             await Assert.ThrowsAsync<ArgumentException>(
                 () =>
@@ -353,27 +331,16 @@ public sealed class FileSystemStorageServiceTests
                 new DeskVaultDataPaths(
                     rootDirectory);
 
-            var keyService =
-                new TestEncryptionKeyService(
-                    RandomNumberGenerator.GetBytes(32));
-
-            var encryptionService =
-                new DocumentEncryptionService(
-                    keyService,
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
-                    dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
 
             using var cancellationTokenSource =
                 new CancellationTokenSource();
 
             cancellationTokenSource.Cancel();
 
-            await Assert.ThrowsAsync<OperationCanceledException>(
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () =>
                     storageService.DeleteAsync(
                         Path.Combine(
@@ -400,20 +367,9 @@ public sealed class FileSystemStorageServiceTests
                 new DeskVaultDataPaths(
                     rootDirectory);
 
-            var keyService =
-                new TestEncryptionKeyService(
-                    RandomNumberGenerator.GetBytes(32));
-
-            var encryptionService =
-                new DocumentEncryptionService(
-                    keyService,
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
-                    dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
 
             string missingFilePath =
                 Path.Combine(
@@ -432,6 +388,29 @@ public sealed class FileSystemStorageServiceTests
             DeleteTemporaryDirectory(
                 rootDirectory);
         }
+    }
+
+    private static FileSystemStorageService CreateStorageService(
+        DeskVaultDataPaths dataPaths,
+        DocumentEncryptionService? encryptionService = null)
+    {
+        encryptionService ??=
+            CreateEncryptionService();
+
+        return new FileSystemStorageService(
+            encryptionService,
+            dataPaths,
+            NullLogger<FileSystemStorageService>.Instance);
+    }
+
+    private static DocumentEncryptionService CreateEncryptionService()
+    {
+        byte[] key =
+            RandomNumberGenerator.GetBytes(32);
+
+        return new DocumentEncryptionService(
+            new TestEncryptionKeyService(key),
+            NullLogger<DocumentEncryptionService>.Instance);
     }
 
     private static string CreateTemporaryDirectory()
@@ -459,8 +438,8 @@ public sealed class FileSystemStorageServiceTests
         }
     }
 
-    private sealed class TestEncryptionKeyService :
-        IEncryptionKeyService
+    private sealed class TestEncryptionKeyService
+        : IEncryptionKeyService
     {
         private readonly byte[] _key;
 

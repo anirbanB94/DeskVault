@@ -251,11 +251,11 @@ public sealed class RemoveDocumentHandlerTests
             "Access denied.",
             result.Message);
 
-        Assert.DoesNotContain(
-            repository.Invocations,
-            invocation =>
-                invocation.Method.Name ==
-                nameof(IDocumentRepository.DeleteAsync));
+        repository.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -303,11 +303,14 @@ public sealed class RemoveDocumentHandlerTests
             "Metadata storage operation failed.",
             result.Message);
 
-        Assert.Contains(
-            repository.Invocations,
-            invocation =>
-                invocation.Method.Name ==
-                nameof(IDocumentRepository.DeleteAsync));
+        Assert.True(
+            storageService.DeleteWasCalled);
+
+        repository.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     private static Document CreateDocument()

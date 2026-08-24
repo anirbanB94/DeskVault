@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace DeskVault.Application.Tests;
 
@@ -20,12 +21,16 @@ public sealed class SearchDocumentsHandlerTests
         ];
 
         var store =
-            new TestDocumentSearchStore(expected);
+            new Mock<IDocumentSearchStore>();
 
-        var handler =
-            new SearchDocumentsHandler(
-                store,
-                NullLogger<SearchDocumentsHandler>.Instance);
+        store
+            .Setup(x => x.SearchAsync(
+                "matching",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        SearchDocumentsHandler handler =
+            CreateHandler(store);
 
         IReadOnlyList<SearchDocumentsResult> result =
             await handler.HandleAsync(
@@ -34,6 +39,12 @@ public sealed class SearchDocumentsHandlerTests
         Assert.Equal(
             expected,
             result);
+
+        store.Verify(
+            x => x.SearchAsync(
+                "matching",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -46,14 +57,18 @@ public sealed class SearchDocumentsHandlerTests
             cancellationTokenSource.Token;
 
         var store =
-            new TestDocumentSearchStore(
-                [],
-                cancellationToken);
+            new Mock<IDocumentSearchStore>();
 
-        var handler =
-            new SearchDocumentsHandler(
-                store,
-                NullLogger<SearchDocumentsHandler>.Instance);
+        store
+            .Setup(x => x.SearchAsync(
+                It.IsAny<string>(),
+                cancellationToken))
+            .ThrowsAsync(
+                new OperationCanceledException(
+                    cancellationToken));
+
+        SearchDocumentsHandler handler =
+            CreateHandler(store);
 
         cancellationTokenSource.Cancel();
 
@@ -62,37 +77,19 @@ public sealed class SearchDocumentsHandlerTests
                 handler.HandleAsync(
                     new SearchDocumentsQuery("matching"),
                     cancellationToken));
+
+        store.Verify(
+            x => x.SearchAsync(
+                "matching",
+                cancellationToken),
+            Times.Once);
     }
 
-    private sealed class TestDocumentSearchStore
-        : IDocumentSearchStore
+    private static SearchDocumentsHandler CreateHandler(
+        Mock<IDocumentSearchStore> store)
     {
-        private readonly IReadOnlyList<SearchDocumentsResult> _results;
-        private readonly CancellationToken _expectedCancellationToken;
-
-        public TestDocumentSearchStore(
-            IReadOnlyList<SearchDocumentsResult> results,
-            CancellationToken expectedCancellationToken = default)
-        {
-            _results = results;
-            _expectedCancellationToken = expectedCancellationToken;
-        }
-
-        public Task<IReadOnlyList<SearchDocumentsResult>> SearchAsync(
-            string searchText,
-            CancellationToken cancellationToken = default)
-        {
-            Assert.Equal(
-                _expectedCancellationToken,
-                cancellationToken);
-
-            if (cancellationToken.IsCancellationRequested)
-            {
-                throw new OperationCanceledException(
-                    cancellationToken);
-            }
-
-            return Task.FromResult(_results);
-        }
+        return new SearchDocumentsHandler(
+            store.Object,
+            NullLogger<SearchDocumentsHandler>.Instance);
     }
 }

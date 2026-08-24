@@ -36,9 +36,7 @@ public sealed class ListDocumentsHandlerTests
             .ReturnsAsync(expected);
 
         var handler =
-            new ListDocumentsHandler(
-                repository.Object,
-                NullLogger<ListDocumentsHandler>.Instance);
+            CreateHandler(repository);
 
         IReadOnlyList<Document> result =
             await handler.HandleAsync(
@@ -52,6 +50,14 @@ public sealed class ListDocumentsHandlerTests
             x => x.GetAllAsync(
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    private static ListDocumentsHandler CreateHandler(
+        Mock<IDocumentRepository> repository)
+    {
+        return new ListDocumentsHandler(
+            repository.Object,
+            NullLogger<ListDocumentsHandler>.Instance);
     }
 
     private static Document CreateDocument(

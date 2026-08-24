@@ -1,12 +1,9 @@
 using DeskVault.Application.Documents.Chunking;
-using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Normalization;
-using DeskVault.Application.Documents.Processing;
-using DeskVault.Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DeskVault.Application.Tests;
@@ -55,6 +52,10 @@ public sealed class ApplicationDependencyInjectionTests
             serviceProvider
                 .GetServices<IDocumentTextExtractor>()
                 .ToList();
+
+        Assert.Equal(
+            3,
+            extractors.Count);
 
         Assert.Contains(
             extractors,

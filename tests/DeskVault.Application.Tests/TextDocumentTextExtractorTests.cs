@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Tests.TestInfrastructure;
 using System.Text;
@@ -6,14 +7,14 @@ namespace DeskVault.Application.Tests;
 
 public sealed class TextDocumentTextExtractorTests
 {
+    private readonly TextDocumentTextExtractor _extractor = new();
+
     [Fact]
     public void CanExtract_TxtFile_ReturnsTrue()
     {
-        var extractor =
-            new TextDocumentTextExtractor();
-
         bool result =
-            extractor.CanExtract("notes.txt");
+            _extractor.CanExtract(
+                "notes.txt");
 
         Assert.True(result);
     }
@@ -25,11 +26,9 @@ public sealed class TextDocumentTextExtractorTests
     public void CanExtract_TxtExtension_IsCaseInsensitive(
         string fileName)
     {
-        var extractor =
-            new TextDocumentTextExtractor();
-
         bool result =
-            extractor.CanExtract(fileName);
+            _extractor.CanExtract(
+                fileName);
 
         Assert.True(result);
     }
@@ -42,11 +41,9 @@ public sealed class TextDocumentTextExtractorTests
     public void CanExtract_UnsupportedExtension_ReturnsFalse(
         string fileName)
     {
-        var extractor =
-            new TextDocumentTextExtractor();
-
         bool result =
-            extractor.CanExtract(fileName);
+            _extractor.CanExtract(
+                fileName);
 
         Assert.False(result);
     }
@@ -59,13 +56,11 @@ public sealed class TextDocumentTextExtractorTests
 
         await using var stream =
             new MemoryStream(
-                Encoding.UTF8.GetBytes(expectedText));
+                Encoding.UTF8.GetBytes(
+                    expectedText));
 
-        var extractor =
-            new TextDocumentTextExtractor();
-
-        var result =
-            await extractor.ExtractAsync(
+        DocumentTextExtractionResult result =
+            await _extractor.ExtractAsync(
                 stream,
                 "notes.txt");
 
@@ -87,13 +82,11 @@ public sealed class TextDocumentTextExtractorTests
 
         await using var stream =
             new MemoryStream(
-                Encoding.UTF8.GetBytes(expectedText));
+                Encoding.UTF8.GetBytes(
+                    expectedText));
 
-        var extractor =
-            new TextDocumentTextExtractor();
-
-        var result =
-            await extractor.ExtractAsync(
+        DocumentTextExtractionResult result =
+            await _extractor.ExtractAsync(
                 stream,
                 "notes.txt");
 
@@ -110,16 +103,15 @@ public sealed class TextDocumentTextExtractorTests
 
         await using var stream =
             new MemoryStream(
-                Encoding.UTF8.GetBytes(text));
+                Encoding.UTF8.GetBytes(
+                    text));
 
-        var extractor =
-            new TextDocumentTextExtractor();
-
-        await extractor.ExtractAsync(
+        await _extractor.ExtractAsync(
             stream,
             "notes.txt");
 
-        Assert.True(stream.CanRead);
+        Assert.True(
+            stream.CanRead);
     }
 
     [Fact]
@@ -135,12 +127,9 @@ public sealed class TextDocumentTextExtractorTests
 
         cancellationTokenSource.Cancel();
 
-        var extractor =
-            new TextDocumentTextExtractor();
-
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
-                extractor.ExtractAsync(
+                _extractor.ExtractAsync(
                     stream,
                     "notes.txt",
                     cancellationTokenSource.Token));
@@ -152,13 +141,10 @@ public sealed class TextDocumentTextExtractorTests
         using var stream =
             new ThrowingReadStream();
 
-        var extractor =
-            new TextDocumentTextExtractor();
-
-        var exception =
+        InvalidOperationException exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    extractor.ExtractAsync(
+                    _extractor.ExtractAsync(
                         stream,
                         "notes.txt"));
 

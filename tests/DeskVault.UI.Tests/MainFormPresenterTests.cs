@@ -31,28 +31,9 @@ public sealed class MainFormPresenterTests
                 "security",
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-            [
-                new SearchDocumentsResult(
+                CreateSearchResults(
                     firstDocumentId,
-                    "security-policy.md",
-                    "Security Policy",
-                    0,
-                    "Security policy introduction."),
-
-                new SearchDocumentsResult(
-                    firstDocumentId,
-                    "security-policy.md",
-                    "Security Policy",
-                    2,
-                    "Security retention requirements."),
-
-                new SearchDocumentsResult(
-                    secondDocumentId,
-                    "incident-response.md",
-                    "Incident Response",
-                    1,
-                    "Security incident response procedure.")
-            ]);
+                    secondDocumentId));
 
         var view =
             new Mock<IMainFormView>();
@@ -64,7 +45,7 @@ public sealed class MainFormPresenterTests
         var documentWorkspace =
             new Mock<IDocumentWorkspace>();
 
-        var presenter =
+        _ =
             CreatePresenter(
                 view,
                 searchStore,
@@ -74,7 +55,7 @@ public sealed class MainFormPresenterTests
             x => x.SearchRequested += null,
             EventArgs.Empty);
 
-        await Task.Delay(100);
+        await WaitForBackgroundOperationAsync();
 
         searchStore.Verify(
             x => x.SearchAsync(
@@ -92,6 +73,35 @@ public sealed class MainFormPresenterTests
                         documents[1].Id == secondDocumentId &&
                         documents[1].FileName == "incident-response.md")),
             Times.Once);
+    }
+
+    private static IReadOnlyList<SearchDocumentsResult> CreateSearchResults(
+        Guid firstDocumentId,
+        Guid secondDocumentId)
+    {
+        return
+        [
+            new SearchDocumentsResult(
+                firstDocumentId,
+                "security-policy.md",
+                "Security Policy",
+                0,
+                "Security policy introduction."),
+
+            new SearchDocumentsResult(
+                firstDocumentId,
+                "security-policy.md",
+                "Security Policy",
+                2,
+                "Security retention requirements."),
+
+            new SearchDocumentsResult(
+                secondDocumentId,
+                "incident-response.md",
+                "Incident Response",
+                1,
+                "Security incident response procedure.")
+        ];
     }
 
     private static MainFormPresenter CreatePresenter(
@@ -157,5 +167,10 @@ public sealed class MainFormPresenterTests
             searchDocumentsHandler,
             documentWorkspace.Object,
             NullLogger<MainFormPresenter>.Instance);
+    }
+
+    private static async Task WaitForBackgroundOperationAsync()
+    {
+        await Task.Delay(100);
     }
 }

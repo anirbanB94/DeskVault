@@ -76,7 +76,8 @@ public sealed class DocumentTextNormalizerTests
             "First\nSecond\nThird";
 
         var extractionResult =
-            new DocumentTextExtractionResult(text);
+            new DocumentTextExtractionResult(
+                text);
 
         var normalizer =
             new DocumentTextNormalizer();
@@ -97,7 +98,8 @@ public sealed class DocumentTextNormalizerTests
             "First line   \nSecond line\t";
 
         var extractionResult =
-            new DocumentTextExtractionResult(text);
+            new DocumentTextExtractionResult(
+                text);
 
         var normalizer =
             new DocumentTextNormalizer();
@@ -118,7 +120,8 @@ public sealed class DocumentTextNormalizerTests
             "First\n\n\nSecond";
 
         var extractionResult =
-            new DocumentTextExtractionResult(text);
+            new DocumentTextExtractionResult(
+                text);
 
         var normalizer =
             new DocumentTextNormalizer();
@@ -139,7 +142,8 @@ public sealed class DocumentTextNormalizerTests
             "  \n  First line\nSecond line  \n  ";
 
         var extractionResult =
-            new DocumentTextExtractionResult(text);
+            new DocumentTextExtractionResult(
+                text);
 
         var normalizer =
             new DocumentTextNormalizer();
