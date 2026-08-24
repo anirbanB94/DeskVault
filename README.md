@@ -42,21 +42,21 @@ DeskVault is currently in **MVP development**.
 - Extensible document renderer abstraction and resolver
 - Secure Markdown rendering with controlled HTML, script, resource, and navigation policies
 - Architecture Decision Records for significant architectural choices
+- Document processing pipeline with text extraction, normalization, chunking, and persisted processing lifecycle
+- Full-text document search across persisted document chunks
+- EF Core database migrations and schema evolution
+- Automated test coverage across Application, Infrastructure, and UI projects
 
 ### In Development
 
 - Additional document renderers such as PDF and Office formats
 - Improved desktop UI/UX
-- Document processing pipeline
-- Text extraction
-- Full-text and semantic search
 - Local embeddings
 - Retrieval-Augmented Generation (RAG)
 - Local AI integration through Ollama
 - Source-grounded knowledge retrieval
 - Additional security hardening
-- Automated test coverage
-- Database migrations and schema evolution
+- Additional document renderers such as PDF and Office formats
 
 ## Architecture
 
@@ -344,6 +344,8 @@ Architectural decisions are documented through ADRs under `docs/adr/`.
 
 DeskVault is an actively developed portfolio project.
 
-The current MVP focuses on establishing a **secure, persistent, local document foundation with an in-app document workspace and initial document rendering support**.
+The current MVP focuses on establishing a **secure, persistent, local document foundation with an in-app document workspace, document rendering, processing, and search support**.
 
-The workspace currently provides the document-centric UI foundation and opening flow. TXT, Markdown, and CSV rendering are implemented, while additional renderers, document processing, search, and AI capabilities remain on the roadmap.
+The workspace currently provides the document-centric UI foundation and opening flow. TXT, Markdown, and CSV rendering are implemented. Document processing, including text extraction, normalization, chunking, and persisted processing lifecycle support, is implemented, as is full-text search across processed document chunks. Additional renderers, embeddings, RAG, and local AI capabilities remain on the roadmap.
+
+Automated test coverage is established across the Application, Infrastructure, and UI test projects, with 220 tests passing in the current verification run.
