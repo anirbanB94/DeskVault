@@ -5,6 +5,7 @@ using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.UI.Presenters;
 
@@ -17,6 +18,7 @@ public sealed class MainFormPresenterFactory :
     private readonly ListDocumentsHandler _listDocumentsHandler;
     private readonly SearchDocumentsHandler _searchDocumentsHandler;
     private readonly IDocumentWorkspace _documentWorkspace;
+    private readonly ILogger<MainFormPresenter> _logger;
 
     public MainFormPresenterFactory(
         ImportDocumentHandler importDocumentHandler,
@@ -24,7 +26,8 @@ public sealed class MainFormPresenterFactory :
         OpenDocumentHandler openDocumentHandler,
         ListDocumentsHandler listDocumentsHandler,
         SearchDocumentsHandler searchDocumentsHandler,
-        IDocumentWorkspace documentWorkspace)
+        IDocumentWorkspace documentWorkspace,
+        ILogger<MainFormPresenter> logger)
     {
         _importDocumentHandler = importDocumentHandler;
         _removeDocumentHandler = removeDocumentHandler;
@@ -32,6 +35,7 @@ public sealed class MainFormPresenterFactory :
         _listDocumentsHandler = listDocumentsHandler;
         _searchDocumentsHandler = searchDocumentsHandler;
         _documentWorkspace = documentWorkspace;
+        _logger = logger;
     }
 
     public MainFormPresenter Create(
@@ -44,6 +48,7 @@ public sealed class MainFormPresenterFactory :
             _openDocumentHandler,
             _listDocumentsHandler,
             _searchDocumentsHandler,
-            _documentWorkspace);
+            _documentWorkspace,
+            _logger);
     }
 }

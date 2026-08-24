@@ -6,6 +6,7 @@ using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.UI.Tests;
@@ -783,7 +784,8 @@ public sealed class DocumentWorkspacePresenterTests
                 repository.Object),
             new RemoveDocumentHandler(
                 repository.Object,
-                storageService.Object));
+                storageService.Object),
+            NullLogger<DocumentWorkspacePresenter>.Instance);
     }
 
     private static Document CreateDocument(

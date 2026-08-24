@@ -2,6 +2,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.UI.Forms;
 
@@ -9,18 +10,21 @@ public partial class MainForm : Form, IMainFormView
 {
     private readonly IApplicationInfoService _applicationInfo;
     private readonly MainFormPresenter _presenter;
+    private readonly ILogger<MainForm> _logger;
 
     public MainForm(
         IApplicationInfoService applicationInfo,
-        IMainFormPresenterFactory presenterFactory)
+        IMainFormPresenterFactory presenterFactory,
+        ILogger<MainForm> logger)
     {
         InitializeComponent();
 
         _applicationInfo = applicationInfo;
-
         _presenter = presenterFactory.Create(this);
+        _logger = logger;
 
-        Text = $"{_applicationInfo.ApplicationName} v{_applicationInfo.Version}";
+        Text =
+            $"{_applicationInfo.ApplicationName} v{_applicationInfo.Version}";
 
         documentGridView.Columns.Add(
             new DataGridViewTextBoxColumn
@@ -37,8 +41,10 @@ public partial class MainForm : Form, IMainFormView
         removeButton.Click += OnRemoveButtonClick;
         searchButton.Click += OnSearchButtonClick;
         searchTextBox.KeyDown += OnSearchTextBoxKeyDown;
-        documentGridView.SelectionChanged += OnDocumentSelectionChanged;
-        documentGridView.CellDoubleClick += OnDocumentDoubleClick;
+        documentGridView.SelectionChanged +=
+            OnDocumentSelectionChanged;
+        documentGridView.CellDoubleClick +=
+            OnDocumentDoubleClick;
     }
 
     public event EventHandler? ImportRequested;
@@ -102,7 +108,24 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         EventArgs e)
     {
-        await _presenter.InitializeAsync();
+        _logger.LogInformation(
+            LogMessages.MainFormLoadStarted);
+
+        try
+        {
+            await _presenter.InitializeAsync();
+
+            _logger.LogInformation(
+                LogMessages.MainFormLoadCompleted);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.MainFormLoadFailed);
+
+            throw;
+        }
     }
 
     private void OnImportButtonClick(

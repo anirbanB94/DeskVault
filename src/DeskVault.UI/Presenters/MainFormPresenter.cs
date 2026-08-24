@@ -6,6 +6,7 @@ using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.UI.Presenters;
 
@@ -18,6 +19,7 @@ public sealed class MainFormPresenter
     private readonly ListDocumentsHandler _listDocumentsHandler;
     private readonly SearchDocumentsHandler _searchDocumentsHandler;
     private readonly IDocumentWorkspace _documentWorkspace;
+    private readonly ILogger<MainFormPresenter> _logger;
 
     public MainFormPresenter(
         IMainFormView view,
@@ -26,7 +28,8 @@ public sealed class MainFormPresenter
         OpenDocumentHandler openDocumentHandler,
         ListDocumentsHandler listDocumentsHandler,
         SearchDocumentsHandler searchDocumentsHandler,
-        IDocumentWorkspace documentWorkspace)
+        IDocumentWorkspace documentWorkspace,
+        ILogger<MainFormPresenter> logger)
     {
         _view = view;
         _importDocumentHandler = importDocumentHandler;
@@ -35,6 +38,7 @@ public sealed class MainFormPresenter
         _listDocumentsHandler = listDocumentsHandler;
         _searchDocumentsHandler = searchDocumentsHandler;
         _documentWorkspace = documentWorkspace;
+        _logger = logger;
 
         _view.ImportRequested += OnImportRequested;
         _view.OpenRequested += OnOpenRequested;
@@ -46,6 +50,9 @@ public sealed class MainFormPresenter
 
     public async Task InitializeAsync()
     {
+        _logger.LogInformation(
+            LogMessages.MainWorkspaceInitializationStarted);
+
         try
         {
             var documentCount =
@@ -53,6 +60,9 @@ public sealed class MainFormPresenter
 
             if (documentCount == 0)
             {
+                _logger.LogInformation(
+                    LogMessages.MainWorkspaceInitializedWithoutDocuments);
+
                 _view.SetStatus(
                     UiMessages.ReadyStatus);
 
@@ -63,9 +73,17 @@ public sealed class MainFormPresenter
 
             _view.SetStatus(
                 $"{documentCount} document(s) imported.");
+
+            _logger.LogInformation(
+                LogMessages.MainWorkspaceInitializedWithDocuments,
+                documentCount);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.MainWorkspaceInitializationFailed);
+
             _view.SetStatus(
                 UiMessages.UnableToLoadDocumentsStatus);
 
@@ -83,8 +101,14 @@ public sealed class MainFormPresenter
 
         if (string.IsNullOrWhiteSpace(filePath))
         {
+            _logger.LogDebug(
+                LogMessages.DocumentImportCancelled);
+
             return;
         }
+
+        _logger.LogInformation(
+            LogMessages.DocumentImportStarted);
 
         _view.SetImportEnabled(false);
         _view.SetStatus(
@@ -113,12 +137,18 @@ public sealed class MainFormPresenter
                 _view.SetStatus(
                     result.Description);
 
+                _logger.LogInformation(
+                    LogMessages.DocumentImportCompleted);
+
                 _view.ShowInformation(
                     result.Description,
                     UiMessages.ImportCompleteTitle);
 
                 return;
             }
+
+            _logger.LogWarning(
+                LogMessages.DocumentImportRejected);
 
             _view.SetStatus(
                 result.Description);
@@ -127,8 +157,12 @@ public sealed class MainFormPresenter
                 result.Description,
                 UiMessages.ImportFailedTitle);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentImportFailed);
+
             _view.SetStatus(
                 UiMessages.UnexpectedImportError);
 
@@ -148,8 +182,14 @@ public sealed class MainFormPresenter
     {
         if (_view.SelectedDocumentId is not Guid documentId)
         {
+            _logger.LogDebug(
+                LogMessages.DocumentOpenSkippedWithoutSelection);
+
             return;
         }
+
+        _logger.LogInformation(
+            LogMessages.DocumentOpenStarted);
 
         _view.SetOpenEnabled(false);
         _view.SetStatus(
@@ -168,9 +208,16 @@ public sealed class MainFormPresenter
 
             _view.SetStatus(
                 UiMessages.DocumentOpenedStatus);
+
+            _logger.LogInformation(
+                LogMessages.DocumentOpenCompleted);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentOpenFailed);
+
             _view.SetStatus(
                 UiMessages.UnableToOpenDocumentStatus);
 
@@ -191,6 +238,9 @@ public sealed class MainFormPresenter
     {
         if (_view.SelectedDocumentId is not Guid documentId)
         {
+            _logger.LogDebug(
+                LogMessages.DocumentRemovalSkippedWithoutSelection);
+
             return;
         }
 
@@ -199,13 +249,22 @@ public sealed class MainFormPresenter
 
         if (string.IsNullOrWhiteSpace(fileName))
         {
+            _logger.LogWarning(
+                LogMessages.DocumentRemovalSkippedWithoutFileName);
+
             return;
         }
 
         if (!_view.ConfirmRemoval(fileName))
         {
+            _logger.LogDebug(
+                LogMessages.DocumentRemovalCancelled);
+
             return;
         }
+
+        _logger.LogInformation(
+            LogMessages.DocumentRemovalStarted);
 
         _view.SetRemoveEnabled(false);
         _view.SetOpenEnabled(false);
@@ -226,6 +285,9 @@ public sealed class MainFormPresenter
 
                 _view.SetStatus(result.Message);
 
+                _logger.LogInformation(
+                    LogMessages.DocumentRemovalCompleted);
+
                 _view.ShowInformation(
                     result.Message,
                     UiMessages.DocumentRemovedTitle);
@@ -233,14 +295,21 @@ public sealed class MainFormPresenter
                 return;
             }
 
+            _logger.LogWarning(
+                LogMessages.DocumentRemovalRejected);
+
             _view.SetStatus(result.Message);
 
             _view.ShowWarning(
                 result.Message,
                 UiMessages.RemoveFailedTitle);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentRemovalFailed);
+
             _view.SetStatus(
                 UiMessages.UnableToRemoveDocumentStatus);
 
@@ -271,9 +340,15 @@ public sealed class MainFormPresenter
 
             if (string.IsNullOrWhiteSpace(searchText))
             {
+                _logger.LogDebug(
+                    LogMessages.DocumentSearchCleared);
+
                 await RefreshDocumentsAsync();
                 return;
             }
+
+            _logger.LogInformation(
+                LogMessages.DocumentSearchStarted);
 
             var results =
                 await _searchDocumentsHandler.HandleAsync(
@@ -289,11 +364,18 @@ public sealed class MainFormPresenter
 
             if (documents.Count == 0)
             {
+                _logger.LogInformation(
+                    LogMessages.DocumentSearchCompletedWithoutResults);
+
                 _view.ShowEmptyState();
                 _view.SetOpenEnabled(false);
                 _view.SetRemoveEnabled(false);
                 return;
             }
+
+            _logger.LogInformation(
+                LogMessages.DocumentSearchCompletedWithResults,
+                documents.Count);
 
             _view.ShowDocuments(documents);
 
@@ -305,6 +387,10 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentSearchFailed);
+
             _view.SetStatus(
                 $"Search failed: {ex.Message}");
 
@@ -316,12 +402,18 @@ public sealed class MainFormPresenter
 
     private async Task<int> RefreshDocumentsAsync()
     {
+        _logger.LogDebug(
+            LogMessages.DocumentListRefreshStarted);
+
         var documents =
             await _listDocumentsHandler.HandleAsync(
                 new ListDocumentsQuery());
 
         if (documents.Count == 0)
         {
+            _logger.LogDebug(
+                LogMessages.DocumentListRefreshCompletedWithoutDocuments);
+
             _view.ShowEmptyState();
             _view.SetOpenEnabled(false);
             _view.SetRemoveEnabled(false);
@@ -343,6 +435,10 @@ public sealed class MainFormPresenter
         _view.SetRemoveEnabled(
             _view.SelectedDocumentId.HasValue);
 
+        _logger.LogDebug(
+            LogMessages.DocumentListRefreshCompleted,
+            documents.Count);
+
         return documents.Count;
     }
 
@@ -361,6 +457,9 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        _logger.LogDebug(
+            LogMessages.DocumentWorkspaceRemovalNotificationReceived);
+
         await RefreshDocumentsAsync();
     }
 }

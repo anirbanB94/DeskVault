@@ -7,6 +7,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.UI.Tests;
@@ -149,6 +150,7 @@ public sealed class MainFormPresenterTests
             openDocumentHandler,
             listDocumentsHandler,
             searchDocumentsHandler,
-            documentWorkspace.Object);
+            documentWorkspace.Object,
+            NullLogger<MainFormPresenter>.Instance);
     }
 }

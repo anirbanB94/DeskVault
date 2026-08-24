@@ -3,6 +3,7 @@ using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.UI.Presenters;
 
@@ -10,17 +11,13 @@ public sealed class DocumentWorkspacePresenter :
     IDocumentWorkspace
 {
     private readonly IDocumentWorkspaceView _view;
-
     private readonly IDocumentViewer _documentViewer;
-
     private readonly GetDocumentHandler _getDocumentHandler;
-
     private readonly RemoveDocumentHandler _removeDocumentHandler;
+    private readonly ILogger<DocumentWorkspacePresenter> _logger;
 
     private GetDocumentResult? _currentDocument;
-
     private Stream? _currentDocumentStream;
-
     private string? _currentFileName;
 
     public event EventHandler DocumentRemoved = null!;
@@ -29,12 +26,14 @@ public sealed class DocumentWorkspacePresenter :
         IDocumentWorkspaceView view,
         IDocumentViewer documentViewer,
         GetDocumentHandler getDocumentHandler,
-        RemoveDocumentHandler removeDocumentHandler)
+        RemoveDocumentHandler removeDocumentHandler,
+        ILogger<DocumentWorkspacePresenter> logger)
     {
         _view = view;
         _documentViewer = documentViewer;
         _getDocumentHandler = getDocumentHandler;
         _removeDocumentHandler = removeDocumentHandler;
+        _logger = logger;
 
         _view.OpenExternallyRequested +=
             OnOpenExternallyRequested;
@@ -55,34 +54,50 @@ public sealed class DocumentWorkspacePresenter :
         string fileName,
         CancellationToken cancellationToken = default)
     {
-        _currentDocument =
-            await _getDocumentHandler.HandleAsync(
-                new GetDocumentQuery(documentId),
-                cancellationToken);
-
-        _currentDocumentStream?.Dispose();
-
-        _currentDocumentStream = documentStream;
-        _currentFileName = fileName;
+        _logger.LogInformation(
+            LogMessages.DocumentWorkspaceOpenStarted);
 
         try
         {
+            _currentDocument =
+                await _getDocumentHandler.HandleAsync(
+                    new GetDocumentQuery(documentId),
+                    cancellationToken);
+
+            _currentDocumentStream?.Dispose();
+
+            _currentDocumentStream = documentStream;
+            _currentFileName = fileName;
+
             await _view.ShowDocumentAsync(
                 documentStream,
                 fileName,
                 cancellationToken);
+
+            _logger.LogInformation(
+                LogMessages.DocumentWorkspaceOpenCompleted);
         }
         catch (NotSupportedException)
         {
+            _logger.LogInformation(
+                LogMessages.DocumentWorkspacePreviewUnsupported);
+
             _view.ShowUnsupportedPreview(
                 UiMessages.UnsupportedDocumentPreviewMessage);
         }
         catch (OperationCanceledException)
         {
+            _logger.LogDebug(
+                LogMessages.DocumentWorkspaceOpenCancelled);
+
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentWorkspaceOpenFailed);
+
             _view.ShowError(
                 UiMessages.UnableToOpenDocument,
                 UiMessages.DeskVaultTitle);
@@ -96,8 +111,14 @@ public sealed class DocumentWorkspacePresenter :
         if (_currentDocumentStream is null ||
             string.IsNullOrWhiteSpace(_currentFileName))
         {
+            _logger.LogDebug(
+                LogMessages.DocumentWorkspaceOpenExternallySkipped);
+
             return;
         }
+
+        _logger.LogInformation(
+            LogMessages.DocumentWorkspaceOpenExternallyStarted);
 
         try
         {
@@ -106,9 +127,16 @@ public sealed class DocumentWorkspacePresenter :
             await _documentViewer.OpenAsync(
                 _currentDocumentStream,
                 _currentFileName);
+
+            _logger.LogInformation(
+                LogMessages.DocumentWorkspaceOpenExternallyCompleted);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentWorkspaceOpenExternallyFailed);
+
             _view.ShowError(
                 UiMessages.UnableToOpenDocument,
                 UiMessages.OpenDocumentTitle);
@@ -121,6 +149,9 @@ public sealed class DocumentWorkspacePresenter :
     {
         if (_currentDocument is null)
         {
+            _logger.LogDebug(
+                LogMessages.DocumentInformationSkippedWithoutDocument);
+
             return;
         }
 
@@ -144,14 +175,23 @@ public sealed class DocumentWorkspacePresenter :
     {
         if (_currentDocument is null)
         {
+            _logger.LogDebug(
+                LogMessages.DocumentWorkspaceRemovalSkippedWithoutDocument);
+
             return;
         }
 
         if (!_view.ConfirmRemoval(
             _currentDocument.FileName))
         {
+            _logger.LogDebug(
+                LogMessages.DocumentWorkspaceRemovalCancelled);
+
             return;
         }
+
+        _logger.LogInformation(
+            LogMessages.DocumentWorkspaceRemovalStarted);
 
         try
         {
@@ -171,6 +211,9 @@ public sealed class DocumentWorkspacePresenter :
 
                 _view.CloseWorkspace();
 
+                _logger.LogInformation(
+                    LogMessages.DocumentWorkspaceRemovalCompleted);
+
                 DocumentRemoved?.Invoke(
                     this,
                     EventArgs.Empty);
@@ -178,12 +221,19 @@ public sealed class DocumentWorkspacePresenter :
                 return;
             }
 
+            _logger.LogWarning(
+                LogMessages.DocumentWorkspaceRemovalRejected);
+
             _view.ShowError(
                 result.Message,
                 UiMessages.RemoveFailedTitle);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentWorkspaceRemovalFailed);
+
             _view.ShowError(
                 UiMessages.UnableToRemoveDocument,
                 UiMessages.DeskVaultTitle);
@@ -194,7 +244,9 @@ public sealed class DocumentWorkspacePresenter :
         object? sender,
         EventArgs e)
     {
+        _logger.LogDebug(
+            LogMessages.DocumentWorkspaceCloseRequested);
+
         _view.CloseWorkspace();
     }
-
 }

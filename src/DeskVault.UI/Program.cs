@@ -1,6 +1,7 @@
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.UI.Forms;
 using DeskVault.UI.Hosting;
+using DeskVault.UI.Resources;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using WindowsForms = System.Windows.Forms;
@@ -23,7 +24,7 @@ internal static class Program
             .GetAwaiter()
             .GetResult();
 
-        Log.Information("DeskVault application starting...");
+        Log.Information(LogMessages.ApplicationStarting);
 
         var mainForm = host.Services.GetRequiredService<MainForm>();
 
