@@ -4,7 +4,9 @@ using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Domain.Documents;
 using DeskVault.UI.Presenters;
+using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -204,6 +206,240 @@ public sealed class MainFormPresenterTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task OpenRequested_SelectedDocument_OpensDocumentInWorkspace()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        const string fileName =
+            "security-policy.md";
+
+        const string content =
+            "# Security Policy";
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                Document.Create(
+                    documentId,
+                    fileName,
+                    "Security Policy",
+                    "test-hash",
+                    "document.dvault"));
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        documentReader
+            .Setup(x => x.OpenReadAsync(
+                "document.dvault",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                CreateContentStream(
+                    content));
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                repository,
+                documentReader);
+
+        view.Raise(
+            x => x.OpenRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        documentReader.Verify(
+            x => x.OpenReadAsync(
+                "document.dvault",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        documentWorkspace.Verify(
+            x => x.OpenAsync(
+                documentId,
+                It.Is<Stream>(
+                    stream =>
+                        ReadStream(stream) == content),
+                fileName),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.DocumentOpenedStatus),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task OpenRequested_WithoutSelection_DoesNothing()
+    {
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns((Guid?)null);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                repository,
+                documentReader);
+
+        view.Raise(
+            x => x.OpenRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        documentReader.Verify(
+            x => x.OpenReadAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        documentWorkspace.Verify(
+            x => x.OpenAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task OpenRequested_WhenOpeningFails_ShowsErrorAndFailureStatus()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        const string errorMessage =
+            "Unable to read document.";
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                Document.Create(
+                    documentId,
+                    "security-policy.md",
+                    "Security Policy",
+                    "test-hash",
+                    "document.dvault"));
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        documentReader
+            .Setup(x => x.OpenReadAsync(
+                "document.dvault",
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    errorMessage));
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                repository,
+                documentReader);
+
+        view.Raise(
+            x => x.OpenRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToOpenDocumentStatus),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToOpenDocument,
+                UiMessages.OpenDocumentTitle),
+            Times.Once);
+
+        documentWorkspace.Verify(
+            x => x.OpenAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetOpenEnabled(
+                It.IsAny<bool>()),
+            Times.AtLeastOnce);
+    }
+
     private static IReadOnlyList<SearchDocumentsResult> CreateSearchResults(
         Guid firstDocumentId,
         Guid secondDocumentId)
@@ -236,9 +472,11 @@ public sealed class MainFormPresenterTests
     private static MainFormPresenter CreatePresenter(
         Mock<IMainFormView> view,
         Mock<IDocumentSearchStore> searchStore,
-        Mock<IDocumentWorkspace> documentWorkspace)
+        Mock<IDocumentWorkspace> documentWorkspace,
+        Mock<IDocumentRepository>? repository = null,
+        Mock<IDocumentReader>? documentReader = null)
     {
-        var repository =
+        repository ??=
             new Mock<IDocumentRepository>();
 
         var storageService =
@@ -250,7 +488,7 @@ public sealed class MainFormPresenterTests
         var importValidator =
             new Mock<IImportDocumentValidator>();
 
-        var documentReader =
+        documentReader ??=
             new Mock<IDocumentReader>();
 
         var processingService =
@@ -296,6 +534,27 @@ public sealed class MainFormPresenterTests
             searchDocumentsHandler,
             documentWorkspace.Object,
             NullLogger<MainFormPresenter>.Instance);
+    }
+
+    private static MemoryStream CreateContentStream(
+        string content)
+    {
+        return new MemoryStream(
+            System.Text.Encoding.UTF8.GetBytes(
+                content));
+    }
+
+    private static string ReadStream(
+        Stream stream)
+    {
+        stream.Position = 0;
+
+        using var reader =
+            new StreamReader(
+                stream,
+                leaveOpen: true);
+
+        return reader.ReadToEnd();
     }
 
     private static async Task WaitForBackgroundOperationAsync()
