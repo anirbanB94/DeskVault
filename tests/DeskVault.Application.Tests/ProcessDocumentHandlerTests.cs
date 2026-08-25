@@ -144,6 +144,70 @@ public sealed class ProcessDocumentHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenProcessingFails_MarksDocumentAsFailedAndRethrows()
+    {
+        Document document = CreateDocument();
+
+        var repository = new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingContext =
+            CreateProcessingContext(repository);
+
+        var statusHistory = new List<DocumentStatus>();
+
+        repository
+            .Setup(x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (updatedDocument, _) =>
+                    statusHistory.Add(
+                        updatedDocument.Status))
+            .Returns(Task.CompletedTask);
+
+        processingContext.Extractor.ThrowOnExtract = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () =>
+                processingContext.Handler.HandleAsync(
+                    new ProcessDocumentCommand(
+                        document.Id)));
+
+        Assert.True(
+            processingContext.Reader.WasOpened);
+
+        Assert.True(
+            processingContext.Extractor.WasCalled);
+
+        Assert.Equal(
+            [
+                DocumentStatus.Processing,
+                DocumentStatus.Failed
+            ],
+            statusHistory);
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.ReplaceCallCount);
+
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        Assert.Equal(
+            DocumentStatus.Failed,
+            document.Status);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenProcessingProducesMultipleChunks_PreservesChunkOrder()
     {
         Document document = CreateDocument();
@@ -401,6 +465,8 @@ public sealed class ProcessDocumentHandlerTests
     {
         public bool WasCalled { get; private set; }
 
+        public bool ThrowOnExtract { get; set; }
+
         public string? FileName { get; private set; }
 
         public bool CanExtract(
@@ -420,6 +486,12 @@ public sealed class ProcessDocumentHandlerTests
 
             WasCalled = true;
             FileName = fileName;
+
+            if (ThrowOnExtract)
+            {
+                throw new InvalidOperationException(
+                    "Test extraction failure.");
+            }
 
             return Task.FromResult(
                 new DocumentTextExtractionResult(

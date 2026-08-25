@@ -105,6 +105,10 @@ public sealed class Document
         Status = DocumentStatus.Available;
     }
 
+    public void MarkFailed()
+    {
+        Status = DocumentStatus.Failed;
+    }
     private static void Validate(
         Guid id,
         string fileName,

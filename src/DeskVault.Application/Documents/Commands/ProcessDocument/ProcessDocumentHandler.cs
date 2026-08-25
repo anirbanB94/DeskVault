@@ -2,8 +2,8 @@ using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Interfaces;
-using DeskVault.Shared.Resources;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Documents.Commands.ProcessDocument;
@@ -125,6 +125,12 @@ public sealed class ProcessDocumentHandler
         }
         catch (Exception ex)
         {
+            document.MarkFailed();
+
+            await _documentRepository.UpdateAsync(
+                document,
+                cancellationToken);
+
             _logger.LogError(
                 ex,
                 LogMessages.DocumentProcessingFailed);

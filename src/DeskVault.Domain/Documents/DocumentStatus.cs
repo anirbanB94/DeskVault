@@ -6,6 +6,7 @@ public enum DocumentStatus
     Processing = 1,
     Indexed = 2,
     Available = 3,
-    Archived = 4,
-    Deleted = 5
+    Failed = 4,
+    Archived = 5,
+    Deleted = 6
 }
