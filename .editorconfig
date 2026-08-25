@@ -33,10 +33,6 @@ csharp_prefer_braces = true:warning
 # Expression-bodied members
 csharp_style_expression_bodied_methods = false:none
 
-# Nullable
-dotnet_diagnostic.CS8602.severity = warning
-dotnet_diagnostic.CS8618.severity = warning
-
 ############################################################
 # Naming
 ############################################################

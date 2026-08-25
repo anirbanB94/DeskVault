@@ -25,9 +25,11 @@ DeskVault is currently in **MVP development**.
 - Encrypted `.dvault` document artifacts
 - Persistent document metadata using SQLite
 - EF Core persistence infrastructure
+- EF Core database migrations and schema evolution
 - Application restart persistence
 - Document listing and selection
 - Persistent document retrieval
+- Document removal workflow
 - Decryption and document opening
 - Local application-data storage under `%LOCALAPPDATA%\DeskVault`
 - In-app document workspace foundation
@@ -45,7 +47,9 @@ DeskVault is currently in **MVP development**.
 - Document processing pipeline with text extraction, normalization, chunking, and persisted processing lifecycle
 - Full-text document search across persisted document chunks
 - EF Core database migrations and schema evolution
-- Automated test coverage across Application, Infrastructure, and UI projects
+- Automated test coverage across Application, Infrastructure, Integration, and UI projects
+- Centralized NuGet package version management
+- Repository-level .NET SDK and build configuration
 
 ### In Development
 
@@ -56,44 +60,44 @@ DeskVault is currently in **MVP development**.
 - Local AI integration through Ollama
 - Source-grounded knowledge retrieval
 - Additional security hardening
-- Additional document renderers such as PDF and Office formats
+- Additional document processing and indexing capabilities
 
 ## Architecture
 
 DeskVault follows a layered architecture designed to keep infrastructure concerns isolated from the application and domain layers.
 
 ```text
-┌──────────────────────────────────────────────┐
-│                  DeskVault UI                │
-│              WinForms + Presenter            │
-│                                              │
-│  MainForm                                    │
-│      │                                       │
-│      └── DocumentViewForm / Workspace        │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│                Application                   │
-│       Commands / Queries / Interfaces        │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│                   Domain                     │
-│       Documents / Business Rules / State     │
-└──────────────────────────────────────────────┘
-                       ▲
-                       │
-┌──────────────────────┴───────────────────────┐
-│                Infrastructure                │
-│                                              │
-│  SQLite / EF Core                            │
-│  Encrypted File Storage                      │
-│  Encryption Key Management                   │
-│  Document Readers                            │
-│  External Infrastructure Services            │
-└──────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                         DeskVault UI                        │
+│                    WinForms + Presenter                     │
+│                                                             │
+│  MainForm                                                  │
+│      │                                                      │
+│      └── DocumentViewForm / Workspace                      │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       Application                           │
+│              Commands / Queries / Interfaces                │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                          Domain                             │
+│              Documents / Business Rules / State             │
+└─────────────────────────────────────────────────────────────┘
+                              ▲
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                     Infrastructure                          │
+│                                                             │
+│  SQLite / EF Core                                           │
+│  Encrypted File Storage                                     │
+│  Encryption Key Management                                  │
+│  Document Readers                                           │
+│  External Infrastructure Services                           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 The Application layer depends on abstractions such as `IDocumentRepository`. Infrastructure provides the concrete implementations.
@@ -107,12 +111,12 @@ This keeps persistence, encryption, filesystem access, and other platform-specif
 DeskVault separates **document content** from **document metadata**.
 
 ```text
-%LOCALAPPDATA%\DeskVault│
+%LOCALAPPDATA%\DeskVault
 ├── DeskVault.db
-│
-├── Documents│   └── <document-id>.dvault
-│
-└── Security    └── <protected security material>
+├── Documents
+│   └── <document-id>.dvault
+└── Security
+    └── <protected security material>
 ```
 
 ### SQLite
@@ -185,6 +189,44 @@ The architectural decision is documented in:
 
 - `docs/adr/0006-in-app-document-workspace.md`
 - `docs/adr/0007-document-workspace-ui-and-interaction-model.md`
+- `docs/adr/0008-document-semantic-preservation-through-rendering-pipeline.md`
+
+## Document Processing and Search
+
+DeskVault now includes a document processing pipeline for supported document types.
+
+The current processing flow is:
+
+```text
+Stored Document
+      │
+      ▼
+Text Extraction
+      │
+      ▼
+Normalization
+      │
+      ▼
+Chunking
+      │
+      ▼
+Persisted Processing State
+      │
+      ▼
+Full-Text Search
+```
+
+The processing pipeline currently provides:
+
+- Text extraction
+- Document-specific extraction boundaries
+- Text normalization
+- Bounded text chunking
+- Persisted processing lifecycle state
+- Persisted document chunks
+- Full-text document search across processed chunks
+
+The processing architecture is designed to provide a foundation for future semantic retrieval and local AI capabilities without coupling the current MVP to an AI runtime.
 
 ## Security Direction
 
@@ -265,33 +307,76 @@ DeskVault is being developed around the following principles:
 ```text
 src/
 ├── DeskVault.UI/
+│   ├── Assets/
+│   ├── Controls/
 │   ├── Forms/
 │   ├── Hosting/
 │   ├── Presenters/
 │   ├── Rendering/
+│   ├── Resources/
 │   ├── Services/
+│   ├── Themes/
 │   └── Views/
 │
 ├── DeskVault.Application/
+│   ├── Behaviors/
 │   ├── Configurations/
 │   ├── Documents/
+│   │   ├── Chunking/
 │   │   ├── Commands/
-│   │   └── Queries/
-│   └── Interfaces/
+│   │   ├── DTOs/
+│   │   ├── Extraction/
+│   │   ├── Mappings/
+│   │   ├── Normalization/
+│   │   ├── Parsing/
+│   │   ├── Processing/
+│   │   ├── Queries/
+│   │   └── Validators/
+│   ├── Interfaces/
+│   ├── Resources/
+│   └── Services/
 │
 ├── DeskVault.Domain/
-│   └── Documents/
+│   ├── Documents/
+│   ├── Events/
+│   ├── Exceptions/
+│   ├── Interfaces/
+│   └── ValueObjects/
 │
 ├── DeskVault.Infrastructure/
+│   ├── Configurations/
+│   ├── Extensions/
+│   ├── Logging/
 │   ├── Persistence/
+│   │   ├── Baseline/
 │   │   ├── Configurations/
 │   │   ├── Context/
-│   │   └── Entities/
+│   │   ├── Entities/
+│   │   └── Migrations/
 │   ├── Repositories/
+│   ├── Security/
 │   └── Services/
 │
 ├── DeskVault.AI/
+│   ├── Chats/
+│   ├── Clients/
+│   ├── Embeddings/
+│   ├── Models/
+│   ├── Prompts/
+│   └── Services/
+│
 └── DeskVault.Shared/
+    ├── Constants/
+    ├── Extensions/
+    ├── Helpers/
+    ├── Models/
+    └── Resources/
+
+tests/
+├── DeskVault.Application.Tests/
+├── DeskVault.Infrastructure.Tests/
+├── DeskVault.Integration.Tests/
+└── DeskVault.UI.Tests/
 
 docs/
 └── adr/
@@ -328,9 +413,14 @@ Document Rendering
     └── CSV
     ↓
 Document Processing
+    ├── Extraction
+    ├── Normalization
+    ├── Chunking
+    └── Persistence
     ↓
-Search
+Full-Text Search
     ↓
+[Future]
 Embeddings
     ↓
 RAG
@@ -348,4 +438,4 @@ The current MVP focuses on establishing a **secure, persistent, local document f
 
 The workspace currently provides the document-centric UI foundation and opening flow. TXT, Markdown, and CSV rendering are implemented. Document processing, including text extraction, normalization, chunking, and persisted processing lifecycle support, is implemented, as is full-text search across processed document chunks. Additional renderers, embeddings, RAG, and local AI capabilities remain on the roadmap.
 
-Automated test coverage is established across the Application, Infrastructure, and UI test projects, with 220 tests passing in the current verification run.
+Automated test coverage is established across the Application, Infrastructure, Integration, and UI test projects, with **230 tests passing in the current verification run**.
