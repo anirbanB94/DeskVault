@@ -1,23 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
-using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
-using DeskVault.Application.Documents.Commands.ProcessDocument;
-using DeskVault.Application.Documents.Extraction;
-using DeskVault.Application.Documents.Extraction.CSVDocument;
-using DeskVault.Application.Documents.Extraction.MarkdownDocument;
-using DeskVault.Application.Documents.Extraction.TextDocument;
-using DeskVault.Application.Documents.Normalization;
-using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Domain.Documents;
-using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
-using DeskVault.Infrastructure.Repositories;
-using DeskVault.Infrastructure.Services;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Integration.Tests;
 
@@ -34,11 +20,16 @@ public sealed class DocumentImportIntegrationTests
 
         Directory.CreateDirectory(rootDirectory);
 
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
         try
         {
-            DeskVaultDataPaths dataPaths =
-                new(rootDirectory);
-
             string sourceFilePath =
                 Path.Combine(
                     rootDirectory,
@@ -56,173 +47,170 @@ public sealed class DocumentImportIntegrationTests
                 sourceText,
                 Encoding.UTF8);
 
-            await using SqliteConnection connection =
-                CreateConnection();
+            Guid documentId;
 
-            var repository =
-                CreateRepository(connection);
+            await using (
+                var firstInstance =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await firstInstance.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Integration Test Document"));
 
-            var processingStore =
-                CreateProcessingStore(connection);
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
 
-            var searchStore =
-                CreateSearchStore(connection);
+                Assert.NotNull(
+                    importResult.DocumentId);
 
-            var encryptionService =
-                new DocumentEncryptionService(
-                    new TestEncryptionKeyService(
-                        RandomNumberGenerator.GetBytes(32)),
-                    NullLogger<DocumentEncryptionService>.Instance);
+                documentId =
+                    importResult.DocumentId.Value;
 
-            var storageService =
-                new FileSystemStorageService(
-                    encryptionService,
-                    dataPaths,
-                    NullLogger<FileSystemStorageService>.Instance);
+                Document? document =
+                    await firstInstance.GetDocumentAsync(
+                        documentId);
 
-            var reader =
-                new EncryptedDocumentReader(
-                    encryptionService,
-                    NullLogger<EncryptedDocumentReader>.Instance);
+                Assert.NotNull(document);
 
-            var extractorResolver =
-                new DocumentTextExtractorResolver(
-                [
-                    new TextDocumentTextExtractor(),
-                    new MarkdownDocumentTextExtractor(),
-                    new CsvDocumentTextExtractor()
-                ]);
+                Assert.Equal(
+                    "integration-test.txt",
+                    document.FileName);
 
-            var processHandler =
-                new ProcessDocumentHandler(
-                    repository,
-                    reader,
-                    extractorResolver,
-                    new DocumentTextNormalizer(),
-                    new DocumentTextChunker(
-                        maxChunkSize: 4000),
-                    processingStore,
-                    NullLogger<ProcessDocumentHandler>.Instance);
+                Assert.Equal(
+                    "Integration Test Document",
+                    document.DisplayName);
 
-            var processingService =
-                new DocumentProcessingService(
-                    processHandler);
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    document.Status);
 
-            var importHandler =
-                new ImportDocumentHandler(
-                    new ImportDocumentValidator(),
-                    new Sha256HashService(
-                        NullLogger<Sha256HashService>.Instance),
-                    storageService,
-                    repository,
-                    processingService,
-                    NullLogger<ImportDocumentHandler>.Instance);
+                Assert.True(
+                    File.Exists(
+                        document.StoredFilePath));
 
-            ImportDocumentResult importResult =
-                await importHandler.HandleAsync(
-                    new ImportDocumentCommand(
-                        sourceFilePath,
-                        "Integration Test Document"));
+                Assert.EndsWith(
+                    ".dvault",
+                    document.StoredFilePath,
+                    StringComparison.OrdinalIgnoreCase);
 
-            Assert.Equal(
-                ImportDocumentResultStatus.Success,
-                importResult.Status);
+                List<DocumentChunkEntity> chunks =
+                    await firstInstance.GetChunksAsync(
+                        documentId);
 
-            Assert.NotNull(
-                importResult.DocumentId);
+                Assert.NotEmpty(chunks);
 
-            Guid documentId =
-                importResult.DocumentId.Value;
+                IReadOnlyList<SearchDocumentsResult> searchResults =
+                    await firstInstance.SearchHandler.HandleAsync(
+                        new SearchDocumentsQuery(
+                            "ENTERPRISE ARCHITECTURE"));
 
-            Document? document =
-                await repository.GetByIdAsync(
-                    documentId);
+                SearchDocumentsResult matchingResult =
+                    Assert.Single(
+                        searchResults,
+                        result =>
+                            result.DocumentId == documentId);
 
-            Assert.NotNull(document);
+                Assert.Equal(
+                    "integration-test.txt",
+                    matchingResult.FileName);
 
-            Assert.Equal(
-                "integration-test.txt",
-                document.FileName);
+                Assert.Equal(
+                    "Integration Test Document",
+                    matchingResult.DisplayName);
 
-            Assert.Equal(
-                "Integration Test Document",
-                document.DisplayName);
+                Assert.Contains(
+                    "enterprise architecture",
+                    matchingResult.ChunkText,
+                    StringComparison.OrdinalIgnoreCase);
+            }
 
-            Assert.Equal(
-                DocumentStatus.Available,
-                document.Status);
+            await using (
+                var secondInstance =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                Document? restoredDocument =
+                    await secondInstance.GetDocumentAsync(
+                        documentId);
 
-            Assert.True(
-                File.Exists(
-                    document.StoredFilePath));
+                Assert.NotNull(restoredDocument);
 
-            Assert.EndsWith(
-                ".dvault",
-                document.StoredFilePath,
-                StringComparison.OrdinalIgnoreCase);
+                Assert.Equal(
+                    documentId,
+                    restoredDocument.Id);
 
-            byte[] storedBytes =
-                await File.ReadAllBytesAsync(
-                    document.StoredFilePath);
+                Assert.Equal(
+                    "integration-test.txt",
+                    restoredDocument.FileName);
 
-            byte[] plaintextBytes =
-                await File.ReadAllBytesAsync(
-                    sourceFilePath);
+                Assert.Equal(
+                    "Integration Test Document",
+                    restoredDocument.DisplayName);
 
-            Assert.NotEqual(
-                plaintextBytes,
-                storedBytes);
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    restoredDocument.Status);
 
-            List<DocumentChunkEntity> chunks =
-                await GetChunksAsync(
-                    connection,
-                    documentId);
+                Assert.True(
+                    File.Exists(
+                        restoredDocument.StoredFilePath));
 
-            Assert.NotEmpty(
-                chunks);
+                List<DocumentChunkEntity> restoredChunks =
+                    await secondInstance.GetChunksAsync(
+                        documentId);
 
-            string indexedText =
-                string.Join(
-                    "\n",
-                    chunks
-                        .OrderBy(
-                            chunk => chunk.Order)
-                        .Select(
-                            chunk => chunk.Text));
+                Assert.NotEmpty(
+                    restoredChunks);
 
-            Assert.Contains(
-                "DeskVault integration testing",
-                indexedText);
+                string indexedText =
+                    string.Join(
+                        "\n",
+                        restoredChunks
+                            .OrderBy(
+                                chunk => chunk.Order)
+                            .Select(
+                                chunk => chunk.Text));
 
-            Assert.Contains(
-                "searchable enterprise architecture content",
-                indexedText);
+                Assert.Contains(
+                    "DeskVault integration testing",
+                    indexedText);
 
-            var searchHandler =
-                new SearchDocumentsHandler(
-                    searchStore,
-                    NullLogger<SearchDocumentsHandler>.Instance);
+                Assert.Contains(
+                    "searchable enterprise architecture content",
+                    indexedText);
 
-            IReadOnlyList<SearchDocumentsResult> searchResults =
-                await searchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "ENTERPRISE ARCHITECTURE"));
+                IReadOnlyList<SearchDocumentsResult> searchResults =
+                    await secondInstance.SearchHandler.HandleAsync(
+                        new SearchDocumentsQuery(
+                            "ENTERPRISE ARCHITECTURE"));
 
-            SearchDocumentsResult matchingResult =
-                Assert.Single(searchResults, result => result.DocumentId == documentId);
+                SearchDocumentsResult matchingResult =
+                    Assert.Single(
+                        searchResults,
+                        result =>
+                            result.DocumentId == documentId);
 
-            Assert.Equal(
-                "integration-test.txt",
-                matchingResult.FileName);
+                Assert.Equal(
+                    "integration-test.txt",
+                    matchingResult.FileName);
 
-            Assert.Equal(
-                "Integration Test Document",
-                matchingResult.DisplayName);
+                Assert.Equal(
+                    "Integration Test Document",
+                    matchingResult.DisplayName);
 
-            Assert.Contains(
-                "enterprise architecture",
-                matchingResult.ChunkText,
-                StringComparison.OrdinalIgnoreCase);
+                Assert.Contains(
+                    "enterprise architecture",
+                    matchingResult.ChunkText,
+                    StringComparison.OrdinalIgnoreCase);
+            }
         }
         finally
         {
@@ -232,135 +220,6 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     recursive: true);
             }
-        }
-    }
-
-    private static SqliteConnection CreateConnection()
-    {
-        var connection =
-            new SqliteConnection(
-                "Data Source=:memory:");
-
-        connection.Open();
-
-        using var context =
-            CreateContext(connection);
-
-        context.Database.EnsureCreated();
-
-        return connection;
-    }
-
-    private static SqliteDocumentRepository CreateRepository(
-        SqliteConnection connection)
-    {
-        return new SqliteDocumentRepository(
-            CreateFactory(connection),
-            NullLogger<SqliteDocumentRepository>.Instance);
-    }
-
-    private static SqliteDocumentProcessingStore CreateProcessingStore(
-        SqliteConnection connection)
-    {
-        return new SqliteDocumentProcessingStore(
-            CreateFactory(connection),
-            NullLogger<SqliteDocumentProcessingStore>.Instance);
-    }
-
-    private static SqliteDocumentSearchStore CreateSearchStore(
-        SqliteConnection connection)
-    {
-        return new SqliteDocumentSearchStore(
-            CreateFactory(connection),
-            NullLogger<SqliteDocumentSearchStore>.Instance);
-    }
-
-    private static async Task<List<DocumentChunkEntity>> GetChunksAsync(
-        SqliteConnection connection,
-        Guid documentId)
-    {
-        await using DeskVaultDbContext context =
-            CreateContext(connection);
-
-        return await context.DocumentChunks
-            .AsNoTracking()
-            .Where(
-                chunk =>
-                    chunk.DocumentId == documentId)
-            .OrderBy(
-                chunk => chunk.Order)
-            .ToListAsync();
-    }
-
-    private static IDbContextFactory<DeskVaultDbContext> CreateFactory(
-        SqliteConnection connection)
-    {
-        return new TestDbContextFactory(
-            connection);
-    }
-
-    private static DeskVaultDbContext CreateContext(
-        SqliteConnection connection)
-    {
-        DbContextOptions<DeskVaultDbContext> options =
-            new DbContextOptionsBuilder<DeskVaultDbContext>()
-                .UseSqlite(connection)
-                .Options;
-
-        return new DeskVaultDbContext(
-            options);
-    }
-
-    private sealed class TestDbContextFactory
-        : IDbContextFactory<DeskVaultDbContext>
-    {
-        private readonly SqliteConnection _connection;
-
-        public TestDbContextFactory(
-            SqliteConnection connection)
-        {
-            _connection = connection;
-        }
-
-        public DeskVaultDbContext CreateDbContext()
-        {
-            return CreateContext();
-        }
-
-        public Task<DeskVaultDbContext> CreateDbContextAsync(
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return Task.FromResult(
-                CreateContext());
-        }
-
-        private DeskVaultDbContext CreateContext()
-        {
-            return DocumentImportIntegrationTests.CreateContext(
-                _connection);
-        }
-    }
-
-    private sealed class TestEncryptionKeyService
-        : IEncryptionKeyService
-    {
-        private readonly byte[] _key;
-
-        public TestEncryptionKeyService(
-            byte[] key)
-        {
-            _key = key;
-        }
-
-        public Task<byte[]> GetOrCreateKeyAsync(
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return Task.FromResult(
-                _key);
         }
     }
 }

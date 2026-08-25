@@ -17,7 +17,6 @@ using DeskVault.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Security.Cryptography;
 
 namespace DeskVault.Integration.Tests;
 
@@ -34,14 +33,17 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
     public SearchDocumentsHandler SearchHandler { get; }
 
     public DocumentPipelineTestHarness(
-        string rootDirectory)
+        string rootDirectory,
+        string databasePath,
+        byte[] encryptionKey)
     {
         DataPaths =
             new DeskVaultDataPaths(
                 rootDirectory);
 
         _connection =
-            CreateConnection();
+            CreateConnection(
+                databasePath);
 
         var repository =
             CreateRepository();
@@ -55,7 +57,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         var encryptionService =
             new DocumentEncryptionService(
                 new TestEncryptionKeyService(
-                    RandomNumberGenerator.GetBytes(32)),
+                    encryptionKey),
                 NullLogger<DocumentEncryptionService>.Instance);
 
         var storageService =
@@ -172,11 +174,12 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             options);
     }
 
-    private static SqliteConnection CreateConnection()
+    private static SqliteConnection CreateConnection(
+        string databasePath)
     {
         var connection =
             new SqliteConnection(
-                "Data Source=:memory:");
+                $"Data Source={databasePath};Pooling=False");
 
         connection.Open();
 
@@ -203,7 +206,12 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _connection.DisposeAsync();
+        if (_connection.State != System.Data.ConnectionState.Closed)
+        {
+            await _connection.CloseAsync();
+        }
+
+        _connection.Dispose();
     }
 
     private sealed class TestDbContextFactory
