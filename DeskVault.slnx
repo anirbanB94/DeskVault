@@ -18,6 +18,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/DeskVault.Application.Tests/DeskVault.Application.Tests.csproj" Id="bffed1d0-48f3-441b-b671-135746839464" />
     <Project Path="tests/DeskVault.Infrastructure.Tests/DeskVault.Infrastructure.Tests.csproj" Id="56a8bbc0-9e84-4ea3-8fb3-01fe44a84e78" />
+    <Project Path="tests/DeskVault.Integration.Tests/DeskVault.Integration.Tests.csproj" />
     <Project Path="tests/DeskVault.UI.Tests/DeskVault.UI.Tests.csproj" Id="6aa2d440-60cc-4ace-af43-394e6e5a582e" />
   </Folder>
 </Solution>
