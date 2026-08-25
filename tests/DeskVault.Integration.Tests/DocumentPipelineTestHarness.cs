@@ -9,7 +9,6 @@ using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
-using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
