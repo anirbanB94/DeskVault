@@ -75,6 +75,135 @@ public sealed class MainFormPresenterTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task SearchRequested_NoMatches_ShowsEmptyStateAndDisablesDocumentActions()
+    {
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                "unknown",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                []);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns("unknown");
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                "unknown",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowEmptyState(),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetOpenEnabled(false),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetRemoveEnabled(false),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SearchRequested_SearchStoreFails_ShowsErrorAndFailureStatus()
+    {
+        const string searchText = "security";
+        const string errorMessage = "Search store failure.";
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                searchText,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    errorMessage));
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(searchText);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                searchText,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                $"Search failed: {errorMessage}"),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message =>
+                        message.Contains(
+                            errorMessage,
+                            StringComparison.Ordinal)),
+                "DeskVault"),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowEmptyState(),
+            Times.Never);
+    }
+
     private static IReadOnlyList<SearchDocumentsResult> CreateSearchResults(
         Guid firstDocumentId,
         Guid secondDocumentId)

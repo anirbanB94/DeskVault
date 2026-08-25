@@ -75,6 +75,48 @@ public sealed class SqliteDocumentSearchStoreTests
     }
 
     [Fact]
+    public async Task SearchAsync_WhenSearchTextDiffersOnlyByCase_ReturnsMatchingChunk()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "case-test.txt",
+                "Case Test Document");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            document.Id,
+            [
+                new DocumentChunk(
+                0,
+                "Security policy content.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                "SECURITY");
+
+        SearchDocumentsResult result =
+            Assert.Single(results);
+
+        Assert.Equal(
+            document.Id,
+            result.DocumentId);
+
+        Assert.Equal(
+            0,
+            result.ChunkOrder);
+    }
+
+    [Fact]
     public async Task SearchAsync_WhenNoChunkMatches_ReturnsEmpty()
     {
         await using SqliteConnection connection =

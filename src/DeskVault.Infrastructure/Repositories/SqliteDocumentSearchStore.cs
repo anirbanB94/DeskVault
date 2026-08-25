@@ -46,8 +46,9 @@ public sealed class SqliteDocumentSearchStore
                     .AsNoTracking()
                     .Where(
                         chunk =>
-                            chunk.Text.Contains(
-                                normalizedSearchText))
+                            EF.Functions.Like(
+                                chunk.Text,
+                                $"%{normalizedSearchText}%"))
                     .Join(
                         dbContext.Documents,
                         chunk => chunk.DocumentId,
