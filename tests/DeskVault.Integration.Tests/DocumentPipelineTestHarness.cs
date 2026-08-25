@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.ProcessDocument;
@@ -9,6 +8,7 @@ using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
+using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
@@ -17,6 +17,7 @@ using DeskVault.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
 
 namespace DeskVault.Integration.Tests;
 
@@ -27,6 +28,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
     public DeskVaultDataPaths DataPaths { get; }
 
     public ImportDocumentHandler ImportHandler { get; }
+
+    public DocumentProcessingService ProcessingService { get; }
 
     public SearchDocumentsHandler SearchHandler { get; }
 
@@ -85,7 +88,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 processingStore,
                 NullLogger<ProcessDocumentHandler>.Instance);
 
-        var processingService =
+        ProcessingService =
             new DocumentProcessingService(
                 processHandler);
 
@@ -96,7 +99,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     NullLogger<Sha256HashService>.Instance),
                 storageService,
                 repository,
-                processingService,
+                ProcessingService,
                 NullLogger<ImportDocumentHandler>.Instance);
 
         SearchHandler =
