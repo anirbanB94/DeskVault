@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using DeskVault.Application.Documents.Commands.ImportDocument;
+using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Entities;
@@ -210,6 +211,123 @@ public sealed class DocumentImportIntegrationTests
                     "enterprise architecture",
                     matchingResult.ChunkText,
                     StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RemoveDocument_WhenDocumentExists_RemovesStoredFileMetadataAndChunks()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "remove-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                """
+                DeskVault removal integration testing verifies
+                complete document cleanup across storage and persistence.
+                """);
+
+            Guid documentId;
+            string storedFilePath;
+
+            await using (
+                var instance =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await instance.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Removal Integration Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
+                Document? document =
+                    await instance.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(document);
+
+                storedFilePath =
+                    document.StoredFilePath;
+
+                Assert.True(
+                    File.Exists(
+                        storedFilePath));
+
+                List<DocumentChunkEntity> chunks =
+                    await instance.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(chunks);
+
+                RemoveDocumentResult removeResult =
+                    await instance.RemoveHandler.HandleAsync(
+                        new RemoveDocumentCommand(
+                            documentId));
+
+                Assert.Equal(
+                    RemoveDocumentResultStatus.Success,
+                    removeResult.Status);
+
+                Assert.False(
+                    File.Exists(
+                        storedFilePath));
+
+                Document? removedDocument =
+                    await instance.GetDocumentAsync(
+                        documentId);
+
+                Assert.Null(
+                    removedDocument);
+
+                List<DocumentChunkEntity> removedChunks =
+                    await instance.GetChunksAsync(
+                        documentId);
+
+                Assert.Empty(
+                    removedChunks);
             }
         }
         finally
