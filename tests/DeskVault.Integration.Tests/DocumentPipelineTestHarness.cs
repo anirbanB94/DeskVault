@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.ProcessDocument;
+using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
@@ -8,7 +9,6 @@ using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
-using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
@@ -31,6 +31,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
     public DocumentProcessingService ProcessingService { get; }
 
     public SearchDocumentsHandler SearchHandler { get; }
+
+    public RemoveDocumentHandler RemoveHandler { get; }
 
     public DocumentPipelineTestHarness(
         string rootDirectory,
@@ -108,6 +110,12 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             new SearchDocumentsHandler(
                 searchStore,
                 NullLogger<SearchDocumentsHandler>.Instance);
+
+        RemoveHandler =
+            new RemoveDocumentHandler(
+                repository,
+                storageService,
+                NullLogger<RemoveDocumentHandler>.Instance);
     }
 
     public async Task<Document?> GetDocumentAsync(
