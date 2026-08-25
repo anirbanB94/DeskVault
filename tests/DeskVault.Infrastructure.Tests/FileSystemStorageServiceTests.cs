@@ -193,11 +193,23 @@ public sealed class FileSystemStorageServiceTests
                     rootDirectory,
                     "missing.txt");
 
+            Guid documentId =
+                Guid.NewGuid();
+
+            string expectedStoredFilePath =
+                Path.Combine(
+                    dataPaths.DocumentsDirectory,
+                    $"{documentId}.dvault");
+
             await Assert.ThrowsAsync<FileNotFoundException>(
                 () =>
                     storageService.StoreAsync(
                         missingSource,
-                        Guid.NewGuid()));
+                        documentId));
+
+            Assert.False(
+                File.Exists(
+                    expectedStoredFilePath));
         }
         finally
         {
@@ -231,6 +243,14 @@ public sealed class FileSystemStorageServiceTests
                 sourceFilePath,
                 "DeskVault cancellation test.");
 
+            Guid documentId =
+                Guid.NewGuid();
+
+            string expectedStoredFilePath =
+                Path.Combine(
+                    dataPaths.DocumentsDirectory,
+                    $"{documentId}.dvault");
+
             using var cancellationTokenSource =
                 new CancellationTokenSource();
 
@@ -240,8 +260,73 @@ public sealed class FileSystemStorageServiceTests
                 () =>
                     storageService.StoreAsync(
                         sourceFilePath,
-                        Guid.NewGuid(),
+                        documentId,
                         cancellationTokenSource.Token));
+
+            Assert.False(
+                File.Exists(
+                    expectedStoredFilePath));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task StoreAsync_WhenDestinationAlreadyExists_ThrowsIOExceptionAndPreservesExistingFile()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
+
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "source.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "DeskVault source content.");
+
+            Guid documentId =
+                Guid.NewGuid();
+
+            Directory.CreateDirectory(
+                dataPaths.DocumentsDirectory);
+
+            string storedFilePath =
+                Path.Combine(
+                    dataPaths.DocumentsDirectory,
+                    $"{documentId}.dvault");
+
+            byte[] existingContent =
+                "Existing encrypted file."u8.ToArray();
+
+            await File.WriteAllBytesAsync(
+                storedFilePath,
+                existingContent);
+
+            await Assert.ThrowsAnyAsync<IOException>(
+                () =>
+                    storageService.StoreAsync(
+                        sourceFilePath,
+                        documentId));
+
+            Assert.Equal(
+                existingContent,
+                await File.ReadAllBytesAsync(
+                    storedFilePath));
         }
         finally
         {

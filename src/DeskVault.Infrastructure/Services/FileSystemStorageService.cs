@@ -32,6 +32,13 @@ public sealed class FileSystemStorageService : IStorageService
         _logger.LogInformation(
             LogMessages.DocumentStorageStarted);
 
+        string destinationFilePath =
+            Path.Combine(
+                _dataPaths.DocumentsDirectory,
+                $"{documentId}.dvault");
+
+        bool destinationCreated = false;
+
         try
         {
             string documentsDirectory =
@@ -39,11 +46,6 @@ public sealed class FileSystemStorageService : IStorageService
 
             Directory.CreateDirectory(
                 documentsDirectory);
-
-            string destinationFilePath =
-                Path.Combine(
-                    documentsDirectory,
-                    $"{documentId}.dvault");
 
             await using var source =
                 new FileStream(
@@ -63,6 +65,8 @@ public sealed class FileSystemStorageService : IStorageService
                     bufferSize: 81920,
                     useAsync: true);
 
+            destinationCreated = true;
+
             await _encryptionService.EncryptAsync(
                 source,
                 destination,
@@ -75,10 +79,22 @@ public sealed class FileSystemStorageService : IStorageService
         }
         catch (OperationCanceledException)
         {
+            if (destinationCreated)
+            {
+                TryDeletePartialFile(
+                    destinationFilePath);
+            }
+
             throw;
         }
         catch (Exception ex)
         {
+            if (destinationCreated)
+            {
+                TryDeletePartialFile(
+                    destinationFilePath);
+            }
+
             _logger.LogError(
                 ex,
                 LogMessages.DocumentStorageFailed);
@@ -118,6 +134,24 @@ public sealed class FileSystemStorageService : IStorageService
                 LogMessages.DocumentStorageDeletionFailed);
 
             throw;
+        }
+    }
+
+    private void TryDeletePartialFile(
+        string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+        }
+        catch (Exception cleanupException)
+        {
+            _logger.LogError(
+                cleanupException,
+                LogMessages.DocumentStorageDeletionFailed);
         }
     }
 }
