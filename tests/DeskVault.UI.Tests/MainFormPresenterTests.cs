@@ -540,6 +540,116 @@ public sealed class MainFormPresenterTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task ImportRequested_WhenProcessingFails_ShowsErrorAndDoesNotRefreshDocuments()
+    {
+        const string filePath =
+            @"C:\Documents\security-policy.md";
+
+        const string hash =
+            "processing-failure-hash";
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedFilePath)
+            .Returns(filePath);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                hash,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var hashService =
+            new Mock<IHashService>();
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                filePath,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(hash);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                filePath,
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("document.dvault");
+
+        var processingService =
+            new Mock<IDocumentProcessingService>();
+
+        processingService
+            .Setup(x => x.ProcessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    "Document processing failed."));
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                repository,
+                hashService: hashService,
+                storageService: storageService,
+                processingService: processingService);
+
+        view.Raise(
+            x => x.ImportRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnexpectedImportError),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnexpectedImportError,
+                UiMessages.DeskVaultTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Once);
+    }
+
     private static IReadOnlyList<SearchDocumentsResult> CreateSearchResults(
         Guid firstDocumentId,
         Guid secondDocumentId)
@@ -594,12 +704,14 @@ public sealed class MainFormPresenterTests
         Mock<IDocumentRepository>? repository = null,
         Mock<IDocumentReader>? documentReader = null,
         Mock<IHashService>? hashService = null,
-        Mock<IImportDocumentValidator>? importValidator = null)
+        Mock<IImportDocumentValidator>? importValidator = null,
+        Mock<IStorageService>? storageService = null,
+        Mock<IDocumentProcessingService>? processingService = null)
     {
         repository ??=
             new Mock<IDocumentRepository>();
 
-        var storageService =
+        storageService ??=
             new Mock<IStorageService>();
 
         hashService ??=
@@ -611,7 +723,7 @@ public sealed class MainFormPresenterTests
         documentReader ??=
             new Mock<IDocumentReader>();
 
-        var processingService =
+        processingService ??=
             new Mock<IDocumentProcessingService>();
 
         var importDocumentHandler =
