@@ -518,6 +518,268 @@ public sealed class DocumentImportIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task ImportDocument_WhenValidCsvDocument_CompletesProcessingAndMakesDocumentSearchable()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "integration-test.csv");
+
+            string sourceText =
+                """
+            Id,Name,Department
+            1001,Alice Johnson,Engineering
+            1002,Bob Smith,Design
+            """;
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            ImportDocumentResult importResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Integration CSV Document"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Document? document =
+                await harness.GetDocumentAsync(
+                    importResult.DocumentId.Value);
+
+            Assert.NotNull(document);
+
+            Assert.Equal(
+                "integration-test.csv",
+                document.FileName);
+
+            Assert.Equal(
+                "Integration CSV Document",
+                document.DisplayName);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                document.Status);
+
+            List<DocumentChunkEntity> chunks =
+                await harness.GetChunksAsync(
+                    document.Id);
+
+            Assert.NotEmpty(chunks);
+
+            string indexedText =
+                string.Join(
+                    "\n",
+                    chunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Contains(
+                "Name: Alice Johnson",
+                indexedText);
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                await harness.SearchHandler.HandleAsync(
+                    new SearchDocumentsQuery(
+                        "Alice Johnson"));
+
+            SearchDocumentsResult matchingResult =
+                Assert.Single(
+                    searchResults,
+                    result =>
+                        result.DocumentId == document.Id);
+
+            Assert.Equal(
+                "integration-test.csv",
+                matchingResult.FileName);
+
+            Assert.Equal(
+                "Integration CSV Document",
+                matchingResult.DisplayName);
+
+            Assert.Contains(
+                "Alice Johnson",
+                matchingResult.ChunkText,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenValidMarkdownDocument_CompletesProcessingAndMakesDocumentSearchable()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "integration-test.md");
+
+            string sourceText =
+                """
+            # DeskVault Integration Test
+
+            This document contains searchable markdown architecture content.
+
+            ## Processing
+
+            Markdown syntax should remain preserved.
+            """;
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            ImportDocumentResult importResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Integration Markdown Document"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Document? document =
+                await harness.GetDocumentAsync(
+                    importResult.DocumentId.Value);
+
+            Assert.NotNull(document);
+
+            Assert.Equal(
+                "integration-test.md",
+                document.FileName);
+
+            Assert.Equal(
+                "Integration Markdown Document",
+                document.DisplayName);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                document.Status);
+
+            List<DocumentChunkEntity> chunks =
+                await harness.GetChunksAsync(
+                    document.Id);
+
+            Assert.NotEmpty(chunks);
+
+            string indexedText =
+                string.Join(
+                    "\n",
+                    chunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Contains(
+                "searchable markdown architecture content",
+                indexedText);
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                await harness.SearchHandler.HandleAsync(
+                    new SearchDocumentsQuery(
+                        "markdown architecture"));
+
+            SearchDocumentsResult matchingResult =
+                Assert.Single(
+                    searchResults,
+                    result =>
+                        result.DocumentId == document.Id);
+
+            Assert.Equal(
+                "integration-test.md",
+                matchingResult.FileName);
+
+            Assert.Equal(
+                "Integration Markdown Document",
+                matchingResult.DisplayName);
+
+            Assert.Contains(
+                "markdown architecture",
+                matchingResult.ChunkText,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
     private sealed class FailingDocumentTextExtractor
         : IDocumentTextExtractor
     {
