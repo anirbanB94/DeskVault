@@ -15,7 +15,8 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentDoesNotExist_ReturnsNotFound()
     {
-        var repository = new Mock<IDocumentRepository>();
+        var repository =
+            new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -23,7 +24,8 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((Document?)null);
 
-        var processingContext = CreateProcessingContext(repository);
+        var processingContext =
+            CreateProcessingContext(repository);
 
         ProcessDocumentResult result =
             await processingContext.Handler.HandleAsync(
@@ -57,7 +59,8 @@ public sealed class ProcessDocumentHandlerTests
     {
         Document document = CreateDocument();
 
-        var repository = new Mock<IDocumentRepository>();
+        var repository =
+            new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -70,7 +73,8 @@ public sealed class ProcessDocumentHandlerTests
                 repository,
                 maxChunkSize: 100);
 
-        var statusHistory = new List<DocumentStatus>();
+        var statusHistory =
+            new List<DocumentStatus>();
 
         repository
             .Setup(x => x.UpdateAsync(
@@ -148,7 +152,8 @@ public sealed class ProcessDocumentHandlerTests
     {
         Document document = CreateDocument();
 
-        var repository = new Mock<IDocumentRepository>();
+        var repository =
+            new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -159,17 +164,9 @@ public sealed class ProcessDocumentHandlerTests
         var processingContext =
             CreateProcessingContext(repository);
 
-        var statusHistory = new List<DocumentStatus>();
-
-        repository
-            .Setup(x => x.UpdateAsync(
-                It.IsAny<Document>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<Document, CancellationToken>(
-                (updatedDocument, _) =>
-                    statusHistory.Add(
-                        updatedDocument.Status))
-            .Returns(Task.CompletedTask);
+        var statusHistory =
+            CreateStatusHistory(
+                repository);
 
         processingContext.Extractor.ThrowOnExtract = true;
 
@@ -185,26 +182,57 @@ public sealed class ProcessDocumentHandlerTests
         Assert.True(
             processingContext.Extractor.WasCalled);
 
-        Assert.Equal(
-            [
-                DocumentStatus.Processing,
-                DocumentStatus.Failed
-            ],
-            statusHistory);
+        AssertProcessingFailureLifecycle(
+            document,
+            statusHistory,
+            processingContext,
+            repository);
+    }
 
-        Assert.Equal(
-            0,
-            processingContext.ProcessingStore.ReplaceCallCount);
+    [Fact]
+    public async Task HandleAsync_WhenNoExtractorSupportsDocument_MarksDocumentAsFailedAndRethrows()
+    {
+        Document document =
+            Document.Create(
+                Guid.NewGuid(),
+                "document.pdf",
+                "Unsupported Document",
+                "sha256-test-hash",
+                "document.dvault");
 
-        repository.Verify(
-            x => x.UpdateAsync(
-                It.IsAny<Document>(),
-                It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
+        var repository =
+            new Mock<IDocumentRepository>();
 
-        Assert.Equal(
-            DocumentStatus.Failed,
-            document.Status);
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingContext =
+            CreateProcessingContext(repository);
+
+        var statusHistory =
+            CreateStatusHistory(
+                repository);
+
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () =>
+                processingContext.Handler.HandleAsync(
+                    new ProcessDocumentCommand(
+                        document.Id)));
+
+        Assert.False(
+            processingContext.Reader.WasOpened);
+
+        Assert.False(
+            processingContext.Extractor.WasCalled);
+
+        AssertProcessingFailureLifecycle(
+            document,
+            statusHistory,
+            processingContext,
+            repository);
     }
 
     [Fact]
@@ -212,7 +240,8 @@ public sealed class ProcessDocumentHandlerTests
     {
         Document document = CreateDocument();
 
-        var repository = new Mock<IDocumentRepository>();
+        var repository =
+            new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -258,7 +287,8 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenCancellationIsRequestedBeforeProcessing_ThrowsOperationCanceledException()
     {
-        var repository = new Mock<IDocumentRepository>();
+        var repository =
+            new Mock<IDocumentRepository>();
 
         var processingContext =
             CreateProcessingContext(repository);
@@ -303,7 +333,8 @@ public sealed class ProcessDocumentHandlerTests
     {
         Document document = CreateDocument();
 
-        var repository = new Mock<IDocumentRepository>();
+        var repository =
+            new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -346,7 +377,8 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task ProcessAsync_WhenDocumentDoesNotExist_ThrowsFileNotFoundException()
     {
-        var repository = new Mock<IDocumentRepository>();
+        var repository =
+            new Mock<IDocumentRepository>();
 
         repository
             .Setup(x => x.GetByIdAsync(
@@ -391,6 +423,53 @@ public sealed class ProcessDocumentHandlerTests
             "Test Document",
             "sha256-test-hash",
             "document.dvault");
+    }
+
+    private static List<DocumentStatus> CreateStatusHistory(
+        Mock<IDocumentRepository> repository)
+    {
+        var statusHistory =
+            new List<DocumentStatus>();
+
+        repository
+            .Setup(x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (updatedDocument, _) =>
+                    statusHistory.Add(
+                        updatedDocument.Status))
+            .Returns(Task.CompletedTask);
+
+        return statusHistory;
+    }
+
+    private static void AssertProcessingFailureLifecycle(
+        Document document,
+        IReadOnlyList<DocumentStatus> statusHistory,
+        ProcessingContext processingContext,
+        Mock<IDocumentRepository> repository)
+    {
+        Assert.Equal(
+            [
+                DocumentStatus.Processing,
+                DocumentStatus.Failed
+            ],
+            statusHistory);
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.ReplaceCallCount);
+
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        Assert.Equal(
+            DocumentStatus.Failed,
+            document.Status);
     }
 
     private static ProcessingContext CreateProcessingContext(
