@@ -95,6 +95,21 @@ public static class UiMessages
     public const string UnexpectedImportError =
         "An unexpected error occurred while importing the document.";
 
+    public const string ReprocessingDocumentStatus =
+        "Reprocessing document...";
+
+    public const string DocumentReprocessedStatus =
+        "Document reprocessed successfully.";
+
+    public const string ReprocessDocumentTitle =
+        "Document Reprocessed";
+
+    public const string UnableToReprocessDocumentStatus =
+        "Unable to reprocess document.";
+
+    public const string UnableToReprocessDocument =
+        "The document could not be reprocessed.";
+
     public const string BackToDocuments =
         "← Documents";
 

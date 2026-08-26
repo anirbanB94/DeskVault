@@ -650,6 +650,114 @@ public sealed class MainFormPresenterTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task ReprocessRequested_WhenProcessingSucceeds_RefreshesDocumentsAndShowsSuccess()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                Document.Restore(
+                    documentId,
+                    "security-policy.md",
+                    "Security Policy",
+                    "test-hash",
+                    "document.dvault",
+                    DateTime.UtcNow,
+                    DocumentStatus.Available)
+            ]);
+
+        var processingService =
+            new Mock<IDocumentProcessingService>();
+
+        processingService
+            .Setup(x => x.ProcessAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                repository,
+                processingService: processingService);
+
+        view.Raise(
+            x => x.ReprocessRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.Is<IReadOnlyList<DocumentListItem>>(
+                    documents =>
+                        documents.Count == 1 &&
+                        documents[0].Id == documentId &&
+                        documents[0].FileName == "security-policy.md")),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.DocumentReprocessedStatus),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowInformation(
+                UiMessages.DocumentReprocessedStatus,
+                UiMessages.ReprocessDocumentTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetOpenEnabled(true),
+            Times.AtLeastOnce);
+
+        view.Verify(
+            x => x.SetRemoveEnabled(true),
+            Times.AtLeastOnce);
+
+        view.Verify(
+            x => x.SetReprocessEnabled(true),
+            Times.AtLeastOnce);
+    }
+
     private static IReadOnlyList<SearchDocumentsResult> CreateSearchResults(
         Guid firstDocumentId,
         Guid secondDocumentId)
@@ -765,6 +873,7 @@ public sealed class MainFormPresenterTests
             listDocumentsHandler,
             searchDocumentsHandler,
             documentWorkspace.Object,
+            processingService.Object,
             NullLogger<MainFormPresenter>.Instance);
     }
 

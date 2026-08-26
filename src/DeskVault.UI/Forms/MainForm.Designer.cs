@@ -12,6 +12,7 @@ partial class MainForm
     private System.Windows.Forms.Button importButton;
     private System.Windows.Forms.Button openButton;
     private System.Windows.Forms.Button removeButton;
+    private System.Windows.Forms.Button reprocessButton;
     private System.Windows.Forms.Panel contentPanel;
     private System.Windows.Forms.Label emptyStateLabel;
     private System.Windows.Forms.DataGridView documentGridView;
@@ -36,6 +37,7 @@ partial class MainForm
         searchPanel = new Panel();
         searchButton = new Button();
         searchTextBox = new TextBox();
+        reprocessButton = new Button();
         removeButton = new Button();
         openButton = new Button();
         importButton = new Button();
@@ -55,6 +57,7 @@ partial class MainForm
         // headerPanel
         //
         headerPanel.Controls.Add(searchPanel);
+        headerPanel.Controls.Add(reprocessButton);
         headerPanel.Controls.Add(removeButton);
         headerPanel.Controls.Add(openButton);
         headerPanel.Controls.Add(importButton);
@@ -74,13 +77,13 @@ partial class MainForm
         searchPanel.Location = new Point(241, 17);
         searchPanel.Name = "searchPanel";
         searchPanel.Padding = new Padding(30, 25, 30, 25);
-        searchPanel.Size = new Size(806, 103);
+        searchPanel.Size = new Size(546, 103);
         searchPanel.TabIndex = 4;
         //
         // searchButton
         //
         searchButton.Dock = DockStyle.Right;
-        searchButton.Location = new Point(656, 25);
+        searchButton.Location = new Point(396, 25);
         searchButton.Name = "searchButton";
         searchButton.Size = new Size(120, 53);
         searchButton.TabIndex = 1;
@@ -93,8 +96,20 @@ partial class MainForm
         searchTextBox.Location = new Point(30, 25);
         searchTextBox.Name = "searchTextBox";
         searchTextBox.PlaceholderText = "Search documents...";
-        searchTextBox.Size = new Size(746, 39);
+        searchTextBox.Size = new Size(366, 39);
         searchTextBox.TabIndex = 0;
+        //
+        // reprocessButton
+        //
+        reprocessButton.Dock = DockStyle.Right;
+        reprocessButton.Enabled = false;
+        reprocessButton.Location = new Point(787, 17);
+        reprocessButton.Margin = new Padding(6);
+        reprocessButton.Name = "reprocessButton";
+        reprocessButton.Size = new Size(260, 103);
+        reprocessButton.TabIndex = 3;
+        reprocessButton.Text = "Reprocess";
+        reprocessButton.UseVisualStyleBackColor = true;
         //
         // removeButton
         //

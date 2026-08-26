@@ -39,6 +39,7 @@ public partial class MainForm : Form, IMainFormView
         importButton.Click += OnImportButtonClick;
         openButton.Click += OnOpenButtonClick;
         removeButton.Click += OnRemoveButtonClick;
+        reprocessButton.Click += OnReprocessButtonClick;
         searchButton.Click += OnSearchButtonClick;
         searchTextBox.KeyDown += OnSearchTextBoxKeyDown;
         documentGridView.SelectionChanged +=
@@ -52,6 +53,8 @@ public partial class MainForm : Form, IMainFormView
     public event EventHandler? OpenRequested;
 
     public event EventHandler? RemoveRequested;
+
+    public event EventHandler? ReprocessRequested;
 
     public event EventHandler? DocumentSelectionChanged;
 
@@ -155,6 +158,15 @@ public partial class MainForm : Form, IMainFormView
             EventArgs.Empty);
     }
 
+    private void OnReprocessButtonClick(
+        object? sender,
+        EventArgs e)
+    {
+        ReprocessRequested?.Invoke(
+            this,
+            EventArgs.Empty);
+    }
+
     private void OnSearchButtonClick(
         object? sender,
         EventArgs e)
@@ -245,6 +257,12 @@ public partial class MainForm : Form, IMainFormView
         bool enabled)
     {
         removeButton.Enabled = enabled;
+    }
+
+    public void SetReprocessEnabled(
+        bool enabled)
+    {
+        reprocessButton.Enabled = enabled;
     }
 
     public void SetStatus(

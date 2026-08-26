@@ -65,6 +65,18 @@ public static class LogMessages
     public const string DocumentRemovalFailed =
         "Document removal failed.";
 
+    public const string DocumentReprocessSkippedWithoutSelection =
+        "Document reprocessing skipped because no document is selected.";
+
+    public const string DocumentReprocessStarted =
+        "Document reprocessing started.";
+
+    public const string DocumentReprocessCompleted =
+        "Document reprocessing completed successfully.";
+
+    public const string DocumentReprocessFailed =
+        "Document reprocessing failed.";
+
     public const string DocumentSearchCleared =
         "Document search cleared.";
 

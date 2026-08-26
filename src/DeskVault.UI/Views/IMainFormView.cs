@@ -8,6 +8,8 @@ public interface IMainFormView
 
     event EventHandler RemoveRequested;
 
+    event EventHandler ReprocessRequested;
+
     event EventHandler DocumentSelectionChanged;
 
     event EventHandler SearchRequested;
@@ -27,6 +29,8 @@ public interface IMainFormView
     void SetOpenEnabled(bool enabled);
 
     void SetRemoveEnabled(bool enabled);
+
+    void SetReprocessEnabled(bool enabled);
 
     void SetStatus(string message);
 

@@ -3,6 +3,7 @@ using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
+using DeskVault.Application.Interfaces;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
@@ -19,6 +20,7 @@ public sealed class MainFormPresenter
     private readonly ListDocumentsHandler _listDocumentsHandler;
     private readonly SearchDocumentsHandler _searchDocumentsHandler;
     private readonly IDocumentWorkspace _documentWorkspace;
+    private readonly IDocumentProcessingService _documentProcessingService;
     private readonly ILogger<MainFormPresenter> _logger;
 
     public MainFormPresenter(
@@ -29,6 +31,7 @@ public sealed class MainFormPresenter
         ListDocumentsHandler listDocumentsHandler,
         SearchDocumentsHandler searchDocumentsHandler,
         IDocumentWorkspace documentWorkspace,
+        IDocumentProcessingService documentProcessingService,
         ILogger<MainFormPresenter> logger)
     {
         _view = view;
@@ -38,6 +41,7 @@ public sealed class MainFormPresenter
         _listDocumentsHandler = listDocumentsHandler;
         _searchDocumentsHandler = searchDocumentsHandler;
         _documentWorkspace = documentWorkspace;
+        _documentProcessingService = documentProcessingService;
         _logger = logger;
 
         _view.ImportRequested += OnImportRequested;
@@ -45,6 +49,7 @@ public sealed class MainFormPresenter
         _view.RemoveRequested += OnRemoveRequested;
         _view.DocumentSelectionChanged += OnDocumentSelectionChanged;
         _view.SearchRequested += OnSearchRequested;
+        _view.ReprocessRequested += OnReprocessRequested;
         _documentWorkspace.DocumentRemoved += OnDocumentRemoved;
     }
 
@@ -269,6 +274,7 @@ public sealed class MainFormPresenter
         _view.SetRemoveEnabled(false);
         _view.SetOpenEnabled(false);
         _view.SetImportEnabled(false);
+        _view.SetReprocessEnabled(false);
         _view.SetStatus(
             UiMessages.RemovingDocumentStatus);
 
@@ -321,11 +327,76 @@ public sealed class MainFormPresenter
         {
             _view.SetImportEnabled(true);
 
-            _view.SetOpenEnabled(
-                _view.SelectedDocumentId.HasValue);
+            bool hasSelection =
+                _view.SelectedDocumentId.HasValue;
 
-            _view.SetRemoveEnabled(
-                _view.SelectedDocumentId.HasValue);
+            _view.SetOpenEnabled(hasSelection);
+            _view.SetRemoveEnabled(hasSelection);
+            _view.SetReprocessEnabled(hasSelection);
+        }
+    }
+
+    private async void OnReprocessRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (_view.SelectedDocumentId is not Guid documentId)
+        {
+            _logger.LogDebug(
+                LogMessages.DocumentReprocessSkippedWithoutSelection);
+
+            return;
+        }
+
+        _logger.LogInformation(
+            LogMessages.DocumentReprocessStarted);
+
+        _view.SetReprocessEnabled(false);
+        _view.SetOpenEnabled(false);
+        _view.SetRemoveEnabled(false);
+        _view.SetImportEnabled(false);
+        _view.SetStatus(
+            UiMessages.ReprocessingDocumentStatus);
+
+        try
+        {
+            await _documentProcessingService.ProcessAsync(
+                documentId);
+
+            await RefreshDocumentsAsync();
+
+            _view.SetStatus(
+                UiMessages.DocumentReprocessedStatus);
+
+            _logger.LogInformation(
+                LogMessages.DocumentReprocessCompleted);
+
+            _view.ShowInformation(
+                UiMessages.DocumentReprocessedStatus,
+                UiMessages.ReprocessDocumentTitle);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentReprocessFailed);
+
+            _view.SetStatus(
+                UiMessages.UnableToReprocessDocumentStatus);
+
+            _view.ShowError(
+                UiMessages.UnableToReprocessDocument,
+                UiMessages.ReprocessDocumentTitle);
+        }
+        finally
+        {
+            bool hasSelection =
+                _view.SelectedDocumentId.HasValue;
+
+            _view.SetImportEnabled(true);
+            _view.SetOpenEnabled(hasSelection);
+            _view.SetRemoveEnabled(hasSelection);
+            _view.SetReprocessEnabled(hasSelection);
         }
     }
 
@@ -344,6 +415,7 @@ public sealed class MainFormPresenter
                     LogMessages.DocumentSearchCleared);
 
                 await RefreshDocumentsAsync();
+
                 return;
             }
 
@@ -370,6 +442,8 @@ public sealed class MainFormPresenter
                 _view.ShowEmptyState();
                 _view.SetOpenEnabled(false);
                 _view.SetRemoveEnabled(false);
+                _view.SetReprocessEnabled(false);
+
                 return;
             }
 
@@ -379,11 +453,12 @@ public sealed class MainFormPresenter
 
             _view.ShowDocuments(documents);
 
-            _view.SetOpenEnabled(
-                _view.SelectedDocumentId.HasValue);
+            bool hasSelection =
+                _view.SelectedDocumentId.HasValue;
 
-            _view.SetRemoveEnabled(
-                _view.SelectedDocumentId.HasValue);
+            _view.SetOpenEnabled(hasSelection);
+            _view.SetRemoveEnabled(hasSelection);
+            _view.SetReprocessEnabled(hasSelection);
         }
         catch (Exception ex)
         {
@@ -417,6 +492,7 @@ public sealed class MainFormPresenter
             _view.ShowEmptyState();
             _view.SetOpenEnabled(false);
             _view.SetRemoveEnabled(false);
+            _view.SetReprocessEnabled(false);
 
             return 0;
         }
@@ -429,11 +505,12 @@ public sealed class MainFormPresenter
 
         _view.ShowDocuments(items);
 
-        _view.SetOpenEnabled(
-            _view.SelectedDocumentId.HasValue);
+        bool hasSelection =
+            _view.SelectedDocumentId.HasValue;
 
-        _view.SetRemoveEnabled(
-            _view.SelectedDocumentId.HasValue);
+        _view.SetOpenEnabled(hasSelection);
+        _view.SetRemoveEnabled(hasSelection);
+        _view.SetReprocessEnabled(hasSelection);
 
         _logger.LogDebug(
             LogMessages.DocumentListRefreshCompleted,
@@ -451,6 +528,7 @@ public sealed class MainFormPresenter
 
         _view.SetOpenEnabled(hasSelection);
         _view.SetRemoveEnabled(hasSelection);
+        _view.SetReprocessEnabled(hasSelection);
     }
 
     private async void OnDocumentRemoved(
