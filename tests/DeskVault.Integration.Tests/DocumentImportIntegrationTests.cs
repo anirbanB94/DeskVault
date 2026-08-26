@@ -225,6 +225,93 @@ public sealed class DocumentImportIntegrationTests
     }
 
     [Fact]
+    public async Task ImportDocument_WhenSameDocumentIsImportedTwice_ReturnsDuplicateAndDoesNotCreateSecondDocument()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "duplicate-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "DeskVault duplicate import integration test.");
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            ImportDocumentResult firstResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "First Document"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                firstResult.Status);
+
+            Assert.NotNull(
+                firstResult.DocumentId);
+
+            ImportDocumentResult secondResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Second Document"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Duplicate,
+                secondResult.Status);
+
+            Assert.Null(
+                secondResult.DocumentId);
+
+            Assert.Equal(
+                "The document has already been imported.",
+                secondResult.Description);
+
+            Document? document =
+                await harness.GetDocumentAsync(
+                    firstResult.DocumentId.Value);
+
+            Assert.NotNull(document);
+
+            Assert.Equal(
+                "First Document",
+                document.DisplayName);
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task RemoveDocument_WhenDocumentExists_RemovesStoredFileMetadataAndChunks()
     {
         string rootDirectory =
