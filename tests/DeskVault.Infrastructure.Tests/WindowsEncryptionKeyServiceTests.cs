@@ -147,6 +147,50 @@ public sealed class WindowsEncryptionKeyServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenProtectedKeyIsMissing_CreatesNewKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var service =
+                CreateService(dataPaths);
+
+            byte[] firstKey =
+                await service.GetOrCreateKeyAsync();
+
+            string keyFilePath =
+                GetKeyFilePath(dataPaths);
+
+            File.Delete(keyFilePath);
+
+            byte[] secondKey =
+                await service.GetOrCreateKeyAsync();
+
+            Assert.Equal(
+                32,
+                secondKey.Length);
+
+            Assert.NotEqual(
+                firstKey,
+                secondKey);
+
+            Assert.True(
+                File.Exists(keyFilePath));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
     private static WindowsEncryptionKeyService CreateService(
         DeskVaultDataPaths dataPaths)
     {
