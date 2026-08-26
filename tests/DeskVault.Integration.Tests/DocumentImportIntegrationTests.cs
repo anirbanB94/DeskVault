@@ -1,10 +1,11 @@
-using System.Security.Cryptography;
-using System.Text;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
+using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Entities;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace DeskVault.Integration.Tests;
 
@@ -425,6 +426,122 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     recursive: true);
             }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenProcessingFails_PersistsFailedStatusAndKeepsStoredFile()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "processing-failure-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "DeskVault processing failure integration test.");
+
+            var failingExtractor =
+                new FailingDocumentTextExtractor();
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    [failingExtractor]);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    harness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Processing Failure Test Document")));
+
+            IReadOnlyList<Document> documents =
+                await harness.GetDocumentsAsync();
+
+            Document document =
+                Assert.Single(documents);
+
+            Assert.Equal(
+                "processing-failure-test.txt",
+                document.FileName);
+
+            Assert.Equal(
+                "Processing Failure Test Document",
+                document.DisplayName);
+
+            Assert.Equal(
+                DocumentStatus.Failed,
+                document.Status);
+
+            Assert.True(
+                File.Exists(
+                    document.StoredFilePath));
+
+            List<DocumentChunkEntity> chunks =
+                await harness.GetChunksAsync(
+                    document.Id);
+
+            Assert.Empty(chunks);
+
+            Assert.True(
+                failingExtractor.WasCalled);
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    private sealed class FailingDocumentTextExtractor
+        : IDocumentTextExtractor
+    {
+        public bool WasCalled { get; private set; }
+
+        public bool CanExtract(
+            string fileName)
+        {
+            return fileName.EndsWith(
+                ".txt",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        public Task<DocumentTextExtractionResult> ExtractAsync(
+            Stream documentStream,
+            string fileName,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            WasCalled = true;
+
+            throw new InvalidOperationException(
+                "Test processing failure.");
         }
     }
 }

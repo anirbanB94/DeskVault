@@ -37,7 +37,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
     public DocumentPipelineTestHarness(
         string rootDirectory,
         string databasePath,
-        byte[] encryptionKey)
+        byte[] encryptionKey,
+        IEnumerable<IDocumentTextExtractor>? extractors = null)
     {
         DataPaths =
             new DeskVaultDataPaths(
@@ -75,11 +76,12 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
         var extractorResolver =
             new DocumentTextExtractorResolver(
-            [
-                new TextDocumentTextExtractor(),
-                new MarkdownDocumentTextExtractor(),
-                new CsvDocumentTextExtractor()
-            ]);
+                extractors ??
+                [
+                    new TextDocumentTextExtractor(),
+                    new MarkdownDocumentTextExtractor(),
+                    new CsvDocumentTextExtractor()
+                ]);
 
         var processHandler =
             new ProcessDocumentHandler(
@@ -126,6 +128,14 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
         return await repository.GetByIdAsync(
             documentId);
+    }
+
+    public async Task<IReadOnlyList<Document>> GetDocumentsAsync()
+    {
+        var repository =
+            CreateRepository();
+
+        return await repository.GetAllAsync();
     }
 
     public async Task<List<DocumentChunkEntity>> GetChunksAsync(
@@ -214,7 +224,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_connection.State != System.Data.ConnectionState.Closed)
+        if (_connection.State !=
+            System.Data.ConnectionState.Closed)
         {
             await _connection.CloseAsync();
         }
