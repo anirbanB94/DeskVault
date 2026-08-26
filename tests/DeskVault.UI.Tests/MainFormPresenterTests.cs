@@ -440,6 +440,106 @@ public sealed class MainFormPresenterTests
             Times.AtLeastOnce);
     }
 
+    [Fact]
+    public async Task ImportRequested_WhenDocumentIsDuplicate_ShowsWarningAndDoesNotRefreshDocuments()
+    {
+        const string filePath =
+            @"C:\Documents\security-policy.md";
+
+        const string duplicateHash =
+            "duplicate-hash";
+
+        const string duplicateDescription =
+            "The document has already been imported.";
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedFilePath)
+            .Returns(filePath);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                duplicateHash,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var hashService =
+            new Mock<IHashService>();
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                filePath,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(duplicateHash);
+
+        var importValidator =
+            CreateSuccessfulImportValidator();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                repository,
+                hashService: hashService,
+                importValidator: importValidator);
+
+        view.Raise(
+            x => x.ImportRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        hashService.Verify(
+            x => x.ComputeSha256Async(
+                filePath,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.ExistsByHashAsync(
+                duplicateHash,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetStatus(
+                duplicateDescription),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowWarning(
+                duplicateDescription,
+                UiMessages.ImportFailedTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Once);
+    }
+
     private static IReadOnlyList<SearchDocumentsResult> CreateSearchResults(
         Guid firstDocumentId,
         Guid secondDocumentId)
@@ -469,12 +569,32 @@ public sealed class MainFormPresenterTests
         ];
     }
 
+    private static Mock<IImportDocumentValidator>
+        CreateSuccessfulImportValidator()
+    {
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        validator
+            .Setup(x => x.Validate(
+                It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        return validator;
+    }
+
     private static MainFormPresenter CreatePresenter(
         Mock<IMainFormView> view,
         Mock<IDocumentSearchStore> searchStore,
         Mock<IDocumentWorkspace> documentWorkspace,
         Mock<IDocumentRepository>? repository = null,
-        Mock<IDocumentReader>? documentReader = null)
+        Mock<IDocumentReader>? documentReader = null,
+        Mock<IHashService>? hashService = null,
+        Mock<IImportDocumentValidator>? importValidator = null)
     {
         repository ??=
             new Mock<IDocumentRepository>();
@@ -482,11 +602,11 @@ public sealed class MainFormPresenterTests
         var storageService =
             new Mock<IStorageService>();
 
-        var hashService =
+        hashService ??=
             new Mock<IHashService>();
 
-        var importValidator =
-            new Mock<IImportDocumentValidator>();
+        importValidator ??=
+            CreateSuccessfulImportValidator();
 
         documentReader ??=
             new Mock<IDocumentReader>();
