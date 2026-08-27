@@ -103,16 +103,11 @@ Structured Document Representation
               └── Future AI / Retrieval
 ```
 
-The structured source representation and the persisted derived
-representation are distinct concepts.
+The structured source representation and the persisted derived representation are distinct concepts.
 
-The structured source representation preserves source semantics required
-for presentation and further processing.
+The structured source representation preserves source semantics required for presentation and further processing.
 
-Normalization and chunking produce a derived representation optimized for
-consistent downstream knowledge operations. The derived representation
-must remain traceable to its source document and must not be treated as a
-replacement for the original source semantics.
+Normalization and chunking produce a derived representation optimized for consistent downstream knowledge operations. The derived representation must remain traceable to its source document and must not be treated as a replacement for the original source semantics.
 
 The structured representation may be format-specific when the source format has meaningful structure that cannot be safely reduced to generic text.
 
@@ -547,8 +542,7 @@ The goal is to preserve enough source meaning that rendering, search, and AI can
 
 ## Application Layer Boundary
 
-The Application layer should expose document-processing capabilities
-through abstractions appropriate to the use case.
+The Application layer should expose document-processing capabilities through abstractions appropriate to the use case.
 
 The UI must not access format-specific infrastructure directly.
 
@@ -564,17 +558,11 @@ Document processing abstraction
 Infrastructure / format library
 ```
 
-The exact placement of parsers may evolve as the architecture matures, but
-format-specific implementation details must not leak into presentation
-orchestration.
+The exact placement of parsers may evolve as the architecture matures, but format-specific implementation details must not leak into presentation orchestration.
 
-The UI renderer may depend on the structured representation it needs for
-presentation, but it should not own source parsing when parsing is a
-reusable application capability.
+The UI renderer may depend on the structured representation it needs for presentation, but it should not own source parsing when parsing is a reusable application capability.
 
-Knowledge-processing consumers should likewise consume application-level
-processing results and persisted derived representations rather than
-scraping rendered UI output.
+Knowledge-processing consumers should likewise consume application-level processing results and persisted derived representations rather than scraping rendered UI output.
 
 ## Error Handling
 
@@ -628,8 +616,6 @@ Format-specific resources such as WebView2 controls remain owned by the renderer
 
 This prevents document-processing components from unexpectedly closing resources owned by higher-level workflows.
 
-
-
 ## Document Processing Lifecycle
 
 The semantic-preservation boundary also governs the lifecycle of application-level document processing.
@@ -677,8 +663,7 @@ This separation prevents the document's overall lifecycle from becoming overload
 
 Document processing orchestration belongs in the Application layer.
 
-The orchestrator is responsible for coordinating the processing stages in
-their defined order:
+The orchestrator is responsible for coordinating the processing stages in their defined order:
 
 ```text
 Read
@@ -692,8 +677,7 @@ Chunk
 Persist derived result
 ```
 
-The orchestrator must coordinate these capabilities through application
-contracts rather than depending directly on UI rendering components.
+The orchestrator must coordinate these capabilities through application contracts rather than depending directly on UI rendering components.
 
 The processing workflow must therefore remain usable by:
 
@@ -718,18 +702,13 @@ The orchestrator must not:
 - treat rendered output as processing input
 - silently replace processing failures with partial success
 
-The existing asynchronous contracts are retained throughout the
-processing pipeline. Cancellation must flow from the orchestration entry
-point through reading, extraction, normalization, and chunking.
+The existing asynchronous contracts are retained throughout the processing pipeline. Cancellation must flow from the orchestration entry point through reading, extraction, normalization, and chunking.
 
-For MVP 1, processing may be invoked synchronously by the application
-workflow even though the processing contracts are asynchronous. A
-background-job framework is not required to establish this boundary.
+For MVP 1, processing may be invoked synchronously by the application workflow even though the processing contracts are asynchronous. A background-job framework is not required to establish this boundary.
 
 ## Processing State Ownership
 
-Processing execution state belongs to the processing workflow, not to the
-document renderer and not to the document's general lifecycle status.
+Processing execution state belongs to the processing workflow, not to the document renderer and not to the document's general lifecycle status.
 
 The application-level processing boundary owns the transition:
 
@@ -744,20 +723,15 @@ Processing
 
 Only the processing workflow should make these transitions.
 
-A renderer may observe processing information for presentation, but it must
-not change processing state as a side effect of rendering.
+A renderer may observe processing information for presentation, but it must not change processing state as a side effect of rendering.
 
-`DocumentStatus` remains responsible for the document's broader lifecycle.
-Processing state remains responsible for the execution state of document
-processing.
+`DocumentStatus` remains responsible for the document's broader lifecycle. Processing state remains responsible for the execution state of document processing.
 
-This separation allows later background execution, retries, and
-observability without overloading the document lifecycle model.
+This separation allows later background execution, retries, and observability without overloading the document lifecycle model.
 
 ## Processing Completion and Derived-Result Publication
 
-A document must not become visibly `Completed` while its derived processing
-result is known to be incomplete or invalid.
+A document must not become visibly `Completed` while its derived processing result is known to be incomplete or invalid.
 
 Conceptually:
 
@@ -775,18 +749,13 @@ Persist derived result successfully
 Completed
 ```
 
-If a processing attempt fails before the derived result is successfully
-published, the attempt remains `Failed` and the application must not
-present the partial attempt as the current successful processing result.
+If a processing attempt fails before the derived result is successfully published, the attempt remains `Failed` and the application must not present the partial attempt as the current successful processing result.
 
-The exact transactional or replacement mechanism is a persistence
-implementation concern. The observable application-level rule is:
+The exact transactional or replacement mechanism is a persistence implementation concern. The observable application-level rule is:
 
-> A successful processing result is published as a coherent derived result,
-> and a failed attempt must not masquerade as a successful one.
+> A successful processing result is published as a coherent derived result, and a failed attempt must not masquerade as a successful one.
 
-This rule supports idempotent retries and prevents partially written chunks
-from becoming authoritative search or AI input.
+This rule supports idempotent retries and prevents partially written chunks from becoming authoritative search or AI input.
 
 ## Processing Pipeline
 
@@ -924,11 +893,9 @@ The exact persistence schema may evolve as processing capabilities grow, provide
 
 ## MVP 1 Processing Boundary
 
-For MVP 1, the processing architecture will establish the application-level
-processing boundary without requiring a background-job framework.
+For MVP 1, the processing architecture will establish the application-level processing boundary without requiring a background-job framework.
 
-Processing may be invoked synchronously by the application workflow while
-retaining asynchronous contracts and cancellation support.
+Processing may be invoked synchronously by the application workflow while retaining asynchronous contracts and cancellation support.
 
 The MVP 1 processing implementation should therefore establish:
 
@@ -946,13 +913,9 @@ The following capabilities remain future extensions of the same boundary:
 - embeddings and vector indexing
 - AI / RAG orchestration
 
-Processing-state semantics remain distinct from `DocumentStatus` and must not
-be represented as completed UI state unless the underlying processing result
-has been successfully published.
+Processing-state semantics remain distinct from `DocumentStatus` and must not be represented as completed UI state unless the underlying processing result has been successfully published.
 
-The processing boundary must remain suitable for later background execution
-without requiring a redesign of the document semantic model or rendering
-layer.
+The processing boundary must remain suitable for later background execution without requiring a redesign of the document semantic model or rendering layer.
 
 ## Security Considerations
 
@@ -1000,8 +963,7 @@ It must not become an application instruction merely because an AI subsystem con
 
 ## Current MVP 1 Implementation Boundary
 
-The semantic-preservation and processing architecture described by this ADR
-is now implemented through the MVP 1 document knowledge pipeline.
+The semantic-preservation and processing architecture described by this ADR is now implemented through the MVP 1 document knowledge pipeline.
 
 The current flow is:
 
@@ -1039,17 +1001,11 @@ The current implementation establishes:
 - coherent publication of the current successful derived result
 - initial local keyword/chunk search
 
-The processing workflow remains independent of rendering. A document does
-not need to be rendered in order to be processed for search or future AI
-use.
+The processing workflow remains independent of rendering. A document does not need to be rendered in order to be processed for search or future AI use.
 
-For MVP 1, processing may be invoked synchronously by the application
-workflow. The processing contracts remain asynchronous and cancellation-
-aware so that a future background worker can use the same application
-boundary.
+For MVP 1, processing may be invoked synchronously by the application workflow. The processing contracts remain asynchronous and cancellation-aware so that a future background worker can use the same application boundary.
 
-The following are future extensions of this boundary and are not required
-for MVP 1:
+The following are future extensions of this boundary and are not required for MVP 1:
 
 - background worker execution
 - durable retry scheduling
@@ -1060,9 +1016,7 @@ for MVP 1:
 - RAG
 - local AI assistant orchestration
 
-The processing lifecycle remains separate from `DocumentStatus`, and
-processing state is not derived from renderer state or UI presentation.
-
+The processing lifecycle remains separate from `DocumentStatus`, and processing state is not derived from renderer state or UI presentation.
 
 ## Alternatives Considered
 

@@ -12,12 +12,15 @@ DeskVault is being designed for environments where privacy, offline capability, 
 
 ## Current Status
 
-DeskVault is currently in **MVP development**.
+DeskVault is currently in **MVP 1 development / release-hardening**.
 
-### Implemented
+MVP 1 focuses on establishing a secure, persistent, local document foundation with an in-app document workspace, document rendering, document processing, and local keyword/full-text search.
+
+### Implemented in MVP 1
 
 - .NET 10 / WinForms desktop application
-- Clean separation across Domain, Application, Infrastructure, and UI
+- Layered separation across Domain, Application, Infrastructure, and UI
+- Application-level vertical-slice architecture
 - Document import workflow
 - SHA-256 based duplicate detection
 - Encrypted document storage using AES-GCM
@@ -25,15 +28,14 @@ DeskVault is currently in **MVP development**.
 - Encrypted `.dvault` document artifacts
 - Persistent document metadata using SQLite
 - EF Core persistence infrastructure
-- EF Core database migrations and schema evolution
+- EF Core migrations and schema evolution
 - Application restart persistence
 - Document listing and selection
 - Persistent document retrieval
 - Document removal workflow
 - Decryption and document opening
 - Local application-data storage under `%LOCALAPPDATA%\DeskVault`
-- In-app document workspace foundation
-- Document workspace opening flow
+- In-app document workspace
 - Dedicated `DocumentViewForm` workspace
 - Workspace-oriented UI interaction model
 - Presenter-driven document workspace integration
@@ -43,61 +45,77 @@ DeskVault is currently in **MVP development**.
 - Structured CSV parsing with bounded preview support
 - Extensible document renderer abstraction and resolver
 - Secure Markdown rendering with controlled HTML, script, resource, and navigation policies
+- Renderer-owned presentation resources and lifecycle
+- Separation of document lifecycle and workspace lifecycle
+- Document processing pipeline with extraction, normalization, chunking, and persisted processing lifecycle
+- Processing failure handling and retry/reprocessing support
+- Cancellation-aware processing contracts
+- Idempotent replacement of derived processing results
+- Persisted document chunks
+- Local keyword/full-text search across processed document chunks
 - Architecture Decision Records for significant architectural choices
-- Document processing pipeline with text extraction, normalization, chunking, and persisted processing lifecycle
-- Full-text document search across persisted document chunks
-- EF Core database migrations and schema evolution
-- Automated test coverage across Application, Infrastructure, Integration, and UI projects
 - Centralized NuGet package version management
 - Repository-level .NET SDK and build configuration
+- Automated test coverage across Application, Infrastructure, Integration, and UI projects
 
-### In Development
+### Future Roadmap
+
+The following capabilities are intentionally **not MVP 1 functionality**:
 
 - Additional document renderers such as PDF and Office formats
-- Improved desktop UI/UX
-- Local embeddings
+- Improved desktop UI/UX and visual polish
+- Embeddings and vector indexing
+- Hybrid search
 - Retrieval-Augmented Generation (RAG)
 - Local AI integration through Ollama
-- Source-grounded knowledge retrieval
-- Additional security hardening
-- Additional document processing and indexing capabilities
+- Source-grounded AI responses
+- Functional AI assistant interaction
+- Background document-processing workers
+- Durable retry scheduling and richer processing observability
+- Persistent named workspaces
+- Related-document workspace management
+- Recent activity
+- Multiple simultaneous workspaces
+- Automatic workspace recovery
+- Additional security hardening and security-focused enhancements
 
 ## Architecture
 
-DeskVault follows a layered architecture designed to keep infrastructure concerns isolated from the application and domain layers.
+DeskVault follows a layered architecture designed to keep infrastructure concerns isolated from application and domain logic.
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                         DeskVault UI                        │
-│                    WinForms + Presenter                     │
-│                                                             │
-│  MainForm                                                  │
-│      │                                                      │
-│      └── DocumentViewForm / Workspace                      │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                         DeskVault UI                         │
+│                    WinForms + Presenter                      │
+│                                                              │
+│  MainForm                                                   │
+│      │                                                       │
+│      └── DocumentViewForm / Workspace                        │
+└──────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       Application                           │
-│              Commands / Queries / Interfaces                │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                        Application                           │
+│              Commands / Queries / Interfaces                 │
+│       Document Import / Processing / Search / Services       │
+└──────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                          Domain                             │
-│              Documents / Business Rules / State             │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                           Domain                             │
+│              Documents / Business Rules / State              │
+└──────────────────────────────────────────────────────────────┘
                               ▲
                               │
-┌─────────────────────────────────────────────────────────────┐
-│                     Infrastructure                          │
-│                                                             │
-│  SQLite / EF Core                                           │
-│  Encrypted File Storage                                     │
-│  Encryption Key Management                                  │
-│  Document Readers                                           │
-│  External Infrastructure Services                           │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      Infrastructure                          │
+│                                                              │
+│  SQLite / EF Core                                            │
+│  Encrypted File Storage                                      │
+│  Encryption Key Management                                   │
+│  Document Readers                                            │
+│  External Infrastructure Services                            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 The Application layer depends on abstractions such as `IDocumentRepository`. Infrastructure provides the concrete implementations.
@@ -121,7 +139,7 @@ DeskVault separates **document content** from **document metadata**.
 
 ### SQLite
 
-SQLite stores document metadata such as:
+SQLite stores document metadata and processing-related persistence such as:
 
 - Document ID
 - File name
@@ -130,8 +148,11 @@ SQLite stores document metadata such as:
 - Import timestamp
 - Document status
 - Encrypted storage path
+- Processing execution state
+- Processing attempt information
+- Derived document chunks
 
-EF Core provides the persistence abstraction inside Infrastructure.
+EF Core provides the persistence implementation inside Infrastructure, with migrations used for schema evolution.
 
 ### Encrypted Files
 
@@ -143,9 +164,9 @@ This separation allows the metadata store and document-content storage to evolve
 
 ## Document Workspace
 
-DeskVault now provides an initial **in-app document workspace**.
+DeskVault provides an initial **in-app document workspace**.
 
-The current workspace establishes the UI boundary for document-centric interaction without prematurely implementing future workspace functionality.
+The MVP 1 workspace is intentionally a single-document viewing and document-management experience.
 
 The current workspace includes:
 
@@ -153,14 +174,14 @@ The current workspace includes:
 - Dedicated document workspace window
 - Workspace header
 - Document content area
-- AI interaction entry point
-- Workspace actions menu
+- Document information
+- Workspace/document actions
 - Close workspace action
 - Presenter-driven workspace opening
 
-The current implementation establishes the workspace shell and opening flow, with TXT, Markdown, and CSV documents rendered in-app through the extensible document renderer boundary. CSV documents are parsed into a structured representation before rendering, preserving columns, rows, structural warnings, and bounded-preview state.
+The AI assistant interaction model is part of the architectural direction, but functional AI processing and assistant interaction are future capabilities.
 
-The intended direction is:
+The current flow is:
 
 ```text
 Main Document Library
@@ -170,30 +191,65 @@ Main Document Library
 OpenDocumentHandler
         │
         ▼
-IDocumentWorkspace
-        │
-        ▼
-DocumentViewForm
-        │
+DocumentViewForm / Workspace
         ├── Document Identity
         ├── Document Content
-        ├── AI Assistant
+        ├── Document Information
         └── Workspace Actions
 ```
 
-The workspace architecture is intentionally designed to provide a path toward future capabilities such as related documents, persistent workspaces, multiple workspace windows, additional document renderers, and local AI assistance without implementing those capabilities prematurely.
+The workspace architecture provides a path toward related documents, persistent workspaces, multiple workspace windows, additional document renderers, and local AI assistance without implementing those capabilities prematurely.
 
-Document rendering is isolated behind `IDocumentContentRenderer`, allowing additional formats to be introduced without changing workspace orchestration. TXT, Markdown, and CSV currently have in-app renderers. Markdown uses Markdig for parsing and WebView2 as its rich presentation surface, while CSV uses a parser-plus-renderer pipeline with bounded preview configuration. Renderer-specific security and presentation policies remain inside the UI rendering boundary.
+### Document Rendering
 
-The architectural decision is documented in:
+Document rendering is isolated behind `IDocumentContentRenderer` and `IDocumentContentRendererResolver`.
 
-- `docs/adr/0006-in-app-document-workspace.md`
-- `docs/adr/0007-document-workspace-ui-and-interaction-model.md`
-- `docs/adr/0008-document-semantic-preservation-through-rendering-pipeline.md`
+```text
+DocumentViewForm
+      │
+      ▼
+IDocumentContentRendererResolver
+      │
+      ▼
+IDocumentContentRenderer
+      ├── TXT
+      ├── Markdown
+      └── CSV
+```
+
+The renderer boundary allows additional formats to be introduced without changing workspace orchestration.
+
+CSV uses a parser-plus-renderer pipeline:
+
+```text
+CSV
+ │
+ ▼
+CsvDocumentParser
+ │
+ ▼
+CsvDocument
+ ├── Columns
+ ├── Rows
+ ├── Warnings
+ └── HasMoreRows
+ │
+ ▼
+CsvDocumentContentRenderer
+ │
+ ▼
+DataGridView
+```
+
+This preserves CSV semantics before presentation and makes bounded preview state explicit.
+
+Markdown uses Markdig for parsing and WebView2 as its rich presentation surface. Imported Markdown is treated as untrusted content. Raw HTML, JavaScript, remote resources, and external navigation are controlled by renderer policy and disabled by default.
+
+Renderer-specific technologies and security policies remain inside the rendering boundary.
 
 ## Document Processing and Search
 
-DeskVault now includes a document processing pipeline for supported document types.
+DeskVault includes a document knowledge-processing pipeline for supported document types.
 
 The current processing flow is:
 
@@ -201,7 +257,10 @@ The current processing flow is:
 Stored Document
       │
       ▼
-Text Extraction
+Document Reader
+      │
+      ▼
+Extraction
       │
       ▼
 Normalization
@@ -210,23 +269,70 @@ Normalization
 Chunking
       │
       ▼
-Persisted Processing State
+Persisted Derived Representation
       │
       ▼
-Full-Text Search
+Keyword / Full-Text Search
 ```
 
-The processing pipeline currently provides:
+The MVP 1 processing pipeline provides:
 
-- Text extraction
-- Document-specific extraction boundaries
+- TXT extraction
+- Markdown extraction
+- CSV extraction
+- Extraction failure-boundary handling
 - Text normalization
-- Bounded text chunking
-- Persisted processing lifecycle state
+- Deterministic chunking
+- Persisted processing execution state
+- Processing failure and retry/reprocessing support
+- Cancellation propagation
+- Idempotent derived-result replacement
 - Persisted document chunks
-- Full-text document search across processed chunks
+- Local keyword/full-text search across processed chunks
 
-The processing architecture is designed to provide a foundation for future semantic retrieval and local AI capabilities without coupling the current MVP to an AI runtime.
+Processing remains independent of document rendering.
+
+A document does **not** need to be rendered in order to be processed for search or future AI use.
+
+The processing lifecycle is separate from `DocumentStatus`:
+
+```text
+Pending
+   │
+   ▼
+Processing
+   ├──────────► Completed
+   │
+   └──────────► Failed
+                    │
+                    │ retry
+                    ▼
+                Processing
+```
+
+A successful derived result is published coherently. Failed or partial processing attempts must not masquerade as the current successful result.
+
+### Semantic Preservation
+
+DeskVault treats document parsing/extraction and document rendering as separate architectural responsibilities.
+
+```text
+Source Document
+      │
+      ▼
+Parser / Extractor
+      │
+      ▼
+Structured Document Representation
+      ├── Rendering
+      ├── Search
+      ├── Indexing
+      └── AI / Retrieval
+```
+
+The renderer is a consumer of document semantics rather than their source of truth.
+
+This allows future search, indexing, and AI capabilities to consume application-level document-processing results rather than scraping UI controls, HTML, WebView2 output, or rendered text.
 
 ## Security Direction
 
@@ -238,7 +344,9 @@ The current implementation includes:
 - SHA-256 content hashing
 - Windows-protected encryption key management
 - Local-only document storage
+- Controlled Markdown rendering
 - No requirement for cloud document storage
+- Explicit user-controlled external opening for unsupported formats
 
 Future security work will include additional hardening, validation, key-management improvements, and security-focused testing.
 
@@ -246,14 +354,16 @@ Future security work will include additional hardening, validation, key-manageme
 
 DeskVault is designed to eventually provide local AI-powered knowledge retrieval.
 
-The intended pipeline is:
+The intended future pipeline is:
 
 ```text
 Documents
     ↓
 Encrypted Local Storage
     ↓
-Text Extraction
+Text / Structured Extraction
+    ↓
+Normalization
     ↓
 Chunking
     ↓
@@ -270,7 +380,7 @@ Source-Grounded Answer
 
 Ollama is planned as the local model runtime.
 
-AI functionality is **not yet considered complete MVP functionality**; it is part of the platform roadmap.
+AI functionality is **not implemented MVP 1 functionality**. Embeddings, vector indexing, RAG, and functional AI assistant interaction remain roadmap capabilities.
 
 ## Design Principles
 
@@ -281,26 +391,27 @@ DeskVault is being developed around the following principles:
 3. **Layered architecture** — Domain and Application remain independent of infrastructure technologies.
 4. **Replaceable infrastructure** — repositories and infrastructure services are accessed through abstractions.
 5. **Explicit boundaries** — UI, Application, Domain, and Infrastructure have distinct responsibilities.
-6. **Scalable foundations** — today's MVP should provide a reasonable path toward search, indexing, and AI workloads without premature complexity.
-7. **Evidence over claims** — documentation should reflect implemented functionality separately from planned capabilities.
+6. **Semantic preservation** — parsing establishes document meaning; rendering presents it.
+7. **Scalable foundations** — today's MVP should provide a reasonable path toward search, indexing, and AI workloads without premature complexity.
+8. **Evidence over claims** — documentation should distinguish implemented functionality from planned capabilities.
 
 ## Technology Stack
 
-| Area                | Technology                              |
-| ------------------- | --------------------------------------- |
-| Runtime             | .NET 10                                 |
-| UI                  | Windows Forms                           |
-| Language            | C#                                      |
-| Persistence         | SQLite                                  |
-| ORM                 | Entity Framework Core                   |
-| Document Encryption | AES-GCM                                 |
-| Key Protection      | Windows Data Protection                 |
-| Hashing             | SHA-256                                 |
-| Local AI Runtime      | Ollama                                  |
-| Planned Model         | Phi-4 Mini                              |
-| Markdown Parsing      | Markdig                                 |
-| Markdown Presentation | WebView2                                |
-| Architecture          | Layered / Clean Architecture principles |
+| Area                  | Technology |
+| --------------------- | ---------- |
+| Runtime               | .NET 10 |
+| UI                    | Windows Forms |
+| Language               | C# |
+| Persistence            | SQLite |
+| ORM                    | Entity Framework Core |
+| Document Encryption    | AES-GCM |
+| Key Protection         | Windows Data Protection |
+| Hashing                | SHA-256 |
+| Markdown Parsing       | Markdig |
+| Markdown Presentation  | WebView2 |
+| Local AI Runtime       | Ollama (planned) |
+| Planned Model          | Phi-4 Mini (planned) |
+| Architecture           | Layered / Clean Architecture principles |
 
 ## Project Structure
 
@@ -382,6 +493,8 @@ docs/
 └── adr/
 ```
 
+`DeskVault.AI` represents the planned AI boundary and is not evidence that local AI functionality is implemented in MVP 1.
+
 ## Development Approach
 
 DeskVault is being developed incrementally as an enterprise-grade portfolio project.
@@ -423,6 +536,8 @@ Full-Text Search
 [Future]
 Embeddings
     ↓
+Vector / Hybrid Retrieval
+    ↓
 RAG
     ↓
 Local AI Knowledge Assistant
@@ -434,8 +549,25 @@ Architectural decisions are documented through ADRs under `docs/adr/`.
 
 DeskVault is an actively developed portfolio project.
 
-The current MVP focuses on establishing a **secure, persistent, local document foundation with an in-app document workspace, document rendering, processing, and search support**.
+The current MVP 1 focuses on establishing a **secure, persistent, local document foundation with an in-app document workspace, document rendering, processing, and search support**.
 
-The workspace currently provides the document-centric UI foundation and opening flow. TXT, Markdown, and CSV rendering are implemented. Document processing, including text extraction, normalization, chunking, and persisted processing lifecycle support, is implemented, as is full-text search across processed document chunks. Additional renderers, embeddings, RAG, and local AI capabilities remain on the roadmap.
+The current implementation provides TXT, Markdown, and CSV rendering; document extraction, normalization, deterministic chunking, persisted processing state, retry/reprocessing support, and local keyword/full-text search across processed document chunks.
 
-Automated test coverage is established across the Application, Infrastructure, Integration, and UI test projects, with **230 tests passing in the current verification run**.
+Local AI, embeddings, vector indexing, hybrid search, RAG, additional document renderers, persistent workspaces, and other advanced capabilities remain on the roadmap.
+
+Automated test coverage is established across the Application, Infrastructure, Integration, and UI test projects. The exact passing-test count should be verified from the current test run rather than treated as a permanent README claim.
+
+## Architecture Decision Records
+
+Significant architectural decisions are documented in `docs/adr/`.
+
+Current ADRs include:
+
+- `0001-project-vision.md`
+- `0002-vertical-slice-architecture.md`
+- `0003-document-import-workflow.md`
+- `0004-document-encryption-at-rest.md`
+- `0005-document-metadata-persistence.md`
+- `0006-in-app-document-workspace.md`
+- `0007-document-workspace-ui-and-interaction-model.md`
+- `0008-document-semantic-preservation-through-rendering-pipeline.md`

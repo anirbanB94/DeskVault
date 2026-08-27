@@ -1,6 +1,6 @@
 # ADR-0005: Persist Document Metadata with SQLite
 
-## Status 
+## Status
 
 Accepted
 
@@ -203,13 +203,58 @@ Restores existing persisted state
 
 Restoration preserves persisted values such as the original import timestamp and document status rather than applying new-document defaults.
 
-## Database Initialization
+## Database Initialization and Schema Evolution
 
-The MVP initializes the SQLite database during application startup using EF Core database creation support.
+DeskVault initializes its local SQLite database during application startup.
 
-A dedicated `DatabaseInitializer` keeps database initialization separate from dependency registration and the `DbContext`.
+The database schema is managed through Entity Framework Core migrations.
+Infrastructure owns the `DbContext`, migrations, and database initialization
+responsibilities.
 
-As schema evolution becomes more important, the initialization strategy can transition to EF Core migrations.
+The application does not access SQLite or EF Core types directly.
+
+The persistence boundary is:
+
+```text
+Application
+    ↓
+Application-defined persistence abstractions
+    ↓
+Infrastructure
+    ↓
+EF Core DbContext / Migrations
+    ↓
+SQLite
+```
+
+Using migrations provides explicit schema evolution as the document,
+processing, and derived-content persistence model grows.
+
+Database initialization remains separate from application use-case logic
+and from the UI lifecycle.
+
+## Current Implementation
+
+The SQLite persistence decision is implemented in the current MVP 1
+persistence foundation.
+
+The current persistence model includes:
+
+- document metadata
+- processing execution state
+- processing attempt information
+- document-to-chunk relationships
+- persisted document chunks representing the current successful derived result
+
+Document metadata and processing-derived data are persisted through
+Infrastructure-owned EF Core persistence while encrypted source document
+content remains stored separately as `.dvault` files.
+
+The current implementation uses EF Core migrations for schema evolution and
+SQLite for local persistence.
+
+The Application layer remains independent of EF Core and SQLite through
+application-defined abstractions.
 
 ## Alternatives Considered
 
@@ -246,7 +291,7 @@ A future server-backed implementation could be introduced behind the existing Ap
 ### Negative
 
 * Infrastructure now has a database dependency.
-* SQLite schema evolution will eventually require migrations.
+* SQLite schema evolution requires migrations.
 * A separate persistence entity must be maintained alongside the Domain entity.
 * Database initialization adds startup work.
 

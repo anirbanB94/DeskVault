@@ -1,5 +1,7 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
+using DeskVault.Application.Documents.Commands.ProcessDocument;
+using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
@@ -21,6 +23,7 @@ public sealed class MainFormPresenter
     private readonly SearchDocumentsHandler _searchDocumentsHandler;
     private readonly IDocumentWorkspace _documentWorkspace;
     private readonly IDocumentProcessingService _documentProcessingService;
+    private readonly DocumentTextExtractorResolver _documentTextExtractorResolver;
     private readonly ILogger<MainFormPresenter> _logger;
 
     public MainFormPresenter(
@@ -32,6 +35,7 @@ public sealed class MainFormPresenter
         SearchDocumentsHandler searchDocumentsHandler,
         IDocumentWorkspace documentWorkspace,
         IDocumentProcessingService documentProcessingService,
+        DocumentTextExtractorResolver documentTextExtractorResolver,
         ILogger<MainFormPresenter> logger)
     {
         _view = view;
@@ -42,6 +46,7 @@ public sealed class MainFormPresenter
         _searchDocumentsHandler = searchDocumentsHandler;
         _documentWorkspace = documentWorkspace;
         _documentProcessingService = documentProcessingService;
+        _documentTextExtractorResolver = documentTextExtractorResolver;
         _logger = logger;
 
         _view.ImportRequested += OnImportRequested;
@@ -75,6 +80,8 @@ public sealed class MainFormPresenter
             }
 
             _view.SetOpenEnabled(true);
+
+            UpdateReprocessEnabled();
 
             _view.SetStatus(
                 $"{documentCount} document(s) imported.");
@@ -138,6 +145,8 @@ public sealed class MainFormPresenter
 
                 _view.SetOpenEnabled(
                     result.DocumentId.HasValue);
+
+                UpdateReprocessEnabled();
 
                 _view.SetStatus(
                     result.Description);
@@ -234,6 +243,8 @@ public sealed class MainFormPresenter
         {
             _view.SetOpenEnabled(
                 _view.SelectedDocumentId.HasValue);
+
+            UpdateReprocessEnabled();
         }
     }
 
@@ -332,7 +343,8 @@ public sealed class MainFormPresenter
 
             _view.SetOpenEnabled(hasSelection);
             _view.SetRemoveEnabled(hasSelection);
-            _view.SetReprocessEnabled(hasSelection);
+
+            UpdateReprocessEnabled();
         }
     }
 
@@ -344,6 +356,30 @@ public sealed class MainFormPresenter
         {
             _logger.LogDebug(
                 LogMessages.DocumentReprocessSkippedWithoutSelection);
+
+            return;
+        }
+
+        string? fileName =
+            _view.SelectedDocumentFileName;
+
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            _logger.LogDebug(
+                LogMessages.DocumentReprocessSkippedWithoutFileName);
+
+            _view.SetReprocessEnabled(false);
+
+            return;
+        }
+
+        if (!_documentTextExtractorResolver.CanResolve(fileName))
+        {
+            _logger.LogDebug(
+                "Document reprocessing skipped because no text extractor is available for {FileName}.",
+                fileName);
+
+            _view.SetReprocessEnabled(false);
 
             return;
         }
@@ -396,7 +432,8 @@ public sealed class MainFormPresenter
             _view.SetImportEnabled(true);
             _view.SetOpenEnabled(hasSelection);
             _view.SetRemoveEnabled(hasSelection);
-            _view.SetReprocessEnabled(hasSelection);
+
+            UpdateReprocessEnabled();
         }
     }
 
@@ -458,7 +495,9 @@ public sealed class MainFormPresenter
 
             _view.SetOpenEnabled(hasSelection);
             _view.SetRemoveEnabled(hasSelection);
-            _view.SetReprocessEnabled(hasSelection);
+
+            UpdateReprocessEnabled();
+
         }
         catch (Exception ex)
         {
@@ -510,7 +549,8 @@ public sealed class MainFormPresenter
 
         _view.SetOpenEnabled(hasSelection);
         _view.SetRemoveEnabled(hasSelection);
-        _view.SetReprocessEnabled(hasSelection);
+
+        UpdateReprocessEnabled();
 
         _logger.LogDebug(
             LogMessages.DocumentListRefreshCompleted,
@@ -528,7 +568,28 @@ public sealed class MainFormPresenter
 
         _view.SetOpenEnabled(hasSelection);
         _view.SetRemoveEnabled(hasSelection);
-        _view.SetReprocessEnabled(hasSelection);
+
+        UpdateReprocessEnabled();
+    }
+
+    private void UpdateReprocessEnabled()
+    {
+        if (_view.SelectedDocumentId is not Guid)
+        {
+            _view.SetReprocessEnabled(false);
+
+            return;
+        }
+
+        string? fileName =
+            _view.SelectedDocumentFileName;
+
+        bool canReprocess =
+            !string.IsNullOrWhiteSpace(fileName) &&
+            _documentTextExtractorResolver.CanResolve(fileName);
+
+        _view.SetReprocessEnabled(
+            canReprocess);
     }
 
     private async void OnDocumentRemoved(

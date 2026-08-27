@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
+using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
@@ -139,8 +140,11 @@ public sealed class MainFormPresenterTests
     [Fact]
     public async Task SearchRequested_SearchStoreFails_ShowsErrorAndFailureStatus()
     {
-        const string searchText = "security";
-        const string errorMessage = "Search store failure.";
+        const string searchText =
+            "security";
+
+        const string errorMessage =
+            "Search store failure.";
 
         var searchStore =
             new Mock<IDocumentSearchStore>();
@@ -541,13 +545,15 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task ImportRequested_WhenProcessingFails_ShowsErrorAndDoesNotRefreshDocuments()
+    public async Task ImportRequested_WhenImportSucceeds_DoesNotProcessDocumentAndRefreshesDocuments()
     {
         const string filePath =
             @"C:\Documents\security-policy.md";
 
         const string hash =
-            "processing-failure-hash";
+            "successful-import-hash";
+
+        Guid? importedDocumentId = null;
 
         var searchStore =
             new Mock<IDocumentSearchStore>();
@@ -571,6 +577,40 @@ public sealed class MainFormPresenterTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (document, _) =>
+                {
+                    importedDocumentId = document.Id;
+                })
+            .Returns(Task.CompletedTask);
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                if (importedDocumentId is not Guid documentId)
+                {
+                    return [];
+                }
+
+                return
+                [
+                    Document.Restore(
+                        documentId,
+                        "security-policy.md",
+                        "security-policy",
+                        hash,
+                        "document.dvault",
+                        DateTime.UtcNow,
+                        DocumentStatus.Imported)
+                ];
+            });
+
         var hashService =
             new Mock<IHashService>();
 
@@ -593,14 +633,6 @@ public sealed class MainFormPresenterTests
         var processingService =
             new Mock<IDocumentProcessingService>();
 
-        processingService
-            .Setup(x => x.ProcessAsync(
-                It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(
-                new InvalidOperationException(
-                    "Document processing failed."));
-
         _ =
             CreatePresenter(
                 view,
@@ -617,33 +649,76 @@ public sealed class MainFormPresenterTests
 
         await WaitForBackgroundOperationAsync();
 
-        processingService.Verify(
-            x => x.ProcessAsync(
+        Assert.NotNull(importedDocumentId);
+
+        hashService.Verify(
+            x => x.ComputeSha256Async(
+                filePath,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.ExistsByHashAsync(
+                hash,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        storageService.Verify(
+            x => x.StoreAsync(
+                filePath,
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
         repository.Verify(
             x => x.AddAsync(
-                It.IsAny<Document>(),
+                It.Is<Document>(
+                    document =>
+                        document.Id == importedDocumentId &&
+                        document.FileName == "security-policy.md" &&
+                        document.DisplayName == "security-policy"),
                 It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.Is<IReadOnlyList<DocumentListItem>>(
+                    documents =>
+                        documents.Count == 1 &&
+                        documents[0].Id == importedDocumentId &&
+                        documents[0].FileName == "security-policy.md")),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetSelectedDocumentId(
+                importedDocumentId),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetOpenEnabled(true),
             Times.Once);
 
         view.Verify(
             x => x.SetStatus(
-                UiMessages.UnexpectedImportError),
+                "Document imported successfully."),
             Times.Once);
 
         view.Verify(
-            x => x.ShowError(
-                UiMessages.UnexpectedImportError,
-                UiMessages.DeskVaultTitle),
+            x => x.ShowInformation(
+                "Document imported successfully.",
+                UiMessages.ImportCompleteTitle),
             Times.Once);
-
-        view.Verify(
-            x => x.ShowDocuments(
-                It.IsAny<IReadOnlyList<DocumentListItem>>()),
-            Times.Never);
 
         view.Verify(
             x => x.SetImportEnabled(true),
@@ -665,6 +740,10 @@ public sealed class MainFormPresenterTests
         view
             .SetupGet(x => x.SelectedDocumentId)
             .Returns(documentId);
+
+        view
+            .SetupGet(x => x.SelectedDocumentFileName)
+            .Returns("security-policy.md");
 
         var documentWorkspace =
             new Mock<IDocumentWorkspace>();
@@ -758,6 +837,61 @@ public sealed class MainFormPresenterTests
             Times.AtLeastOnce);
     }
 
+    [Fact]
+    public async Task ReprocessRequested_UnsupportedDocument_DisablesReprocessAndDoesNotProcess()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        view
+            .SetupGet(x => x.SelectedDocumentFileName)
+            .Returns("unsupported.docx");
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var processingService =
+            new Mock<IDocumentProcessingService>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                processingService: processingService);
+
+        view.Raise(
+            x => x.ReprocessRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetReprocessEnabled(false),
+            Times.AtLeastOnce);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.ReprocessingDocumentStatus),
+            Times.Never);
+    }
+
     private static IReadOnlyList<SearchDocumentsResult> CreateSearchResults(
         Guid firstDocumentId,
         Guid secondDocumentId)
@@ -805,6 +939,31 @@ public sealed class MainFormPresenterTests
         return validator;
     }
 
+    private static DocumentTextExtractorResolver
+        CreateDocumentTextExtractorResolver()
+    {
+        var extractor =
+            new Mock<IDocumentTextExtractor>();
+
+        extractor
+            .Setup(x => x.CanExtract(
+                It.IsAny<string>()))
+            .Returns(
+                (string fileName) =>
+                    fileName.EndsWith(
+                        ".txt",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    fileName.EndsWith(
+                        ".md",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    fileName.EndsWith(
+                        ".csv",
+                        StringComparison.OrdinalIgnoreCase));
+
+        return new DocumentTextExtractorResolver(
+            [extractor.Object]);
+    }
+
     private static MainFormPresenter CreatePresenter(
         Mock<IMainFormView> view,
         Mock<IDocumentSearchStore> searchStore,
@@ -814,7 +973,8 @@ public sealed class MainFormPresenterTests
         Mock<IHashService>? hashService = null,
         Mock<IImportDocumentValidator>? importValidator = null,
         Mock<IStorageService>? storageService = null,
-        Mock<IDocumentProcessingService>? processingService = null)
+        Mock<IDocumentProcessingService>? processingService = null,
+        DocumentTextExtractorResolver? documentTextExtractorResolver = null)
     {
         repository ??=
             new Mock<IDocumentRepository>();
@@ -834,13 +994,15 @@ public sealed class MainFormPresenterTests
         processingService ??=
             new Mock<IDocumentProcessingService>();
 
+        documentTextExtractorResolver ??=
+            CreateDocumentTextExtractorResolver();
+
         var importDocumentHandler =
             new ImportDocumentHandler(
                 importValidator.Object,
                 hashService.Object,
                 storageService.Object,
                 repository.Object,
-                processingService.Object,
                 NullLogger<ImportDocumentHandler>.Instance);
 
         var removeDocumentHandler =
@@ -874,6 +1036,7 @@ public sealed class MainFormPresenterTests
             searchDocumentsHandler,
             documentWorkspace.Object,
             processingService.Object,
+            documentTextExtractorResolver,
             NullLogger<MainFormPresenter>.Instance);
     }
 

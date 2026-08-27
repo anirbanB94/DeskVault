@@ -8,8 +8,7 @@ public static class UiMessages
     public const string OpenDocumentTitle =
         "Open Document";
 
-    public const string DocumentColumnHeader =
-        "Document";
+    public const string DocumentColumnHeader = "Documents";
 
     public const string SelectDocumentToImportTitle =
         "Select a document to import";

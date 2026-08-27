@@ -94,3 +94,74 @@ Persist Document
         |
         v
 Success Result
+```
+
+## Current Implementation
+
+The document import workflow is implemented as a dedicated Application
+vertical slice.
+
+The current import boundary is:
+
+```text
+ImportDocumentCommand
+        |
+        v
+Validate
+        |
+        v
+Compute SHA-256
+        |
+        v
+Check Duplicate
+        |
+        +---- Exists ----> Duplicate Result
+        |
+        v
+Generate Document ID
+        |
+        v
+Store Encrypted Content
+        |
+        v
+Create Domain Document
+        |
+        v
+Persist Document Metadata
+        |
+        v
+Success Result
+```
+
+The import workflow is responsible for establishing the stored document and
+its persistent document metadata.
+
+Document knowledge processing is intentionally separate. After successful
+import, a separate Application-layer processing workflow may read the
+stored document, extract content, normalize it, chunk it, and persist the
+derived processing result.
+
+The current Infrastructure implementation stores document content as
+encrypted `.dvault` files and persists document metadata through SQLite and
+Entity Framework Core.
+
+Import therefore establishes the source document and its persistent
+lifecycle state, while processing establishes derived knowledge
+representations.
+
+## Result
+
+The import and processing responsibilities remain explicitly separated:
+
+```text
+Document Import
+    ↓
+Stored + Persisted Document
+    ↓
+Separate Processing Workflow
+    ↓
+Extract → Normalize → Chunk → Persist Derived Result
+```
+
+This separation allows document acquisition and storage to remain
+independent from downstream document knowledge processing.

@@ -104,6 +104,84 @@ The implementation must authenticate encrypted content before returning decrypte
 
 Cryptographic failures must not expose sensitive document contents through error messages or logs.
 
+## Current Implementation
+
+The encryption-at-rest decision is implemented in the current MVP 1
+document-storage workflow.
+
+The current storage boundary is:
+
+```text
+Source Document
+    ↓
+Compute SHA-256
+    ↓
+Store through IStorageService
+    ↓
+AES-GCM encrypted content
+    ↓
+Application-managed `.dvault` file
+```
+
+Document content is stored separately from document metadata.
+
+The encrypted document artifacts are stored under:
+
+```text
+%LOCALAPPDATA%\DeskVault\Documents
+```
+
+The encryption implementation remains inside Infrastructure. The
+Application layer interacts with storage through its abstraction and does
+not perform cryptographic operations directly.
+
+Encryption keys are protected using the Windows-protected key-management
+implementation rather than being stored beside encrypted document files.
+
+Document retrieval follows the corresponding protected path:
+
+```text
+Application
+    ↓
+IDocumentReader / storage abstraction
+    ↓
+Infrastructure
+    ↓
+Protected key material
+    ↓
+AES-GCM authentication and decryption
+    ↓
+Readable document stream
+```
+
+Cryptographic failures are handled through the application's controlled
+error boundaries and must not expose document contents or encryption
+material through user-facing messages or logs.
+
+## Result
+
+DeskVault now protects imported document content at rest while keeping
+document metadata and encrypted document content in separate storage
+boundaries.
+
+The resulting MVP 1 model is:
+
+```text
+Document Metadata
+    ↓
+SQLite / EF Core
+
+Document Content
+    ↓
+Encrypted `.dvault` File
+    ↓
+Windows-protected Key Material
+```
+
+The encryption boundary remains replaceable through Infrastructure
+abstractions and does not couple cryptographic implementation details to
+the Domain, Application, or UI layers.
+
 ## Future Considerations
 
 The following are intentionally deferred:
