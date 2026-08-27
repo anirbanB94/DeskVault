@@ -74,6 +74,19 @@ public sealed class DocumentImportIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
+                Document? importedDocument =
+                    await firstInstance.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(importedDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Imported,
+                    importedDocument.Status);
+
+                await firstInstance.ProcessingService.ProcessAsync(
+                    documentId);
+
                 Document? document =
                     await firstInstance.GetDocumentAsync(
                         documentId);
@@ -371,6 +384,19 @@ public sealed class DocumentImportIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
+                Document? importedDocument =
+                    await instance.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(importedDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Imported,
+                    importedDocument.Status);
+
+                await instance.ProcessingService.ProcessAsync(
+                    documentId);
+
                 Document? document =
                     await instance.GetDocumentAsync(
                         documentId);
@@ -469,12 +495,36 @@ public sealed class DocumentImportIntegrationTests
                     encryptionKey,
                     [failingExtractor]);
 
+            ImportDocumentResult importResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Processing Failure Test Document"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Guid documentId =
+                importResult.DocumentId.Value;
+
+            Document? importedDocument =
+                await harness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(importedDocument);
+
+            Assert.Equal(
+                DocumentStatus.Imported,
+                importedDocument.Status);
+
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    harness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
-                            sourceFilePath,
-                            "Processing Failure Test Document")));
+                    harness.ProcessingService.ProcessAsync(
+                        documentId));
 
             IReadOnlyList<Document> documents =
                 await harness.GetDocumentsAsync();
@@ -575,9 +625,25 @@ public sealed class DocumentImportIntegrationTests
             Assert.NotNull(
                 importResult.DocumentId);
 
+            Guid documentId =
+                importResult.DocumentId.Value;
+
+            Document? importedDocument =
+                await harness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(importedDocument);
+
+            Assert.Equal(
+                DocumentStatus.Imported,
+                importedDocument.Status);
+
+            await harness.ProcessingService.ProcessAsync(
+                documentId);
+
             Document? document =
                 await harness.GetDocumentAsync(
-                    importResult.DocumentId.Value);
+                    documentId);
 
             Assert.NotNull(document);
 
@@ -708,9 +774,25 @@ public sealed class DocumentImportIntegrationTests
             Assert.NotNull(
                 importResult.DocumentId);
 
+            Guid documentId =
+                importResult.DocumentId.Value;
+
+            Document? importedDocument =
+                await harness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(importedDocument);
+
+            Assert.Equal(
+                DocumentStatus.Imported,
+                importedDocument.Status);
+
+            await harness.ProcessingService.ProcessAsync(
+                documentId);
+
             Document? document =
                 await harness.GetDocumentAsync(
-                    importResult.DocumentId.Value);
+                    documentId);
 
             Assert.NotNull(document);
 

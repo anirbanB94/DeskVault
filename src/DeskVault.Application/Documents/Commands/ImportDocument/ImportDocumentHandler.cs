@@ -11,7 +11,6 @@ public sealed class ImportDocumentHandler
     private readonly IHashService _hashService;
     private readonly IStorageService _storageService;
     private readonly IDocumentRepository _repository;
-    private readonly IDocumentProcessingService _documentProcessingService;
     private readonly ILogger<ImportDocumentHandler> _logger;
 
     public ImportDocumentHandler(
@@ -19,14 +18,12 @@ public sealed class ImportDocumentHandler
         IHashService hashService,
         IStorageService storageService,
         IDocumentRepository repository,
-        IDocumentProcessingService documentProcessingService,
         ILogger<ImportDocumentHandler> logger)
     {
         _validator = validator;
         _hashService = hashService;
         _storageService = storageService;
         _repository = repository;
-        _documentProcessingService = documentProcessingService;
         _logger = logger;
     }
 
@@ -101,10 +98,6 @@ public sealed class ImportDocumentHandler
 
             await _repository.AddAsync(
                 document,
-                cancellationToken);
-
-            await _documentProcessingService.ProcessAsync(
-                document.Id,
                 cancellationToken);
 
             _logger.LogInformation(

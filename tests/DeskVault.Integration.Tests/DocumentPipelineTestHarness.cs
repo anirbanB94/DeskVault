@@ -105,7 +105,6 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     NullLogger<Sha256HashService>.Instance),
                 storageService,
                 repository,
-                ProcessingService,
                 NullLogger<ImportDocumentHandler>.Instance);
 
         SearchHandler =
