@@ -30,19 +30,59 @@ The workspace header will provide document identity and high-level actions.
 The intended header structure is:
 
 ```text
-┌─────────────────────────────────────────────────────────┐
-│ ← Documents                                             │
-│                                                         │
-│ report.pdf                         [ AI ] [⋯] [Close]   │
-│ Imported Aug 11 • PDF                                   │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│                  Document                               │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│ ← Documents                                                        │
+│                                                                    │
+│ report.pdf                                  [ AI ] [⋯] [Close]      │
+│ Imported Aug 11 • PDF                                               │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│                         Document                                   │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 The exact visual styling may evolve during implementation, but the header will preserve the distinction between navigation, document identity, workspace actions, and AI access.
+
+## MVP 1 Scope Boundary
+
+The interaction model described by this ADR establishes both the current
+MVP 1 workspace architecture and the longer-term interaction direction.
+
+For MVP 1, the workspace is intentionally limited to the capabilities
+required for document viewing and document-level management.
+
+The current MVP 1 workspace boundary is:
+
+```text
+Document Library
+      ↓
+DocumentViewForm
+      ├── Document identity
+      ├── Document content
+      ├── Document information
+      └── Workspace/document actions
+```
+
+The following are future capabilities and are not required to be functional
+in MVP 1:
+
+- functional AI assistant interaction
+- related-document management
+- persistent named workspaces
+- workspace recovery
+- Recent activity
+- multiple simultaneous workspace windows
+- automatic workspace persistence
+- primary-document reassignment in multi-document workspaces
+- PDF and DOCX in-app rendering
+
+Future-oriented actions should not be presented as implemented
+functionality. Where a future control exists in the visual design, it may
+remain hidden or disabled until its corresponding capability is implemented.
+
+This keeps MVP 1 focused while preserving the architectural direction
+required for later workspace evolution.
 
 ## Current Implementation and Deferred Scope
 
@@ -79,10 +119,12 @@ interpreted as implemented:
 - primary-document reassignment in multi-document workspaces
 - PDF and DOCX in-app renderers
 
-The future interaction model remains useful as an architectural direction,
-but MVP 1 does not require implementing those capabilities.
+The current MVP 1 workspace therefore establishes the document-centric
+workspace and rendering boundaries without requiring the complete
+multi-document, persistent-workspace, or AI-assisted experience described
+as the long-term direction.
 
-### Current MVP 1 Workspace Boundary
+## Current MVP 1 Workspace Boundary
 
 For the current MVP 1 implementation, the workspace is primarily a
 single-document viewing and document-management experience:
@@ -131,9 +173,10 @@ The workspace header will provide:
 - contextual workspace/document menu
 - workspace close action
 
-The contextual menu will support both document-level and workspace-level actions.
+The contextual menu is a long-term interaction model. Actions that are not
+implemented in MVP 1 must not be presented as active functionality.
 
-The intended menu is:
+The intended future menu is:
 
 ```text
 [⋯]
@@ -144,45 +187,46 @@ The intended menu is:
 └── Close Workspace
 ```
 
-Actions that are not yet implemented may remain future capabilities and should not be presented as completed functionality.
-
 ## AI Assistant Interaction
 
 The AI assistant will use an adaptive and collapsible side-panel model.
 
 The header will provide an `[AI]` toggle.
 
-When the assistant is collapsed, a persistent edge tab will remain available.
+When the assistant is collapsed, a persistent edge tab may remain available.
 
 Conceptually:
 
 ```text
 Large screen
 
-┌──────────────────────────────────────────────┬──────────────┐
-│ Document                         [ AI ]      │ AI Assistant │
-│                                              │              │
-└──────────────────────────────────────────────┴──────────────┘
+┌──────────────────────────────────────────────────────────┬──────────────┐
+│ Document                              [ AI ]              │ AI Assistant │
+│                                                          │              │
+└──────────────────────────────────────────────────────────┴──────────────┘
 ```
 
 When collapsed:
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│ Document                                      [ AI ]        │
-│                                             ┌────┐          │
-│                                             │ AI │          │
-│                                             └────┘          │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│ Document                                              [ AI ]           │
+│                                                   ┌────────┐           │
+│                                                   │   AI   │           │
+│                                                   └────────┘           │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 The panel will adapt to available screen space.
 
 On larger screens, the assistant may remain visible beside the document.
 
-On smaller screens, the assistant may be collapsed by default or collapsed when required to preserve document viewing space.
+On smaller screens, the assistant may be collapsed by default or collapsed
+when required to preserve document viewing space.
 
-The initial implementation will provide the structural UI boundary for the assistant. Actual AI processing, retrieval, RAG, and local model interaction remain future capabilities.
+The initial implementation provides only the structural UI boundary where
+required. Actual AI processing, retrieval, RAG, and local model interaction
+remain future capabilities.
 
 ## Document Rendering Architecture
 
@@ -333,13 +377,20 @@ MarkdownViewerControl
 
 Imported Markdown is treated as untrusted document content.
 
-The Markdown renderer will use a controlled rendering policy. It will not automatically load remote resources, and external navigation will be handled through an explicit, controlled action rather than unrestricted automatic navigation.
+The Markdown renderer will use a controlled rendering policy. It will not
+automatically load remote resources, and external navigation will be
+handled through an explicit, controlled action rather than unrestricted
+automatic navigation.
 
-The renderer should support normal Markdown document features while avoiding premature implementation of a general-purpose HTML/browser framework.
+The renderer should support normal Markdown document features while
+avoiding premature implementation of a general-purpose HTML/browser
+framework.
 
 ### Markdown Rendering Security and Presentation Policy
 
-Imported Markdown is treated as untrusted content. The Markdown renderer will apply defense-in-depth controls at both the Markdown parsing and presentation layers.
+Imported Markdown is treated as untrusted content. The Markdown renderer
+will apply defense-in-depth controls at both the Markdown parsing and
+presentation layers.
 
 The initial policy is:
 
@@ -423,28 +474,32 @@ IDocumentContentRenderer
 
 ## Unsupported Formats
 
-When no in-app renderer is available, DeskVault will not automatically launch the operating system's associated application.
+When no in-app renderer is available, DeskVault will not automatically
+launch the operating system's associated application.
 
-Instead, the workspace will display an in-app message explaining that the format is not currently supported for preview.
+Instead, the workspace will display an in-app message explaining that the
+format is not currently supported for preview.
 
 The user will explicitly choose whether to open the document externally.
 
 Conceptually:
 
 ```text
-┌──────────────────────────────────────────────┐
-│                                              │
-│  Preview unavailable for this file type.     │
-│                                              │
-│  DeskVault does not currently support        │
-│  in-app preview for this format.             │
-│                                              │
-│              [ Open Externally ]             │
-│                                              │
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                                                                    │
+│  Preview unavailable for this file type.                           │
+│                                                                    │
+│  DeskVault does not currently support                              │
+│  in-app preview for this format.                                   │
+│                                                                    │
+│                    [ Open Externally ]                             │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-This preserves user control and keeps the workspace active.
+The explicit external-open action is a user-controlled fallback and does
+not change the workspace's responsibility for document lifecycle or
+presentation.
 
 ## Loading State
 
@@ -455,14 +510,14 @@ The workspace will therefore provide an explicit loading state.
 The preferred initial behavior is:
 
 ```text
-┌──────────────────────────────────────────┐
-│ report.pdf                    [ AI ] [⋯] │
-│ Loading document...                      │
-├──────────────────────────────────────────┤
-│                                          │
-│       Preparing document preview...      │
-│                                          │
-└──────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│ report.pdf                                      [ AI ] [⋯]          │
+│ Loading document...                                                │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│                  Preparing document preview...                     │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 The state model may later support more specific status messages such as:
@@ -497,7 +552,12 @@ Has unsaved state?
 Close   Confirm
 ```
 
-This allows the current document-viewing workflow to remain frictionless while protecting future workspace configuration, related-document changes, AI notes, or other editable state.
+For MVP 1, the workspace is primarily a viewing experience and does not
+introduce persistent editable workspace state. Therefore, close should not
+require confirmation solely because a document is open.
+
+The conditional confirmation rule is retained for future workspace state
+such as related-document changes, AI notes, or other editable configuration.
 
 ## Document and Workspace Lifecycle
 
@@ -547,21 +607,23 @@ Project Alpha Workspace
 
 Remove Report.pdf
         ↓
-┌──────────────────────────────────────┐
-│ Primary document is being removed.   │
-│                                      │
-│ Choose a new primary document:       │
-│                                      │
-│ ○ Contract.pdf                       │
-│ ○ Notes.md                           │
-│                                      │
-│ [ Cancel ]        [ Remove ]         │
-└──────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Primary document is being removed.                           │
+│                                                              │
+│ Choose a new primary document:                               │
+│                                                              │
+│ ○ Contract.pdf                                               │
+│ ○ Notes.md                                                   │
+│                                                              │
+│ [ Cancel ]                         [ Remove ]                │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 DeskVault will not silently promote another document without user confirmation.
 
 If no related documents remain, the current workspace closes because it no longer has a document context.
+
+This behavior is a future multi-document workspace rule and is not required by MVP 1.
 
 ## Workspace Persistence
 
@@ -743,9 +805,9 @@ The future model is:
 
 ```text
 MainForm
- ├── Workspace A
- ├── Workspace B
- └── Workspace C
+├── Workspace A
+├── Workspace B
+└── Workspace C
 ```
 
 When multiple workspaces are enabled, opening a document that already has an active workspace will activate the existing workspace rather than create a duplicate.
@@ -754,7 +816,7 @@ The exact presentation mechanism may remain independent of the underlying worksp
 
 ## Scope of Initial Implementation
 
-The current implementation phase focuses on the `DocumentViewForm` and its supporting boundaries.
+The current implementation phase focuses on `DocumentViewForm` and its supporting boundaries.
 
 The following are architectural targets but are not required to be fully implemented in the first workspace vertical slice:
 
@@ -769,6 +831,8 @@ The following are architectural targets but are not required to be fully impleme
 - automatic workspace recovery
 
 The first implementation should establish the correct boundaries and interaction model without prematurely implementing all future functionality.
+
+## Alternatives Considered
 
 ### Use a legacy WinForms `WebBrowser` control for Markdown
 
@@ -799,8 +863,6 @@ A native renderer would require DeskVault to implement and maintain substantial 
 Rejected.
 
 Imported documents are treated as untrusted content. Rendering must use a controlled policy and must not automatically load remote resources.
-
-## Alternatives Considered
 
 ### Automatically persist every opened document as a workspace
 
@@ -862,7 +924,7 @@ The architecture will support multiple workspaces, but the first implementation 
 - The workspace remains focused on the primary document.
 - The AI assistant has a defined adaptive interaction pattern.
 - Document rendering is separated behind a resolver and renderer boundary.
-- CSV is now an implemented structured/grid renderer rather than a future renderer.
+- CSV is an implemented structured/grid renderer rather than a future renderer.
 - CSV parsing preserves structural information before presentation.
 - Bounded CSV previewing is represented explicitly through `HasMoreRows`.
 - CSV parsing configuration is externally configurable through `CsvParsingOptions`.

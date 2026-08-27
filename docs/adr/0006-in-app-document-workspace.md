@@ -106,6 +106,38 @@ The AI assistant area will initially provide the structural foundation for futur
 
 Future AI capabilities may operate over the primary document and its related documents as a shared processing and retrieval context.
 
+## MVP 1 Scope Boundary
+
+The workspace architecture described by this ADR includes both the current
+MVP 1 implementation and the longer-term product direction.
+
+For MVP 1, the implemented workspace is intentionally limited to the
+document-viewing and document-management capabilities required by the
+current vertical slice.
+
+The current MVP 1 workspace provides:
+
+```text
+DocumentViewForm
+├── Document identity
+├── Document content
+├── Document information
+└── Required workspace/document actions
+```
+
+Future-oriented controls and capabilities such as AI interaction, related
+documents, persistent workspaces, Recent activity, and other workspace
+management features are architectural direction only and are not required
+to be exposed as active MVP 1 functionality.
+
+Where future controls exist in the current UI structure, they may remain
+present but hidden or disabled until their corresponding capability is
+implemented.
+
+This keeps the current MVP focused without requiring the underlying
+workspace architecture to be redesigned when future capabilities are
+introduced.
+
 ## Current Implementation and Deferred Scope
 
 The architectural direction described by this ADR remains valid, but the
@@ -154,7 +186,6 @@ The current MVP 1 workspace therefore establishes the document-centric
 workspace and rendering boundaries without requiring the complete
 multi-document, persistent-workspace, or AI-assisted experience described
 as the long-term direction.
-
 
 ## Architectural Boundaries
 
@@ -351,10 +382,9 @@ DocumentViewForm
         ↓
 Document Content Renderer
         ↓
-┌──────────────┬──────────────┬──────────────┐
-│ Text         │ PDF          │ DOCX         │
-│ Renderer     │ Renderer     │ Renderer     │
-└──────────────┴──────────────┴──────────────┘
+┌────────────────┬────────────────┬────────────────┐
+│ Text Renderer  │ PDF Renderer   │ DOCX Renderer  │
+└────────────────┴────────────────┴────────────────┘
 ```
 
 The initial implementation will prioritize formats that can be presented simply within the application.

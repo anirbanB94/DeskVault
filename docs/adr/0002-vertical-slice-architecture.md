@@ -74,16 +74,34 @@ New features should generally be implemented as complete vertical slices through
 
 ## Implementation Notes
 
-The first implemented vertical slice is the document import workflow.
+DeskVault's document import workflow is implemented as a vertical slice
+through the Application and supporting architectural boundaries.
 
 Its current flow is:
 
 1. Validate the import command.
 2. Compute the document SHA-256 hash.
 3. Check for an existing document with the same hash.
-4. Store the source file in managed storage.
+4. Store the source content through the storage abstraction.
 5. Create the Domain `Document` aggregate.
-6. Persist the document through the repository abstraction.
+6. Persist document metadata through the repository abstraction.
 7. Return an application result.
 
-The initial repository implementation is in-memory and the storage implementation uses the local file system. These implementations are intentionally replaceable through application-defined interfaces.
+Infrastructure provides the concrete implementations for persistence,
+encrypted document storage, hashing, and related platform concerns.
+
+The current persistence implementation uses SQLite with Entity Framework
+Core, while document content is stored separately as encrypted `.dvault`
+files under application-managed local storage.
+
+The Application layer remains independent of these infrastructure
+implementations through application-defined abstractions.
+
+The document processing workflow is a separate Application-layer vertical
+slice. It reads the stored document, performs extraction, normalization,
+and chunking, and persists the resulting processing state and derived
+document chunks.
+
+This separation keeps document acquisition, storage, and knowledge
+processing as distinct use-case boundaries while preserving the overall
+Domain/Application/Infrastructure/UI architecture.
