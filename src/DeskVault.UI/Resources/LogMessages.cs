@@ -163,4 +163,7 @@ public static class LogMessages
 
     public const string MainFormLoadFailed =
         "Main form load failed.";
+
+    public const string DocumentReprocessSkippedWithoutFileName =
+        "Document reprocessing skipped because no file name is available.";
 }

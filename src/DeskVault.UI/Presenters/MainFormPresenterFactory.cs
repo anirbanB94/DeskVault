@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
+using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
@@ -20,6 +21,7 @@ public sealed class MainFormPresenterFactory :
     private readonly SearchDocumentsHandler _searchDocumentsHandler;
     private readonly IDocumentWorkspace _documentWorkspace;
     private readonly IDocumentProcessingService _documentProcessingService;
+    private readonly DocumentTextExtractorResolver _documentTextExtractorResolver;
     private readonly ILogger<MainFormPresenter> _logger;
 
     public MainFormPresenterFactory(
@@ -30,6 +32,7 @@ public sealed class MainFormPresenterFactory :
         SearchDocumentsHandler searchDocumentsHandler,
         IDocumentWorkspace documentWorkspace,
         IDocumentProcessingService documentProcessingService,
+        DocumentTextExtractorResolver documentTextExtractorResolver,
         ILogger<MainFormPresenter> logger)
     {
         _importDocumentHandler = importDocumentHandler;
@@ -39,6 +42,7 @@ public sealed class MainFormPresenterFactory :
         _searchDocumentsHandler = searchDocumentsHandler;
         _documentWorkspace = documentWorkspace;
         _documentProcessingService = documentProcessingService;
+        _documentTextExtractorResolver = documentTextExtractorResolver;
         _logger = logger;
     }
 
@@ -54,6 +58,7 @@ public sealed class MainFormPresenterFactory :
             _searchDocumentsHandler,
             _documentWorkspace,
             _documentProcessingService,
+            _documentTextExtractorResolver,
             _logger);
     }
 }

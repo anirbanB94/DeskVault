@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace DeskVault.Application.Documents.Extraction;
 
 public sealed class DocumentTextExtractorResolver
@@ -12,6 +10,13 @@ public sealed class DocumentTextExtractorResolver
         _extractors =
             extractors
                 .ToList();
+    }
+
+    public bool CanResolve(
+        string fileName)
+    {
+        return _extractors.Any(
+            candidate => candidate.CanExtract(fileName));
     }
 
     public IDocumentTextExtractor Resolve(
