@@ -1,0 +1,14 @@
+# Default owner for all repository content
+* @anirbanB94
+
+# Repository governance and CI
+/.github/ @anirbanB94
+
+# Application code
+/src/ @anirbanB94
+
+# Automated tests
+/tests/ @anirbanB94
+
+# Product and architecture documentation
+/docs/ @anirbanB94
