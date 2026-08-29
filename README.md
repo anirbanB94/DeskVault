@@ -10,11 +10,17 @@ The core product principle is simple:
 
 DeskVault is being designed for environments where privacy, offline capability, security, and controlled data processing matter.
 
+## Product Goal
+
+Evolve DeskVault into a secure, offline-first enterprise knowledge platform that enables users to discover, retrieve, and understand information from their locally stored documents while keeping their data under their control.
+
 ## Current Status
 
-DeskVault is currently in **MVP 1 development / release-hardening**.
+**MVP 1 — Released**
 
-MVP 1 focuses on establishing a secure, persistent, local document foundation with an in-app document workspace, document rendering, document processing, and local keyword/full-text search.
+MVP 1 established the secure, persistent, local document foundation with an in-app document workspace, supported document rendering, document processing, and local keyword/full-text search.
+
+DeskVault is now progressing through product discovery and backlog refinement toward the next product increment.
 
 ### Implemented in MVP 1
 
@@ -60,7 +66,7 @@ MVP 1 focuses on establishing a secure, persistent, local document foundation wi
 
 ### Future Roadmap
 
-The following capabilities are intentionally **not MVP 1 functionality**:
+The following capabilities are intentionally not part of the released MVP 1 baseline. They represent potential future product direction and backlog candidates; they are not commitments to a specific MVP scope or release sequence.
 
 - Additional document renderers such as PDF and Office formats
 - Improved desktop UI/UX and visual polish
