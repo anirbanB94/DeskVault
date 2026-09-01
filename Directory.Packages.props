@@ -24,7 +24,7 @@
 
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
 
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <PackageVersion Include="SQLite3MC.PCLRaw.bundle" Version="2.4.0" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
 
     <PackageVersion Include="Serilog" Version="4.4.0" />

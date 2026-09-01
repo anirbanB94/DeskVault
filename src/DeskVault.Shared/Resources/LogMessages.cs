@@ -170,6 +170,15 @@ public static class LogMessages
     public const string EncryptionKeyOperationFailed =
         "Infrastructure encryption key operation failed.";
 
+    public const string DatabaseEncryptionKeyLoaded =
+        "Infrastructure database encryption key loaded.";
+
+    public const string DatabaseEncryptionKeyCreated =
+        "Infrastructure database encryption key created.";
+
+    public const string DatabaseEncryptionKeyOperationFailed =
+        "Infrastructure database encryption key operation failed.";
+
     public const string DocumentHashStarted =
         "Infrastructure document hash computation started.";
 
