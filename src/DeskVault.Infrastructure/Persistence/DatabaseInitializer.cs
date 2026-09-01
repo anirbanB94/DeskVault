@@ -38,43 +38,6 @@ public sealed class DatabaseInitializer
                 await _dbContextFactory.CreateDbContextAsync(
                     cancellationToken);
 
-            if (!await dbContext.Database.CanConnectAsync(
-                    cancellationToken))
-            {
-                _logger.LogInformation(
-                    LogMessages.DatabaseConnectionUnavailable);
-
-                await dbContext.Database.MigrateAsync(
-                    cancellationToken);
-
-                _logger.LogInformation(
-                    LogMessages.DatabaseInitializationCompleted);
-
-                return;
-            }
-
-            _logger.LogInformation(
-                LogMessages.DatabaseConnectionAvailable);
-
-            var migrationsTableExists =
-                await HasMigrationsHistoryTableAsync(
-                    dbContext,
-                    cancellationToken);
-
-            if (!migrationsTableExists)
-            {
-                _logger.LogInformation(
-                    LogMessages.DatabaseMigrationsHistoryInitializing);
-
-                await CreateMigrationsHistoryTableAsync(
-                    dbContext,
-                    cancellationToken);
-
-                await RecordInitialMigrationAsync(
-                    dbContext,
-                    cancellationToken);
-            }
-
             await dbContext.Database.MigrateAsync(
                 cancellationToken);
 

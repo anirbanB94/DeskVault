@@ -6,6 +6,7 @@ using DeskVault.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace DeskVault.Infrastructure;
 
@@ -15,9 +16,11 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        SQLitePCL.Batteries_V2.Init();
+
         services.AddSingleton<IApplicationInfoService, ApplicationInfoService>();
 
-        services.AddSingleton<DeskVaultDataPaths>();
+        services.TryAddSingleton<DeskVaultDataPaths>();
 
         services.AddDbContextFactory<DeskVaultDbContext>(
             (serviceProvider, options) =>
@@ -25,8 +28,19 @@ public static class DependencyInjection
                 var paths =
                     serviceProvider.GetRequiredService<DeskVaultDataPaths>();
 
+                var databaseKeyService =
+                    serviceProvider.GetRequiredService<IDatabaseEncryptionKeyService>();
+
+                byte[] databaseKey =
+                    databaseKeyService.GetOrCreateKeyAsync()
+                        .GetAwaiter()
+                        .GetResult();
+
+                string databasePassword =
+                    Convert.ToBase64String(databaseKey);
+
                 options.UseSqlite(
-                    $"Data Source={paths.DatabasePath}");
+                    $"Data Source={paths.DatabasePath};Password={databasePassword};Pooling=False");
             });
 
         services.AddSingleton<DatabaseInitializer>();
