@@ -41,6 +41,16 @@ public sealed class InfrastructureDependencyInjectionTests
             serviceProvider.GetRequiredService<IDocumentReader>());
     }
 
+    [Fact]
+    public void AddInfrastructure_RegistersDatabaseEncryptionKeyService()
+    {
+        using ServiceProvider serviceProvider =
+            CreateServiceProvider();
+
+        Assert.IsType<WindowsDatabaseEncryptionKeyService>(
+            serviceProvider.GetRequiredService<IDatabaseEncryptionKeyService>());
+    }
+
     private static ServiceProvider CreateServiceProvider()
     {
         var services =

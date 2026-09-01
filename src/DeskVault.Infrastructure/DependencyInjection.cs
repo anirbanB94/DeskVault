@@ -35,6 +35,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IEncryptionKeyService, WindowsEncryptionKeyService>();
 
+        services.AddSingleton<IDatabaseEncryptionKeyService, WindowsDatabaseEncryptionKeyService>();
+
         services.AddSingleton<IStorageService, FileSystemStorageService>();
 
         services.AddSingleton<DocumentEncryptionService>();
