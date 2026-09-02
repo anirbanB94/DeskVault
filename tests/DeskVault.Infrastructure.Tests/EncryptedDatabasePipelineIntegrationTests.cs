@@ -12,7 +12,6 @@ using DeskVault.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -242,6 +241,156 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task EncryptedDatabase_WhenOpenedWithWrongKey_FailsWithoutExposingKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] correctDatabaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        byte[] wrongDatabaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            ServiceProvider serviceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    correctDatabaseKey);
+
+            await using (serviceProvider)
+            {
+                var initializer =
+                    serviceProvider.GetRequiredService<DatabaseInitializer>();
+
+                await initializer.InitializeAsync();
+            }
+
+            ServiceProvider wrongKeyServiceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    wrongDatabaseKey);
+
+            await using (wrongKeyServiceProvider)
+            {
+                var initializer =
+                    wrongKeyServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+                Exception exception =
+                    await Assert.ThrowsAnyAsync<Exception>(
+                        () =>
+                            initializer.InitializeAsync());
+
+                string exceptionText =
+                    exception.ToString();
+
+                string correctKeyText =
+                    Convert.ToBase64String(
+                        correctDatabaseKey);
+
+                string wrongKeyText =
+                    Convert.ToBase64String(
+                        wrongDatabaseKey);
+
+                Assert.DoesNotContain(
+                    correctKeyText,
+                    exceptionText,
+                    StringComparison.Ordinal);
+
+                Assert.DoesNotContain(
+                    wrongKeyText,
+                    exceptionText,
+                    StringComparison.Ordinal);
+            }
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task EncryptedDatabase_WhenDatabaseKeyFileIsMissing_FailsWithoutExposingKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            ServiceProvider firstServiceProvider =
+                BuildProductionServiceProvider(
+                    rootDirectory);
+
+            await using (firstServiceProvider)
+            {
+                var initializer =
+                    firstServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+                await initializer.InitializeAsync();
+            }
+
+            string databaseKeyFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "Security",
+                    "database.key");
+
+            Assert.True(
+                File.Exists(
+                    databaseKeyFilePath));
+
+            byte[] originalProtectedKey =
+                await File.ReadAllBytesAsync(
+                    databaseKeyFilePath);
+
+            Assert.NotEmpty(
+                originalProtectedKey);
+
+            File.Delete(
+                databaseKeyFilePath);
+
+            Assert.False(
+                File.Exists(
+                    databaseKeyFilePath));
+
+            ServiceProvider secondServiceProvider =
+                BuildProductionServiceProvider(
+                    rootDirectory);
+
+            await using (secondServiceProvider)
+            {
+                var initializer =
+                    secondServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+                Exception exception =
+                    await Assert.ThrowsAnyAsync<Exception>(
+                        () =>
+                            initializer.InitializeAsync());
+
+                string exceptionText =
+                    exception.ToString();
+
+                Assert.DoesNotContain(
+                    Convert.ToBase64String(
+                        originalProtectedKey),
+                    exceptionText,
+                    StringComparison.Ordinal);
+
+                Assert.True(
+                    File.Exists(
+                        databaseKeyFilePath));
+            }
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
     private static ServiceProvider BuildServiceProvider(
         string rootDirectory,
         byte[] databaseKey)
@@ -267,6 +416,30 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         services.AddSingleton<IDatabaseEncryptionKeyService>(
             new TestDatabaseEncryptionKeyService(
                 databaseKey));
+
+        return services.BuildServiceProvider();
+    }
+
+    private static ServiceProvider BuildProductionServiceProvider(
+        string rootDirectory)
+    {
+        var services =
+            new ServiceCollection();
+
+        services.AddLogging();
+
+        IConfiguration configuration =
+            new ConfigurationBuilder()
+                .Build();
+
+        services.AddSingleton(
+            new DeskVaultDataPaths(
+                rootDirectory));
+
+        services.AddApplication();
+
+        services.AddInfrastructure(
+            configuration);
 
         return services.BuildServiceProvider();
     }
@@ -308,7 +481,8 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
     private static void DeleteTemporaryDirectory(
         string directory)
     {
-        if (Directory.Exists(directory))
+        if (Directory.Exists(
+                directory))
         {
             Directory.Delete(
                 directory,
