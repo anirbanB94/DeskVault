@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
-using DeskVault.Application.Documents.Chunking;
+using System.Text;
+using DeskVault.Application;
+using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
@@ -17,7 +19,7 @@ namespace DeskVault.Infrastructure.Tests;
 public sealed class EncryptedDatabasePipelineIntegrationTests
 {
     [Fact]
-    public async Task EncryptedDatabase_WhenUsingProductionInfrastructurePath_SupportsRepositoryProcessingAndSearch()
+    public async Task EncryptedDatabase_WhenUsingProductionInfrastructurePath_SupportsDocumentImportProcessingAndSearch()
     {
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -25,11 +27,27 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         byte[] databaseKey =
             RandomNumberGenerator.GetBytes(32);
 
-        Guid documentId =
-            Guid.NewGuid();
-
         try
         {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "encrypted-integration-test.txt");
+
+            string sourceText =
+                """
+                DeskVault encrypted database integration testing.
+
+                This document contains searchable enterprise architecture content.
+                """;
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            Guid documentId;
+
             ServiceProvider serviceProvider =
                 BuildServiceProvider(
                     rootDirectory,
@@ -42,62 +60,84 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
 
                 await initializer.InitializeAsync();
 
+                var importHandler =
+                    serviceProvider.GetRequiredService<ImportDocumentHandler>();
+
+                var processingService =
+                    serviceProvider.GetRequiredService<IDocumentProcessingService>();
+
+                var searchHandler =
+                    serviceProvider.GetRequiredService<SearchDocumentsHandler>();
+
+                ImportDocumentResult importResult =
+                    await importHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Encrypted Database Integration Test"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
                 var repository =
                     serviceProvider.GetRequiredService<IDocumentRepository>();
 
-                var processingStore =
-                    serviceProvider.GetRequiredService<IDocumentProcessingStore>();
-
-                var searchStore =
-                    serviceProvider.GetRequiredService<IDocumentSearchStore>();
-
-                var document =
-                    Document.Create(
-                        documentId,
-                        "encrypted-integration-test.txt",
-                        "Encrypted Database Integration Test",
-                        "test-sha256-hash",
-                        Path.Combine(
-                            rootDirectory,
-                            "Documents",
-                            "encrypted-integration-test.dvault"));
-
-                await repository.AddAsync(
-                    document);
-
-                Document? storedDocument =
+                Document? importedDocument =
                     await repository.GetByIdAsync(
                         documentId);
 
                 Assert.NotNull(
-                    storedDocument);
+                    importedDocument);
 
                 Assert.Equal(
                     documentId,
-                    storedDocument.Id);
+                    importedDocument.Id);
+
+                Assert.Equal(
+                    "encrypted-integration-test.txt",
+                    importedDocument.FileName);
 
                 Assert.Equal(
                     "Encrypted Database Integration Test",
-                    storedDocument.DisplayName);
+                    importedDocument.DisplayName);
 
-                var chunks =
-                    new[]
-                    {
-                        new DocumentChunk(
-                            0,
-                            "DeskVault encrypted database integration testing."),
-                        new DocumentChunk(
-                            1,
-                            "SQLite3MC protects the local document metadata and search index.")
-                    };
+                Assert.Equal(
+                    DocumentStatus.Imported,
+                    importedDocument.Status);
 
-                await processingStore.ReplaceChunksAsync(
-                    documentId,
-                    chunks);
+                Assert.True(
+                    File.Exists(
+                        importedDocument.StoredFilePath));
+
+                Assert.EndsWith(
+                    ".dvault",
+                    importedDocument.StoredFilePath,
+                    StringComparison.OrdinalIgnoreCase);
+
+                await processingService.ProcessAsync(
+                    documentId);
+
+                Document? processedDocument =
+                    await repository.GetByIdAsync(
+                        documentId);
+
+                Assert.NotNull(
+                    processedDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    processedDocument.Status);
 
                 IReadOnlyList<SearchDocumentsResult> searchResults =
-                    await searchStore.SearchAsync(
-                        "SQLite3MC");
+                    await searchHandler.HandleAsync(
+                        new SearchDocumentsQuery(
+                            "ENTERPRISE ARCHITECTURE"));
 
                 SearchDocumentsResult matchingResult =
                     Assert.Single(
@@ -114,7 +154,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     matchingResult.DisplayName);
 
                 Assert.Contains(
-                    "SQLite3MC",
+                    "enterprise architecture",
                     matchingResult.ChunkText,
                     StringComparison.OrdinalIgnoreCase);
             }
@@ -127,7 +167,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
 
             Assert.NotEqual(
                 "SQLite format 3",
-                System.Text.Encoding.ASCII.GetString(
+                Encoding.ASCII.GetString(
                     databaseHeader,
                     0,
                     Math.Min(
@@ -144,8 +184,8 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 var repository =
                     secondServiceProvider.GetRequiredService<IDocumentRepository>();
 
-                var searchStore =
-                    secondServiceProvider.GetRequiredService<IDocumentSearchStore>();
+                var searchHandler =
+                    secondServiceProvider.GetRequiredService<SearchDocumentsHandler>();
 
                 Document? restoredDocument =
                     await repository.GetByIdAsync(
@@ -158,9 +198,26 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     documentId,
                     restoredDocument.Id);
 
+                Assert.Equal(
+                    "encrypted-integration-test.txt",
+                    restoredDocument.FileName);
+
+                Assert.Equal(
+                    "Encrypted Database Integration Test",
+                    restoredDocument.DisplayName);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    restoredDocument.Status);
+
+                Assert.True(
+                    File.Exists(
+                        restoredDocument.StoredFilePath));
+
                 IReadOnlyList<SearchDocumentsResult> restoredSearchResults =
-                    await searchStore.SearchAsync(
-                        "encrypted database");
+                    await searchHandler.HandleAsync(
+                        new SearchDocumentsQuery(
+                            "encrypted database"));
 
                 SearchDocumentsResult restoredResult =
                     Assert.Single(
@@ -171,6 +228,11 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 Assert.Equal(
                     "Encrypted Database Integration Test",
                     restoredResult.DisplayName);
+
+                Assert.Contains(
+                    "encrypted database",
+                    restoredResult.ChunkText,
+                    StringComparison.OrdinalIgnoreCase);
             }
         }
         finally
@@ -196,6 +258,8 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         services.AddSingleton(
             new DeskVaultDataPaths(
                 rootDirectory));
+
+        services.AddApplication();
 
         services.AddInfrastructure(
             configuration);
