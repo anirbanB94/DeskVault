@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using DeskVault.Infrastructure.Persistence.Context;
+using DeskVault.Infrastructure.Services;
 using DeskVault.Shared.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -7,20 +9,26 @@ namespace DeskVault.Infrastructure.Persistence;
 
 public sealed class DatabaseInitializer
 {
-    private const string InitialMigrationId =
-        "20260821094306_InitialCreate";
-
-    private const string EfCoreProductVersion =
-        "10.0.10";
-
     private readonly IDbContextFactory<DeskVaultDbContext> _dbContextFactory;
+    private readonly DeskVaultDataPaths _dataPaths;
+    private readonly IDatabaseFormatDetector _databaseFormatDetector;
+    private readonly IDatabaseEncryptionKeyService _databaseEncryptionKeyService;
+    private readonly IDatabaseEncryptionMigrator _databaseEncryptionMigrator;
     private readonly ILogger<DatabaseInitializer> _logger;
 
     public DatabaseInitializer(
         IDbContextFactory<DeskVaultDbContext> dbContextFactory,
+        DeskVaultDataPaths dataPaths,
+        IDatabaseFormatDetector databaseFormatDetector,
+        IDatabaseEncryptionKeyService databaseEncryptionKeyService,
+        IDatabaseEncryptionMigrator databaseEncryptionMigrator,
         ILogger<DatabaseInitializer> logger)
     {
         _dbContextFactory = dbContextFactory;
+        _dataPaths = dataPaths;
+        _databaseFormatDetector = databaseFormatDetector;
+        _databaseEncryptionKeyService = databaseEncryptionKeyService;
+        _databaseEncryptionMigrator = databaseEncryptionMigrator;
         _logger = logger;
     }
 
@@ -34,6 +42,37 @@ public sealed class DatabaseInitializer
 
         try
         {
+            bool isPlaintextDatabase =
+                await _databaseFormatDetector.IsPlaintextSqliteAsync(
+                    _dataPaths.DatabasePath,
+                    cancellationToken);
+
+            if (isPlaintextDatabase)
+            {
+                _logger.LogInformation(
+                    LogMessages.DatabasePlaintextMigrationStarted);
+
+                byte[] databaseKey =
+                    await _databaseEncryptionKeyService.GetOrCreateKeyAsync(
+                        cancellationToken);
+
+                try
+                {
+                    await _databaseEncryptionMigrator.MigrateAsync(
+                        _dataPaths.DatabasePath,
+                        databaseKey,
+                        cancellationToken);
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(
+                        databaseKey);
+                }
+
+                _logger.LogInformation(
+                    LogMessages.DatabasePlaintextMigrationCompleted);
+            }
+
             await using var dbContext =
                 await _dbContextFactory.CreateDbContextAsync(
                     cancellationToken);
@@ -56,63 +95,5 @@ public sealed class DatabaseInitializer
 
             throw;
         }
-    }
-
-    private static async Task<bool> HasMigrationsHistoryTableAsync(
-        DeskVaultDbContext dbContext,
-        CancellationToken cancellationToken)
-    {
-        var connection =
-            dbContext.Database.GetDbConnection();
-
-        await connection.OpenAsync(
-            cancellationToken);
-
-        await using var command =
-            connection.CreateCommand();
-
-        command.CommandText =
-            """
-            SELECT COUNT(*)
-            FROM sqlite_master
-            WHERE type = 'table'
-              AND name = '__EFMigrationsHistory';
-            """;
-
-        var result =
-            await command.ExecuteScalarAsync(
-                cancellationToken);
-
-        return Convert.ToInt32(result) > 0;
-    }
-
-    private static async Task CreateMigrationsHistoryTableAsync(
-        DeskVaultDbContext dbContext,
-        CancellationToken cancellationToken)
-    {
-        await dbContext.Database.ExecuteSqlRawAsync(
-            """
-            CREATE TABLE "__EFMigrationsHistory" (
-                "MigrationId" TEXT NOT NULL
-                    CONSTRAINT "PK___EFMigrationsHistory"
-                    PRIMARY KEY,
-                "ProductVersion" TEXT NOT NULL
-            );
-            """,
-            cancellationToken);
-    }
-
-    private static async Task RecordInitialMigrationAsync(
-        DeskVaultDbContext dbContext,
-        CancellationToken cancellationToken)
-    {
-        await dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"""
-            INSERT INTO "__EFMigrationsHistory"
-                ("MigrationId", "ProductVersion")
-            VALUES
-                ({InitialMigrationId}, {EfCoreProductVersion});
-            """,
-            cancellationToken);
     }
 }
