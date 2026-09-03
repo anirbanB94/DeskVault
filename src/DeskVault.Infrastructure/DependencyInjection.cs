@@ -51,6 +51,10 @@ public static class DependencyInjection
 
         services.AddSingleton<IDatabaseEncryptionKeyService, WindowsDatabaseEncryptionKeyService>();
 
+        services.AddSingleton<IDatabaseFormatDetector, SqliteDatabaseFormatDetector>();
+
+        services.AddSingleton<IDatabaseEncryptionMigrator, SqliteDatabaseEncryptionMigrator>();
+
         services.AddSingleton<IStorageService, FileSystemStorageService>();
 
         services.AddSingleton<DocumentEncryptionService>();

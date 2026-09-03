@@ -77,6 +77,12 @@ public static class LogMessages
     public const string DatabaseMigrationsHistoryInitializing =
         "Infrastructure database migrations history is being initialized.";
 
+    public const string DatabasePlaintextMigrationStarted =
+        "Infrastructure plaintext database migration started.";
+
+    public const string DatabasePlaintextMigrationCompleted =
+        "Infrastructure plaintext database migration completed.";
+
     public const string DatabaseInitializationCompleted =
         "Infrastructure database initialization completed.";
 
