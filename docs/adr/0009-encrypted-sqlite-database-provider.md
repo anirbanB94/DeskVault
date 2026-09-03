@@ -75,6 +75,16 @@ This ordering is important because database connectivity and migration
 operations must occur against the encrypted database rather than first
 creating or opening an unencrypted database.
 
+Plaintext-to-encrypted migration introduces an additional lifecycle
+requirement. Existing plaintext databases must not be rekeyed directly
+in place because an interruption during the synchronous SQLite3MC
+`sqlite3_rekey()` operation can leave the canonical database in an unsafe
+state.
+
+The migration therefore requires a staging and promotion strategy that
+keeps the original plaintext database recoverable until the encrypted
+database has been verified.
+
 ## Decision
 
 DeskVault will use SQLite3MC as the SQLite database-encryption provider.
@@ -141,20 +151,77 @@ intact so that repositories and processing services continue to operate
 through the existing persistence abstractions.
 
 Fresh databases must therefore be created encrypted from the beginning.
-The implementation does not introduce an automatic plaintext-to-encrypted
-database migration as part of this decision.
 
-SQLCipher is not selected for the current implementation because the
-spike demonstrated unresolved native loading/runtime integration
-problems. SQLite3MC provided the required encrypted SQLite behavior
-within the existing .NET and SQLitePCLRaw architecture.
+### Plaintext-to-Encrypted Migration
 
-Native SQLite runtime packaging is considered part of deployment
-correctness. The required native SQLite3MC runtime assets must be
-available for each supported application architecture.
+Existing plaintext SQLite databases are migrated by
+`DatabaseInitializer` through a staged migration lifecycle.
 
-SQLite3MC package licensing and distribution requirements must remain
-part of the production release review.
+The canonical plaintext database is never directly rekeyed. Instead:
+
+```text
+Canonical plaintext database
+        ↓
+Copy to .migration staging database
+        ↓
+SQLite3MC sqlite3_rekey()
+        ↓
+Verify staging database is encrypted
+        ↓
+File.Replace()
+        ↓
+Canonical encrypted database
+        +
+.migration-backup plaintext recovery copy
+        ↓
+EF Core initialization succeeds
+        ↓
+Remove .migration-backup
+```
+
+The `.migration` file is disposable staging state. It is removed when it
+is stale or after successful promotion.
+
+The `.migration-backup` file temporarily contains the previous canonical
+plaintext database after successful promotion. It is retained until the
+encrypted canonical database has successfully completed normal Entity
+Framework Core initialization.
+
+This ordering provides a recovery point if the process is interrupted
+after promotion but before backup cleanup.
+
+On a subsequent startup:
+
+- If the canonical database is encrypted and a migration backup exists,
+  the encrypted canonical database is treated as authoritative.
+- Normal Entity Framework Core initialization is performed against the
+  encrypted canonical database.
+- The migration backup is removed only after successful initialization.
+- A stale `.migration` staging file can be discarded when the canonical
+  database is already encrypted.
+- If the canonical database is plaintext while a migration backup exists,
+  the backup must also be a plaintext SQLite database before it can be
+  discarded and migration retried.
+- If the canonical database is missing while migration artifacts exist,
+  initialization fails rather than guessing which artifact is
+  authoritative.
+- If the canonical database and migration artifacts are all absent,
+  normal first-run database initialization remains possible.
+
+The migration process verifies that the staging database no longer has a
+standard plaintext SQLite header before promotion and verifies the
+canonical database again after promotion.
+
+Database migration failures therefore leave the original canonical
+plaintext database available for retry rather than silently replacing it
+with an unverified staging result.
+
+The synchronous SQLite3MC `sqlite3_rekey()` operation itself is not
+directly cancellation-interruptible. The staging strategy isolates this
+provider-level limitation from the canonical database.
+
+The migration implementation does not change the document-file
+encryption strategy.
 
 ## Consequences
 
@@ -174,6 +241,12 @@ Incorrect or unavailable database keys result in controlled database
 initialization failure rather than silently falling back to an unencrypted
 database.
 
+Plaintext-to-encrypted migration now has an explicit recovery-safe
+lifecycle based on staging, verification, promotion, and delayed cleanup.
+
+The canonical database is protected from direct in-place rekey
+interruption because SQLite3MC rekeying occurs against the staging copy.
+
 The implementation introduces a native SQLite dependency that must be
 packaged correctly for the supported Windows runtime architectures.
 
@@ -184,10 +257,32 @@ The database encryption decision does not replace the document-content
 encryption strategy defined by ADR-0004. Document content and database
 metadata remain separate storage and encryption boundaries.
 
-Plaintext-to-encrypted database migration is not addressed by this ADR
-and requires a separate design if existing plaintext databases must be
-supported in a future release.
+The migration lifecycle introduces temporary plaintext recovery artifacts.
+These artifacts are deliberately retained only until successful
+encrypted database initialization and must not be treated as permanent
+database copies.
 
 The selected provider can be reconsidered in the future if native
 runtime support, licensing requirements, platform support, or security
 requirements change.
+
+## Verification
+
+The provider-level migration spike established the following behavior:
+
+- SQLite3MC `sqlite3_rekey()` successfully encrypts the database.
+- The encrypted database no longer exposes the standard plaintext SQLite
+  header.
+- The correct encryption key can reopen the encrypted database.
+- An incorrect key fails to open the encrypted database normally.
+- A busy database returns a controlled SQLite busy result while leaving
+  the source recoverable.
+- Interrupted provider-level rekeying can affect the file being rekeyed,
+  which is why production migration does not operate directly on the
+  canonical database.
+- Rekeying a staging copy preserves the original plaintext source.
+- Interrupted staging rekey can be recovered without making the
+  canonical database unavailable.
+- Production integration tests verify migration, metadata preservation,
+  document state, chunks, searchability, encrypted reopen, and
+  post-promotion recovery cleanup.
