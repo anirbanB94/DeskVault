@@ -98,6 +98,14 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 File.Exists(
                     databasePath + ".plaintext"));
 
+            Assert.False(
+                File.Exists(
+                    databasePath + ".migration"));
+
+            Assert.False(
+                File.Exists(
+                    databasePath + ".migration-backup"));
+
             AssertEncryptedDocumentExists(
                 databasePath,
                 documentId,
@@ -197,6 +205,140 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     "plaintext migration",
                     matchingResult.ChunkText,
                     StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                databaseKey);
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task EncryptedDatabase_WhenMigrationBackupRemainsAfterPromotion_IsRecoveredAndBackupRemoved()
+    {
+        SQLitePCL.Batteries_V2.Init();
+
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] databaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        Guid firstChunkId =
+            Guid.NewGuid();
+
+        Guid secondChunkId =
+            Guid.NewGuid();
+
+        DateTime importedAt =
+            new DateTime(
+                2026,
+                8,
+                2,
+                11,
+                45,
+                0,
+                DateTimeKind.Utc);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        string migrationBackupPath =
+            databasePath +
+            ".migration-backup";
+
+        string backupSourcePath =
+            Path.Combine(
+                rootDirectory,
+                "migration-backup-source.db");
+
+        try
+        {
+            CreatePlaintextDeskVaultDatabase(
+                databasePath,
+                documentId,
+                firstChunkId,
+                secondChunkId,
+                importedAt);
+
+            ServiceProvider migrationServiceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey);
+
+            await using (migrationServiceProvider)
+            {
+                var initializer =
+                    migrationServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+                await initializer.InitializeAsync();
+            }
+
+            Assert.False(
+                IsPlaintextSqliteDatabase(
+                    databasePath));
+
+            AssertEncryptedDocumentExists(
+                databasePath,
+                documentId,
+                databaseKey);
+
+            CreatePlaintextDeskVaultDatabase(
+                backupSourcePath,
+                documentId,
+                firstChunkId,
+                secondChunkId,
+                importedAt);
+
+            File.Copy(
+                backupSourcePath,
+                migrationBackupPath);
+
+            Assert.True(
+                File.Exists(
+                    migrationBackupPath));
+
+            Assert.True(
+                IsPlaintextSqliteDatabase(
+                    migrationBackupPath));
+
+            ServiceProvider recoveryServiceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey);
+
+            await using (recoveryServiceProvider)
+            {
+                var initializer =
+                    recoveryServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+                await initializer.InitializeAsync();
+
+                Assert.False(
+                    IsPlaintextSqliteDatabase(
+                        databasePath));
+
+                Assert.False(
+                    File.Exists(
+                        databasePath + ".migration"));
+
+                Assert.False(
+                    File.Exists(
+                        migrationBackupPath));
+
+                AssertEncryptedDocumentExists(
+                    databasePath,
+                    documentId,
+                    databaseKey);
             }
         }
         finally
