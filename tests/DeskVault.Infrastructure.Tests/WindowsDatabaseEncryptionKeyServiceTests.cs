@@ -195,6 +195,110 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
     }
 
     [Fact]
+    public async Task GetKeyAsync_WhenKeyExists_ReturnsSameKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var service =
+                CreateService(dataPaths);
+
+            byte[] originalKey =
+                await service.GetOrCreateKeyAsync();
+
+            byte[] retrievedKey =
+                await service.GetKeyAsync();
+
+            Assert.Equal(
+                originalKey,
+                retrievedKey);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_WhenProtectedKeyIsMissing_ThrowsWithoutCreatingReplacementKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var service =
+                CreateService(dataPaths);
+
+            await service.GetOrCreateKeyAsync();
+
+            string keyFilePath =
+                GetDatabaseKeyFilePath(dataPaths);
+
+            File.Delete(
+                keyFilePath);
+
+            await Assert.ThrowsAsync<CryptographicException>(
+                () =>
+                    service.GetKeyAsync());
+
+            Assert.False(
+                File.Exists(
+                    keyFilePath));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetKeyAsync_WhenCancelled_ThrowsOperationCanceledException()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var service =
+                CreateService(dataPaths);
+
+            await service.GetOrCreateKeyAsync();
+
+            using var cancellationTokenSource =
+                new CancellationTokenSource();
+
+            cancellationTokenSource.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () =>
+                    service.GetKeyAsync(
+                        cancellationTokenSource.Token));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task GetOrCreateKeyAsync_WhenProtectedKeyIsTampered_ThrowsCryptographicException()
     {
         string rootDirectory =

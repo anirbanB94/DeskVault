@@ -52,6 +52,17 @@ public sealed class DatabaseInitializer
                 await PrepareDatabaseMigrationAsync(
                     cancellationToken);
 
+            if (!File.Exists(
+                    _dataPaths.DatabasePath))
+            {
+                byte[] databaseKey =
+                    await _databaseEncryptionKeyService.GetOrCreateKeyAsync(
+                        cancellationToken);
+
+                CryptographicOperations.ZeroMemory(
+                    databaseKey);
+            }
+
             await using var dbContext =
                 await _dbContextFactory.CreateDbContextAsync(
                     cancellationToken);

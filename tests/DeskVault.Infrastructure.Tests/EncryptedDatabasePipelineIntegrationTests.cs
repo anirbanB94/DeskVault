@@ -5,11 +5,8 @@ using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
-using DeskVault.Infrastructure;
 using DeskVault.Infrastructure.Persistence;
-using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Services;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -242,6 +239,83 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
     }
 
     [Fact]
+    public async Task EncryptedDatabase_WhenRuntimeArtifactsExist_DoNotExposePlaintextContent()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] databaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        string plaintextMarker =
+            $"DeskVault-SIDE-CAR-PLAINTEXT-MARKER-{Guid.NewGuid():N}";
+
+        try
+        {
+            ServiceProvider serviceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey);
+
+            await using (serviceProvider)
+            {
+                var initializer =
+                    serviceProvider.GetRequiredService<DatabaseInitializer>();
+
+                await initializer.InitializeAsync();
+
+                var repository =
+                    serviceProvider.GetRequiredService<IDocumentRepository>();
+
+                Document document =
+                    Document.Create(
+                        Guid.NewGuid(),
+                        "sidecar-test.txt",
+                        plaintextMarker,
+                        "sidecar-test-hash",
+                        Path.Combine(
+                            rootDirectory,
+                            "Documents",
+                            "sidecar-test.dvault"));
+
+                await repository.AddAsync(
+                    document);
+
+                await AssertNoPlaintextMarkerInRuntimeArtifactsAsync(
+                    rootDirectory,
+                    plaintextMarker);
+            }
+
+            await AssertNoPlaintextMarkerInRuntimeArtifactsAsync(
+                rootDirectory,
+                plaintextMarker);
+
+            byte[] databaseHeader =
+                await ReadDatabaseHeaderAsync(
+                    Path.Combine(
+                        rootDirectory,
+                        "DeskVault.db"));
+
+            Assert.NotEqual(
+                "SQLite format 3",
+                Encoding.ASCII.GetString(
+                    databaseHeader,
+                    0,
+                    Math.Min(
+                        15,
+                        databaseHeader.Length)));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                databaseKey);
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task EncryptedDatabase_WhenOpenedWithWrongKey_FailsWithoutExposingKey()
     {
         string rootDirectory =
@@ -379,7 +453,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     exceptionText,
                     StringComparison.Ordinal);
 
-                Assert.True(
+                Assert.False(
                     File.Exists(
                         databaseKeyFilePath));
             }
@@ -464,6 +538,103 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         return header[..bytesRead];
     }
 
+    private static async Task AssertNoPlaintextMarkerInRuntimeArtifactsAsync(
+        string rootDirectory,
+        string plaintextMarker)
+    {
+        byte[] markerBytes =
+            Encoding.UTF8.GetBytes(
+                plaintextMarker);
+
+        IReadOnlyList<string> artifactPaths =
+            Directory
+                .EnumerateFiles(
+                    rootDirectory,
+                    "*",
+                    SearchOption.AllDirectories)
+                .Where(
+                    IsPotentialSqliteRuntimeArtifact)
+                .ToList();
+
+        foreach (string artifactPath in artifactPaths)
+        {
+            byte[] artifactContents =
+                await File.ReadAllBytesAsync(
+                    artifactPath);
+
+            Assert.False(
+                ContainsByteSequence(
+                    artifactContents,
+                    markerBytes),
+                $"Plaintext marker was found in SQLite runtime artifact '{artifactPath}'.");
+        }
+    }
+
+    private static bool ContainsByteSequence(
+        byte[] source,
+        byte[] sequence)
+    {
+        if (sequence.Length == 0)
+        {
+            return true;
+        }
+
+        if (source.Length < sequence.Length)
+        {
+            return false;
+        }
+
+        for (int sourceIndex = 0;
+             sourceIndex <= source.Length - sequence.Length;
+             sourceIndex++)
+        {
+            bool matches =
+                true;
+
+            for (int sequenceIndex = 0;
+                 sequenceIndex < sequence.Length;
+                 sequenceIndex++)
+            {
+                if (source[sourceIndex + sequenceIndex] !=
+                    sequence[sequenceIndex])
+                {
+                    matches =
+                        false;
+
+                    break;
+                }
+            }
+
+            if (matches)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsPotentialSqliteRuntimeArtifact(
+        string filePath)
+    {
+        string fileName =
+            Path.GetFileName(
+                filePath);
+
+        return fileName.EndsWith(
+                   "-wal",
+                   StringComparison.OrdinalIgnoreCase) ||
+               fileName.EndsWith(
+                   "-shm",
+                   StringComparison.OrdinalIgnoreCase) ||
+               fileName.EndsWith(
+                   "-journal",
+                   StringComparison.OrdinalIgnoreCase) ||
+               fileName.EndsWith(
+                   ".tmp",
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string directory =
@@ -503,6 +674,15 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         }
 
         public Task<byte[]> GetOrCreateKeyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                _key.ToArray());
+        }
+
+        public Task<byte[]> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();

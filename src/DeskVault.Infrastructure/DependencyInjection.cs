@@ -22,26 +22,7 @@ public static class DependencyInjection
 
         services.TryAddSingleton<DeskVaultDataPaths>();
 
-        services.AddDbContextFactory<DeskVaultDbContext>(
-            (serviceProvider, options) =>
-            {
-                var paths =
-                    serviceProvider.GetRequiredService<DeskVaultDataPaths>();
-
-                var databaseKeyService =
-                    serviceProvider.GetRequiredService<IDatabaseEncryptionKeyService>();
-
-                byte[] databaseKey =
-                    databaseKeyService.GetOrCreateKeyAsync()
-                        .GetAwaiter()
-                        .GetResult();
-
-                string databasePassword =
-                    Convert.ToBase64String(databaseKey);
-
-                options.UseSqlite(
-                    $"Data Source={paths.DatabasePath};Password={databasePassword};Pooling=False");
-            });
+        services.AddSingleton<IDbContextFactory<DeskVaultDbContext>, EncryptedDeskVaultDbContextFactory>();
 
         services.AddSingleton<DatabaseInitializer>();
 

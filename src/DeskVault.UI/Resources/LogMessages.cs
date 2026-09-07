@@ -166,4 +166,7 @@ public static class LogMessages
 
     public const string DocumentReprocessSkippedWithoutFileName =
         "Document reprocessing skipped because no file name is available.";
+
+    public const string DatabaseInitializationFailed =
+        "Database initialization failed during application startup.";
 }

@@ -135,4 +135,11 @@ public static class UiMessages
 
     public const string CloseWorkspace =
         "Close Workspace";
+
+    public const string DatabaseInitializationFailedTitle =
+        "Database Initialization Failed";
+
+    public const string UnableToInitializeDatabase =
+        "DeskVault could not initialize its local database. " +
+        "The application will now close.";
 }
