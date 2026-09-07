@@ -83,6 +83,65 @@ public sealed class ImportDocumentValidatorTests
         }
     }
 
+    [Theory]
+    [InlineData(".txt")]
+    [InlineData(".md")]
+    [InlineData(".csv")]
+    [InlineData(".json")]
+    [InlineData(".xml")]
+    [InlineData(".yaml")]
+    [InlineData(".yml")]
+    [InlineData(".ini")]
+    [InlineData(".config")]
+    [InlineData(".log")]
+    [InlineData(".c")]
+    [InlineData(".cpp")]
+    [InlineData(".h")]
+    [InlineData(".hpp")]
+    [InlineData(".cs")]
+    [InlineData(".java")]
+    [InlineData(".py")]
+    [InlineData(".js")]
+    [InlineData(".ts")]
+    [InlineData(".css")]
+    [InlineData(".sql")]
+    [InlineData(".ps1")]
+    [InlineData(".html")]
+    [InlineData(".htm")]
+    public void Validate_WhenMvpSupportedFileIsNonEmpty_ReturnsSuccess(
+        string extension)
+    {
+        string filePath =
+            CreateTemporaryFilePath(extension);
+
+        try
+        {
+            File.WriteAllText(
+                filePath,
+                "DeskVault test document");
+
+            ImportDocumentCommand command =
+                new(
+                    filePath,
+                    null);
+
+            ImportDocumentResult result =
+                _validator.Validate(command);
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                result.Status);
+
+            Assert.Equal(
+                "Validation successful.",
+                result.Description);
+        }
+        finally
+        {
+            DeleteFileIfExists(filePath);
+        }
+    }
+
     [Fact]
     public void Validate_WhenSupportedFileIsEmpty_ReturnsValidationFailed()
     {
