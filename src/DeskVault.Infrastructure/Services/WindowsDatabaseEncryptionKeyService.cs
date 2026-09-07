@@ -41,23 +41,9 @@ public sealed class WindowsDatabaseEncryptionKeyService :
 
             if (File.Exists(keyFilePath))
             {
-                byte[] protectedKeyFromFile =
-                    await File.ReadAllBytesAsync(
-                        keyFilePath,
-                        cancellationToken);
-
-                byte[] key =
-                    ProtectedData.Unprotect(
-                        protectedKeyFromFile,
-                        null,
-                        DataProtectionScope.CurrentUser);
-
-                ValidateKey(key);
-
-                _logger.LogInformation(
-                    LogMessages.DatabaseEncryptionKeyLoaded);
-
-                return key;
+                return await ReadExistingKeyAsync(
+                    keyFilePath,
+                    cancellationToken);
             }
 
             byte[] newKey =
@@ -92,6 +78,65 @@ public sealed class WindowsDatabaseEncryptionKeyService :
 
             throw;
         }
+    }
+
+    public async Task<byte[]> GetKeyAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            string keyFilePath =
+                Path.Combine(
+                    _dataPaths.SecurityDirectory,
+                    KeyFileName);
+
+            if (!File.Exists(keyFilePath))
+            {
+                throw new CryptographicException(
+                    "The database encryption key is unavailable.");
+            }
+
+            return await ReadExistingKeyAsync(
+                keyFilePath,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DatabaseEncryptionKeyOperationFailed);
+
+            throw;
+        }
+    }
+
+    private async Task<byte[]> ReadExistingKeyAsync(
+        string keyFilePath,
+        CancellationToken cancellationToken)
+    {
+        byte[] protectedKeyFromFile =
+            await File.ReadAllBytesAsync(
+                keyFilePath,
+                cancellationToken);
+
+        byte[] key =
+            ProtectedData.Unprotect(
+                protectedKeyFromFile,
+                null,
+                DataProtectionScope.CurrentUser);
+
+        ValidateKey(key);
+
+        _logger.LogInformation(
+            LogMessages.DatabaseEncryptionKeyLoaded);
+
+        return key;
     }
 
     private static void ValidateKey(

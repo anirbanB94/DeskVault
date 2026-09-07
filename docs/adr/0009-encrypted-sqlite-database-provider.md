@@ -121,15 +121,28 @@ The Infrastructure layer will be responsible for:
 ```text
 Generate database key
         ↓
-Protect key using platform key protection
+Protect key using Windows DPAPI
         ↓
-Retrieve key when configuring database access
+Store protected key in the local Security boundary
+        ↓
+Retrieve and unprotect key when configuring database access
         ↓
 Supply key to encrypted SQLite connection
+        ↓
+Clear transient key material after use
 ```
 
-The encryption key itself must not be logged, exposed through exceptions,
-or stored as plaintext application configuration.
+The database encryption key is protected using Windows Data Protection
+API (DPAPI) with `DataProtectionScope.CurrentUser`. The protected key is
+stored as the local `Security\database.key` artifact rather than as
+plaintext configuration.
+
+The plaintext database encryption key is not intentionally persisted by
+DeskVault. Where the implementation controls the transient key buffer,
+the buffer is cleared after use.
+
+The database encryption key must not be logged, exposed through
+user-facing exceptions, or stored as plaintext application configuration.
 
 Database initialization will configure the encrypted SQLite connection
 before Entity Framework Core migrations are executed:
@@ -223,6 +236,19 @@ provider-level limitation from the canonical database.
 The migration implementation does not change the document-file
 encryption strategy.
 
+### Startup Failure Handling
+
+Database initialization is a security-sensitive startup boundary.
+Failures are logged with the technical exception for diagnostics, but
+raw exception details are not presented to the user.
+
+When database initialization fails, DeskVault displays a fixed generic
+message and exits without starting the main application window.
+
+This prevents database-provider, migration, key-protection, or other
+initialization exception details from being exposed through the
+user-facing startup error path.
+
 ## Consequences
 
 The local SQLite database is protected at rest rather than being exposed
@@ -236,6 +262,13 @@ existing Application and Domain boundaries.
 
 Database key management becomes an explicit security responsibility
 separate from the database provider itself.
+
+The database encryption key is protected by Windows DPAPI using the
+current Windows user context. Consequently, access to the protected key
+depends on continued access to the Windows DPAPI context under which the
+key was protected. DeskVault does not provide an independent recovery
+mechanism for a key that can no longer be unprotected by that Windows
+user context.
 
 Incorrect or unavailable database keys result in controlled database
 initialization failure rather than silently falling back to an unencrypted
@@ -262,6 +295,12 @@ These artifacts are deliberately retained only until successful
 encrypted database initialization and must not be treated as permanent
 database copies.
 
+Database initialization failures are intentionally surfaced to users
+through a generic startup error message rather than raw exception
+details. Technical exception details remain available through application
+logging for diagnostics, subject to the application's existing logging
+configuration.
+
 The selected provider can be reconsidered in the future if native
 runtime support, licensing requirements, platform support, or security
 requirements change.
@@ -286,3 +325,19 @@ The provider-level migration spike established the following behavior:
 - Production integration tests verify migration, metadata preservation,
   document state, chunks, searchability, encrypted reopen, and
   post-promotion recovery cleanup.
+- Database encryption key material is protected using Windows DPAPI with
+  `DataProtectionScope.CurrentUser`.
+- Database encryption key material is kept separate from the document-file
+  encryption key.
+- Database initialization establishes the encrypted database access path
+  before EF Core migrations.
+- SQLite runtime artifacts are checked to ensure persisted plaintext
+  database content is not unintentionally exposed.
+- The supported Windows `win-x64` Release publish was verified to include
+  the SQLite3MC native runtime and provider dependencies.
+- The production Infrastructure registration uses the encrypted
+  SQLite3MC provider path rather than the previous plaintext SQLite
+  runtime provider.
+- Database initialization failures are logged without intentionally
+  logging database key material and are presented to users through a
+  fixed generic startup failure message.

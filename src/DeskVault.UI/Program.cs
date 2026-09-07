@@ -17,12 +17,30 @@ internal static class Program
 
         using var host = HostConfigurator.Build();
 
-        var databaseInitializer = host.Services.GetRequiredService<DatabaseInitializer>();
+        var databaseInitializer =
+            host.Services.GetRequiredService<DatabaseInitializer>();
 
-        databaseInitializer
-            .InitializeAsync()
-            .GetAwaiter()
-            .GetResult();
+        try
+        {
+            databaseInitializer
+                .InitializeAsync()
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(
+                ex,
+                LogMessages.DatabaseInitializationFailed);
+
+            WindowsForms.MessageBox.Show(
+                UiMessages.UnableToInitializeDatabase,
+                UiMessages.DatabaseInitializationFailedTitle,
+                WindowsForms.MessageBoxButtons.OK,
+                WindowsForms.MessageBoxIcon.Error);
+
+            return;
+        }
 
         Log.Information(LogMessages.ApplicationStarting);
 
