@@ -8,6 +8,7 @@ using DeskVault.Application.Documents.Extraction.JsonDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Extraction.XmlDocument;
+using DeskVault.Application.Documents.Extraction.YamlDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ListDocuments;
@@ -44,6 +45,8 @@ public static class DependencyInjection
         services.AddSingleton<IDocumentTextExtractor, JsonDocumentTextExtractor>();
 
         services.AddSingleton<IDocumentTextExtractor, XmlDocumentTextExtractor>();
+
+        services.AddSingleton<IDocumentTextExtractor, YamlDocumentTextExtractor>();
 
         services.AddSingleton<DocumentTextExtractorResolver>();
 
