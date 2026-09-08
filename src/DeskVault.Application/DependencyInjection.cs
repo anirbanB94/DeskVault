@@ -4,10 +4,12 @@ using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
+using DeskVault.Application.Documents.Extraction.IniDocument;
 using DeskVault.Application.Documents.Extraction.JsonDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Extraction.XmlDocument;
+using DeskVault.Application.Documents.Extraction.YamlDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ListDocuments;
@@ -44,6 +46,10 @@ public static class DependencyInjection
         services.AddSingleton<IDocumentTextExtractor, JsonDocumentTextExtractor>();
 
         services.AddSingleton<IDocumentTextExtractor, XmlDocumentTextExtractor>();
+
+        services.AddSingleton<IDocumentTextExtractor, YamlDocumentTextExtractor>();
+
+        services.AddSingleton<IDocumentTextExtractor, IniDocumentTextExtractor>();
 
         services.AddSingleton<DocumentTextExtractorResolver>();
 
