@@ -101,6 +101,35 @@ public sealed class XmlDocumentTextExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_WhenElementContainsMixedContent_PreservesTextAndChildElements()
+    {
+        // Arrange
+        const string xml =
+            """
+            <message>
+              Hello <name>DeskVault</name>!
+            </message>
+            """;
+
+        const string expected =
+            """
+            message:
+              Hello
+              name: DeskVault
+              !
+            """;
+
+        XmlDocumentTextExtractor extractor = new();
+
+        // Act
+        DocumentTextExtractionResult result =
+            await ExtractAsync(extractor, xml);
+
+        // Assert
+        Assert.Equal(expected, result.Text);
+    }
+
+    [Fact]
     public async Task ExtractAsync_WhenAttributesArePresent_PreservesAttributes()
     {
         // Arrange

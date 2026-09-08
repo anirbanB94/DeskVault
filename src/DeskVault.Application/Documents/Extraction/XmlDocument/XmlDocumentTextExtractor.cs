@@ -73,13 +73,18 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
             output.Append(attribute.Value);
         }
 
+        IReadOnlyList<XNode> childNodes =
+            element.Nodes()
+                .ToList();
+
         IReadOnlyList<XElement> childElements =
-            element.Elements()
+            childNodes
+                .OfType<XElement>()
                 .ToList();
 
         string text =
             string.Concat(
-                element.Nodes()
+                childNodes
                     .OfType<XText>()
                     .Select(node => node.Value))
             .Trim();
@@ -98,15 +103,33 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
 
         output.AppendLine();
 
-        foreach (XElement child in childElements)
+        foreach (XNode childNode in childNodes)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            AppendElement(
-                child,
-                output,
-                indentationLevel + 1,
-                cancellationToken);
+            if (childNode is XElement childElement)
+            {
+                AppendElement(
+                    childElement,
+                    output,
+                    indentationLevel + 1,
+                    cancellationToken);
+            }
+            else if (childNode is XText textNode)
+            {
+                string childText = textNode.Value.Trim();
+
+                if (childText.Length == 0)
+                {
+                    continue;
+                }
+
+                AppendIndentation(
+                    output,
+                    indentationLevel + 1);
+                output.Append(childText);
+                output.AppendLine();
+            }
         }
     }
 
