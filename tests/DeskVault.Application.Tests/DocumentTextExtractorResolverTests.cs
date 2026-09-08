@@ -32,6 +32,19 @@ public sealed class DocumentTextExtractorResolverTests
             extractor);
     }
 
+    [Theory]
+    [InlineData("application.cs")]
+    [InlineData("application.log")]
+    public void Resolve_SourceCodeAndLogFiles_ReturnsTextExtractor(
+        string fileName)
+    {
+        IDocumentTextExtractor extractor =
+            CreateResolver().Resolve(fileName);
+
+        Assert.IsType<TextDocumentTextExtractor>(
+            extractor);
+    }
+
     [Fact]
     public void Resolve_MarkdownFile_ReturnsMarkdownExtractor()
     {
@@ -141,6 +154,20 @@ public sealed class DocumentTextExtractorResolverTests
             CreateResolver().Resolve(fileName);
 
         Assert.IsType<XmlDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Theory]
+    [InlineData("application.CS")]
+    [InlineData("application.LoG")]
+    [InlineData("script.PY")]
+    public void Resolve_SourceCodeAndLogExtensions_IsCaseInsensitive(
+        string fileName)
+    {
+        IDocumentTextExtractor extractor =
+            CreateResolver().Resolve(fileName);
+
+        Assert.IsType<TextDocumentTextExtractor>(
             extractor);
     }
 }
