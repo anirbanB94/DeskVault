@@ -1,7 +1,9 @@
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
+using DeskVault.Application.Documents.Extraction.JsonDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
+using DeskVault.Application.Documents.Extraction.XmlDocument;
 
 namespace DeskVault.Application.Tests;
 
@@ -14,7 +16,9 @@ public sealed class DocumentTextExtractorResolverTests
             {
                 new TextDocumentTextExtractor(),
                 new MarkdownDocumentTextExtractor(),
-                new CsvDocumentTextExtractor()
+                new CsvDocumentTextExtractor(),
+                new JsonDocumentTextExtractor(),
+                new XmlDocumentTextExtractor()
             });
     }
 
@@ -45,6 +49,26 @@ public sealed class DocumentTextExtractorResolverTests
             CreateResolver().Resolve("data.csv");
 
         Assert.IsType<CsvDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Fact]
+    public void Resolve_JsonFile_ReturnsJsonExtractor()
+    {
+        IDocumentTextExtractor extractor =
+            CreateResolver().Resolve("document.json");
+
+        Assert.IsType<JsonDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Fact]
+    public void Resolve_XmlFile_ReturnsXmlExtractor()
+    {
+        IDocumentTextExtractor extractor =
+            CreateResolver().Resolve("document.xml");
+
+        Assert.IsType<XmlDocumentTextExtractor>(
             extractor);
     }
 
@@ -89,6 +113,34 @@ public sealed class DocumentTextExtractorResolverTests
             CreateResolver().Resolve(fileName);
 
         Assert.IsType<CsvDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Theory]
+    [InlineData("document.JSON")]
+    [InlineData("document.Json")]
+    [InlineData("document.jSoN")]
+    public void Resolve_JsonExtension_IsCaseInsensitive(
+        string fileName)
+    {
+        IDocumentTextExtractor extractor =
+            CreateResolver().Resolve(fileName);
+
+        Assert.IsType<JsonDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Theory]
+    [InlineData("document.XML")]
+    [InlineData("document.Xml")]
+    [InlineData("document.xMl")]
+    public void Resolve_XmlExtension_IsCaseInsensitive(
+        string fileName)
+    {
+        IDocumentTextExtractor extractor =
+            CreateResolver().Resolve(fileName);
+
+        Assert.IsType<XmlDocumentTextExtractor>(
             extractor);
     }
 }
