@@ -1,8 +1,10 @@
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
+using DeskVault.Application.Documents.Extraction.JsonDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
+using DeskVault.Application.Documents.Extraction.XmlDocument;
 using DeskVault.Application.Documents.Normalization;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -54,7 +56,7 @@ public sealed class ApplicationDependencyInjectionTests
                 .ToList();
 
         Assert.Equal(
-            3,
+            5,
             extractors.Count);
 
         Assert.Contains(
@@ -68,5 +70,13 @@ public sealed class ApplicationDependencyInjectionTests
         Assert.Contains(
             extractors,
             extractor => extractor is CsvDocumentTextExtractor);
+
+        Assert.Contains(
+            extractors,
+            extractor => extractor is JsonDocumentTextExtractor);
+
+        Assert.Contains(
+            extractors,
+            extractor => extractor is XmlDocumentTextExtractor);
     }
 }
