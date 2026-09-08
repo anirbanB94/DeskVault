@@ -1,7 +1,7 @@
 ---
 name: Technical Task
 about: Engineering work required to deliver a Product Backlog Item
-title: "[TASK] "
+title: "task(<area>): "
 labels: task
 assignees:
 ---
