@@ -5,12 +5,29 @@ namespace DeskVault.Application.Documents.Extraction.TextDocument;
 public sealed class TextDocumentTextExtractor
     : IDocumentTextExtractor
 {
+    private static readonly HashSet<string> SupportedExtensions =
+        new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt",
+        ".log",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".java",
+        ".py",
+        ".js",
+        ".ts",
+        ".css",
+        ".sql",
+        ".ps1"
+    };
+
     public bool CanExtract(string fileName)
     {
-        return string.Equals(
-            Path.GetExtension(fileName),
-            ".txt",
-            StringComparison.OrdinalIgnoreCase);
+        return SupportedExtensions.Contains(
+            Path.GetExtension(fileName));
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(
