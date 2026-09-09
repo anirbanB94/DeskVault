@@ -14,7 +14,11 @@ public static class UiMessages
         "Select a document to import";
 
     public const string SupportedDocumentsFilter =
-        "Supported Documents|*.pdf;*.docx;*.txt;*.md;*.csv|";
+        "Supported Documents|" +
+        "*.pdf;*.docx;*.txt;*.md;*.csv;" +
+        "*.json;*.xml;*.yaml;*.yml;*.ini;*.config;*.log;" +
+        "*.c;*.cpp;*.h;*.hpp;*.cs;*.java;*.py;*.js;*.ts;*.css;*.sql;*.ps1;" +
+        "*.html;*.htm|";
 
     public const string AllFilesFilter =
         "All Files|*.*";
