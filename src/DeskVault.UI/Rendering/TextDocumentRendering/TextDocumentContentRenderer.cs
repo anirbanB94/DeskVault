@@ -1,27 +1,45 @@
-using DeskVault.Application.Documents.Extraction;
-using DeskVault.Application.Documents.Extraction.TextDocument;
+using System.Text;
 
 namespace DeskVault.UI.Rendering.TextDocumentRendering;
 
 public sealed class TextDocumentContentRenderer
     : IDocumentContentRenderer
 {
-    private readonly DocumentTextExtractorResolver _extractorResolver;
+    private static readonly HashSet<string> SupportedExtensions =
+        new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt",
+        ".json",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".ini",
+        ".config",
+        ".log",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".java",
+        ".py",
+        ".js",
+        ".ts",
+        ".css",
+        ".sql",
+        ".ps1"
+    };
 
     public int Priority => 0;
 
-    public TextDocumentContentRenderer(
-        DocumentTextExtractorResolver extractorResolver)
+    public TextDocumentContentRenderer()
     {
-        _extractorResolver = extractorResolver;
     }
 
     public bool CanRender(string fileName)
     {
-        return string.Equals(
-            Path.GetExtension(fileName),
-            ".txt",
-            StringComparison.OrdinalIgnoreCase);
+        return SupportedExtensions.Contains(
+            Path.GetExtension(fileName));
     }
 
     public async Task RenderAsync(
@@ -30,17 +48,26 @@ public sealed class TextDocumentContentRenderer
         string fileName,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(contentHost);
+        ArgumentNullException.ThrowIfNull(documentStream);
 
-        IDocumentTextExtractor extractor =
-            _extractorResolver.Resolve(fileName);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        DocumentTextExtractionResult result =
-            await extractor.ExtractAsync(
-                documentStream,
-                fileName,
+        using var reader = new StreamReader(
+            documentStream,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true,
+            bufferSize: 1024,
+            leaveOpen: true);
+
+        string text =
+            await reader.ReadToEndAsync(
                 cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        string displayText =
+            NormalizeLineEndings(text);
 
         DocumentContentHost.Clear(contentHost);
 
@@ -50,10 +77,25 @@ public sealed class TextDocumentContentRenderer
             ReadOnly = true,
             ScrollBars = ScrollBars.Both,
             Dock = DockStyle.Fill,
-            Text = result.Text,
+            Text = displayText,
             WordWrap = false
         };
 
         contentHost.Controls.Add(textBox);
+    }
+
+    private static string NormalizeLineEndings(
+        string text)
+    {
+        return text
+            .Replace(
+                "\r\n",
+                "\n")
+            .Replace(
+                "\r",
+                "\n")
+            .Replace(
+                "\n",
+                Environment.NewLine);
     }
 }
