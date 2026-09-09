@@ -4,6 +4,8 @@ using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Entities;
+using DeskVault.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -862,6 +864,122 @@ public sealed class DocumentImportIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task ImportDocument_WhenFormattedJsonIsImported_PreservesOriginalSourceBytes()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "source-preservation-test.json");
+
+            string sourceText =
+                """
+                {
+                    "name": "DeskVault",
+                    "version": "1.0",
+                    "enabled": true,
+                    "workspace": {
+                        "type": "knowledge",
+                        "features": [
+                            "search",
+                            "processing",
+                            "rendering"
+                        ]
+                    }
+                }
+                """;
+
+            byte[] originalBytes =
+                Encoding.UTF8.GetBytes(
+                    sourceText);
+
+            await File.WriteAllBytesAsync(
+                sourceFilePath,
+                originalBytes);
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            ImportDocumentResult importResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Source Preservation JSON"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Document? document =
+                await harness.GetDocumentAsync(
+                    importResult.DocumentId.Value);
+
+            Assert.NotNull(document);
+
+            Assert.True(
+                File.Exists(
+                    document.StoredFilePath));
+
+            var encryptionService =
+                new DocumentEncryptionService(
+                    new TestEncryptionKeyService(
+                        encryptionKey),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            var reader =
+                new EncryptedDocumentReader(
+                    encryptionService,
+                    NullLogger<EncryptedDocumentReader>.Instance);
+
+            await using Stream decryptedStream =
+                await reader.OpenReadAsync(
+                    document.StoredFilePath);
+
+            using var decryptedContent =
+                new MemoryStream();
+
+            await decryptedStream.CopyToAsync(
+                decryptedContent);
+
+            Assert.Equal(
+                originalBytes,
+                decryptedContent.ToArray());
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
     private sealed class FailingDocumentTextExtractor
         : IDocumentTextExtractor
     {
@@ -886,6 +1004,27 @@ public sealed class DocumentImportIntegrationTests
 
             throw new InvalidOperationException(
                 "Test processing failure.");
+        }
+    }
+
+    private sealed class TestEncryptionKeyService
+        : IEncryptionKeyService
+    {
+        private readonly byte[] _key;
+
+        public TestEncryptionKeyService(
+            byte[] key)
+        {
+            _key = key;
+        }
+
+        public Task<byte[]> GetOrCreateKeyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                _key);
         }
     }
 }

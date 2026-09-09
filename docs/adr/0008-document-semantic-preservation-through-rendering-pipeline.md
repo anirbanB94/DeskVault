@@ -77,11 +77,15 @@ This establishes a general architectural pattern that should govern future docum
 
 ## Decision
 
-DeskVault will preserve document semantics through a distinct parsing/extraction and rendering boundary.
+DeskVault will preserve document semantics through distinct parsing/extraction and rendering boundaries.
 
 The architectural rule is:
 
-> **Parsing and extraction establish the structured meaning available to the application. Rendering consumes that representation for presentation and must not become the source of truth for document semantics.**
+> **Parsing and extraction establish the structured meaning available to the application. Rendering consumes the appropriate source or semantic representation for presentation and must not become the source of truth for document semantics.**
+
+For formats where the semantic extraction representation is also an appropriate visual representation, a renderer may consume that representation directly.
+
+For formats where semantic extraction intentionally produces a transformed or normalized representation that does not visually resemble the original source syntax, the renderer may consume the original document content independently for presentation.
 
 The intended document-processing architecture is:
 
@@ -159,6 +163,8 @@ The exact representation will depend on the source format.
 
 DeskVault will not force every document format into a single lowest-common-denominator model if doing so would destroy useful source semantics.
 
+Extraction and parsing exist to establish application-consumable meaning. They do not need to produce the exact visual representation shown to the user.
+
 ## Structured Representation
 
 A structured document representation should preserve information that can materially affect interpretation.
@@ -200,6 +206,73 @@ Content exists but could not be interpreted reliably
 ```
 
 This distinction is especially important for large documents and imperfect source files.
+
+## Source-Preserving Presentation
+
+For textual formats where the semantic extraction representation differs materially from the source syntax, the renderer may consume the original source content for presentation.
+
+The presentation goal is:
+
+> **The document should visually communicate its native textual format while semantic extraction remains independently optimized for processing, search, and future AI use.**
+
+Examples include:
+
+```text
+JSON
+    ↓
+native JSON source presentation
+```
+
+```text
+XML
+    ↓
+native XML source presentation
+```
+
+```text
+YAML
+    ↓
+native YAML source presentation
+```
+
+```text
+INI / CONFIG
+    ↓
+native INI-style source presentation
+```
+
+```text
+C# / Python / Java / C / C++ / JavaScript / TypeScript / SQL / PowerShell
+    ↓
+native source-code presentation
+```
+
+The renderer should preserve recognizable source syntax, structure, ordering, indentation, delimiters, and other characteristics that make the document visually identifiable as its native format.
+
+The renderer must not reconstruct source syntax from a semantic extraction result when that reconstruction could lose source information.
+
+Instead, when native presentation is required, the renderer should consume the original source content independently from the semantic extraction pipeline.
+
+This does not make the original source content the application semantic model.
+
+The separation remains:
+
+```text
+Original Source
+      ├──→ Native Presentation
+      │
+      └──→ Parsing / Extraction
+               ↓
+        Semantic Representation
+               ↓
+        Normalization / Chunking
+               ↓
+        Search / AI / Retrieval
+```
+
+Basic native presentation does not require syntax highlighting, AST analysis, compilation, execution, or language-aware intelligence.
+
+Those capabilities may be introduced by future presentation-oriented MVPs without changing this architectural boundary.
 
 ## Preview and Bounded Materialization
 
@@ -288,10 +361,18 @@ Its responsibilities include:
 - presenting warnings
 - presenting preview boundaries
 - formatting content for readability
+- preserving recognizable native source syntax where appropriate
 - managing presentation-specific resources
 - exposing user interactions appropriate to the viewing experience
 
 A renderer is not responsible for redefining the document model.
+
+A renderer may consume either:
+
+- a structured application representation, when that representation is appropriate for presentation; or
+- the original source content, when native source presentation is required.
+
+The choice of presentation input must not alter the application-level semantic-processing boundary.
 
 For example, a CSV renderer may use:
 
@@ -302,6 +383,16 @@ DataGridView
 but `DataGridView` is a presentation mechanism.
 
 The renderer must not make the application depend on `DataGridView` as the representation of CSV semantics.
+
+Similarly, a JSON renderer may display:
+
+```json
+{
+  "name": "DeskVault"
+}
+```
+
+while the JSON extractor provides a semantic representation for normalization, chunking, search, and AI.
 
 The same principle applies to:
 
@@ -358,6 +449,10 @@ The renderer is responsible for:
 
 This separation must be preserved as CSV functionality grows.
 
+CSV demonstrates that a renderer does not need to present generic extracted text. It may consume a format-specific structured representation when that provides the correct presentation model.
+
+Source-oriented textual formats may use the same architectural boundary while consuming their original source content for visual fidelity.
+
 ## Configuration Boundary
 
 Parsing behavior that affects document semantics or resource usage must be configurable through parser-specific options rather than being hidden inside the renderer.
@@ -398,6 +493,10 @@ Renderer: 1,000 rows
 
 where the UI could accidentally create a second semantic boundary.
 
+The same principle applies to other format-specific parsing limits.
+
+Presentation-specific display constraints may exist, but they must not silently redefine the semantic completeness of the document-processing result.
+
 ## AI and Search Independence
 
 Future AI and search functionality must consume document representations or dedicated application-level document-processing results rather than scraping the rendered UI.
@@ -422,9 +521,21 @@ Document
 Parser / Extractor
    ↓
 Structured Representation
-   ├── Renderer
    ├── Search / Indexing
    └── AI / Retrieval
+```
+
+Rendering remains an independent presentation consumer:
+
+```text
+Document
+   ├──→ Native source presentation
+   │
+   └──→ Parser / Extractor
+          ↓
+       Structured Representation
+          ├──→ Search / Indexing
+          └──→ AI / Retrieval
 ```
 
 This keeps AI independent from presentation technology.
@@ -478,6 +589,10 @@ Extraction completeness
 ```
 
 This is particularly important for enterprise workflows because users may make decisions based on document previews.
+
+A native source renderer should not be assumed to imply that the semantic extraction is complete.
+
+Likewise, a semantic extraction representation should not be assumed to be the exact visual source representation.
 
 ## Format-Specific Semantics
 
@@ -540,6 +655,8 @@ The goal is not to make these representations identical.
 
 The goal is to preserve enough source meaning that rendering, search, and AI can operate without depending on one another.
 
+The visual presentation of a format may use a representation specifically suited to the viewing experience, including the original source content where native syntax is important.
+
 ## Application Layer Boundary
 
 The Application layer should expose document-processing capabilities through abstractions appropriate to the use case.
@@ -561,6 +678,8 @@ Infrastructure / format library
 The exact placement of parsers may evolve as the architecture matures, but format-specific implementation details must not leak into presentation orchestration.
 
 The UI renderer may depend on the structured representation it needs for presentation, but it should not own source parsing when parsing is a reusable application capability.
+
+Where native source presentation requires the original source stream, the renderer may consume that source content through the established document/workspace boundary without making the source content a replacement for the application semantic representation.
 
 Knowledge-processing consumers should likewise consume application-level processing results and persisted derived representations rather than scraping rendered UI output.
 
@@ -584,6 +703,8 @@ The application should preserve this distinction because future AI/search workfl
 
 Warnings should be represented as data where practical.
 
+A renderer consuming original source content for presentation must not be treated as a second extraction pipeline unless the renderer explicitly requires format-specific parsing for presentation.
+
 Exceptions should be reserved for conditions that prevent the operation from completing according to its contract.
 
 ## Cancellation
@@ -604,13 +725,15 @@ Cancellation is particularly important for:
 
 The renderer should propagate cancellation rather than silently converting cancellation into a generic rendering error.
 
+Native source presentation should also honor cancellation when reading or materializing source content.
+
 ## Resource Ownership
 
 Document streams remain owned by the caller unless an explicit ownership transfer is documented.
 
 Parsers may read from supplied streams.
 
-Renderers may consume the parsed representation.
+Renderers may consume the parsed representation or, where appropriate, read the supplied source content for native presentation.
 
 Format-specific resources such as WebView2 controls remain owned by the renderer that creates them, subject to the workspace lifecycle.
 
@@ -961,6 +1084,8 @@ must remain document data.
 
 It must not become an application instruction merely because an AI subsystem consumes the representation.
 
+Native source presentation must likewise remain a display operation. Rendering a source file must not imply compilation, execution, evaluation, or language-aware interpretation.
+
 ## Current MVP 1 Implementation Boundary
 
 The semantic-preservation and processing architecture described by this ADR is now implemented through the MVP 1 document knowledge pipeline.
@@ -1034,6 +1159,14 @@ Plain text is useful for some downstream operations but can destroy important se
 
 Format-specific structured representations provide a better foundation.
 
+### Reconstruct native source syntax from semantic extraction output
+
+Rejected.
+
+Semantic extraction may intentionally transform source content into a representation optimized for processing. Reconstructing the original syntax from that representation can lose information, formatting, ordering, delimiters, comments, or other source characteristics.
+
+When native source presentation is required, the renderer should consume the original source content rather than attempting to reverse the semantic representation.
+
 ### Use the rendered UI as the canonical document model
 
 Rejected.
@@ -1072,12 +1205,22 @@ Rejected.
 
 AI should consume structured document-processing results or application-level retrieval results rather than screen controls, HTML, or rendered text.
 
+### Add syntax highlighting as part of the initial native source presentation
+
+Deferred.
+
+The initial requirement is recognizable and readable native source presentation.
+
+Syntax highlighting, language-aware navigation, code intelligence, AST analysis, compilation, execution, and related capabilities may be introduced in later MVPs without changing the semantic-preservation boundary.
+
 ## Consequences
 
 ### Positive
 
 - Document semantics have a clear architectural owner.
 - Rendering remains a presentation concern.
+- Native textual formats can visually resemble their source format.
+- Semantic extraction remains independently optimized for search and AI.
 - Search and AI can reuse document-processing results.
 - Format-specific information can be preserved.
 - Large-document previewing can remain bounded without falsely implying completeness.
@@ -1098,6 +1241,7 @@ AI should consume structured document-processing results or application-level re
 - Preview completeness requires additional metadata and UI handling.
 - More explicit boundaries increase implementation complexity compared with direct rendering.
 - Future shared document abstractions may require careful design to avoid either duplication or semantic loss.
+- Native source presentation may require format-aware renderer implementations even when semantic extraction already exists.
 
 These trade-offs are accepted because DeskVault's long-term value depends on using documents for more than visual display.
 
@@ -1109,17 +1253,17 @@ The canonical direction is:
 
 ```text
 Source Document
-      ↓
-Parser / Extractor
-      ↓
-Structured Document Representation
-      ├── Rendering
-      ├── Search
-      ├── Indexing
-      └── AI / Retrieval
+      ├──→ Native / Format-Aware Presentation
+      │
+      └──→ Parser / Extractor
+              ↓
+      Structured Document Representation
+              ├──→ Search
+              ├──→ Indexing
+              └──→ AI / Retrieval
 ```
 
-The rendering layer is therefore a consumer of document semantics rather than the source of truth.
+The rendering layer is therefore a consumer of document content and semantics rather than the source of truth.
 
 The current CSV implementation establishes the first concrete example of this pattern:
 
@@ -1135,6 +1279,36 @@ CsvDocumentContentRenderer
 DataGridView
 ```
 
+For source-oriented textual formats, the presentation path may instead preserve the original source:
+
+```text
+JSON / XML / YAML / INI / Source Code
+      ↓
+Original Source Content
+      ↓
+Format-Aware Renderer
+      ↓
+Readable Native Presentation
+```
+
+while the processing path remains:
+
+```text
+JSON / XML / YAML / INI / Source Code
+      ↓
+Parser / Extractor
+      ↓
+Semantic Representation
+      ↓
+Normalization
+      ↓
+Chunking
+      ↓
+Search / AI
+```
+
+These paths are intentionally independent.
+
 Future PDF, DOCX, XLSX, PPTX, and other document-processing implementations should follow the same architectural principle while preserving the unique semantics of their source formats.
 
-This decision provides DeskVault with a stable foundation for document preview, search, indexing, local AI, retrieval, and RAG without coupling those capabilities to the presentation layer.
+This decision provides DeskVault with a stable foundation for recognizable document presentation, search, indexing, local AI, retrieval, and RAG without coupling those capabilities to the presentation layer.

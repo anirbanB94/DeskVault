@@ -16,13 +16,53 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_TxtFile_ReturnsTextRenderer()
     {
+        // Arrange
         var resolver =
             CreateResolver(
                 CreateTextRenderer());
 
+        // Act
         IDocumentContentRenderer renderer =
             resolver.Resolve("notes.txt");
 
+        // Assert
+        Assert.IsType<TextDocumentContentRenderer>(
+            renderer);
+    }
+
+    [Theory]
+    [InlineData("data.json")]
+    [InlineData("data.xml")]
+    [InlineData("config.yaml")]
+    [InlineData("config.yml")]
+    [InlineData("settings.ini")]
+    [InlineData("settings.config")]
+    [InlineData("application.log")]
+    [InlineData("program.c")]
+    [InlineData("program.cpp")]
+    [InlineData("program.h")]
+    [InlineData("program.hpp")]
+    [InlineData("program.cs")]
+    [InlineData("program.java")]
+    [InlineData("program.py")]
+    [InlineData("program.js")]
+    [InlineData("program.ts")]
+    [InlineData("styles.css")]
+    [InlineData("query.sql")]
+    [InlineData("script.ps1")]
+    public void Resolve_ExpandedTextFormat_ReturnsTextRenderer(
+        string fileName)
+    {
+        // Arrange
+        var resolver =
+            CreateResolver(
+                CreateTextRenderer());
+
+        // Act
+        IDocumentContentRenderer renderer =
+            resolver.Resolve(fileName);
+
+        // Assert
         Assert.IsType<TextDocumentContentRenderer>(
             renderer);
     }
@@ -30,13 +70,16 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_MarkdownFile_ReturnsMarkdownRenderer()
     {
+        // Arrange
         var resolver =
             CreateResolver(
                 CreateMarkdownRenderer());
 
+        // Act
         IDocumentContentRenderer renderer =
             resolver.Resolve("README.md");
 
+        // Assert
         Assert.IsType<MarkdownDocumentContentRenderer>(
             renderer);
     }
@@ -44,13 +87,16 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_CsvFile_ReturnsCsvRenderer()
     {
+        // Arrange
         var resolver =
             CreateResolver(
                 CreateCsvRenderer());
 
+        // Act
         IDocumentContentRenderer renderer =
             resolver.Resolve("data.csv");
 
+        // Assert
         Assert.IsType<CsvDocumentContentRenderer>(
             renderer);
     }
@@ -62,13 +108,53 @@ public sealed class DocumentContentRendererResolverTests
     public void Resolve_TxtExtension_IsCaseInsensitive(
         string fileName)
     {
+        // Arrange
         var resolver =
             CreateResolver(
                 CreateTextRenderer());
 
+        // Act
         IDocumentContentRenderer renderer =
             resolver.Resolve(fileName);
 
+        // Assert
+        Assert.IsType<TextDocumentContentRenderer>(
+            renderer);
+    }
+
+    [Theory]
+    [InlineData("data.JSON")]
+    [InlineData("data.Xml")]
+    [InlineData("config.YAML")]
+    [InlineData("config.Yml")]
+    [InlineData("settings.INI")]
+    [InlineData("settings.CONFIG")]
+    [InlineData("application.LOG")]
+    [InlineData("program.C")]
+    [InlineData("program.CPP")]
+    [InlineData("program.H")]
+    [InlineData("program.HPP")]
+    [InlineData("program.CS")]
+    [InlineData("program.JAVA")]
+    [InlineData("program.PY")]
+    [InlineData("program.JS")]
+    [InlineData("program.TS")]
+    [InlineData("styles.CSS")]
+    [InlineData("query.SQL")]
+    [InlineData("script.PS1")]
+    public void Resolve_ExpandedTextFormat_IsCaseInsensitive(
+        string fileName)
+    {
+        // Arrange
+        var resolver =
+            CreateResolver(
+                CreateTextRenderer());
+
+        // Act
+        IDocumentContentRenderer renderer =
+            resolver.Resolve(fileName);
+
+        // Assert
         Assert.IsType<TextDocumentContentRenderer>(
             renderer);
     }
@@ -80,13 +166,16 @@ public sealed class DocumentContentRendererResolverTests
     public void Resolve_MarkdownExtension_IsCaseInsensitive(
         string fileName)
     {
+        // Arrange
         var resolver =
             CreateResolver(
                 CreateMarkdownRenderer());
 
+        // Act
         IDocumentContentRenderer renderer =
             resolver.Resolve(fileName);
 
+        // Assert
         Assert.IsType<MarkdownDocumentContentRenderer>(
             renderer);
     }
@@ -98,13 +187,16 @@ public sealed class DocumentContentRendererResolverTests
     public void Resolve_CsvExtension_IsCaseInsensitive(
         string fileName)
     {
+        // Arrange
         var resolver =
             CreateResolver(
                 CreateCsvRenderer());
 
+        // Act
         IDocumentContentRenderer renderer =
             resolver.Resolve(fileName);
 
+        // Assert
         Assert.IsType<CsvDocumentContentRenderer>(
             renderer);
     }
@@ -117,16 +209,19 @@ public sealed class DocumentContentRendererResolverTests
     public void Resolve_UnsupportedExtension_ThrowsNotSupportedException(
         string fileName)
     {
+        // Arrange
         var resolver =
             CreateResolver(
                 CreateTextRenderer(),
                 CreateMarkdownRenderer(),
                 CreateCsvRenderer());
 
+        // Act
         NotSupportedException exception =
             Assert.Throws<NotSupportedException>(
                 () => resolver.Resolve(fileName));
 
+        // Assert
         Assert.Equal(
             $"No document renderer is available for '{fileName}'.",
             exception.Message);
@@ -135,16 +230,19 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_EmptyFileName_ThrowsNotSupportedException()
     {
+        // Arrange
         var resolver =
             CreateResolver(
                 CreateTextRenderer(),
                 CreateMarkdownRenderer(),
                 CreateCsvRenderer());
 
+        // Act
         NotSupportedException exception =
             Assert.Throws<NotSupportedException>(
                 () => resolver.Resolve(string.Empty));
 
+        // Assert
         Assert.Equal(
             "No document renderer is available for ''.",
             exception.Message);
@@ -153,6 +251,7 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void Resolve_WhenMultipleRenderersCanRender_SelectsHighestPriority()
     {
+        // Arrange
         var lowPriorityRenderer =
             new Mock<IDocumentContentRenderer>();
 
@@ -180,9 +279,11 @@ public sealed class DocumentContentRendererResolverTests
                 lowPriorityRenderer.Object,
                 highPriorityRenderer.Object);
 
+        // Act
         IDocumentContentRenderer renderer =
             resolver.Resolve("document.test");
 
+        // Assert
         Assert.Same(
             highPriorityRenderer.Object,
             renderer);
@@ -197,8 +298,7 @@ public sealed class DocumentContentRendererResolverTests
 
     private static TextDocumentContentRenderer CreateTextRenderer()
     {
-        return new TextDocumentContentRenderer(
-            CreateTextExtractorResolver());
+        return new TextDocumentContentRenderer();
     }
 
     private static MarkdownDocumentContentRenderer CreateMarkdownRenderer()
