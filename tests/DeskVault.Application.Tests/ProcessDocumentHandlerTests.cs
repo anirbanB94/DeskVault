@@ -329,6 +329,122 @@ public sealed class ProcessDocumentHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenCancellationOccursDuringExtraction_RethrowsAndLeavesProcessingState()
+    {
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingContext =
+            CreateProcessingContext(repository);
+
+        var statusHistory =
+            CreateStatusHistory(
+                repository);
+
+        processingContext.Extractor.CancelOnExtract = true;
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () =>
+                processingContext.Handler.HandleAsync(
+                    new ProcessDocumentCommand(
+                        document.Id),
+                    cancellationTokenSource.Token));
+
+        Assert.True(
+            processingContext.Reader.WasOpened);
+
+        Assert.True(
+            processingContext.Extractor.WasCalled);
+
+        Assert.Equal(
+            [
+                DocumentStatus.Processing
+            ],
+            statusHistory);
+
+        Assert.Equal(
+            DocumentStatus.Processing,
+            document.Status);
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.ReplaceCallCount);
+
+        repository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenProcessingSameDocumentTwice_ProducesDeterministicLifecycle()
+    {
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingContext =
+            CreateProcessingContext(repository);
+
+        ProcessDocumentResult firstResult =
+            await processingContext.Handler.HandleAsync(
+                new ProcessDocumentCommand(
+                    document.Id));
+
+        ProcessDocumentResult secondResult =
+            await processingContext.Handler.HandleAsync(
+                new ProcessDocumentCommand(
+                    document.Id));
+
+        Assert.Equal(
+            ProcessDocumentResultStatus.Success,
+            firstResult.Status);
+
+        Assert.Equal(
+            ProcessDocumentResultStatus.Success,
+            secondResult.Status);
+
+        Assert.Equal(
+            document.Id,
+            firstResult.DocumentId);
+
+        Assert.Equal(
+            document.Id,
+            secondResult.DocumentId);
+
+        Assert.Equal(
+            firstResult.Description,
+            secondResult.Description);
+
+        Assert.Equal(
+            2,
+            processingContext.ProcessingStore.ReplaceCallCount);
+
+        Assert.Equal(
+            DocumentStatus.Available,
+            document.Status);
+    }
+
+    [Fact]
     public async Task ProcessAsync_WhenDocumentExists_CompletesSuccessfully()
     {
         Document document = CreateDocument();
@@ -546,6 +662,8 @@ public sealed class ProcessDocumentHandlerTests
 
         public bool ThrowOnExtract { get; set; }
 
+        public bool CancelOnExtract { get; set; }
+
         public string? FileName { get; private set; }
 
         public bool CanExtract(
@@ -570,6 +688,12 @@ public sealed class ProcessDocumentHandlerTests
             {
                 throw new InvalidOperationException(
                     "Test extraction failure.");
+            }
+
+            if (CancelOnExtract)
+            {
+                throw new OperationCanceledException(
+                    cancellationToken);
             }
 
             return Task.FromResult(
