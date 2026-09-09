@@ -545,7 +545,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task ImportRequested_WhenImportSucceeds_DoesNotProcessDocumentAndRefreshesDocuments()
+    public async Task ImportRequested_WhenImportSucceeds_ProcessesDocumentAndRefreshesDocuments()
     {
         const string filePath =
             @"C:\Documents\security-policy.md";
@@ -687,9 +687,11 @@ public sealed class MainFormPresenterTests
 
         processingService.Verify(
             x => x.ProcessAsync(
-                It.IsAny<Guid>(),
+                It.Is<Guid>(
+                    documentId =>
+                        documentId == importedDocumentId),
                 It.IsAny<CancellationToken>()),
-            Times.Never);
+            Times.Once);
 
         view.Verify(
             x => x.ShowDocuments(

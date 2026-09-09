@@ -1,6 +1,5 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
-using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
@@ -138,6 +137,15 @@ public sealed class MainFormPresenter
             if (result.Status ==
                 ImportDocumentResultStatus.Success)
             {
+                if (result.DocumentId is not Guid documentId)
+                {
+                    throw new InvalidOperationException(
+                        "A successful document import did not return a document identifier.");
+                }
+
+                await _documentProcessingService.ProcessAsync(
+                    documentId);
+
                 await RefreshDocumentsAsync();
 
                 _view.SetSelectedDocumentId(
