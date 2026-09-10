@@ -29,6 +29,7 @@ public sealed class SqliteDocumentSearchStoreTests
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
+            0L,
             [
                 new DocumentChunk(
                     0,
@@ -91,10 +92,11 @@ public sealed class SqliteDocumentSearchStoreTests
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
+            0L,
             [
                 new DocumentChunk(
-                0,
-                "Security policy content.")
+                    0,
+                    "Security policy content.")
             ]);
 
         var searchStore =
@@ -133,6 +135,7 @@ public sealed class SqliteDocumentSearchStoreTests
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
+            0L,
             [
                 new DocumentChunk(
                     0,
@@ -173,6 +176,7 @@ public sealed class SqliteDocumentSearchStoreTests
 
         await processingStore.ReplaceChunksAsync(
             secondDocument.Id,
+            0L,
             [
                 new DocumentChunk(
                     1,
@@ -185,6 +189,7 @@ public sealed class SqliteDocumentSearchStoreTests
 
         await processingStore.ReplaceChunksAsync(
             firstDocument.Id,
+            0L,
             [
                 new DocumentChunk(
                     1,

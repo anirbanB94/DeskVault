@@ -47,6 +47,14 @@ public sealed class DocumentEntityConfiguration
             .IsRequired()
             .HasMaxLength(1024);
 
+        builder.Property(
+                document => document.ProcessingGeneration)
+            .IsRequired();
+
+        builder.Property(
+                document => document.LastSuccessfulProcessingGeneration)
+            .IsRequired();
+
         builder.HasIndex(
                 document => document.Sha256Hash)
             .IsUnique();
