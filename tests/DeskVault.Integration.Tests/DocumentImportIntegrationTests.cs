@@ -764,6 +764,196 @@ public sealed class DocumentImportIntegrationTests
     }
 
     [Fact]
+    public async Task ImportDocument_WhenSameDocumentIsProcessedConcurrently_PreventsStaleAttemptFromOverwritingNewerResult()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "concurrent-processing-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "Original source content.",
+                Encoding.UTF8);
+
+            Guid documentId;
+
+            await using (
+                var setupHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await setupHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Concurrent Processing Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+            }
+
+            var firstExtractor =
+                new BlockingDocumentTextExtractor(
+                    "Stale generation one content.");
+
+            var secondExtractor =
+                new ImmediateDocumentTextExtractor(
+                    "Authoritative generation two content.");
+
+            await using var firstHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    [firstExtractor]);
+
+            await using var secondHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    [secondExtractor]);
+
+            Task firstProcessingTask =
+                firstHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+            await firstExtractor.WaitUntilExtractionStartedAsync();
+
+            Task secondProcessingTask =
+                secondHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+            await secondProcessingTask;
+
+            Document? afterSecondProcessing =
+                await secondHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(afterSecondProcessing);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                afterSecondProcessing.Status);
+
+            Assert.Equal(
+                2L,
+                afterSecondProcessing.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                afterSecondProcessing.LastSuccessfulProcessingGeneration);
+
+            firstExtractor.ReleaseExtraction();
+
+            await Assert.ThrowsAnyAsync<Exception>(
+                () => firstProcessingTask);
+
+            Document? finalDocument =
+                await secondHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(finalDocument);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                finalDocument.Status);
+
+            Assert.Equal(
+                2L,
+                finalDocument.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                finalDocument.LastSuccessfulProcessingGeneration);
+
+            List<DocumentChunkEntity> finalChunks =
+                await secondHarness.GetChunksAsync(
+                    documentId);
+
+            Assert.NotEmpty(finalChunks);
+
+            string finalIndexedText =
+                string.Join(
+                    "\n",
+                    finalChunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Contains(
+                "Authoritative generation two content.",
+                finalIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.DoesNotContain(
+                "Stale generation one content.",
+                finalIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.Equal(
+                1,
+                finalChunks.Count(
+                    chunk =>
+                        chunk.Text.Contains(
+                            "Authoritative generation two content.",
+                            StringComparison.Ordinal)));
+
+            Assert.Equal(
+                0,
+                finalChunks.Count(
+                    chunk =>
+                        chunk.Text.Contains(
+                            "Stale generation one content.",
+                            StringComparison.Ordinal)));
+
+            Assert.True(
+                firstExtractor.WasCalled);
+
+            Assert.True(
+                secondExtractor.WasCalled);
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ImportDocument_WhenSameDocumentIsImportedTwice_ReturnsDuplicateAndDoesNotCreateSecondDocument()
     {
         string rootDirectory =
@@ -1567,6 +1757,102 @@ public sealed class DocumentImportIntegrationTests
         public Task WaitUntilExtractionStartedAsync()
         {
             return _extractionStarted.Task;
+        }
+    }
+
+    private sealed class BlockingDocumentTextExtractor
+        : IDocumentTextExtractor
+    {
+        private readonly string _text;
+
+        private readonly TaskCompletionSource<bool>
+            _extractionStarted =
+                new(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private readonly TaskCompletionSource<bool>
+            _releaseExtraction =
+                new(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public BlockingDocumentTextExtractor(
+            string text)
+        {
+            _text = text;
+        }
+
+        public bool WasCalled { get; private set; }
+
+        public bool CanExtract(
+            string fileName)
+        {
+            return fileName.EndsWith(
+                ".txt",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        public async Task<DocumentTextExtractionResult> ExtractAsync(
+            Stream documentStream,
+            string fileName,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            WasCalled = true;
+
+            _extractionStarted.TrySetResult(true);
+
+            await _releaseExtraction.Task.WaitAsync(
+                cancellationToken);
+
+            return new DocumentTextExtractionResult(
+                _text);
+        }
+
+        public Task WaitUntilExtractionStartedAsync()
+        {
+            return _extractionStarted.Task;
+        }
+
+        public void ReleaseExtraction()
+        {
+            _releaseExtraction.TrySetResult(true);
+        }
+    }
+
+    private sealed class ImmediateDocumentTextExtractor
+        : IDocumentTextExtractor
+    {
+        private readonly string _text;
+
+        public ImmediateDocumentTextExtractor(
+            string text)
+        {
+            _text = text;
+        }
+
+        public bool WasCalled { get; private set; }
+
+        public bool CanExtract(
+            string fileName)
+        {
+            return fileName.EndsWith(
+                ".txt",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        public Task<DocumentTextExtractionResult> ExtractAsync(
+            Stream documentStream,
+            string fileName,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            WasCalled = true;
+
+            return Task.FromResult(
+                new DocumentTextExtractionResult(
+                    _text));
         }
     }
 
