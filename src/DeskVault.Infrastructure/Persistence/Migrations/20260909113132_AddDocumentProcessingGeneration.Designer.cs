@@ -3,6 +3,7 @@ using System;
 using DeskVault.Infrastructure.Persistence.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeskVault.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(DeskVaultDbContext))]
-    partial class DeskVaultDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260909113132_AddDocumentProcessingGeneration")]
+    partial class AddDocumentProcessingGeneration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
@@ -59,9 +62,6 @@ namespace DeskVault.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("ImportedAt")
                         .HasColumnType("TEXT");
-
-                    b.Property<long>("LastSuccessfulProcessingGeneration")
-                        .HasColumnType("INTEGER");
 
                     b.Property<long>("ProcessingGeneration")
                         .HasColumnType("INTEGER");

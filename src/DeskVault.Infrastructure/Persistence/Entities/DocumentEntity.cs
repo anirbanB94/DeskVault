@@ -15,4 +15,8 @@ public sealed class DocumentEntity
     public int Status { get; set; }
 
     public string StoredFilePath { get; set; } = string.Empty;
+
+    public long ProcessingGeneration { get; set; }
+
+    public long LastSuccessfulProcessingGeneration { get; set; }
 }

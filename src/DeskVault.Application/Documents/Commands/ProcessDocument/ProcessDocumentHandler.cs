@@ -61,12 +61,19 @@ public sealed class ProcessDocumentHandler
                 "The requested document could not be found.");
         }
 
+        long processingGeneration = 0L;
+
         try
         {
-            document.MarkProcessing();
+            processingGeneration =
+                await _processingStore.AcquireProcessingGenerationAsync(
+                    document.Id,
+                    cancellationToken);
 
-            await _documentRepository.UpdateAsync(
-                document,
+            await _processingStore.PublishProcessingStateAsync(
+                document.Id,
+                processingGeneration,
+                DocumentStatus.Processing,
                 cancellationToken);
 
             var extractor =
@@ -96,19 +103,19 @@ public sealed class ProcessDocumentHandler
 
             await _processingStore.ReplaceChunksAsync(
                 document.Id,
+                processingGeneration,
                 chunks,
                 cancellationToken);
 
-            document.MarkIndexed();
-
-            await _documentRepository.UpdateAsync(
-                document,
+            await _processingStore.PublishProcessingStateAsync(
+                document.Id,
+                processingGeneration,
+                DocumentStatus.Indexed,
                 cancellationToken);
 
-            document.MarkAvailable();
-
-            await _documentRepository.UpdateAsync(
-                document,
+            await _processingStore.PublishSuccessfulProcessingAsync(
+                document.Id,
+                processingGeneration,
                 cancellationToken);
 
             _logger.LogInformation(
@@ -121,15 +128,26 @@ public sealed class ProcessDocumentHandler
         }
         catch (OperationCanceledException)
         {
+            if (processingGeneration > 0L)
+            {
+                await _processingStore.RecoverCancelledProcessingAsync(
+                    document.Id,
+                    processingGeneration,
+                    CancellationToken.None);
+            }
+
             throw;
         }
         catch (Exception ex)
         {
-            document.MarkFailed();
-
-            await _documentRepository.UpdateAsync(
-                document,
-                cancellationToken);
+            if (processingGeneration > 0L)
+            {
+                await _processingStore.PublishProcessingStateAsync(
+                    document.Id,
+                    processingGeneration,
+                    DocumentStatus.Failed,
+                    cancellationToken);
+            }
 
             _logger.LogError(
                 ex,

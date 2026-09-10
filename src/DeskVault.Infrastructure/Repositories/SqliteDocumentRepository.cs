@@ -55,7 +55,10 @@ public sealed class SqliteDocumentRepository
             Sha256Hash = document.Sha256Hash,
             ImportedAt = document.ImportedAt,
             Status = (int)document.Status,
-            StoredFilePath = document.StoredFilePath
+            StoredFilePath = document.StoredFilePath,
+            ProcessingGeneration = document.ProcessingGeneration,
+            LastSuccessfulProcessingGeneration =
+                document.LastSuccessfulProcessingGeneration
         };
 
         await dbContext.Documents.AddAsync(
@@ -179,6 +182,8 @@ public sealed class SqliteDocumentRepository
             entity.Sha256Hash,
             entity.StoredFilePath,
             entity.ImportedAt,
-            (DocumentStatus)entity.Status);
+            (DocumentStatus)entity.Status,
+            entity.ProcessingGeneration,
+            entity.LastSuccessfulProcessingGeneration);
     }
 }

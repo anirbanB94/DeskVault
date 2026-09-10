@@ -94,10 +94,12 @@ public sealed class ProcessingLifecycleSpikeTests
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
+            0L,
             newerChunks);
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
+            0L,
             olderChunks);
 
         IReadOnlyList<DocumentChunkEntity> persistedChunks =
@@ -140,13 +142,14 @@ public sealed class ProcessingLifecycleSpikeTests
         IReadOnlyList<DocumentChunk> chunks =
         [
             new DocumentChunk(
-            0,
-            "CANCELLED RESULT")
+                0,
+                "CANCELLED RESULT")
         ];
 
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => processingStore.ReplaceChunksAsync(
                 document.Id,
+                0L,
                 chunks,
                 cancellationTokenSource.Token));
 
@@ -179,29 +182,33 @@ public sealed class ProcessingLifecycleSpikeTests
         IReadOnlyList<DocumentChunk> firstResult =
         [
             new DocumentChunk(
-            0,
-            "FIRST"),
-        new DocumentChunk(
-            1,
-            "SECOND")
+                0,
+                "FIRST"),
+
+            new DocumentChunk(
+                1,
+                "SECOND")
         ];
 
         IReadOnlyList<DocumentChunk> repeatedResult =
         [
             new DocumentChunk(
-            0,
-            "FIRST"),
-        new DocumentChunk(
-            1,
-            "SECOND")
+                0,
+                "FIRST"),
+
+            new DocumentChunk(
+                1,
+                "SECOND")
         ];
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
+            0L,
             firstResult);
 
         await processingStore.ReplaceChunksAsync(
             document.Id,
+            0L,
             repeatedResult);
 
         IReadOnlyList<DocumentChunkEntity> persistedChunks =

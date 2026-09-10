@@ -16,6 +16,10 @@ public sealed class Document
 
     public string StoredFilePath { get; }
 
+    public long ProcessingGeneration { get; }
+
+    public long LastSuccessfulProcessingGeneration { get; }
+
     private Document(
         Guid id,
         string fileName,
@@ -23,7 +27,9 @@ public sealed class Document
         string sha256Hash,
         string storedFilePath,
         DateTime importedAt,
-        DocumentStatus status)
+        DocumentStatus status,
+        long processingGeneration,
+        long lastSuccessfulProcessingGeneration)
     {
         Id = id;
         FileName = fileName;
@@ -32,6 +38,9 @@ public sealed class Document
         StoredFilePath = storedFilePath;
         ImportedAt = importedAt;
         Status = status;
+        ProcessingGeneration = processingGeneration;
+        LastSuccessfulProcessingGeneration =
+            lastSuccessfulProcessingGeneration;
     }
 
     public static Document Create(
@@ -55,7 +64,9 @@ public sealed class Document
             sha256Hash,
             storedFilePath,
             DateTime.UtcNow,
-            DocumentStatus.Imported);
+            DocumentStatus.Imported,
+            0,
+            0);
     }
 
     public static Document Restore(
@@ -65,7 +76,9 @@ public sealed class Document
         string sha256Hash,
         string storedFilePath,
         DateTime importedAt,
-        DocumentStatus status)
+        DocumentStatus status,
+        long processingGeneration = 0,
+        long lastSuccessfulProcessingGeneration = 0)
     {
         Validate(
             id,
@@ -81,6 +94,27 @@ public sealed class Document
                 nameof(importedAt));
         }
 
+        if (processingGeneration < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(processingGeneration),
+                "Processing generation cannot be negative.");
+        }
+
+        if (lastSuccessfulProcessingGeneration < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(lastSuccessfulProcessingGeneration),
+                "Last successful processing generation cannot be negative.");
+        }
+
+        if (lastSuccessfulProcessingGeneration > processingGeneration)
+        {
+            throw new ArgumentException(
+                "Last successful processing generation cannot be greater than the current processing generation.",
+                nameof(lastSuccessfulProcessingGeneration));
+        }
+
         return new Document(
             id,
             fileName,
@@ -88,8 +122,11 @@ public sealed class Document
             sha256Hash,
             storedFilePath,
             importedAt,
-            status);
+            status,
+            processingGeneration,
+            lastSuccessfulProcessingGeneration);
     }
+
     public void MarkProcessing()
     {
         Status = DocumentStatus.Processing;
@@ -109,6 +146,7 @@ public sealed class Document
     {
         Status = DocumentStatus.Failed;
     }
+
     private static void Validate(
         Guid id,
         string fileName,

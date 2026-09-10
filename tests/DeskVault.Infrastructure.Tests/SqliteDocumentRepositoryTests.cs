@@ -60,6 +60,79 @@ public sealed class SqliteDocumentRepositoryTests
     }
 
     [Fact]
+    public async Task AddAsync_WhenDocumentHasProcessingGeneration_PersistsAndRestoresGeneration()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        Document document =
+            Document.Restore(
+                Guid.NewGuid(),
+                "document.txt",
+                "Test Document",
+                $"sha256-test-hash-{Guid.NewGuid():N}",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Processing,
+                7);
+
+        await repository.AddAsync(
+            document);
+
+        Document? result =
+            await repository.GetByIdAsync(
+                document.Id);
+
+        Assert.NotNull(result);
+
+        Assert.Equal(
+            7L,
+            result.ProcessingGeneration);
+    }
+
+    [Fact]
+    public async Task AddAsync_WhenDocumentHasLastSuccessfulProcessingGeneration_PersistsAndRestoresGeneration()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        Document document =
+            Document.Restore(
+                Guid.NewGuid(),
+                "document.txt",
+                "Test Document",
+                $"sha256-test-hash-{Guid.NewGuid():N}",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available,
+                7,
+                5);
+
+        await repository.AddAsync(
+            document);
+
+        Document? result =
+            await repository.GetByIdAsync(
+                document.Id);
+
+        Assert.NotNull(result);
+
+        Assert.Equal(
+            7L,
+            result.ProcessingGeneration);
+
+        Assert.Equal(
+            5L,
+            result.LastSuccessfulProcessingGeneration);
+    }
+
+    [Fact]
     public async Task ExistsByHashAsync_WhenHashExists_ReturnsTrue()
     {
         await using SqliteConnection connection =
