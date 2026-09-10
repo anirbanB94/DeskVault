@@ -134,12 +134,29 @@ successful repeated processing does not accumulate duplicate chunks.
 Cancellation remains cooperative and must continue to propagate through the
 processing pipeline.
 
-A cancelled processing attempt must not leave misleading derived content
-published as though that attempt completed successfully.
+A cancelled processing attempt must not leave the document permanently in
+`Processing` or publish misleading derived content as though that attempt
+completed successfully.
 
-Processing failures must not result in a document being reported as
-successfully processed when the derived result is incomplete or belongs to an
-obsolete attempt.
+When a processing attempt is cancelled:
+
+- The cancelled processing generation remains obsolete and must not publish
+  further state or derived content.
+- If the document already has a previously successful derived result, the
+  document returns to `Available` and the existing derived content remains
+  intact.
+- If the document has no previously successful derived result, the document
+  returns to `Imported`.
+- Cancellation must not remove or replace previously successful chunks.
+- The cancellation recovery state transition must itself be conditional on
+  the processing generation remaining authoritative, so an obsolete attempt
+  cannot overwrite a newer attempt's state.
+
+Processing failures remain distinct from cancellation. A non-cancellation
+processing failure must publish `Failed` only when the failing processing
+generation is still authoritative. Failures must not result in a document
+being reported as successfully processed when the derived result is
+incomplete or belongs to an obsolete attempt.
 
 Cancellation and failure handling must respect the same authoritative
 generation used for successful publication.
