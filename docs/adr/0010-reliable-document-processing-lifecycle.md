@@ -161,6 +161,37 @@ incomplete or belongs to an obsolete attempt.
 Cancellation and failure handling must respect the same authoritative
 generation used for successful publication.
 
+### Last Successful Processing Generation
+
+The document persistence boundary also records the last processing generation
+whose derived result was successfully published.
+
+`ProcessingGeneration` identifies the current authoritative processing attempt.
+`LastSuccessfulProcessingGeneration` identifies the most recent processing
+attempt for which derived content and the corresponding successful document
+state were published.
+
+These values serve different purposes and must not be treated as interchangeable.
+
+A successful processing attempt updates `LastSuccessfulProcessingGeneration`
+only after its derived content has been durably replaced and its successful
+processing state has been published.
+
+Starting a new processing attempt advances `ProcessingGeneration` but does not
+change `LastSuccessfulProcessingGeneration`.
+
+When a processing attempt is cancelled:
+
+- If `LastSuccessfulProcessingGeneration` identifies a previously successful
+  result, cancellation recovery publishes `Available` and preserves that
+  result.
+- If no successful processing generation exists, cancellation recovery
+  publishes `Imported`.
+- Cancellation must not modify `LastSuccessfulProcessingGeneration`.
+
+All updates to `LastSuccessfulProcessingGeneration` and cancellation recovery
+remain conditional on the processing generation being authoritative.
+
 ### Concurrency
 
 For repeated processing of the same document, persistence behavior must be
