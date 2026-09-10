@@ -2,11 +2,12 @@ using System.Security.Cryptography;
 using System.Text;
 using DeskVault.Application;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
+using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
-using DeskVault.Infrastructure;
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
+using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -36,6 +37,12 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
 
         Guid secondChunkId =
             Guid.NewGuid();
+
+        const string firstChunkText =
+            "The plaintext migration test contains searchable content.";
+
+        const string secondChunkText =
+            "This second chunk verifies that chunk ordering and content survive migration.";
 
         DateTime importedAt =
             new DateTime(
@@ -133,6 +140,10 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 var searchHandler =
                     verificationServiceProvider.GetRequiredService<SearchDocumentsHandler>();
 
+                var dbContextFactory =
+                    verificationServiceProvider.GetRequiredService<
+                        IDbContextFactory<DeskVaultDbContext>>();
+
                 IReadOnlyList<Document> allDocuments =
                     await repository.GetAllAsync();
 
@@ -181,6 +192,87 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                         "Documents",
                         "migration-test.dvault"),
                     document.StoredFilePath);
+
+                await using DeskVaultDbContext dbContext =
+                    await dbContextFactory.CreateDbContextAsync();
+
+                List<DocumentChunkEntity> chunks =
+                    await dbContext.DocumentChunks
+                        .AsNoTracking()
+                        .Where(
+                            chunk =>
+                                chunk.DocumentId == documentId)
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .ToListAsync();
+
+                Assert.Equal(
+                    2,
+                    chunks.Count);
+
+                DocumentChunkEntity firstChunk =
+                    Assert.Single(
+                        chunks,
+                        chunk => chunk.Order == 0);
+
+                DocumentChunkEntity secondChunk =
+                    Assert.Single(
+                        chunks,
+                        chunk => chunk.Order == 1);
+
+                Assert.NotEqual(
+                    firstChunkId,
+                    firstChunk.Id);
+
+                Assert.NotEqual(
+                    secondChunkId,
+                    secondChunk.Id);
+
+                Assert.Equal(
+                    DocumentChunkIdentity.CreateLogicalId(
+                        documentId,
+                        0),
+                    firstChunk.Id);
+
+                Assert.Equal(
+                    DocumentChunkIdentity.CreateLogicalId(
+                        documentId,
+                        1),
+                    secondChunk.Id);
+
+                Assert.Equal(
+                    documentId,
+                    firstChunk.DocumentId);
+
+                Assert.Equal(
+                    documentId,
+                    secondChunk.DocumentId);
+
+                Assert.Equal(
+                    firstChunkText,
+                    firstChunk.Text);
+
+                Assert.Equal(
+                    secondChunkText,
+                    secondChunk.Text);
+
+                Assert.Equal(
+                    DocumentChunkIdentity.ComputeContentHash(
+                        firstChunkText),
+                    firstChunk.ContentHash);
+
+                Assert.Equal(
+                    DocumentChunkIdentity.ComputeContentHash(
+                        secondChunkText),
+                    secondChunk.ContentHash);
+
+                Assert.Equal(
+                    0L,
+                    firstChunk.ProcessingGeneration);
+
+                Assert.Equal(
+                    0L,
+                    secondChunk.ProcessingGeneration);
 
                 IReadOnlyList<SearchDocumentsResult> searchResults =
                     await searchHandler.HandleAsync(

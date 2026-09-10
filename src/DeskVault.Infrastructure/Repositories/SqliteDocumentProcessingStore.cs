@@ -312,13 +312,25 @@ public sealed class SqliteDocumentProcessingStore
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                Guid logicalId =
+                    DocumentChunkIdentity.CreateLogicalId(
+                        documentId,
+                        chunk.Order);
+
+                string contentHash =
+                    DocumentChunkIdentity.ComputeContentHash(
+                        chunk.Text);
+
                 await dbContext.DocumentChunks.AddAsync(
                     new DocumentChunkEntity
                     {
-                        Id = Guid.NewGuid(),
+                        Id = logicalId,
                         DocumentId = documentId,
                         Order = chunk.Order,
-                        Text = chunk.Text
+                        Text = chunk.Text,
+                        ContentHash = contentHash,
+                        ProcessingGeneration =
+                            processingGeneration
                     },
                     cancellationToken);
             }
