@@ -5,7 +5,11 @@
 ## Product / Sprint Context
 
 - Product Backlog Item / Issue:
+- Milestone:
 - Sprint:
+- Technical Task:
+- Related Technical Task (if any):
+- Related Spike (if any):
 
 ## Changes
 
