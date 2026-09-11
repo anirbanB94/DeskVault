@@ -6,6 +6,10 @@ using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
+using DeskVault.Application.Documents.Extraction.IniDocument;
+using DeskVault.Application.Documents.Extraction.JsonDocument;
+using DeskVault.Application.Documents.Extraction.XmlDocument;
+using DeskVault.Application.Documents.Extraction.YamlDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
@@ -18,6 +22,7 @@ using DeskVault.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
 
 namespace DeskVault.Integration.Tests;
 
@@ -26,6 +31,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
     private readonly SqliteConnection _connection;
 
     private readonly FileSystemStorageService _storageService;
+
+    private readonly byte[] _encryptionKey;
 
     public DeskVaultDataPaths DataPaths { get; }
 
@@ -39,15 +46,22 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
     public ReconcileDocumentArtifactsHandler ReconciliationHandler { get; }
 
+    public EncryptedDocumentReader DocumentReader { get; }
+
     public DocumentPipelineTestHarness(
         string rootDirectory,
         string databasePath,
         byte[] encryptionKey,
         IEnumerable<IDocumentTextExtractor>? extractors = null)
     {
+        ArgumentNullException.ThrowIfNull(encryptionKey);
+
         DataPaths =
             new DeskVaultDataPaths(
                 rootDirectory);
+
+        _encryptionKey =
+            encryptionKey.ToArray();
 
         _connection =
             CreateConnection(
@@ -65,7 +79,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         var encryptionService =
             new DocumentEncryptionService(
                 new TestEncryptionKeyService(
-                    encryptionKey),
+                    _encryptionKey),
                 NullLogger<DocumentEncryptionService>.Instance);
 
         _storageService =
@@ -74,7 +88,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 DataPaths,
                 NullLogger<FileSystemStorageService>.Instance);
 
-        var reader =
+        DocumentReader =
             new EncryptedDocumentReader(
                 encryptionService,
                 NullLogger<EncryptedDocumentReader>.Instance);
@@ -85,19 +99,19 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 [
                     new TextDocumentTextExtractor(),
                     new MarkdownDocumentTextExtractor(),
-                    new CsvDocumentTextExtractor()
+                    new CsvDocumentTextExtractor(),
+                    new JsonDocumentTextExtractor(),
+                    new XmlDocumentTextExtractor(),
+                    new YamlDocumentTextExtractor(),
+                    new IniDocumentTextExtractor()
                 ]);
 
         var processHandler =
-            new ProcessDocumentHandler(
+            CreateProcessHandler(
                 repository,
-                reader,
-                extractorResolver,
-                new DocumentTextNormalizer(),
-                new DocumentTextChunker(
-                    maxChunkSize: 4000),
                 processingStore,
-                NullLogger<ProcessDocumentHandler>.Instance);
+                DocumentReader,
+                extractorResolver);
 
         ProcessingService =
             new DocumentProcessingService(
@@ -128,7 +142,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 repository,
                 new DocumentArtifactEnumerator(
                     DataPaths),
-                reader,
+                DocumentReader,
                 NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
     }
 
@@ -187,42 +201,58 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             cancellationToken);
     }
 
+    private ProcessDocumentHandler CreateProcessHandler(
+        SqliteDocumentRepository repository,
+        SqliteDocumentProcessingStore processingStore,
+        EncryptedDocumentReader reader,
+        DocumentTextExtractorResolver extractorResolver)
+    {
+        return new ProcessDocumentHandler(
+            repository,
+            reader,
+            extractorResolver,
+            new DocumentTextNormalizer(),
+            new DocumentTextChunker(
+                maxChunkSize: 4000),
+            processingStore,
+            NullLogger<ProcessDocumentHandler>.Instance);
+    }
+
     private SqliteDocumentRepository CreateRepository()
     {
         return new SqliteDocumentRepository(
-            CreateFactory(),
+            CreateFactory(
+                _connection),
             NullLogger<SqliteDocumentRepository>.Instance);
     }
 
     private SqliteDocumentProcessingStore CreateProcessingStore()
     {
         return new SqliteDocumentProcessingStore(
-            CreateFactory(),
+            CreateFactory(
+                _connection),
             NullLogger<SqliteDocumentProcessingStore>.Instance);
     }
 
     private SqliteDocumentSearchStore CreateSearchStore()
     {
         return new SqliteDocumentSearchStore(
-            CreateFactory(),
+            CreateFactory(
+                _connection),
             NullLogger<SqliteDocumentSearchStore>.Instance);
     }
 
-    private IDbContextFactory<DeskVaultDbContext> CreateFactory()
+    private IDbContextFactory<DeskVaultDbContext> CreateFactory(
+        SqliteConnection connection)
     {
         return new TestDbContextFactory(
-            _connection);
+            connection);
     }
 
     private DeskVaultDbContext CreateContext()
     {
-        DbContextOptions<DeskVaultDbContext> options =
-            new DbContextOptionsBuilder<DeskVaultDbContext>()
-                .UseSqlite(_connection)
-                .Options;
-
-        return new DeskVaultDbContext(
-            options);
+        return CreateContext(
+            _connection);
     }
 
     private static SqliteConnection CreateConnection(
@@ -257,13 +287,16 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        CryptographicOperations.ZeroMemory(
+            _encryptionKey);
+
         if (_connection.State !=
             System.Data.ConnectionState.Closed)
         {
             await _connection.CloseAsync();
         }
 
-        _connection.Dispose();
+        await _connection.DisposeAsync();
     }
 
     private sealed class TestDbContextFactory
