@@ -1,0 +1,3 @@
+namespace DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
+
+public sealed record ReconcileDocumentArtifactsQuery;

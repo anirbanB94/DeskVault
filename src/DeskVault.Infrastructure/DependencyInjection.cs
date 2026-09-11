@@ -50,6 +50,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IDocumentSearchStore, SqliteDocumentSearchStore>();
 
+        services.AddSingleton<IDocumentArtifactEnumerator, DocumentArtifactEnumerator>();
+
         return services;
     }
 }

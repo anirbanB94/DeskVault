@@ -8,6 +8,7 @@ using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
@@ -24,6 +25,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 {
     private readonly SqliteConnection _connection;
 
+    private readonly FileSystemStorageService _storageService;
+
     public DeskVaultDataPaths DataPaths { get; }
 
     public ImportDocumentHandler ImportHandler { get; }
@@ -33,6 +36,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
     public SearchDocumentsHandler SearchHandler { get; }
 
     public RemoveDocumentHandler RemoveHandler { get; }
+
+    public ReconcileDocumentArtifactsHandler ReconciliationHandler { get; }
 
     public DocumentPipelineTestHarness(
         string rootDirectory,
@@ -63,7 +68,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     encryptionKey),
                 NullLogger<DocumentEncryptionService>.Instance);
 
-        var storageService =
+        _storageService =
             new FileSystemStorageService(
                 encryptionService,
                 DataPaths,
@@ -103,7 +108,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 new ImportDocumentValidator(),
                 new Sha256HashService(
                     NullLogger<Sha256HashService>.Instance),
-                storageService,
+                _storageService,
                 repository,
                 NullLogger<ImportDocumentHandler>.Instance);
 
@@ -115,8 +120,16 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         RemoveHandler =
             new RemoveDocumentHandler(
                 repository,
-                storageService,
+                _storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
+
+        ReconciliationHandler =
+            new ReconcileDocumentArtifactsHandler(
+                repository,
+                new DocumentArtifactEnumerator(
+                    DataPaths),
+                reader,
+                NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
     }
 
     public async Task<Document?> GetDocumentAsync(
@@ -137,6 +150,16 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         return await repository.GetAllAsync();
     }
 
+    public async Task PersistDocumentAsync(
+        Document document)
+    {
+        var repository =
+            CreateRepository();
+
+        await repository.AddAsync(
+            document);
+    }
+
     public async Task<List<DocumentChunkEntity>> GetChunksAsync(
         Guid documentId)
     {
@@ -151,6 +174,17 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             .OrderBy(
                 chunk => chunk.Order)
             .ToListAsync();
+    }
+
+    public Task StoreArtifactAsync(
+        string sourceFilePath,
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        return _storageService.StoreAsync(
+            sourceFilePath,
+            documentId,
+            cancellationToken);
     }
 
     private SqliteDocumentRepository CreateRepository()

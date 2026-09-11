@@ -14,6 +14,7 @@ using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
+using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,8 @@ public static class DependencyInjection
         services.AddSingleton<RemoveDocumentHandler>();
 
         services.AddSingleton<SearchDocumentsHandler>();
+
+        services.AddSingleton<ReconcileDocumentArtifactsHandler>();
 
         services.AddSingleton<IDocumentTextExtractor, TextDocumentTextExtractor>();
 
