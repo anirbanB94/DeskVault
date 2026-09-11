@@ -26,6 +26,8 @@ public static class DependencyInjection
 
         services.AddSingleton<DatabaseInitializer>();
 
+        services.AddSingleton<DocumentChunkIdentityBackfill>();
+
         services.AddSingleton<IHashService, Sha256HashService>();
 
         services.AddSingleton<IEncryptionKeyService, WindowsEncryptionKeyService>();

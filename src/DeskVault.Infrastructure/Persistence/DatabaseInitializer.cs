@@ -20,6 +20,7 @@ public sealed class DatabaseInitializer
     private readonly IDatabaseFormatDetector _databaseFormatDetector;
     private readonly IDatabaseEncryptionKeyService _databaseEncryptionKeyService;
     private readonly IDatabaseEncryptionMigrator _databaseEncryptionMigrator;
+    private readonly DocumentChunkIdentityBackfill _documentChunkIdentityBackfill;
     private readonly ILogger<DatabaseInitializer> _logger;
 
     public DatabaseInitializer(
@@ -28,6 +29,7 @@ public sealed class DatabaseInitializer
         IDatabaseFormatDetector databaseFormatDetector,
         IDatabaseEncryptionKeyService databaseEncryptionKeyService,
         IDatabaseEncryptionMigrator databaseEncryptionMigrator,
+        DocumentChunkIdentityBackfill documentChunkIdentityBackfill,
         ILogger<DatabaseInitializer> logger)
     {
         _dbContextFactory = dbContextFactory;
@@ -35,6 +37,7 @@ public sealed class DatabaseInitializer
         _databaseFormatDetector = databaseFormatDetector;
         _databaseEncryptionKeyService = databaseEncryptionKeyService;
         _databaseEncryptionMigrator = databaseEncryptionMigrator;
+        _documentChunkIdentityBackfill = documentChunkIdentityBackfill;
         _logger = logger;
     }
 
@@ -68,6 +71,9 @@ public sealed class DatabaseInitializer
                     cancellationToken);
 
             await dbContext.Database.MigrateAsync(
+                cancellationToken);
+
+            await _documentChunkIdentityBackfill.BackfillAsync(
                 cancellationToken);
 
             if (migrationBackupExists)

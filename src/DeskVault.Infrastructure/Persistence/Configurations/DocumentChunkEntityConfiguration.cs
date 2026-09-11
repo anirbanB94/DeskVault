@@ -31,6 +31,15 @@ public sealed class DocumentChunkEntityConfiguration
                 chunk => chunk.Text)
             .IsRequired();
 
+        builder.Property(
+                chunk => chunk.ContentHash)
+            .IsRequired()
+            .HasMaxLength(64);
+
+        builder.Property(
+                chunk => chunk.ProcessingGeneration)
+            .IsRequired();
+
         builder.HasOne<DocumentEntity>()
             .WithMany()
             .HasForeignKey(
