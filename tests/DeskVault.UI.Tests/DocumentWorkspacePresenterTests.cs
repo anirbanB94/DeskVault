@@ -287,6 +287,68 @@ public sealed class DocumentWorkspacePresenterTests
             Times.Once);
     }
 
+    [Theory]
+    [InlineData("document.html")]
+    [InlineData("document.htm")]
+    public async Task OpenExternally_HtmlDocument_UsesExternalViewer(
+        string fileName)
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document document =
+            CreateDocument(
+                documentId,
+                fileName);
+
+        var repository =
+            CreateRepository(
+                document);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var view =
+            new Mock<IDocumentWorkspaceView>();
+
+        var documentViewer =
+            new Mock<IDocumentViewer>();
+
+        var presenter =
+            CreatePresenter(
+                view,
+                documentViewer,
+                repository,
+                storageService);
+
+        using var stream =
+            CreateDocumentStream();
+
+        await presenter.OpenAsync(
+            documentId,
+            stream,
+            document.FileName);
+
+        stream.Position =
+            stream.Length;
+
+        view.Raise(
+            x => x.OpenExternallyRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        Assert.Equal(
+            0,
+            stream.Position);
+
+        documentViewer.Verify(
+            x => x.OpenAsync(
+                stream,
+                document.FileName),
+            Times.Once);
+    }
+
     [Fact]
     public async Task OpenExternally_WithoutCurrentDocument_DoesNothing()
     {
