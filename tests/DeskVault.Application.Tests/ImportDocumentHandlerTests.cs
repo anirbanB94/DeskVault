@@ -347,6 +347,87 @@ public sealed class ImportDocumentHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenMetadataPersistenceFailsAfterStorageSucceeds_PropagatesFailure()
+    {
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        validator
+            .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-hash");
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                "test-hash",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("stored/test.txt");
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    "Metadata persistence failed."));
+
+        var handler =
+            CreateHandler(
+                validator.Object,
+                hashService.Object,
+                storageService.Object,
+                repository);
+
+        var command =
+            new ImportDocumentCommand(
+                "C:\\Documents\\test.txt",
+                "Test Document");
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () =>
+                handler.HandleAsync(command));
+
+        storageService.Verify(
+            x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenStorageFails_ReturnsStorageFailed()
     {
         var validator =
