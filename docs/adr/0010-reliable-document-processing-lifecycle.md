@@ -54,6 +54,14 @@ can identify which processing attempt is current and prevent obsolete
 attempts
 from publishing state or derived content.
 
+Document processing lifecycle consistency is distinct from document-artifact
+consistency. A persisted document record and its encrypted `.dvault` artifact
+cross a database/filesystem persistence boundary. An interrupted import or
+removal can therefore leave metadata and the corresponding encrypted
+artifact temporarily inconsistent. That consistency problem must be handled
+by document-artifact reconciliation rather than by changing the processing
+generation model.
+
 ## Decision
 
 DeskVault will use a **monotonic processing generation** as the authoritative
@@ -220,6 +228,48 @@ storage, or AI processing.
 The existing encrypted SQLite provider and database key-management boundary
 remain unchanged.
 
+### Document Artifact Consistency
+
+Document processing lifecycle consistency and document-artifact consistency
+are separate architectural concerns.
+
+The document record in SQLite is the authoritative metadata representation,
+while the corresponding encrypted `.dvault` artifact is the authoritative
+stored-content representation. Their relationship crosses the database and
+filesystem persistence boundary.
+
+Artifact reconciliation is therefore responsible for detecting and safely
+classifying inconsistencies such as:
+
+- a persisted document record whose expected encrypted artifact is missing;
+- an encrypted artifact with no corresponding persisted document record;
+- an encrypted artifact that exists but cannot be opened or validated;
+- incomplete import or removal operations that leave metadata and artifacts
+  inconsistent.
+
+Artifact reconciliation must not alter the processing-generation authority
+defined by this ADR.
+
+In particular:
+
+- reconciliation must not treat a missing artifact as empty document content;
+- reconciliation must not silently recreate or overwrite encrypted content;
+- reconciliation must not silently activate an orphaned artifact as a
+  document;
+- reconciliation must not delete valid content without sufficient evidence
+  and an explicit safe recovery decision;
+- reconciliation must preserve the existing encrypted storage and
+  key-management boundaries.
+
+Document-artifact reconciliation is an Application-level consistency
+capability implemented through application-defined storage abstractions.
+Filesystem inspection and encrypted-artifact validation remain Infrastructure
+concerns.
+
+This reconciliation boundary is intentionally separate from database
+migration recovery. Database migration recovery remains owned by database
+initialization and migration behavior.
+
 ### Chunk Identity and Provenance
 
 Processing generation provides the lifecycle identity required to prevent
@@ -299,6 +349,7 @@ Stable chunk identity and provenance are addressed separately.
 * Existing transactional chunk replacement remains useful.
 * Processing-specific lifecycle concerns remain separated from generic document
   CRUD.
+* Document-artifact consistency has a distinct reconciliation boundary.
 * Application and Domain remain independent of EF Core and SQLite.
 * The design remains compatible with the existing encrypted SQLite persistence
   boundary.
@@ -312,9 +363,12 @@ Stable chunk identity and provenance are addressed separately.
 * Existing repository and processing-store contracts may require
   processing-specific lifecycle operations.
 * Database schema evolution requires an EF Core migration.
+* Document-artifact reconciliation requires additional detection, validation,
+  and recovery-path tests.
 
 These trade-offs are acceptable because stale-result protection is required
-for a reliable document-processing lifecycle.
+for a reliable document-processing lifecycle and artifact consistency must be
+handled explicitly at the database/filesystem boundary.
 
 ## Implementation Constraints
 
@@ -332,11 +386,18 @@ The implementation must:
 * avoid logging sensitive document or security material;
 * preserve the encrypted SQLite database boundary and existing database key
   management;
-* remain independent of search, embeddings, vectors, and AI processing.
+* remain independent of search, embeddings, vectors, and AI processing;
+* keep document-artifact reconciliation separate from processing-generation
+  authority;
+* never silently recreate, overwrite, or activate document artifacts during
+  reconciliation;
+* keep destructive artifact cleanup behind an explicit safe recovery decision
+  supported by sufficient evidence.
 
 The exact Application method signatures, EF Core implementation details,
 migration shape, and test structure are implementation concerns of the
-reliable processing work.
+reliable processing work and the separate document-artifact reconciliation
+work.
 
 ## Related Decisions and Work
 
@@ -349,8 +410,13 @@ reliable processing work.
 * The reliable document processing lifecycle investigation established the
   need for authoritative processing-attempt identity and stale-result
   protection.
+* The document-artifact reconciliation work establishes a separate
+  consistency boundary between persisted document metadata and encrypted
+  document artifacts.
 * The implementation is tracked by the reliable document processing task.
 * Stable chunk identity and provenance are tracked separately.
+* Document-artifact reconciliation is tracked separately from database
+  migration recovery.
 
 ## Result
 
@@ -360,7 +426,10 @@ identity of a document-processing attempt.
 Processing state and derived content may be published only while the
 processing attempt remains authoritative.
 
-This provides the lifecycle guarantee required to prevent obsolete processing
-attempts from overwriting newer document state or derived content while
-preserving the existing document-processing architecture and persistence
-boundaries.
+Document-artifact consistency is handled separately through reconciliation
+between persisted document metadata and encrypted `.dvault` artifacts.
+
+This separation prevents obsolete processing attempts from overwriting newer
+document state or derived content while ensuring that database/filesystem
+artifact inconsistencies are detected and handled without weakening encrypted
+storage or key-management boundaries.
