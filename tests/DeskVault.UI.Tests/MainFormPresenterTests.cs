@@ -31,7 +31,8 @@ public sealed class MainFormPresenterTests
 
         searchStore
             .Setup(x => x.SearchAsync(
-                "security",
+                It.Is<SearchDocumentsQuery>(
+                    query => query.SearchText == "security"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 CreateSearchResults(
@@ -62,7 +63,8 @@ public sealed class MainFormPresenterTests
 
         searchStore.Verify(
             x => x.SearchAsync(
-                "security",
+                It.Is<SearchDocumentsQuery>(
+                    query => query.SearchText == "security"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -86,7 +88,8 @@ public sealed class MainFormPresenterTests
 
         searchStore
             .Setup(x => x.SearchAsync(
-                "unknown",
+                It.Is<SearchDocumentsQuery>(
+                    query => query.SearchText == "unknown"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 []);
@@ -115,7 +118,8 @@ public sealed class MainFormPresenterTests
 
         searchStore.Verify(
             x => x.SearchAsync(
-                "unknown",
+                It.Is<SearchDocumentsQuery>(
+                    query => query.SearchText == "unknown"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -151,7 +155,8 @@ public sealed class MainFormPresenterTests
 
         searchStore
             .Setup(x => x.SearchAsync(
-                searchText,
+                It.Is<SearchDocumentsQuery>(
+                    query => query.SearchText == searchText),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new InvalidOperationException(
@@ -181,7 +186,8 @@ public sealed class MainFormPresenterTests
 
         searchStore.Verify(
             x => x.SearchAsync(
-                searchText,
+                It.Is<SearchDocumentsQuery>(
+                    query => query.SearchText == searchText),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
