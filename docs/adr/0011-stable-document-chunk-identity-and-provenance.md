@@ -6,8 +6,8 @@ Accepted
 
 ## Context
 
-DeskVault processes imported documents through a separate
-Application-layer workflow:
+DeskVault processes imported documents through a separate Application-layer
+workflow:
 
 ```text
 Stored Document
@@ -83,22 +83,22 @@ The implementation uses a deterministic SHA-256-derived GUID.
 
 The identity domain is the UTF-8 string:
 
-``` text
+```text
 DeskVault.DocumentChunk.v1
 ```
 
 The identity input is the concatenation of:
 
-1.  the UTF-8 bytes of the identity domain;
-2.  the 16 bytes produced by `Guid.TryWriteBytes` for `DocumentId`;
-3.  the 4-byte signed little-endian representation of `Order`.
+1. the UTF-8 bytes of the identity domain;
+2. the 16 bytes produced by `Guid.TryWriteBytes` for `DocumentId`;
+3. the 4-byte signed little-endian representation of `Order`.
 
 The SHA-256 hash of that byte sequence is computed, and the first 16
 bytes of the hash are used to construct the resulting `Guid`.
 
 Conceptually:
 
-``` text
+```text
 LogicalId =
     Guid(
         SHA256(
@@ -278,15 +278,15 @@ through the transition.
 Legacy chunk rows are backfilled after EF Core migrations complete. The
 backfill:
 
--   reads existing chunks without tracking;
--   deterministically derives the logical `Id` from `DocumentId` and
-    `Order`;
--   derives `ContentHash` from the existing chunk text;
--   assigns `ProcessingGeneration = 0` because the historical producing
-    generation is not available;
--   replaces the legacy rows inside a database transaction so the
-    transition is atomic;
--   is idempotent when the rows already conform to the contract.
+- reads existing chunks without tracking;
+- deterministically derives the logical `Id` from `DocumentId` and
+  `Order`;
+- derives `ContentHash` from the existing chunk text;
+- assigns `ProcessingGeneration = 0` because the historical producing
+  generation is not available;
+- replaces the legacy rows inside a database transaction so the
+  transition is atomic;
+- is idempotent when the rows already conform to the contract.
 
 The transition replaces legacy random chunk IDs because repository/code
 inspection established that those IDs have no external consumers outside
@@ -350,39 +350,39 @@ implementation details.
 
 ### Positive
 
--   Logically equivalent processed chunks can retain stable
-    application-level identity under the same chunking contract.
--   Changed content can be distinguished through separate content
-    identity.
--   Changed chunk boundaries are explicitly treated as new logical
-    occurrences rather than requiring fuzzy lineage.
--   Every chunk can be traced to its source document.
--   Persisted chunks can record the processing representation that
-    produced them.
--   Current search can continue to resolve chunks to source documents.
--   Future retrieval and source-grounded capabilities have a canonical
-    reference point.
--   The contract remains independent of search engines, embeddings,
-    vectors, and AI implementations.
--   Existing Application/Infrastructure architectural boundaries remain
-    intact.
--   Processing lifecycle and chunk representation concerns remain
-    separately governed.
--   Legacy persisted chunks can be transitioned without losing their
-    document, order, or text content.
+- Logically equivalent processed chunks can retain stable
+  application-level identity under the same chunking contract.
+- Changed content can be distinguished through separate content
+  identity.
+- Changed chunk boundaries are explicitly treated as new logical
+  occurrences rather than requiring fuzzy lineage.
+- Every chunk can be traced to its source document.
+- Persisted chunks can record the processing representation that
+  produced them.
+- Current search can continue to resolve chunks to source documents.
+- Future retrieval and source-grounded capabilities have a canonical
+  reference point.
+- The contract remains independent of search engines, embeddings,
+  vectors, and AI implementations.
+- Existing Application/Infrastructure architectural boundaries remain
+  intact.
+- Processing lifecycle and chunk representation concerns remain
+  separately governed.
+- Legacy persisted chunks can be transitioned without losing their
+  document, order, or text content.
 
 ### Negative
 
--   The persistence model becomes richer.
--   Existing persisted data requires schema evolution and transition
-    handling.
--   Identity and content hashing introduce additional deterministic
-    behavior that requires explicit tests.
--   Source-location support may vary by extraction format.
--   The exact stable identity construction is now part of the canonical
-    contract and must not be changed silently.
--   Legacy rows retain `ProcessingGeneration = 0` because their
-    historical producing generation cannot be reconstructed.
+- The persistence model becomes richer.
+- Existing persisted data requires schema evolution and transition
+  handling.
+- Identity and content hashing introduce additional deterministic
+  behavior.
+- Source-location support may vary by extraction format.
+- The exact stable identity construction is now part of the canonical
+  contract and must not be changed silently.
+- Legacy rows retain `ProcessingGeneration = 0` because their
+  historical producing generation cannot be reconstructed.
 
 These trade-offs are acceptable because stable, traceable canonical
 derived content is a prerequisite for reliable future retrieval and
@@ -392,59 +392,37 @@ source-grounded capabilities.
 
 The implementation must:
 
--   preserve the Application/Infrastructure dependency boundary;
--   keep the chunker independent of persistence and database concerns;
--   establish deterministic logical chunk identity;
--   keep logical identity separate from content identity;
--   preserve document provenance;
--   preserve processing-generation provenance;
--   preserve deterministic ordering;
--   preserve existing transactional chunk replacement;
--   preserve cancellation and stale-attempt protections established by
-    ADR-0010;
--   preserve existing search-to-document traceability;
--   provide a safe EF Core migration/transition for existing persisted
-    data;
--   avoid sensitive document content or security material in logs;
--   remain independent of embeddings, vectors, RAG, and AI.
+- preserve the Application/Infrastructure dependency boundary;
+- keep the chunker independent of persistence and database concerns;
+- establish deterministic logical chunk identity;
+- keep logical identity separate from content identity;
+- preserve document provenance;
+- preserve processing-generation provenance;
+- preserve deterministic ordering;
+- preserve existing transactional chunk replacement;
+- preserve cancellation and stale-attempt protections established by
+  ADR-0010;
+- preserve existing search-to-document traceability;
+- provide a safe EF Core migration/transition for existing persisted
+  data;
+- avoid sensitive document content or security material in logs;
+- remain independent of embeddings, vectors, RAG, and AI.
 
 The deterministic identity contract specifically requires the
 `DeskVault.DocumentChunk.v1` domain, `DocumentId` byte representation,
 little-endian `Order` representation, SHA-256 hashing, and first-16-byte
 GUID construction described above.
 
-## Validation
-
-The implementation was validated with:
-
--   focused Application identity tests: 7/7 passed;
--   focused Infrastructure persistence identity tests: 5/5 passed;
--   focused legacy migration integration test: 1/1 passed;
--   focused backfill tests: 5/5 passed;
--   full Infrastructure test suite: 125/125 passed;
--   full solution test suite: 503/503 passed;
--   solution build: succeeded;
--   `git diff --check`: clean.
-
-The validation covers deterministic identity, separation of identity and
-content hash, persistence of document/order/content/provenance, legacy
-backfill, idempotence, cancellation behavior, migration compatibility,
-search traceability, and regression behavior.
-
 ## Related Decisions and Work
 
--   ADR-0002 defines the vertical-slice architecture and the
-    Domain/Application/Infrastructure boundaries.
--   ADR-0005 establishes SQLite with EF Core as the local persistence
-    boundary for document metadata and derived processing results.
--   ADR-0009 establishes the encrypted SQLite provider and database
-    key-management boundary.
--   ADR-0010 establishes authoritative processing generation and
-    stale-result protection for the document-processing lifecycle.
--   Technical task #75 defines and implements the stable document chunk
-    identity and provenance contract.
--   Parent PBI #21 expands DeskVault's supported text-oriented knowledge
-    formats.
+- ADR-0002 defines the vertical-slice architecture and the
+  Domain/Application/Infrastructure boundaries.
+- ADR-0005 establishes SQLite with EF Core as the persistence boundary
+  for document metadata and derived processing results.
+- ADR-0009 establishes the encrypted SQLite provider and database
+  key-management boundary.
+- ADR-0010 establishes authoritative processing generation and
+  stale-result protection for the document-processing lifecycle.
 
 ## Result
 

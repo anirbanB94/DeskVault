@@ -77,8 +77,13 @@ public sealed class SqliteDocumentSearchStore
                                 result.DocumentId,
                                 result.FileName,
                                 result.DisplayName,
-                                result.ChunkOrder,
-                                result.ChunkText))
+                                [
+                                    new SearchMatch(
+                                        SearchMatchSource.ProcessedContent,
+                                        SearchMatchKind.Exact,
+                                        result.ChunkText)
+                                ],
+                                1))
                     .ToList();
 
             _logger.LogInformation(

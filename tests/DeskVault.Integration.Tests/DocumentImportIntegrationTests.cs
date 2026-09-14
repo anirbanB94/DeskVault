@@ -158,9 +158,12 @@ public sealed class DocumentImportIntegrationTests
                     matchingResult.DisplayName);
 
                 Assert.Contains(
-                    "enterprise architecture",
-                    matchingResult.ChunkText,
-                    StringComparison.OrdinalIgnoreCase);
+                    matchingResult.Matches,
+                    match =>
+                        match.Source == SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "enterprise architecture",
+                            StringComparison.OrdinalIgnoreCase));
             }
 
             await using (
@@ -248,9 +251,12 @@ public sealed class DocumentImportIntegrationTests
                     matchingResult.DisplayName);
 
                 Assert.Contains(
-                    "enterprise architecture",
-                    matchingResult.ChunkText,
-                    StringComparison.OrdinalIgnoreCase);
+                    matchingResult.Matches,
+                    match =>
+                        match.Source == SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "enterprise architecture",
+                            StringComparison.OrdinalIgnoreCase));
             }
         }
         finally
@@ -1413,9 +1419,12 @@ public sealed class DocumentImportIntegrationTests
                 matchingResult.DisplayName);
 
             Assert.Contains(
-                "Alice Johnson",
-                matchingResult.ChunkText,
-                StringComparison.OrdinalIgnoreCase);
+                matchingResult.Matches,
+                match =>
+                    match.Source == SearchMatchSource.ProcessedContent &&
+                    match.Context.Contains(
+                        "Alice Johnson",
+                        StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -1562,9 +1571,12 @@ public sealed class DocumentImportIntegrationTests
                 matchingResult.DisplayName);
 
             Assert.Contains(
-                "markdown architecture",
-                matchingResult.ChunkText,
-                StringComparison.OrdinalIgnoreCase);
+                matchingResult.Matches,
+                match =>
+                    match.Source == SearchMatchSource.ProcessedContent &&
+                    match.Context.Contains(
+                        "markdown architecture",
+                        StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
