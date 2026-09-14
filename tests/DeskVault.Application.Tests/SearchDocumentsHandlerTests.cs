@@ -16,8 +16,13 @@ public sealed class SearchDocumentsHandlerTests
                 Guid.NewGuid(),
                 "document.txt",
                 "Test Document",
-                0,
-                "Matching content.")
+                [
+                    new SearchMatch(
+                        SearchMatchSource.ProcessedContent,
+                        SearchMatchKind.Exact,
+                        "Matching content.")
+                ],
+                1)
         ];
 
         var store =

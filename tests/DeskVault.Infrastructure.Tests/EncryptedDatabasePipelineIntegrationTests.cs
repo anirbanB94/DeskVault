@@ -150,9 +150,12 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     matchingResult.DisplayName);
 
                 Assert.Contains(
-                    "enterprise architecture",
-                    matchingResult.ChunkText,
-                    StringComparison.OrdinalIgnoreCase);
+                    matchingResult.Matches,
+                    match =>
+                        match.Source == SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "enterprise architecture",
+                            StringComparison.OrdinalIgnoreCase));
             }
 
             byte[] databaseHeader =
@@ -226,9 +229,12 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     restoredResult.DisplayName);
 
                 Assert.Contains(
-                    "encrypted database",
-                    restoredResult.ChunkText,
-                    StringComparison.OrdinalIgnoreCase);
+                    restoredResult.Matches,
+                    match =>
+                        match.Source == SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "encrypted database",
+                            StringComparison.OrdinalIgnoreCase));
             }
         }
         finally

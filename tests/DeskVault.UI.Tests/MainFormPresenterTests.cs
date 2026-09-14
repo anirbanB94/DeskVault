@@ -904,22 +904,30 @@ public sealed class MainFormPresenterTests
                 firstDocumentId,
                 "security-policy.md",
                 "Security Policy",
-                0,
-                "Security policy introduction."),
+                [
+                    new SearchMatch(
+                        SearchMatchSource.ProcessedContent,
+                        SearchMatchKind.Exact,
+                        "Security policy introduction."),
 
-            new SearchDocumentsResult(
-                firstDocumentId,
-                "security-policy.md",
-                "Security Policy",
-                2,
-                "Security retention requirements."),
+                    new SearchMatch(
+                        SearchMatchSource.ProcessedContent,
+                        SearchMatchKind.Exact,
+                        "Security retention requirements.")
+                ],
+                2),
 
             new SearchDocumentsResult(
                 secondDocumentId,
                 "incident-response.md",
                 "Incident Response",
-                1,
-                "Security incident response procedure.")
+                [
+                    new SearchMatch(
+                        SearchMatchSource.ProcessedContent,
+                        SearchMatchKind.Exact,
+                        "Security incident response procedure.")
+                ],
+                1)
         ];
     }
 

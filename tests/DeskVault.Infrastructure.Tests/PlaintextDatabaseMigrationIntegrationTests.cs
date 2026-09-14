@@ -294,9 +294,12 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     matchingResult.DisplayName);
 
                 Assert.Contains(
-                    "plaintext migration",
-                    matchingResult.ChunkText,
-                    StringComparison.OrdinalIgnoreCase);
+                    matchingResult.Matches,
+                    match =>
+                        match.Source == SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "plaintext migration",
+                            StringComparison.OrdinalIgnoreCase));
             }
         }
         finally

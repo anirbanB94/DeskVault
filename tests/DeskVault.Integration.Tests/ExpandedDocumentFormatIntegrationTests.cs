@@ -230,9 +230,12 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 matchingResult.DisplayName);
 
             Assert.Contains(
-                searchableText,
-                matchingResult.ChunkText,
-                StringComparison.OrdinalIgnoreCase);
+                matchingResult.Matches,
+                match =>
+                    match.Source == SearchMatchSource.ProcessedContent &&
+                    match.Context.Contains(
+                        searchableText,
+                        StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -476,9 +479,12 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 matchingResult.FileName);
 
             Assert.Contains(
-                "enterprise knowledge search",
-                matchingResult.ChunkText,
-                StringComparison.OrdinalIgnoreCase);
+                matchingResult.Matches,
+                match =>
+                    match.Source == SearchMatchSource.ProcessedContent &&
+                    match.Context.Contains(
+                        "enterprise knowledge search",
+                        StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -779,9 +785,12 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 matchingResult.DisplayName);
 
             Assert.Contains(
-                "enterprise knowledge search",
-                matchingResult.ChunkText,
-                StringComparison.OrdinalIgnoreCase);
+                matchingResult.Matches,
+                match =>
+                    match.Source == SearchMatchSource.ProcessedContent &&
+                    match.Context.Contains(
+                        "enterprise knowledge search",
+                        StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -1491,9 +1500,12 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 matchingResult.DisplayName);
 
             Assert.Contains(
-                "enterprise knowledge search",
-                matchingResult.ChunkText,
-                StringComparison.OrdinalIgnoreCase);
+                matchingResult.Matches,
+                match =>
+                    match.Source == SearchMatchSource.ProcessedContent &&
+                    match.Context.Contains(
+                        "enterprise knowledge search",
+                        StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -1621,9 +1633,12 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 matchingResult.DisplayName);
 
             Assert.Contains(
-                "Enterprise knowledge search regression content.",
-                matchingResult.ChunkText,
-                StringComparison.OrdinalIgnoreCase);
+                matchingResult.Matches,
+                match =>
+                    match.Source == SearchMatchSource.ProcessedContent &&
+                    match.Context.Contains(
+                        "Enterprise knowledge search regression content.",
+                        StringComparison.OrdinalIgnoreCase));
         }
         finally
         {

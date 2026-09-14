@@ -13,7 +13,7 @@ namespace DeskVault.Infrastructure.Tests;
 public sealed class SqliteDocumentSearchStoreTests
 {
     [Fact]
-    public async Task SearchAsync_WhenMatchingChunkExists_ReturnsDocumentAndChunk()
+    public async Task SearchAsync_WhenMatchingChunkExists_ReturnsDocumentAndMatch()
     {
         await using SqliteConnection connection =
             CreateConnection();
@@ -68,11 +68,18 @@ public sealed class SqliteDocumentSearchStoreTests
 
         Assert.Equal(
             1,
-            result.ChunkOrder);
+            result.MatchCount);
+
+        SearchMatch match =
+            Assert.Single(result.Matches);
+
+        Assert.Equal(
+            SearchMatchSource.ProcessedContent,
+            match.Source);
 
         Assert.Equal(
             "This chunk contains the searchable content.",
-            result.ChunkText);
+            match.Context);
     }
 
     [Fact]
@@ -114,8 +121,19 @@ public sealed class SqliteDocumentSearchStoreTests
             result.DocumentId);
 
         Assert.Equal(
-            0,
-            result.ChunkOrder);
+            1,
+            result.MatchCount);
+
+        SearchMatch match =
+            Assert.Single(result.Matches);
+
+        Assert.Equal(
+            SearchMatchSource.ProcessedContent,
+            match.Source);
+
+        Assert.Equal(
+            "Security policy content.",
+            match.Context);
     }
 
     [Fact]
@@ -214,25 +232,21 @@ public sealed class SqliteDocumentSearchStoreTests
         AssertResult(
             results[0],
             firstDocument,
-            0,
             "Alpha matching content first.");
 
         AssertResult(
             results[1],
             firstDocument,
-            1,
             "Alpha matching content second.");
 
         AssertResult(
             results[2],
             secondDocument,
-            0,
             "Beta matching content first.");
 
         AssertResult(
             results[3],
             secondDocument,
-            1,
             "Beta matching content second.");
     }
 
@@ -275,8 +289,7 @@ public sealed class SqliteDocumentSearchStoreTests
     private static void AssertResult(
         SearchDocumentsResult result,
         Document expectedDocument,
-        int expectedChunkOrder,
-        string expectedChunkText)
+        string expectedMatchText)
     {
         Assert.Equal(
             expectedDocument.Id,
@@ -291,12 +304,19 @@ public sealed class SqliteDocumentSearchStoreTests
             result.DisplayName);
 
         Assert.Equal(
-            expectedChunkOrder,
-            result.ChunkOrder);
+            1,
+            result.MatchCount);
+
+        SearchMatch match =
+            Assert.Single(result.Matches);
 
         Assert.Equal(
-            expectedChunkText,
-            result.ChunkText);
+            SearchMatchSource.ProcessedContent,
+            match.Source);
+
+        Assert.Equal(
+            expectedMatchText,
+            match.Context);
     }
 
     private static SqliteDocumentProcessingStore CreateProcessingStore(
