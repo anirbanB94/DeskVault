@@ -49,7 +49,8 @@ public sealed class SqliteDocumentSearchStoreTests
 
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
-                "searchable");
+                new SearchDocumentsQuery(
+                    "searchable"));
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -67,19 +68,53 @@ public sealed class SqliteDocumentSearchStoreTests
             result.DisplayName);
 
         Assert.Equal(
-            1,
+            3,
             result.MatchCount);
 
-        SearchMatch match =
-            Assert.Single(result.Matches);
+        Assert.Collection(
+            result.Matches,
+            match =>
+            {
+                Assert.Equal(
+                    SearchMatchSource.DocumentMetadata,
+                    match.Source);
 
-        Assert.Equal(
-            SearchMatchSource.ProcessedContent,
-            match.Source);
+                Assert.Equal(
+                    SearchMatchKind.Exact,
+                    match.Kind);
 
-        Assert.Equal(
-            "This chunk contains the searchable content.",
-            match.Context);
+                Assert.Equal(
+                    "searchable.txt",
+                    match.Context);
+            },
+            match =>
+            {
+                Assert.Equal(
+                    SearchMatchSource.DocumentMetadata,
+                    match.Source);
+
+                Assert.Equal(
+                    SearchMatchKind.Exact,
+                    match.Kind);
+
+                Assert.Equal(
+                    "Searchable Document",
+                    match.Context);
+            },
+            match =>
+            {
+                Assert.Equal(
+                    SearchMatchSource.ProcessedContent,
+                    match.Source);
+
+                Assert.Equal(
+                    SearchMatchKind.Exact,
+                    match.Kind);
+
+                Assert.Equal(
+                    "This chunk contains the searchable content.",
+                    match.Context);
+            });
     }
 
     [Fact]
@@ -111,7 +146,8 @@ public sealed class SqliteDocumentSearchStoreTests
 
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
-                "SECURITY");
+                new SearchDocumentsQuery(
+                    "SECURITY"));
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -165,10 +201,71 @@ public sealed class SqliteDocumentSearchStoreTests
 
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
-                "does-not-exist");
+                new SearchDocumentsQuery(
+                    "does-not-exist"));
 
         Assert.Empty(
             results);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenStaleProcessingGenerationExists_ReturnsOnlyAuthoritativeContent()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "generation-test.txt",
+                "Generation Test Document");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        long firstGeneration =
+            await processingStore.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        Assert.Equal(
+            1L,
+            firstGeneration);
+
+        await processingStore.ReplaceChunksAsync(
+            document.Id,
+            firstGeneration,
+            [
+                new DocumentChunk(
+                    0,
+                    "The authoritative-search-term is current content.")
+            ]);
+
+        await processingStore.PublishSuccessfulProcessingAsync(
+            document.Id,
+            firstGeneration);
+
+        long secondGeneration =
+            await processingStore.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        Assert.Equal(
+            2L,
+            secondGeneration);
+
+        await processingStore.PublishSuccessfulProcessingAsync(
+            document.Id,
+            secondGeneration);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> staleResults =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "authoritative-search-term"));
+
+        Assert.Empty(
+            staleResults);
     }
 
     [Fact]
@@ -223,31 +320,393 @@ public sealed class SqliteDocumentSearchStoreTests
 
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
-                "matching");
+                new SearchDocumentsQuery(
+                    "matching"));
 
         Assert.Equal(
-            4,
+            2,
             results.Count);
 
         AssertResult(
             results[0],
             firstDocument,
-            "Alpha matching content first.");
+            [
+                "Alpha matching content first.",
+                "Alpha matching content second."
+            ]);
 
         AssertResult(
             results[1],
-            firstDocument,
-            "Alpha matching content second.");
-
-        AssertResult(
-            results[2],
             secondDocument,
-            "Beta matching content first.");
+            [
+                "Beta matching content first.",
+                "Beta matching content second."
+            ]);
+    }
 
-        AssertResult(
-            results[3],
-            secondDocument,
-            "Beta matching content second.");
+    [Fact]
+    public async Task SearchAsync_WhenSearchTextContainsPercentCharacter_MatchesLiteralPercentCharacter()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document matchingDocument =
+            CreateAndPersistDocument(
+                connection,
+                "percent-match.txt",
+                "Percent Match");
+
+        Document nonMatchingDocument =
+            CreateAndPersistDocument(
+                connection,
+                "percent-no-match.txt",
+                "Percent No Match");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            matchingDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Completion reached 100%.")
+            ]);
+
+        await processingStore.ReplaceChunksAsync(
+            nonMatchingDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Completion reached 100 percent.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "100%"));
+
+        SearchDocumentsResult result =
+            Assert.Single(results);
+
+        Assert.Equal(
+            matchingDocument.Id,
+            result.DocumentId);
+
+        SearchMatch match =
+            Assert.Single(result.Matches);
+
+        Assert.Equal(
+            SearchMatchSource.ProcessedContent,
+            match.Source);
+
+        Assert.Equal(
+            "Completion reached 100%.",
+            match.Context);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenSearchTextContainsUnderscoreCharacter_MatchesLiteralUnderscoreCharacter()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document matchingDocument =
+            CreateAndPersistDocument(
+                connection,
+                "underscore-match.txt",
+                "Underscore Match");
+
+        Document nonMatchingDocument =
+            CreateAndPersistDocument(
+                connection,
+                "underscore-no-match.txt",
+                "Underscore No Match");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            matchingDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "The value is file_name.")
+            ]);
+
+        await processingStore.ReplaceChunksAsync(
+            nonMatchingDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "The value is filename.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "file_name"));
+
+        SearchDocumentsResult result =
+            Assert.Single(results);
+
+        Assert.Equal(
+            matchingDocument.Id,
+            result.DocumentId);
+
+        SearchMatch match =
+            Assert.Single(result.Matches);
+
+        Assert.Equal(
+            SearchMatchSource.ProcessedContent,
+            match.Source);
+
+        Assert.Equal(
+            "The value is file_name.",
+            match.Context);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenSingleFileTypeFilterIsProvided_ReturnsOnlyMatchingFileType()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document textDocument =
+            CreateAndPersistDocument(
+                connection,
+                "matching.txt",
+                "Matching Text");
+
+        Document markdownDocument =
+            CreateAndPersistDocument(
+                connection,
+                "excluded.md",
+                "Excluded Markdown");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            textDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Shared searchable content.")
+            ]);
+
+        await processingStore.ReplaceChunksAsync(
+            markdownDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Shared searchable content.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "searchable",
+                    [".txt"]));
+
+        SearchDocumentsResult result =
+            Assert.Single(results);
+
+        Assert.Equal(
+            textDocument.Id,
+            result.DocumentId);
+
+        Assert.Equal(
+            "matching.txt",
+            result.FileName);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenMultipleFileTypeFiltersAreProvided_ReturnsAllMatchingFileTypes()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document textDocument =
+            CreateAndPersistDocument(
+                connection,
+                "matching.txt",
+                "Matching Text");
+
+        Document markdownDocument =
+            CreateAndPersistDocument(
+                connection,
+                "matching.md",
+                "Matching Markdown");
+
+        Document csvDocument =
+            CreateAndPersistDocument(
+                connection,
+                "excluded.csv",
+                "Excluded CSV");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            textDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Shared searchable content.")
+            ]);
+
+        await processingStore.ReplaceChunksAsync(
+            markdownDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Shared searchable content.")
+            ]);
+
+        await processingStore.ReplaceChunksAsync(
+            csvDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Shared searchable content.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "searchable",
+                    ["TXT", ".MD"]));
+
+        Assert.Equal(
+            2,
+            results.Count);
+
+        Assert.Contains(
+            results,
+            result => result.DocumentId == textDocument.Id);
+
+        Assert.Contains(
+            results,
+            result => result.DocumentId == markdownDocument.Id);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenNoFileTypeFilterIsProvided_ReturnsMatchingDocumentsOfAllFileTypes()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document textDocument =
+            CreateAndPersistDocument(
+                connection,
+                "matching.txt",
+                "Matching Text");
+
+        Document markdownDocument =
+            CreateAndPersistDocument(
+                connection,
+                "matching.md",
+                "Matching Markdown");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            textDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Shared searchable content.")
+            ]);
+
+        await processingStore.ReplaceChunksAsync(
+            markdownDocument.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Shared searchable content.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "searchable"));
+
+        Assert.Equal(
+            2,
+            results.Count);
+
+        Assert.Contains(
+            results,
+            result => result.DocumentId == textDocument.Id);
+
+        Assert.Contains(
+            results,
+            result => result.DocumentId == markdownDocument.Id);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenUnsupportedFileTypeFilterIsProvided_ReturnsEmpty()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "document.txt",
+                "Test Document");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            document.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "Searchable content.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "searchable",
+                    [".unsupported"]));
+
+        Assert.Empty(
+            results);
     }
 
     [Fact]
@@ -262,7 +721,8 @@ public sealed class SqliteDocumentSearchStoreTests
         await Assert.ThrowsAsync<ArgumentException>(
             () =>
                 searchStore.SearchAsync(
-                    "   "));
+                    new SearchDocumentsQuery(
+                        "   ")));
     }
 
     [Fact]
@@ -282,14 +742,15 @@ public sealed class SqliteDocumentSearchStoreTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
                 searchStore.SearchAsync(
-                    "matching",
+                    new SearchDocumentsQuery(
+                        "matching"),
                     cancellationTokenSource.Token));
     }
 
     private static void AssertResult(
         SearchDocumentsResult result,
         Document expectedDocument,
-        string expectedMatchText)
+        IReadOnlyList<string> expectedMatchTexts)
     {
         Assert.Equal(
             expectedDocument.Id,
@@ -304,19 +765,32 @@ public sealed class SqliteDocumentSearchStoreTests
             result.DisplayName);
 
         Assert.Equal(
-            1,
+            expectedMatchTexts.Count,
             result.MatchCount);
 
-        SearchMatch match =
-            Assert.Single(result.Matches);
-
         Assert.Equal(
-            SearchMatchSource.ProcessedContent,
-            match.Source);
+            expectedMatchTexts.Count,
+            result.Matches.Count);
 
-        Assert.Equal(
-            expectedMatchText,
-            match.Context);
+        for (int index = 0;
+            index < expectedMatchTexts.Count;
+            index++)
+        {
+            SearchMatch match =
+                result.Matches[index];
+
+            Assert.Equal(
+                SearchMatchSource.ProcessedContent,
+                match.Source);
+
+            Assert.Equal(
+                SearchMatchKind.Exact,
+                match.Kind);
+
+            Assert.Equal(
+                expectedMatchTexts[index],
+                match.Context);
+        }
     }
 
     private static SqliteDocumentProcessingStore CreateProcessingStore(

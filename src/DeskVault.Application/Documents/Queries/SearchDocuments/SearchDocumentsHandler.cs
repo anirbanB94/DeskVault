@@ -28,7 +28,7 @@ public sealed class SearchDocumentsHandler
 
         var results =
             await _searchStore.SearchAsync(
-                query.SearchText,
+                query,
                 cancellationToken);
 
         _logger.LogInformation(

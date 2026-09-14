@@ -5,6 +5,6 @@ namespace DeskVault.Application.Interfaces;
 public interface IDocumentSearchStore
 {
     Task<IReadOnlyList<SearchDocumentsResult>> SearchAsync(
-        string searchText,
+        SearchDocumentsQuery query,
         CancellationToken cancellationToken = default);
 }

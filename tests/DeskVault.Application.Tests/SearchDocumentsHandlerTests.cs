@@ -28,9 +28,12 @@ public sealed class SearchDocumentsHandlerTests
         var store =
             new Mock<IDocumentSearchStore>();
 
+        SearchDocumentsQuery query =
+            new("matching");
+
         store
             .Setup(x => x.SearchAsync(
-                "matching",
+                query,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(expected);
 
@@ -39,7 +42,7 @@ public sealed class SearchDocumentsHandlerTests
 
         IReadOnlyList<SearchDocumentsResult> result =
             await handler.HandleAsync(
-                new SearchDocumentsQuery("matching"));
+                query);
 
         Assert.Equal(
             expected,
@@ -47,7 +50,7 @@ public sealed class SearchDocumentsHandlerTests
 
         store.Verify(
             x => x.SearchAsync(
-                "matching",
+                query,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -64,9 +67,12 @@ public sealed class SearchDocumentsHandlerTests
         var store =
             new Mock<IDocumentSearchStore>();
 
+        SearchDocumentsQuery query =
+            new("matching");
+
         store
             .Setup(x => x.SearchAsync(
-                It.IsAny<string>(),
+                query,
                 cancellationToken))
             .ThrowsAsync(
                 new OperationCanceledException(
@@ -80,12 +86,12 @@ public sealed class SearchDocumentsHandlerTests
         await Assert.ThrowsAsync<OperationCanceledException>(
             () =>
                 handler.HandleAsync(
-                    new SearchDocumentsQuery("matching"),
+                    query,
                     cancellationToken));
 
         store.Verify(
             x => x.SearchAsync(
-                "matching",
+                query,
                 cancellationToken),
             Times.Once);
     }
