@@ -8,6 +8,8 @@ using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Extraction.XmlDocument;
 using DeskVault.Application.Documents.Extraction.YamlDocument;
 using DeskVault.Application.Documents.Normalization;
+using DeskVault.Application.Documents.Queries.SearchDocuments;
+using DeskVault.Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DeskVault.Application.Tests;
@@ -51,6 +53,9 @@ public sealed class ApplicationDependencyInjectionTests
 
         Assert.IsType<DocumentTextChunker>(
             serviceProvider.GetRequiredService<IDocumentTextChunker>());
+
+        Assert.IsType<SearchDocumentsRanker>(
+            serviceProvider.GetRequiredService<ISearchDocumentsRanker>());
 
         var extractors =
             serviceProvider

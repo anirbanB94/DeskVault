@@ -36,6 +36,8 @@ public static class DependencyInjection
 
         services.AddSingleton<RemoveDocumentHandler>();
 
+        services.AddSingleton<ISearchDocumentsRanker, SearchDocumentsRanker>();
+
         services.AddSingleton<SearchDocumentsHandler>();
 
         services.AddSingleton<ReconcileDocumentArtifactsHandler>();

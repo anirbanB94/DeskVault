@@ -7,13 +7,16 @@ namespace DeskVault.Application.Documents.Queries.SearchDocuments;
 public sealed class SearchDocumentsHandler
 {
     private readonly IDocumentSearchStore _searchStore;
+    private readonly ISearchDocumentsRanker _ranker;
     private readonly ILogger<SearchDocumentsHandler> _logger;
 
     public SearchDocumentsHandler(
         IDocumentSearchStore searchStore,
+        ISearchDocumentsRanker ranker,
         ILogger<SearchDocumentsHandler> logger)
     {
         _searchStore = searchStore;
+        _ranker = ranker;
         _logger = logger;
     }
 
@@ -31,10 +34,13 @@ public sealed class SearchDocumentsHandler
                 query,
                 cancellationToken);
 
+        var rankedResults =
+            _ranker.Rank(results);
+
         _logger.LogInformation(
             LogMessages.DocumentSearchCompleted,
-            results.Count);
+            rankedResults.Count);
 
-        return results;
+        return rankedResults;
     }
 }

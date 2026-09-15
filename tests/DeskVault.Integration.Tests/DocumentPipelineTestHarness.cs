@@ -129,6 +129,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         SearchHandler =
             new SearchDocumentsHandler(
                 searchStore,
+                new SearchDocumentsRanker(),
                 NullLogger<SearchDocumentsHandler>.Instance);
 
         RemoveHandler =
