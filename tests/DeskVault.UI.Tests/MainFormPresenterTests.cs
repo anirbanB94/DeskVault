@@ -1041,6 +1041,7 @@ public sealed class MainFormPresenterTests
         var searchDocumentsHandler =
             new SearchDocumentsHandler(
                 searchStore.Object,
+                new SearchDocumentsRanker(),
                 NullLogger<SearchDocumentsHandler>.Instance);
 
         return new MainFormPresenter(
