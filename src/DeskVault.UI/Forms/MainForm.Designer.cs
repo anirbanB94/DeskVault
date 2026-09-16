@@ -1,24 +1,30 @@
+using DeskVault.UI.Resources;
+using System.Windows.Forms;
+
 namespace DeskVault.UI.Forms;
 
 partial class MainForm
 {
     private System.ComponentModel.IContainer components = null;
-
-    private System.Windows.Forms.Panel headerPanel;
-    private System.Windows.Forms.Label titleLabel;
-    private System.Windows.Forms.Panel searchPanel;
-    private System.Windows.Forms.TextBox searchTextBox;
-    private System.Windows.Forms.Button searchButton;
-    private System.Windows.Forms.FlowLayoutPanel actionPanel;
-    private System.Windows.Forms.Button importButton;
-    private System.Windows.Forms.Button openButton;
-    private System.Windows.Forms.Button removeButton;
-    private System.Windows.Forms.Button reprocessButton;
-    private System.Windows.Forms.Panel contentPanel;
-    private System.Windows.Forms.Label emptyStateLabel;
-    private System.Windows.Forms.DataGridView documentGridView;
-    private System.Windows.Forms.StatusStrip statusStrip;
-    private System.Windows.Forms.ToolStripStatusLabel statusLabel;
+    private Panel headerPanel;
+    private Label titleLabel;
+    private Panel searchPanel;
+    private TextBox searchTextBox;
+    private ComboBox searchFileTypeComboBox;
+    private Button clearSearchButton;
+    private Button searchButton;
+    private FlowLayoutPanel actionPanel;
+    private Button importButton;
+    private Button openButton;
+    private Button removeButton;
+    private Button reprocessButton;
+    private Panel contentPanel;
+    private Label emptyStateLabel;
+    private DataGridView documentGridView;
+    private Panel loadMorePanel;
+    private Button loadMoreButton;
+    private StatusStrip statusStrip;
+    private ToolStripStatusLabel statusLabel;
 
     protected override void Dispose(bool disposing)
     {
@@ -42,10 +48,14 @@ partial class MainForm
         removeButton = new Button();
         searchPanel = new Panel();
         searchButton = new Button();
+        clearSearchButton = new Button();
+        searchFileTypeComboBox = new ComboBox();
         searchTextBox = new TextBox();
         titleLabel = new Label();
         contentPanel = new Panel();
         documentGridView = new DataGridView();
+        loadMorePanel = new Panel();
+        loadMoreButton = new Button();
         emptyStateLabel = new Label();
         statusStrip = new StatusStrip();
         statusLabel = new ToolStripStatusLabel();
@@ -54,6 +64,7 @@ partial class MainForm
         searchPanel.SuspendLayout();
         contentPanel.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)documentGridView).BeginInit();
+        loadMorePanel.SuspendLayout();
         statusStrip.SuspendLayout();
         SuspendLayout();
         //
@@ -100,7 +111,7 @@ partial class MainForm
         importButton.Name = "importButton";
         importButton.Size = new Size(125, 44);
         importButton.TabIndex = 0;
-        importButton.Text = "Import";
+        importButton.Text = UiMessages.ImportButton;
         importButton.UseVisualStyleBackColor = false;
         //
         // openButton
@@ -116,7 +127,7 @@ partial class MainForm
         openButton.Name = "openButton";
         openButton.Size = new Size(125, 44);
         openButton.TabIndex = 1;
-        openButton.Text = "Open";
+        openButton.Text = UiMessages.OpenButton;
         openButton.UseVisualStyleBackColor = false;
         //
         // reprocessButton
@@ -132,7 +143,7 @@ partial class MainForm
         reprocessButton.Name = "reprocessButton";
         reprocessButton.Size = new Size(125, 44);
         reprocessButton.TabIndex = 2;
-        reprocessButton.Text = "Reprocess";
+        reprocessButton.Text = UiMessages.ReprocessButton;
         reprocessButton.UseVisualStyleBackColor = false;
         //
         // removeButton
@@ -148,7 +159,7 @@ partial class MainForm
         removeButton.Name = "removeButton";
         removeButton.Size = new Size(125, 44);
         removeButton.TabIndex = 3;
-        removeButton.Text = "Remove";
+        removeButton.Text = UiMessages.RemoveButton;
         removeButton.UseVisualStyleBackColor = false;
         //
         // searchPanel
@@ -157,6 +168,8 @@ partial class MainForm
             | AnchorStyles.Left
             | AnchorStyles.Right;
         searchPanel.Controls.Add(searchButton);
+        searchPanel.Controls.Add(clearSearchButton);
+        searchPanel.Controls.Add(searchFileTypeComboBox);
         searchPanel.Controls.Add(searchTextBox);
         searchPanel.Location = new Point(240, 18);
         searchPanel.Margin = new Padding(0);
@@ -176,9 +189,35 @@ partial class MainForm
         searchButton.Location = new Point(555, 12);
         searchButton.Name = "searchButton";
         searchButton.Size = new Size(115, 44);
-        searchButton.TabIndex = 1;
-        searchButton.Text = "Search";
+        searchButton.TabIndex = 3;
+        searchButton.Text = UiMessages.SearchButton;
         searchButton.UseVisualStyleBackColor = false;
+        //
+        // clearSearchButton
+        //
+        clearSearchButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        clearSearchButton.BackColor = SystemColors.Control;
+        clearSearchButton.Cursor = Cursors.Hand;
+        clearSearchButton.FlatAppearance.BorderSize = 0;
+        clearSearchButton.FlatStyle = FlatStyle.Flat;
+        clearSearchButton.Font = new Font("Segoe UI Semibold", 10F);
+        clearSearchButton.Location = new Point(435, 12);
+        clearSearchButton.Name = "clearSearchButton";
+        clearSearchButton.Size = new Size(110, 44);
+        clearSearchButton.TabIndex = 2;
+        clearSearchButton.Text = UiMessages.ClearSearchButton;
+        clearSearchButton.UseVisualStyleBackColor = false;
+        //
+        // searchFileTypeComboBox
+        //
+        searchFileTypeComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        searchFileTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        searchFileTypeComboBox.Font = new Font("Segoe UI", 10F);
+        searchFileTypeComboBox.FormattingEnabled = true;
+        searchFileTypeComboBox.Location = new Point(290, 13);
+        searchFileTypeComboBox.Name = "searchFileTypeComboBox";
+        searchFileTypeComboBox.Size = new Size(135, 36);
+        searchFileTypeComboBox.TabIndex = 1;
         //
         // searchTextBox
         //
@@ -190,7 +229,7 @@ partial class MainForm
         searchTextBox.Location = new Point(0, 12);
         searchTextBox.Name = "searchTextBox";
         searchTextBox.PlaceholderText = "Search documents...";
-        searchTextBox.Size = new Size(545, 45);
+        searchTextBox.Size = new Size(280, 45);
         searchTextBox.TabIndex = 0;
         //
         // titleLabel
@@ -210,6 +249,7 @@ partial class MainForm
         //
         contentPanel.BackColor = SystemColors.Control;
         contentPanel.Controls.Add(documentGridView);
+        contentPanel.Controls.Add(loadMorePanel);
         contentPanel.Controls.Add(emptyStateLabel);
         contentPanel.Dock = DockStyle.Fill;
         contentPanel.Location = new Point(0, 104);
@@ -266,9 +306,34 @@ partial class MainForm
         documentGridView.RowTemplate.Height = 42;
         documentGridView.SelectionMode =
             DataGridViewSelectionMode.FullRowSelect;
-        documentGridView.Size = new Size(1444, 802);
+        documentGridView.Size = new Size(1444, 734);
         documentGridView.TabIndex = 1;
         documentGridView.Visible = false;
+        //
+        // loadMorePanel
+        //
+        loadMorePanel.Controls.Add(loadMoreButton);
+        loadMorePanel.Dock = DockStyle.Bottom;
+        loadMorePanel.Location = new Point(28, 758);
+        loadMorePanel.Name = "loadMorePanel";
+        loadMorePanel.Size = new Size(1444, 68);
+        loadMorePanel.TabIndex = 3;
+        //
+        // loadMoreButton
+        //
+        loadMoreButton.Anchor = AnchorStyles.Top;
+        loadMoreButton.BackColor = SystemColors.Control;
+        loadMoreButton.Cursor = Cursors.Hand;
+        loadMoreButton.FlatAppearance.BorderSize = 0;
+        loadMoreButton.FlatStyle = FlatStyle.Flat;
+        loadMoreButton.Font = new Font("Segoe UI Semibold", 10F);
+        loadMoreButton.Location = new Point(654, 12);
+        loadMoreButton.Name = "loadMoreButton";
+        loadMoreButton.Size = new Size(136, 44);
+        loadMoreButton.TabIndex = 0;
+        loadMoreButton.Text = UiMessages.LoadMoreButton;
+        loadMoreButton.UseVisualStyleBackColor = false;
+        loadMoreButton.Visible = false;
         //
         // emptyStateLabel
         //
@@ -280,8 +345,9 @@ partial class MainForm
         emptyStateLabel.Size = new Size(1444, 802);
         emptyStateLabel.TabIndex = 0;
         emptyStateLabel.Text =
-            "No documents imported yet.\r\n\r\n" +
-            "Use Import to add your first document.";
+            UiMessages.NoDocumentsImportedMessage +
+            "\r\n\r\n" +
+            UiMessages.ImportFirstDocumentMessage;
         emptyStateLabel.TextAlign = ContentAlignment.MiddleCenter;
         //
         // statusStrip
@@ -323,6 +389,7 @@ partial class MainForm
         searchPanel.PerformLayout();
         contentPanel.ResumeLayout(false);
         ((System.ComponentModel.ISupportInitialize)documentGridView).EndInit();
+        loadMorePanel.ResumeLayout(false);
         statusStrip.ResumeLayout(false);
         statusStrip.PerformLayout();
         ResumeLayout(false);

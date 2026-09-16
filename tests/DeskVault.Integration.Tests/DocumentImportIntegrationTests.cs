@@ -138,10 +138,13 @@ public sealed class DocumentImportIntegrationTests
 
                 Assert.NotEmpty(chunks);
 
-                IReadOnlyList<SearchDocumentsResult> searchResults =
+                SearchDocumentsPage searchPage =
                     await firstInstance.SearchHandler.HandleAsync(
                         new SearchDocumentsQuery(
                             "ENTERPRISE ARCHITECTURE"));
+
+                IReadOnlyList<SearchDocumentsResult> searchResults =
+                    searchPage.Results;
 
                 SearchDocumentsResult matchingResult =
                     Assert.Single(
@@ -231,10 +234,13 @@ public sealed class DocumentImportIntegrationTests
                     "searchable enterprise architecture content",
                     indexedText);
 
-                IReadOnlyList<SearchDocumentsResult> searchResults =
+                SearchDocumentsPage searchPage =
                     await secondInstance.SearchHandler.HandleAsync(
                         new SearchDocumentsQuery(
                             "ENTERPRISE ARCHITECTURE"));
+
+                IReadOnlyList<SearchDocumentsResult> searchResults =
+                    searchPage.Results;
 
                 SearchDocumentsResult matchingResult =
                     Assert.Single(
@@ -1399,10 +1405,13 @@ public sealed class DocumentImportIntegrationTests
                 "Name: Alice Johnson",
                 indexedText);
 
-            IReadOnlyList<SearchDocumentsResult> searchResults =
+            SearchDocumentsPage searchPage =
                 await harness.SearchHandler.HandleAsync(
                     new SearchDocumentsQuery(
                         "Alice Johnson"));
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                searchPage.Results;
 
             SearchDocumentsResult matchingResult =
                 Assert.Single(
@@ -1551,10 +1560,13 @@ public sealed class DocumentImportIntegrationTests
                 "searchable markdown architecture content",
                 indexedText);
 
-            IReadOnlyList<SearchDocumentsResult> searchResults =
+            SearchDocumentsPage searchPage =
                 await harness.SearchHandler.HandleAsync(
                     new SearchDocumentsQuery(
                         "markdown architecture"));
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                searchPage.Results;
 
             SearchDocumentsResult matchingResult =
                 Assert.Single(

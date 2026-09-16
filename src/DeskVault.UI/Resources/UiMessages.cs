@@ -23,6 +23,33 @@ public static class UiMessages
     public const string AllFilesFilter =
         "All Files|*.*";
 
+    public const string ImportButton =
+        "Import";
+
+    public const string OpenButton =
+        "Open";
+
+    public const string ReprocessButton =
+        "Reprocess";
+
+    public const string RemoveButton =
+        "Remove";
+
+    public const string SearchButton =
+        "Search";
+
+    public const string ClearSearchButton =
+        "Clear";
+
+    public const string LoadMoreButton =
+        "Load More";
+
+    public const string NoDocumentsImportedMessage =
+        "No documents imported yet.";
+
+    public const string ImportFirstDocumentMessage =
+        "Use Import to add your first document.";
+
     public const string RemoveDocumentTitle =
         "Remove Document";
 
@@ -146,4 +173,7 @@ public static class UiMessages
     public const string UnableToInitializeDatabase =
         "DeskVault could not initialize its local database. " +
         "The application will now close.";
+
+    public const string SearchFileTypeAll =
+    "All file types";
 }

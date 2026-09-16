@@ -14,13 +14,17 @@ public interface IMainFormView
 
     event EventHandler SearchRequested;
 
+    event EventHandler? LoadMoreSearchResultsRequested;
+
     Guid? SelectedDocumentId { get; }
 
     string? SelectedDocumentFileName { get; }
 
     string? SelectedFilePath { get; }
 
-    string SearchText { get; }
+    string? SearchText { get; }
+
+    string? SearchFileType { get; }
 
     void SetSelectedDocumentId(Guid? documentId);
 
@@ -31,6 +35,8 @@ public interface IMainFormView
     void SetRemoveEnabled(bool enabled);
 
     void SetReprocessEnabled(bool enabled);
+
+    void SetLoadMoreEnabled(bool enabled);
 
     void SetStatus(string message);
 
@@ -51,6 +57,12 @@ public interface IMainFormView
 
     void ShowDocuments(
         IReadOnlyList<DocumentListItem> documents);
+
+    void ShowSearchResults(
+        IReadOnlyList<SearchResultListItem> results);
+
+    void AppendSearchResults(
+        IReadOnlyList<SearchResultListItem> results);
 
     void ShowEmptyState();
 }
