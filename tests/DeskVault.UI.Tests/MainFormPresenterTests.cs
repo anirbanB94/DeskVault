@@ -1438,6 +1438,312 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
+    public async Task ImportRequested_WhenNoExtractorIsAvailable_SkipsProcessingAndRefreshesDocuments()
+    {
+        const string filePath =
+            @"C:\Documents\document.pdf";
+
+        const string hash =
+            "unsupported-format-hash";
+
+        Guid? importedDocumentId = null;
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedFilePath)
+            .Returns(filePath);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                hash,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (document, _) =>
+                {
+                    importedDocumentId = document.Id;
+                })
+            .Returns(Task.CompletedTask);
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                if (importedDocumentId is not Guid documentId)
+                {
+                    return [];
+                }
+
+                return
+                [
+                    Document.Restore(
+                    documentId,
+                    "document.pdf",
+                    "document",
+                    hash,
+                    "document.dvault",
+                    DateTime.UtcNow,
+                    DocumentStatus.Imported)
+                ];
+            });
+
+        var hashService =
+            new Mock<IHashService>();
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                filePath,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(hash);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                filePath,
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("document.dvault");
+
+        var processingService =
+            new Mock<IDocumentProcessingService>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                repository,
+                hashService: hashService,
+                storageService: storageService,
+                processingService: processingService);
+
+        view.Raise(
+            x => x.ImportRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        Assert.NotNull(importedDocumentId);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.Is<Document>(
+                    document =>
+                        document.Id == importedDocumentId &&
+                        document.FileName == "document.pdf" &&
+                        document.DisplayName == "document"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.Is<IReadOnlyList<DocumentListItem>>(
+                    documents =>
+                        documents.Count == 1 &&
+                        documents[0].Id == importedDocumentId &&
+                        documents[0].FileName == "document.pdf")),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetSelectedDocumentId(
+                importedDocumentId),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetOpenEnabled(true),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                "Document imported successfully."),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowInformation(
+                "Document imported successfully.",
+                UiMessages.ImportCompleteTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ImportRequested_WhenProcessingFails_ShowsUnexpectedImportError()
+    {
+        const string filePath =
+            @"C:\Documents\security-policy.md";
+
+        const string hash =
+            "processing-failure-hash";
+
+        const string errorMessage =
+            "Document processing failed.";
+
+        Guid? importedDocumentId = null;
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedFilePath)
+            .Returns(filePath);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                hash,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (document, _) =>
+                {
+                    importedDocumentId = document.Id;
+                })
+            .Returns(Task.CompletedTask);
+
+        var hashService =
+            new Mock<IHashService>();
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                filePath,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(hash);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                filePath,
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("document.dvault");
+
+        var processingService =
+            new Mock<IDocumentProcessingService>();
+
+        processingService
+            .Setup(x => x.ProcessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    errorMessage));
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace,
+                repository,
+                hashService: hashService,
+                storageService: storageService,
+                processingService: processingService);
+
+        view.Raise(
+            x => x.ImportRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        Assert.NotNull(importedDocumentId);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.Is<Document>(
+                    document =>
+                        document.Id == importedDocumentId &&
+                        document.FileName == "security-policy.md" &&
+                        document.DisplayName == "security-policy"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                It.Is<Guid>(
+                    documentId =>
+                        documentId == importedDocumentId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetSelectedDocumentId(
+                It.IsAny<Guid?>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnexpectedImportError),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnexpectedImportError,
+                UiMessages.DeskVaultTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ReprocessRequested_WhenProcessingSucceeds_RefreshesDocumentsAndShowsSuccess()
     {
         Guid documentId =
