@@ -175,8 +175,21 @@ public sealed class MainFormPresenter
                         "A successful document import did not return a document identifier.");
                 }
 
-                await _documentProcessingService.ProcessAsync(
-                    documentId);
+                string fileName =
+                    Path.GetFileName(filePath);
+
+                if (_documentTextExtractorResolver.CanResolve(
+                    fileName))
+                {
+                    await _documentProcessingService.ProcessAsync(
+                        documentId);
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        "Document processing skipped because no text extractor is available for {FileName}.",
+                        fileName);
+                }
 
                 await RefreshDocumentsAsync();
 
