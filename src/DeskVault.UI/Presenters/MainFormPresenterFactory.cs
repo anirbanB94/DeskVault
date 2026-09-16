@@ -8,6 +8,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace DeskVault.UI.Presenters;
 
@@ -23,6 +24,7 @@ public sealed class MainFormPresenterFactory :
     private readonly IDocumentProcessingService _documentProcessingService;
     private readonly DocumentTextExtractorResolver _documentTextExtractorResolver;
     private readonly ILogger<MainFormPresenter> _logger;
+    private readonly IOptions<SearchOptions> _searchOptions;
 
     public MainFormPresenterFactory(
         ImportDocumentHandler importDocumentHandler,
@@ -33,7 +35,8 @@ public sealed class MainFormPresenterFactory :
         IDocumentWorkspace documentWorkspace,
         IDocumentProcessingService documentProcessingService,
         DocumentTextExtractorResolver documentTextExtractorResolver,
-        ILogger<MainFormPresenter> logger)
+        ILogger<MainFormPresenter> logger,
+        IOptions<SearchOptions> searchOptions)
     {
         _importDocumentHandler = importDocumentHandler;
         _removeDocumentHandler = removeDocumentHandler;
@@ -44,6 +47,7 @@ public sealed class MainFormPresenterFactory :
         _documentProcessingService = documentProcessingService;
         _documentTextExtractorResolver = documentTextExtractorResolver;
         _logger = logger;
+        _searchOptions = searchOptions;
     }
 
     public MainFormPresenter Create(
@@ -59,6 +63,7 @@ public sealed class MainFormPresenterFactory :
             _documentWorkspace,
             _documentProcessingService,
             _documentTextExtractorResolver,
-            _logger);
+            _logger,
+            _searchOptions);
     }
 }

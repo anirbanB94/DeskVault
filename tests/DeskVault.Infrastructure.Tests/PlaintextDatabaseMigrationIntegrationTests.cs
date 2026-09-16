@@ -274,10 +274,13 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     0L,
                     secondChunk.ProcessingGeneration);
 
-                IReadOnlyList<SearchDocumentsResult> searchResults =
+                SearchDocumentsPage searchPage =
                     await searchHandler.HandleAsync(
                         new SearchDocumentsQuery(
                             "plaintext migration"));
+
+                IReadOnlyList<SearchDocumentsResult> searchResults =
+                    searchPage.Results;
 
                 SearchDocumentsResult matchingResult =
                     Assert.Single(

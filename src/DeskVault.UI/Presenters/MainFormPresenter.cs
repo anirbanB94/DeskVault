@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
@@ -9,6 +10,7 @@ using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace DeskVault.UI.Presenters;
 
@@ -24,6 +26,12 @@ public sealed class MainFormPresenter
     private readonly IDocumentProcessingService _documentProcessingService;
     private readonly DocumentTextExtractorResolver _documentTextExtractorResolver;
     private readonly ILogger<MainFormPresenter> _logger;
+    private readonly int _searchPageSize;
+
+    private string? _currentSearchText;
+    private SearchDocumentsContinuation? _currentSearchContinuation;
+    private CancellationTokenSource? _searchCancellationTokenSource;
+    private long _searchOperationVersion;
 
     public MainFormPresenter(
         IMainFormView view,
@@ -35,8 +43,21 @@ public sealed class MainFormPresenter
         IDocumentWorkspace documentWorkspace,
         IDocumentProcessingService documentProcessingService,
         DocumentTextExtractorResolver documentTextExtractorResolver,
-        ILogger<MainFormPresenter> logger)
+        ILogger<MainFormPresenter> logger,
+        IOptions<SearchOptions> searchOptions)
     {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(importDocumentHandler);
+        ArgumentNullException.ThrowIfNull(removeDocumentHandler);
+        ArgumentNullException.ThrowIfNull(openDocumentHandler);
+        ArgumentNullException.ThrowIfNull(listDocumentsHandler);
+        ArgumentNullException.ThrowIfNull(searchDocumentsHandler);
+        ArgumentNullException.ThrowIfNull(documentWorkspace);
+        ArgumentNullException.ThrowIfNull(documentProcessingService);
+        ArgumentNullException.ThrowIfNull(documentTextExtractorResolver);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(searchOptions);
+
         _view = view;
         _importDocumentHandler = importDocumentHandler;
         _removeDocumentHandler = removeDocumentHandler;
@@ -48,11 +69,22 @@ public sealed class MainFormPresenter
         _documentTextExtractorResolver = documentTextExtractorResolver;
         _logger = logger;
 
+        _searchPageSize = searchOptions.Value.PageSize;
+
+        if (_searchPageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(searchOptions),
+                "Search page size must be greater than zero.");
+        }
+
         _view.ImportRequested += OnImportRequested;
         _view.OpenRequested += OnOpenRequested;
         _view.RemoveRequested += OnRemoveRequested;
         _view.DocumentSelectionChanged += OnDocumentSelectionChanged;
         _view.SearchRequested += OnSearchRequested;
+        _view.LoadMoreSearchResultsRequested +=
+            OnLoadMoreSearchResultsRequested;
         _view.ReprocessRequested += OnReprocessRequested;
         _documentWorkspace.DocumentRemoved += OnDocumentRemoved;
     }
@@ -449,37 +481,75 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        var operation =
+            BeginSearchOperation();
+
+        CancellationTokenSource cancellationTokenSource =
+            operation.CancellationTokenSource;
+
+        CancellationToken cancellationToken =
+            cancellationTokenSource.Token;
+
+        long operationVersion =
+            operation.Version;
+
         try
         {
             string searchText =
-                _view.SearchText.Trim();
+                _view.SearchText?.Trim() ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(searchText))
             {
+                _currentSearchText = null;
+                _currentSearchContinuation = null;
+
                 _logger.LogDebug(
                     LogMessages.DocumentSearchCleared);
+
+                if (!IsCurrentSearchOperation(operationVersion))
+                {
+                    return;
+                }
 
                 await RefreshDocumentsAsync();
 
                 return;
             }
 
+            _currentSearchText = searchText;
+            _currentSearchContinuation = null;
+
+            string? searchFileType =
+                _view.SearchFileType;
+
+            IReadOnlyList<string>? fileTypes =
+                string.IsNullOrWhiteSpace(searchFileType)
+                    ? null
+                    : [searchFileType];
+
             _logger.LogInformation(
                 LogMessages.DocumentSearchStarted);
 
-            var results =
+            var page =
                 await _searchDocumentsHandler.HandleAsync(
-                    new SearchDocumentsQuery(searchText));
+                    new SearchDocumentsQuery(
+                        searchText,
+                        FileTypes: fileTypes,
+                        Continuation: null,
+                        Limit: _searchPageSize),
+                    cancellationToken);
 
-            var documents = results
-                .GroupBy(result => result.DocumentId)
-                .Select(group => group.First())
-                .Select(result => new DocumentListItem(
-                    result.DocumentId,
-                    result.FileName))
-                .ToList();
+            cancellationToken.ThrowIfCancellationRequested();
 
-            if (documents.Count == 0)
+            if (!IsCurrentSearchOperation(operationVersion))
+            {
+                return;
+            }
+
+            var searchResults =
+                MapSearchResults(page.Results);
+
+            if (searchResults.Count == 0)
             {
                 _logger.LogInformation(
                     LogMessages.DocumentSearchCompletedWithoutResults);
@@ -488,15 +558,23 @@ public sealed class MainFormPresenter
                 _view.SetOpenEnabled(false);
                 _view.SetRemoveEnabled(false);
                 _view.SetReprocessEnabled(false);
+                _view.SetLoadMoreEnabled(false);
 
                 return;
             }
 
+            _currentSearchContinuation =
+                page.Continuation;
+
             _logger.LogInformation(
                 LogMessages.DocumentSearchCompletedWithResults,
-                documents.Count);
+                searchResults.Count);
 
-            _view.ShowDocuments(documents);
+            _view.ShowSearchResults(
+                searchResults);
+
+            _view.SetLoadMoreEnabled(
+                page.HasMore);
 
             bool hasSelection =
                 _view.SelectedDocumentId.HasValue;
@@ -505,10 +583,20 @@ public sealed class MainFormPresenter
             _view.SetRemoveEnabled(hasSelection);
 
             UpdateReprocessEnabled();
-
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug(
+                "Document search operation was superseded.");
         }
         catch (Exception ex)
         {
+            if (!IsCurrentSearchOperation(operationVersion))
+            {
+                return;
+            }
+
             _logger.LogError(
                 ex,
                 LogMessages.DocumentSearchFailed);
@@ -520,6 +608,194 @@ public sealed class MainFormPresenter
                 ex.ToString(),
                 UiMessages.DeskVaultTitle);
         }
+        finally
+        {
+            CompleteSearchOperation(
+                cancellationTokenSource);
+        }
+    }
+
+    private async void OnLoadMoreSearchResultsRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_currentSearchText) ||
+            _currentSearchContinuation is null)
+        {
+            _view.SetLoadMoreEnabled(false);
+
+            return;
+        }
+
+        var operation =
+            BeginSearchOperation();
+
+        CancellationTokenSource cancellationTokenSource =
+            operation.CancellationTokenSource;
+
+        CancellationToken cancellationToken =
+            cancellationTokenSource.Token;
+
+        long operationVersion =
+            operation.Version;
+
+        try
+        {
+            _logger.LogInformation(
+                LogMessages.DocumentSearchStarted);
+
+            _view.SetLoadMoreEnabled(false);
+
+            string? searchFileType =
+                _view.SearchFileType;
+
+            IReadOnlyList<string>? fileTypes =
+                string.IsNullOrWhiteSpace(searchFileType)
+                    ? null
+                    : [searchFileType];
+
+            SearchDocumentsContinuation continuation =
+                _currentSearchContinuation;
+
+            string searchText =
+                _currentSearchText;
+
+            var page =
+                await _searchDocumentsHandler.HandleAsync(
+                    new SearchDocumentsQuery(
+                        searchText,
+                        FileTypes: fileTypes,
+                        Continuation: continuation,
+                        Limit: _searchPageSize),
+                    cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsCurrentSearchOperation(operationVersion))
+            {
+                return;
+            }
+
+            var searchResults =
+                MapSearchResults(page.Results);
+
+            if (searchResults.Count == 0)
+            {
+                _currentSearchContinuation = null;
+                _view.SetLoadMoreEnabled(false);
+
+                return;
+            }
+
+            _view.AppendSearchResults(
+                searchResults);
+
+            _currentSearchContinuation =
+                page.Continuation;
+
+            _view.SetLoadMoreEnabled(
+                page.HasMore);
+
+            _logger.LogInformation(
+                LogMessages.DocumentSearchCompletedWithResults,
+                searchResults.Count);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug(
+                "Document search operation was superseded.");
+
+            if (IsCurrentSearchOperation(operationVersion))
+            {
+                _view.SetLoadMoreEnabled(
+                    _currentSearchContinuation is not null);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!IsCurrentSearchOperation(operationVersion))
+            {
+                return;
+            }
+
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentSearchFailed);
+
+            _view.SetLoadMoreEnabled(true);
+
+            _view.SetStatus(
+                $"Search failed: {ex.Message}");
+
+            _view.ShowError(
+                ex.ToString(),
+                UiMessages.DeskVaultTitle);
+        }
+        finally
+        {
+            CompleteSearchOperation(
+                cancellationTokenSource);
+        }
+    }
+
+    private (
+        CancellationTokenSource CancellationTokenSource,
+        long Version) BeginSearchOperation()
+    {
+        _searchCancellationTokenSource?.Cancel();
+
+        CancellationTokenSource current =
+            new();
+
+        _searchCancellationTokenSource =
+            current;
+
+        long version =
+            Interlocked.Increment(
+                ref _searchOperationVersion);
+
+        return (
+            current,
+            version);
+    }
+
+    private bool IsCurrentSearchOperation(
+        long operationVersion)
+    {
+        return operationVersion ==
+            Volatile.Read(
+                ref _searchOperationVersion);
+    }
+
+    private void CompleteSearchOperation(
+        CancellationTokenSource cancellationTokenSource)
+    {
+        if (ReferenceEquals(
+            _searchCancellationTokenSource,
+            cancellationTokenSource))
+        {
+            _searchCancellationTokenSource = null;
+        }
+
+        cancellationTokenSource.Dispose();
+    }
+
+    private static List<SearchResultListItem> MapSearchResults(
+        IReadOnlyList<SearchDocumentsResult> results)
+    {
+        return results
+            .Select(result => new SearchResultListItem(
+                result.DocumentId,
+                result.DisplayName,
+                result.FileName,
+                result.Matches
+                    .Select(match => match.Context)
+                    .FirstOrDefault(
+                        context => !string.IsNullOrWhiteSpace(context))
+                    ?? string.Empty,
+                result.MatchCount))
+            .ToList();
     }
 
     private async Task<int> RefreshDocumentsAsync()

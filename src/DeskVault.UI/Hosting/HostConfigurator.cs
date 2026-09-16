@@ -2,6 +2,7 @@ using DeskVault.Application;
 using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Parsing.Csv;
 using DeskVault.Application.Documents.Queries.GetDocument;
+using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Infrastructure;
 using DeskVault.UI.Forms;
 using DeskVault.UI.Presenters;
@@ -80,6 +81,10 @@ internal static class HostConfigurator
         services.Configure<MarkdownRenderingOptions>(
             configuration.GetSection(
                 MarkdownRenderingOptions.SectionName));
+
+        services.Configure<SearchOptions>(
+            configuration.GetSection(
+                SearchOptions.SectionName));
 
         // Application
         services.AddApplication();

@@ -11,14 +11,16 @@ using DeskVault.UI.Resources;
 using DeskVault.UI.Services;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
+using System.Text;
 
 namespace DeskVault.UI.Tests;
 
 public sealed class MainFormPresenterTests
 {
     [Fact]
-    public async Task SearchRequested_MatchingChunks_DisplaysUniqueDocuments()
+    public async Task SearchRequested_MatchingChunks_DisplaysSearchResults()
     {
         Guid firstDocumentId =
             Guid.NewGuid();
@@ -32,7 +34,8 @@ public sealed class MainFormPresenterTests
         searchStore
             .Setup(x => x.SearchAsync(
                 It.Is<SearchDocumentsQuery>(
-                    query => query.SearchText == "security"),
+                    query =>
+                        query.SearchText == "security"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 CreateSearchResults(
@@ -64,19 +67,154 @@ public sealed class MainFormPresenterTests
         searchStore.Verify(
             x => x.SearchAsync(
                 It.Is<SearchDocumentsQuery>(
-                    query => query.SearchText == "security"),
+                    query =>
+                        query.SearchText == "security" &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
         view.Verify(
+            x => x.ShowSearchResults(
+                It.Is<IReadOnlyList<SearchResultListItem>>(
+                    results =>
+                        results.Count == 2 &&
+                        results[0].DocumentId == firstDocumentId &&
+                        results[0].DisplayName == "Security Policy" &&
+                        results[0].FileName == "security-policy.md" &&
+                        results[0].Snippet ==
+                            "Security policy introduction." &&
+                        results[0].MatchCount == 2 &&
+                        results[1].DocumentId == secondDocumentId &&
+                        results[1].DisplayName == "Incident Response" &&
+                        results[1].FileName == "incident-response.md" &&
+                        results[1].Snippet ==
+                            "Security incident response procedure." &&
+                        results[1].MatchCount == 1)),
+            Times.Once);
+
+        view.Verify(
             x => x.ShowDocuments(
-                It.Is<IReadOnlyList<DocumentListItem>>(
-                    documents =>
-                        documents.Count == 2 &&
-                        documents[0].Id == firstDocumentId &&
-                        documents[0].FileName == "security-policy.md" &&
-                        documents[1].Id == secondDocumentId &&
-                        documents[1].FileName == "incident-response.md")),
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SearchRequested_WithoutFileTypeFilter_PassesNullFileTypes()
+    {
+        const string searchText =
+            "security";
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.FileTypes == null),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(searchText);
+
+        view
+            .SetupGet(x => x.SearchFileType)
+            .Returns((string?)null);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.FileTypes == null &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SearchRequested_WithFileTypeFilter_PassesSelectedFileType()
+    {
+        const string searchText =
+            "security";
+
+        const string fileType =
+            ".pdf";
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.FileTypes != null &&
+                        query.FileTypes.Count == 1 &&
+                        query.FileTypes[0] == fileType),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(searchText);
+
+        view
+            .SetupGet(x => x.SearchFileType)
+            .Returns(fileType);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.FileTypes != null &&
+                        query.FileTypes.Count == 1 &&
+                        query.FileTypes[0] == fileType &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -91,8 +229,7 @@ public sealed class MainFormPresenterTests
                 It.Is<SearchDocumentsQuery>(
                     query => query.SearchText == "unknown"),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                []);
+            .ReturnsAsync([]);
 
         var view =
             new Mock<IMainFormView>();
@@ -119,7 +256,10 @@ public sealed class MainFormPresenterTests
         searchStore.Verify(
             x => x.SearchAsync(
                 It.Is<SearchDocumentsQuery>(
-                    query => query.SearchText == "unknown"),
+                    query =>
+                        query.SearchText == "unknown" &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -139,6 +279,11 @@ public sealed class MainFormPresenterTests
             x => x.ShowDocuments(
                 It.IsAny<IReadOnlyList<DocumentListItem>>()),
             Times.Never);
+
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
     }
 
     [Fact]
@@ -156,7 +301,10 @@ public sealed class MainFormPresenterTests
         searchStore
             .Setup(x => x.SearchAsync(
                 It.Is<SearchDocumentsQuery>(
-                    query => query.SearchText == searchText),
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new InvalidOperationException(
@@ -187,7 +335,10 @@ public sealed class MainFormPresenterTests
         searchStore.Verify(
             x => x.SearchAsync(
                 It.Is<SearchDocumentsQuery>(
-                    query => query.SearchText == searchText),
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -212,8 +363,561 @@ public sealed class MainFormPresenterTests
             Times.Never);
 
         view.Verify(
+            x => x.ShowSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        view.Verify(
             x => x.ShowEmptyState(),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task SearchRequested_WhenOlderSearchCompletesAfterNewerSearch_DoesNotReplaceNewerResults()
+    {
+        const string firstSearchText =
+            "first";
+
+        const string secondSearchText =
+            "second";
+
+        Guid firstDocumentId =
+            Guid.NewGuid();
+
+        Guid secondDocumentId =
+            Guid.NewGuid();
+
+        var firstSearchCompletion =
+            new TaskCompletionSource<IReadOnlyList<SearchDocumentsResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var secondSearchCompletion =
+            new TaskCompletionSource<IReadOnlyList<SearchDocumentsResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == firstSearchText),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                SearchDocumentsQuery _,
+                CancellationToken _) =>
+                    firstSearchCompletion.Task);
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == secondSearchText),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                SearchDocumentsQuery _,
+                CancellationToken _) =>
+                    secondSearchCompletion.Task);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        var searchText =
+            firstSearchText;
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(() => searchText);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        searchText =
+            secondSearchText;
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        secondSearchCompletion.SetResult(
+        [
+            CreateResult(
+                "Second Search Result")
+        ]);
+
+        await WaitForBackgroundOperationAsync();
+
+        firstSearchCompletion.SetResult(
+        [
+            new SearchDocumentsResult(
+                firstDocumentId,
+                "first-search-result.md",
+                "First Search Result",
+                [
+                    new SearchMatch(
+                        SearchMatchSource.ProcessedContent,
+                        SearchMatchKind.Exact,
+                        "First search matching content.")
+                ],
+                1)
+        ]);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.Is<IReadOnlyList<SearchResultListItem>>(
+                    results =>
+                        results.Count == 1 &&
+                        results[0].DisplayName ==
+                            "Second Search Result")),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.Is<IReadOnlyList<SearchResultListItem>>(
+                    results =>
+                        results.Count == 1 &&
+                        results[0].DocumentId == firstDocumentId)),
+            Times.Never);
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == firstSearchText),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == secondSearchText),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        _ = secondDocumentId;
+    }
+
+    [Fact]
+    public async Task LoadMoreRequested_WhenSupersededByNewSearch_DoesNotAppendStaleResults()
+    {
+        const string searchText =
+            "security";
+
+        const string newerSearchText =
+            "policy";
+
+        var loadMoreCompletion =
+            new TaskCompletionSource<IReadOnlyList<SearchDocumentsResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var newerSearchCompletion =
+            new TaskCompletionSource<IReadOnlyList<SearchDocumentsResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation == null),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                .. CreateSearchResultsForBatching(21)
+            ]);
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation != null),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                SearchDocumentsQuery _,
+                CancellationToken _) =>
+                    loadMoreCompletion.Task);
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == newerSearchText &&
+                        query.Continuation == null),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                SearchDocumentsQuery _,
+                CancellationToken _) =>
+                    newerSearchCompletion.Task);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        var currentSearchText =
+            searchText;
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(() => currentSearchText);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Raise(
+            x => x.LoadMoreSearchResultsRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        currentSearchText =
+            newerSearchText;
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        IReadOnlyList<SearchDocumentsResult> newerResults =
+        [
+            CreateResult(
+                "Policy Search Result")
+        ];
+
+        newerSearchCompletion.SetResult(
+            newerResults);
+
+        await WaitForBackgroundOperationAsync();
+
+        IReadOnlyList<SearchDocumentsResult> staleResults =
+        [
+            CreateResult(
+                "Stale Load More Result")
+        ];
+
+        loadMoreCompletion.SetResult(
+            staleResults);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.Is<IReadOnlyList<SearchResultListItem>>(
+                    results =>
+                        results.Count == 1 &&
+                        results[0].DisplayName ==
+                            "Policy Search Result")),
+            Times.Once);
+
+        view.Verify(
+            x => x.AppendSearchResults(
+                It.Is<IReadOnlyList<SearchResultListItem>>(
+                    results =>
+                        results.Any(
+                            result =>
+                                result.DisplayName ==
+                                "Stale Load More Result"))),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task LoadMoreRequested_UsesReturnedContinuationAndAppendsResults()
+    {
+        const string searchText =
+            "security";
+
+        IReadOnlyList<SearchDocumentsResult> searchResults =
+            CreateSearchResultsForBatching(21);
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(searchResults);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(searchText);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Raise(
+            x => x.LoadMoreSearchResultsRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation != null &&
+                        query.Limit == 20),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.AppendSearchResults(
+                It.Is<IReadOnlyList<SearchResultListItem>>(
+                    results =>
+                        results.Count == 1 &&
+                        results[0].DocumentId ==
+                            searchResults[20].DocumentId)),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.Is<IReadOnlyList<SearchResultListItem>>(
+                    results =>
+                        results.Count == 20)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task LoadMoreRequested_WithFileTypeFilter_PreservesSelectedFileType()
+    {
+        const string searchText =
+            "security";
+
+        const string fileType =
+            ".pdf";
+
+        IReadOnlyList<SearchDocumentsResult> searchResults =
+            CreateSearchResultsForBatching(21);
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(searchResults);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(searchText);
+
+        view
+            .SetupGet(x => x.SearchFileType)
+            .Returns(fileType);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Raise(
+            x => x.LoadMoreSearchResultsRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.FileTypes != null &&
+                        query.FileTypes.Count == 1 &&
+                        query.FileTypes[0] == fileType &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.FileTypes != null &&
+                        query.FileTypes.Count == 1 &&
+                        query.FileTypes[0] == fileType &&
+                        query.Continuation != null &&
+                        query.Limit == 20),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task LoadMoreRequested_WhenFinalBatchIsReturned_DisablesLoadMore()
+    {
+        const string searchText =
+            "security";
+
+        IReadOnlyList<SearchDocumentsResult> searchResults =
+            CreateSearchResultsForBatching(21);
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(searchResults);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(searchText);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Raise(
+            x => x.LoadMoreSearchResultsRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Verify(
+            x => x.SetLoadMoreEnabled(false),
+            Times.AtLeastOnce);
+
+        view.Verify(
+            x => x.AppendSearchResults(
+                It.Is<IReadOnlyList<SearchResultListItem>>(
+                    results =>
+                        results.Count == 1)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task LoadMoreRequested_WithoutContinuation_DisablesLoadMoreAndDoesNotSearch()
+    {
+        const string searchText =
+            "security";
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(searchText);
+
+        var documentWorkspace =
+            new Mock<IDocumentWorkspace>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                documentWorkspace);
+
+        view.Raise(
+            x => x.LoadMoreSearchResultsRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetLoadMoreEnabled(false),
+            Times.Once);
     }
 
     [Fact]
@@ -937,6 +1641,34 @@ public sealed class MainFormPresenterTests
         ];
     }
 
+    private static IReadOnlyList<SearchDocumentsResult>
+        CreateSearchResultsForBatching(
+            int count)
+    {
+        return Enumerable
+            .Range(1, count)
+            .Select(index =>
+                CreateResult(
+                    $"Search Result {index:D2}"))
+            .ToList();
+    }
+
+    private static SearchDocumentsResult CreateResult(
+        string displayName)
+    {
+        return new SearchDocumentsResult(
+            Guid.NewGuid(),
+            $"{displayName.ToLowerInvariant().Replace(' ', '-')}.md",
+            displayName,
+            [
+                new SearchMatch(
+                    SearchMatchSource.ProcessedContent,
+                    SearchMatchKind.Exact,
+                    $"{displayName} matching content.")
+            ],
+            1);
+    }
+
     private static Mock<IImportDocumentValidator>
         CreateSuccessfulImportValidator()
     {
@@ -1044,6 +1776,13 @@ public sealed class MainFormPresenterTests
                 new SearchDocumentsRanker(),
                 NullLogger<SearchDocumentsHandler>.Instance);
 
+        var searchOptions =
+            Options.Create(
+                new SearchOptions
+                {
+                    PageSize = SearchOptions.DefaultPageSize
+                });
+
         return new MainFormPresenter(
             view.Object,
             importDocumentHandler,
@@ -1054,14 +1793,15 @@ public sealed class MainFormPresenterTests
             documentWorkspace.Object,
             processingService.Object,
             documentTextExtractorResolver,
-            NullLogger<MainFormPresenter>.Instance);
+            NullLogger<MainFormPresenter>.Instance,
+            searchOptions);
     }
 
     private static MemoryStream CreateContentStream(
         string content)
     {
         return new MemoryStream(
-            System.Text.Encoding.UTF8.GetBytes(
+            Encoding.UTF8.GetBytes(
                 content));
     }
 

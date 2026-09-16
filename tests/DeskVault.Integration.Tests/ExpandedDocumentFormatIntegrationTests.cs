@@ -210,10 +210,13 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 indexedText,
                 StringComparison.OrdinalIgnoreCase);
 
-            IReadOnlyList<SearchDocumentsResult> searchResults =
+            SearchDocumentsPage searchPage =
                 await harness.SearchHandler.HandleAsync(
                     new SearchDocumentsQuery(
                         searchableText));
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                searchPage.Results;
 
             SearchDocumentsResult matchingResult =
                 Assert.Single(
@@ -463,10 +466,13 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 normalizedIndexedText,
                 StringComparison.Ordinal);
 
-            IReadOnlyList<SearchDocumentsResult> searchResults =
+            SearchDocumentsPage searchPage =
                 await harness.SearchHandler.HandleAsync(
                     new SearchDocumentsQuery(
                         "enterprise knowledge search"));
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                searchPage.Results;
 
             SearchDocumentsResult matchingResult =
                 Assert.Single(
@@ -765,10 +771,13 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 indexedText,
                 StringComparison.Ordinal);
 
-            IReadOnlyList<SearchDocumentsResult> searchResults =
+            SearchDocumentsPage searchPage =
                 await harness.SearchHandler.HandleAsync(
                     new SearchDocumentsQuery(
                         "enterprise knowledge search"));
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                searchPage.Results;
 
             SearchDocumentsResult matchingResult =
                 Assert.Single(
@@ -1480,10 +1489,13 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 indexedText,
                 StringComparison.OrdinalIgnoreCase);
 
-            IReadOnlyList<SearchDocumentsResult> searchResults =
+            SearchDocumentsPage searchPage =
                 await harness.SearchHandler.HandleAsync(
                     new SearchDocumentsQuery(
                         "enterprise knowledge search"));
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                searchPage.Results;
 
             SearchDocumentsResult matchingResult =
                 Assert.Single(
@@ -1613,10 +1625,13 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 indexedText,
                 StringComparison.OrdinalIgnoreCase);
 
-            IReadOnlyList<SearchDocumentsResult> searchResults =
+            SearchDocumentsPage searchPage =
                 await harness.SearchHandler.HandleAsync(
                     new SearchDocumentsQuery(
                         "enterprise knowledge search"));
+
+            IReadOnlyList<SearchDocumentsResult> searchResults =
+                searchPage.Results;
 
             SearchDocumentsResult matchingResult =
                 Assert.Single(

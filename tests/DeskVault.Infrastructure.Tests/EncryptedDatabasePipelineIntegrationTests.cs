@@ -130,10 +130,13 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     DocumentStatus.Available,
                     processedDocument.Status);
 
-                IReadOnlyList<SearchDocumentsResult> searchResults =
+                SearchDocumentsPage searchPage =
                     await searchHandler.HandleAsync(
                         new SearchDocumentsQuery(
                             "ENTERPRISE ARCHITECTURE"));
+
+                IReadOnlyList<SearchDocumentsResult> searchResults =
+                    searchPage.Results;
 
                 SearchDocumentsResult matchingResult =
                     Assert.Single(
@@ -213,10 +216,13 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     File.Exists(
                         restoredDocument.StoredFilePath));
 
-                IReadOnlyList<SearchDocumentsResult> restoredSearchResults =
+                SearchDocumentsPage restoredSearchPage =
                     await searchHandler.HandleAsync(
                         new SearchDocumentsQuery(
                             "encrypted database"));
+
+                IReadOnlyList<SearchDocumentsResult> restoredSearchResults =
+                    restoredSearchPage.Results;
 
                 SearchDocumentsResult restoredResult =
                     Assert.Single(
