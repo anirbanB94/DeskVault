@@ -46,6 +46,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IDocumentRepository, SqliteDocumentRepository>();
 
+        services.AddSingleton<IWorkspaceRepository, SqliteWorkspaceRepository>();
+
         services.AddSingleton<IDocumentProcessingStore, SqliteDocumentProcessingStore>();
 
         services.AddSingleton<IDocumentSearchStore, SqliteDocumentSearchStore>();
