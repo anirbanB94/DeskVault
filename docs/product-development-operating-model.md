@@ -18,6 +18,76 @@ platform that enables users to discover, retrieve, and understand information
 from their locally stored documents while keeping their data under their
 control.
 
+## MVP and Sprint Relationship
+
+An MVP defines a product-level objective and scope for a defined stage of
+DeskVault's evolution.
+
+A Sprint is an implementation increment that contributes toward the current
+MVP objective. A Sprint does not define or replace the MVP objective.
+
+The relationship is:
+
+```text
+Product Goal
+  ↓
+MVP Objective
+  ↓
+MVP Backlog
+  ↓
+Sprint Goal
+  ↓
+Selected PBIs
+  ↓
+Technical Tasks
+  ↓
+Implementation
+```
+
+### MVP
+
+An MVP (Minimum Viable Product) should define:
+
+- the product outcome the release is intended to establish;
+- the meaningful capabilities required to achieve that outcome;
+- the boundaries of what is intentionally deferred;
+- the evidence or criteria used to determine whether the MVP objective has
+  been achieved.
+
+The MVP backlog is expected to evolve as implementation produces new evidence
+and understanding.
+
+### Sprint
+
+A Sprint is a time-bounded implementation increment within the current MVP.
+
+The Sprint should:
+
+- pursue a clear Sprint Goal aligned with the MVP objective;
+- select a coherent set of PBIs from the actionable backlog;
+- decompose selected work into Technical Tasks as needed;
+- produce a usable increment within the agreed scope.
+
+Completing a Sprint does not by itself mean that the MVP is complete.
+
+### MVP Reassessment
+
+At meaningful implementation boundaries, the remaining MVP scope should be
+reassessed using:
+
+- completed work;
+- implementation evidence;
+- newly discovered technical or product requirements;
+- remaining gaps against the MVP objective;
+- changes in understanding or constraints.
+
+Additional backlog items should be added only when the evidence shows that they
+are required to achieve the MVP objective or address a newly identified
+necessary gap.
+
+The original Sprint plan or anticipated task list must not be treated as a
+fixed definition of MVP completion.
+
 ## Work Hierarchy
 
 DeskVault uses the following work structure:
@@ -129,7 +199,7 @@ For Sprint planning, Product Backlog Items may be estimated using relative
 sizing such as:
 
 ```text
-1 → 2 → 3 → 5 → 8
+1 → 2 → 3 → 5 → 8 → 13
 ```
 
 The estimate represents relative effort, complexity, and uncertainty compared
@@ -146,6 +216,9 @@ Estimation should:
 Technical Tasks may be discussed and broken down as needed to improve
 implementation planning, but task estimates do not override the Product
 Backlog Item's relative size.
+
+Detailed estimation conventions are defined in
+`docs/engineering/estimation-conventions.md`.
 
 ## Lightweight Sprint Review
 
