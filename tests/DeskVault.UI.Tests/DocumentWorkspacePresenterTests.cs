@@ -805,6 +805,7 @@ public sealed class DocumentWorkspacePresenterTests
                 NullLogger<GetDocumentHandler>.Instance),
             new RemoveDocumentHandler(
                 repository.Object,
+                new Mock<IWorkspaceRepository>().Object,
                 storageService.Object,
                 NullLogger<RemoveDocumentHandler>.Instance),
             NullLogger<DocumentWorkspacePresenter>.Instance);

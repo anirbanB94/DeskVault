@@ -468,6 +468,90 @@ public sealed class SqliteWorkspaceRepositoryTests
     }
 
     [Fact]
+    public async Task RemoveDocumentFromAllWorkspacesAsync_WhenDocumentBelongsToMultipleWorkspaces_RemovesOnlyItsMemberships()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        Document firstDocument =
+            CreateDocument();
+
+        Document secondDocument =
+            CreateDocument();
+
+        await AddDocumentAsync(
+            connection,
+            firstDocument);
+
+        await AddDocumentAsync(
+            connection,
+            secondDocument);
+
+        Workspace firstWorkspace =
+            Workspace.CreatePersistent(
+                Guid.NewGuid(),
+                "Research");
+
+        Workspace secondWorkspace =
+            Workspace.CreatePersistent(
+                Guid.NewGuid(),
+                "Writing");
+
+        firstWorkspace.AddDocument(firstDocument.Id);
+        firstWorkspace.AddDocument(secondDocument.Id);
+
+        secondWorkspace.AddDocument(firstDocument.Id);
+
+        await repository.AddAsync(firstWorkspace);
+        await repository.AddAsync(secondWorkspace);
+
+        await repository.RemoveDocumentFromAllWorkspacesAsync(
+            firstDocument.Id);
+
+        Workspace? firstResult =
+            await repository.GetByIdAsync(
+                firstWorkspace.Id);
+
+        Workspace? secondResult =
+            await repository.GetByIdAsync(
+                secondWorkspace.Id);
+
+        Assert.NotNull(firstResult);
+        Assert.NotNull(secondResult);
+
+        Assert.DoesNotContain(
+            firstResult.Memberships,
+            membership =>
+                membership.DocumentId == firstDocument.Id);
+
+        Assert.Contains(
+            firstResult.Memberships,
+            membership =>
+                membership.DocumentId == secondDocument.Id);
+
+        Assert.DoesNotContain(
+            secondResult.Memberships,
+            membership =>
+                membership.DocumentId == firstDocument.Id);
+
+        Document? firstDocumentResult =
+            await GetDocumentAsync(
+                connection,
+                firstDocument.Id);
+
+        Document? secondDocumentResult =
+            await GetDocumentAsync(
+                connection,
+                secondDocument.Id);
+
+        Assert.NotNull(firstDocumentResult);
+        Assert.NotNull(secondDocumentResult);
+    }
+
+    [Fact]
     public async Task GetAllAsync_WhenMultipleWorkspacesExist_ReturnsAllWorkspacesWithMemberships()
     {
         await using SqliteConnection connection =

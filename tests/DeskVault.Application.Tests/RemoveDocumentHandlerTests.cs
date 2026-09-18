@@ -23,12 +23,16 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((Document?)null);
 
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
         var storageService =
             new TestStorageService();
 
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
+                workspaceRepository.Object,
                 storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
@@ -53,6 +57,12 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -70,6 +80,9 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
         var storageService =
             new TestStorageService
             {
@@ -81,6 +94,7 @@ public sealed class RemoveDocumentHandlerTests
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
+                workspaceRepository.Object,
                 storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
@@ -105,6 +119,12 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -122,12 +142,16 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
         var storageService =
             new TestStorageService();
 
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
+                workspaceRepository.Object,
                 storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
@@ -149,6 +173,12 @@ public sealed class RemoveDocumentHandlerTests
 
         repository.Verify(
             x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
                 document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -177,12 +207,16 @@ public sealed class RemoveDocumentHandlerTests
                 new InvalidOperationException(
                     "Metadata deletion failed."));
 
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
         var storageService =
             new TestStorageService();
 
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
+                workspaceRepository.Object,
                 storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
@@ -207,6 +241,12 @@ public sealed class RemoveDocumentHandlerTests
                 document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -224,6 +264,9 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
         var storageService =
             new TestStorageService
             {
@@ -235,6 +278,7 @@ public sealed class RemoveDocumentHandlerTests
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
+                workspaceRepository.Object,
                 storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
@@ -253,6 +297,12 @@ public sealed class RemoveDocumentHandlerTests
 
         repository.Verify(
             x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
@@ -281,12 +331,16 @@ public sealed class RemoveDocumentHandlerTests
                 new IOException(
                     "Metadata storage operation failed."));
 
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
         var storageService =
             new TestStorageService();
 
         var handler =
             new RemoveDocumentHandler(
                 repository.Object,
+                workspaceRepository.Object,
                 storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
@@ -308,6 +362,83 @@ public sealed class RemoveDocumentHandlerTests
 
         repository.Verify(
             x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenWorkspaceMembershipCleanupFails_ReturnsWorkspaceMembershipCleanupFailed()
+    {
+        Document document =
+            CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        repository
+            .Setup(x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.RemoveDocumentFromAllWorkspacesAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    "Workspace membership cleanup failed."));
+
+        var storageService =
+            new TestStorageService();
+
+        var handler =
+            new RemoveDocumentHandler(
+                repository.Object,
+                workspaceRepository.Object,
+                storageService,
+                NullLogger<RemoveDocumentHandler>.Instance);
+
+        RemoveDocumentResult result =
+            await handler.HandleAsync(
+                new RemoveDocumentCommand(
+                    document.Id));
+
+        Assert.Equal(
+            RemoveDocumentResultStatus.WorkspaceMembershipCleanupFailed,
+            result.Status);
+
+        Assert.Equal(
+            "Workspace membership cleanup failed.",
+            result.Message);
+
+        Assert.True(
+            storageService.DeleteWasCalled);
+
+        repository.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
                 document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);

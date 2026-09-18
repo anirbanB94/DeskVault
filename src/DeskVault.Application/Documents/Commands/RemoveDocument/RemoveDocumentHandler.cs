@@ -7,15 +7,18 @@ namespace DeskVault.Application.Documents.Commands.RemoveDocument;
 public sealed class RemoveDocumentHandler
 {
     private readonly IDocumentRepository _repository;
+    private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IStorageService _storageService;
     private readonly ILogger<RemoveDocumentHandler> _logger;
 
     public RemoveDocumentHandler(
         IDocumentRepository repository,
+        IWorkspaceRepository workspaceRepository,
         IStorageService storageService,
         ILogger<RemoveDocumentHandler> logger)
     {
         _repository = repository;
+        _workspaceRepository = workspaceRepository;
         _storageService = storageService;
         _logger = logger;
     }
@@ -73,13 +76,6 @@ public sealed class RemoveDocumentHandler
             await _repository.DeleteAsync(
                 command.DocumentId,
                 cancellationToken);
-
-            _logger.LogInformation(
-                LogMessages.DocumentRemovalCompleted);
-
-            return new RemoveDocumentResult(
-                RemoveDocumentResultStatus.Success,
-                "Document removed successfully.");
         }
         catch (Exception ex) when (
             ex is IOException ||
@@ -93,5 +89,31 @@ public sealed class RemoveDocumentHandler
                 RemoveDocumentResultStatus.MetadataDeletionFailed,
                 ex.Message);
         }
+
+        try
+        {
+            await _workspaceRepository.RemoveDocumentFromAllWorkspacesAsync(
+                command.DocumentId,
+                cancellationToken);
+        }
+        catch (Exception ex) when (
+            ex is IOException ||
+            ex is InvalidOperationException)
+        {
+            _logger.LogError(
+                ex,
+                "Workspace membership cleanup failed during document removal.");
+
+            return new RemoveDocumentResult(
+                RemoveDocumentResultStatus.WorkspaceMembershipCleanupFailed,
+                ex.Message);
+        }
+
+        _logger.LogInformation(
+            LogMessages.DocumentRemovalCompleted);
+
+        return new RemoveDocumentResult(
+            RemoveDocumentResultStatus.Success,
+            "Document removed successfully.");
     }
 }

@@ -132,9 +132,13 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 new SearchDocumentsRanker(),
                 NullLogger<SearchDocumentsHandler>.Instance);
 
+        var workspaceRepository =
+            CreateWorkspaceRepository();
+
         RemoveHandler =
             new RemoveDocumentHandler(
                 repository,
+                workspaceRepository,
                 _storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
@@ -225,6 +229,13 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             CreateFactory(
                 _connection),
             NullLogger<SqliteDocumentRepository>.Instance);
+    }
+
+    private SqliteWorkspaceRepository CreateWorkspaceRepository()
+    {
+        return new SqliteWorkspaceRepository(
+            CreateFactory(
+                _connection));
     }
 
     private SqliteDocumentProcessingStore CreateProcessingStore()
