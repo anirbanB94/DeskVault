@@ -17,6 +17,18 @@ using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Workspaces;
+using DeskVault.Application.Workspaces.Commands.ActivateWorkspace;
+using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
+using DeskVault.Application.Workspaces.Commands.CloseWorkspace;
+using DeskVault.Application.Workspaces.Commands.CreateWorkspace;
+using DeskVault.Application.Workspaces.Commands.DeleteWorkspace;
+using DeskVault.Application.Workspaces.Commands.OpenWorkspace;
+using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
+using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
+using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
+using DeskVault.Application.Workspaces.Queries.GetWorkspace;
+using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DeskVault.Application;
@@ -64,9 +76,32 @@ public static class DependencyInjection
 
         services.AddSingleton<IDocumentTextNormalizer, DocumentTextNormalizer>();
 
-        services.AddSingleton<IDocumentTextChunker>(
-            _ => new DocumentTextChunker(
-                maxChunkSize: 4000));
+        services.AddSingleton<IDocumentTextChunker>(_ => new DocumentTextChunker(maxChunkSize: 4000));
+
+        services.AddSingleton<IActiveWorkspaceRegistry, ActiveWorkspaceRegistry>();
+
+        services.AddSingleton<CreateWorkspaceHandler>();
+
+        services.AddSingleton<AddDocumentToWorkspaceHandler>();
+
+        services.AddSingleton<RemoveDocumentFromWorkspaceHandler>();
+
+        services.AddSingleton<ActivateWorkspaceHandler>();
+
+        services.AddSingleton<SaveTemporaryWorkspaceHandler>();
+
+        services.AddSingleton<CloseWorkspaceHandler>();
+
+        services.AddSingleton<RenameWorkspaceHandler>();
+
+        services.AddSingleton<OpenWorkspaceHandler>();
+
+        services.AddSingleton<DeleteWorkspaceHandler>();
+
+        services.AddSingleton<GetWorkspaceHandler>();
+
+        services.AddSingleton<GetWorkspacesHandler>();
+
 
         return services;
     }

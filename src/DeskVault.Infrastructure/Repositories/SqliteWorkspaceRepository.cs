@@ -188,6 +188,22 @@ public sealed class SqliteWorkspaceRepository
             cancellationToken);
     }
 
+    public async Task RemoveDocumentFromAllWorkspacesAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var dbContext =
+            await _dbContextFactory.CreateDbContextAsync(
+                cancellationToken);
+
+        await dbContext.WorkspaceDocumentMemberships
+            .Where(
+                membership =>
+                    membership.DocumentId == documentId)
+            .ExecuteDeleteAsync(
+                cancellationToken);
+    }
+
     private static void EnsurePersistentWorkspace(
         Workspace workspace)
     {

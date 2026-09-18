@@ -22,4 +22,8 @@ public interface IWorkspaceRepository
     Task DeleteAsync(
         Guid workspaceId,
         CancellationToken cancellationToken = default);
+
+    Task RemoveDocumentFromAllWorkspacesAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default);
 }

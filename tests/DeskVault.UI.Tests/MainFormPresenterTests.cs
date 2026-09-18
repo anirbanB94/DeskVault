@@ -2062,6 +2062,7 @@ public sealed class MainFormPresenterTests
         var removeDocumentHandler =
             new RemoveDocumentHandler(
                 repository.Object,
+                new Mock<IWorkspaceRepository>().Object,
                 storageService.Object,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
