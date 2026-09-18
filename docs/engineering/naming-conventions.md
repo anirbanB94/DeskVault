@@ -1,561 +1,412 @@
 # DeskVault Engineering Naming Conventions
 
-## Purpose
+## 1. Purpose
 
-This document defines the naming conventions used across the DeskVault repository and GitHub development workflow.
+This document defines the naming conventions used across the DeskVault repository and development workflow.
 
-The goal is to keep Product Backlog Items, technical tasks, branches, commits, pull requests, labels, and source-code identifiers consistent and easy to understand.
+The goal is to keep names consistent, predictable, and easy to understand across GitHub Issues, branches, commits, pull requests, code, and documentation.
 
-This document is the authoritative naming convention for the project.
+These conventions apply unless a documented architectural or platform constraint requires an exception.
 
 ---
 
-## 1. Product Backlog Items
+## 2. Product Backlog Item Naming
+
+Product Backlog Items (PBIs) represent product-level capabilities, outcomes, or user value.
 
 ### Format
 
-`<Verb> <object/capability>`
-
-### Examples
-
-- Expand support for text-oriented knowledge formats
-- Evolve document workspace into multi-document workspaces
-- Evolve Search into richer document discovery
-- Encrypt Local Database at Rest
+```text
+<Verb> <object or capability>
+```
 
 ### Rules
 
-- Do not use a prefix.
-- Start with a strong action verb.
-- Describe the product capability rather than the implementation.
-- Do not mention classes, libraries, frameworks, or technical mechanisms.
-- Use sentence case.
-- Keep the title understandable to a non-developer.
-- A Product Backlog Item describes the product-level WHAT and WHY.
-
----
-
-## 2. Technical Tasks
-
-### Format
-
-`task(<area>): <technical action>`
+* Use an action-oriented verb.
+* Describe the product-level **WHAT** or desired outcome.
+* Do not describe implementation details or technical mechanisms.
+* Keep the title concise.
+* Use sentence case.
+* Do not include issue numbers.
+* Do not include sprint, priority, estimate, or status information.
 
 ### Examples
 
-- `task(documents): define supported document formats`
-- `task(documents): implement JSON and XML text extraction`
-- `task(documents): implement JSON and XML document rendering`
-- `task(documents): integrate and validate expanded document formats`
+```text
+Expand support for text-oriented knowledge formats
+Evolve document workspace into multi-document workspaces
+Evolve Search into richer document discovery
+Encrypt Local Database at Rest
+Establish document knowledge provenance and traceability
+```
+
+### Avoid
+
+```text
+Add SQLite tables for workspaces
+Implement JSON parser
+Create provenance service
+Sprint 2 - Search improvements
+#23 - Evolve Search
+```
+
+The first three describe implementation rather than product outcomes. The last two contain execution metadata that belongs elsewhere.
+
+---
+
+## 3. Technical Task Naming
+
+Technical Tasks represent implementation work required to deliver a PBI or maintain the product.
+
+### Format
+
+```text
+task(<area>): <technical action>
+```
 
 ### Rules
 
-- Always use the `task(<area>):` prefix.
-- Use a stable technical area.
-- Describe one concrete engineering outcome.
-- Start the action with a verb.
-- Keep the task implementation-focused.
-- Technical tasks are children of a Product Backlog Item.
-- Task titles must not repeat the full Product Backlog Item title.
+* Describe the specific technical implementation or engineering action.
+* Keep the title concise and actionable.
+* Use sentence case for the description.
+* Use a controlled area that identifies the primary technical domain.
+* Do not restate the entire parent PBI when a more specific implementation action can be stated.
+* Do not include sprint, priority, estimate, or status information.
+* A Technical Task should normally be associated with a parent PBI when it exists to deliver that PBI.
 
----
+### Controlled areas
 
-## 3. Technical Areas
+Use one of the following areas where applicable:
 
-Use a controlled vocabulary rather than inventing new area names for individual issues.
-
-Current areas:
-
-- `documents`
-- `workspace`
-- `search`
-- `persistence`
-- `security`
-- `processing`
-- `rendering`
-- `ui`
-- `testing`
-- `build`
-- `ci`
-- `documentation`
-- `database`
-- `github`
-- `repo`
+```text
+documents
+workspace
+search
+persistence
+security
+processing
+rendering
+ui
+testing
+build
+ci
+documentation
+database
+github
+repo
+```
 
 ### Examples
 
-- `task(documents): ...`
-- `task(workspace): ...`
-- `task(search): ...`
-- `task(persistence): ...`
-- `task(security): ...`
-- `task(rendering): ...`
-- `task(database): ...`
+```text
+task(documents): add structured text extraction
+task(processing): persist processing execution state
+task(search): expose document-level result contract
+task(database): configure encrypted SQLite provider
+task(documentation): update naming conventions
+```
 
-If a new technical area is genuinely required, establish it deliberately rather than creating an ad-hoc scope.
+### Avoid
+
+```text
+task(search): improve search
+task(search): implement feature
+task(documents): work on documents
+task(search): Sprint 2 search work
+```
+
+The first three are too vague to communicate the implementation work. The last contains execution metadata that belongs in the GitHub Project.
+
+### PBI and Technical Task distinction
+
+The distinction is:
+
+```text
+PBI:
+Evolve Search into richer document discovery
+
+Technical Tasks:
+task(search): add document discovery filters
+task(search): implement document result aggregation
+task(search): add search result ordering
+```
+
+The PBI describes the **product capability or outcome**.
+
+The Technical Tasks describe the **technical work required to deliver it**.
 
 ---
 
-## 4. Bugs
+## 4. Bug Naming
+
+Bugs represent incorrect, broken, or unexpected existing behavior.
 
 ### Format
 
-`fix(<area>): <problem>`
-
-### Examples
-
-- `fix(documents): handle malformed document processing`
-- `fix(search): prevent duplicate search results`
-
-Bug titles describe the incorrect behavior being corrected.
-
----
-
-## 5. Technical Spikes
-
-### Format
-
-`spike(<area>): <question or investigation>`
-
-### Examples
-
-- `spike(persistence): evaluate encrypted SQLite providers`
-- `spike(search): evaluate full-text indexing options`
-
-Spikes are used when investigation is required before the implementation approach can be determined.
-
----
-
-## 6. Documentation Work
-
-### Format
-
-`docs(<area>): <action>`
-
-### Examples
-
-- `docs(product): update product development operating model`
-- `docs(readme): update product goal and MVP details`
-- `docs(issue-template): configure issue template chooser`
-- `docs(repo): add engineering naming conventions`
-
----
-
-## 7. GitHub Labels
-
-Use labels to identify the type of work.
-
-Current standard labels:
-
-- `feature`
-- `task`
-- `bug`
-- `spike`
-- `documentation`
+```text
+fix(<area>): <problem>
+```
 
 ### Rules
 
-Keep labels semantic and limited.
-
-Do not create labels for implementation details or project fields.
-
-Avoid labels such as:
-
-- `json`
-- `xml`
-- `sqlite`
-- `ef-core`
-- `pdf`
-- `renderer`
-- `sprint1`
-- `high`
-- `medium`
-
-Use issue content for technical details and GitHub Project fields for priority, estimate, status, and sprint information.
-
----
-
-## 8. Branches
-
-### Format
-
-`<type>/<short-description>`
-
-### Types
-
-- `feature/`
-- `task/`
-- `fix/`
-- `spike/`
-- `docs/`
+* Describe the behavior or problem being corrected.
+* Keep the title concise.
+* Use sentence case.
+* Identify the affected technical area where practical.
+* Do not describe only the proposed solution.
 
 ### Examples
 
-- `feature/document-format-expansion`
-- `task/json-xml-extraction`
-- `task/json-xml-rendering`
-- `task/document-format-integration`
-- `task/database-key-protection`
-- `fix/document-processing-failure`
+```text
+fix(documents): handle corrupt source artifacts
+fix(search): preserve result ordering
+fix(rendering): prevent invalid document layout
+```
+
+---
+
+## 5. Spike Naming
+
+Spikes are time-bounded investigations used to reduce technical or architectural uncertainty.
+
+### Format
+
+```text
+spike(<area>): <question or investigation>
+```
 
 ### Rules
 
-- Use lowercase.
-- Use kebab-case.
-- Keep the description concise.
-- Do not include the GitHub issue number unless a repository workflow explicitly requires it.
-
----
-
-## 9. Commits
-
-DeskVault uses Conventional Commits.
-
-### Format
-
-`<type>(<scope>): <imperative description>`
-
-### Standard commit types
-
-- `feat`
-- `fix`
-- `test`
-- `refactor`
-- `perf`
-- `build`
-- `ci`
-- `docs`
-- `chore`
+* Describe the question being investigated.
+* Identify the technical area.
+* Avoid prematurely specifying the implementation.
+* The outcome should reduce a known uncertainty or support a subsequent decision.
 
 ### Examples
 
-- `feat(documents): add JSON and XML extraction`
-- `feat(rendering): add JSON document renderer`
-- `feat(rendering): add XML document renderer`
-- `feat(database): encrypt local database`
-- `feat(security): protect database encryption key`
-- `test(documents): validate JSON and XML processing`
-- `test(security): verify database key protection`
-- `fix(documents): handle malformed JSON extraction`
-- `docs(product): update MVP scope`
-
-### Rules
-
-- Use imperative wording.
-- Use lowercase after the colon.
-- Keep one logical change per commit.
-- Use the scope to identify the technical area.
-- Do not intentionally include GitHub issue numbers in project-authored commit subjects.
-- Reference the GitHub issue in the commit body or footer when appropriate.
-
-### Type vs Scope
-
-Commit types describe the kind of change.
-
-Commit scopes describe the area affected.
-
-For example:
-
-`feat(security): protect database encryption key`
-
-Here:
-
-- `feat` = a new capability/change
-- `security` = the affected technical area
-
-`security` is therefore a scope, not a commit type.
+```text
+spike(database): evaluate encrypted SQLite providers
+spike(search): investigate relevance strategies
+spike(processing): evaluate cancellation behavior
+```
 
 ---
 
-## 10. Pull Requests
+## 6. Documentation Work Naming
 
-### Format
+Documentation-only work uses:
 
-`<type>(<area>): <short description>`
+```text
+docs(<area>): <action>
+```
 
 ### Examples
 
-- `feat(documents): add JSON and XML extraction`
-- `feat(rendering): add JSON and XML rendering`
-- `feat(database): encrypt local database`
-- `feat(workspace): support multi-document workspaces`
+```text
+docs(architecture): document processing boundaries
+docs(adr): clarify persistence decision
+docs(documentation): update engineering conventions
+```
 
-A Pull Request should normally correspond to one coherent technical task.
+When documentation work is tracked as a Technical Task under a PBI, use the Technical Task format:
 
-### Issue relationship
-
-Use the appropriate GitHub issue reference in the Pull Request body.
-
-For example:
-
-`Closes #26`
-
-or, when automatic closure is not desired:
-
-`Refs #26`
+```text
+task(documentation): <technical action>
+```
 
 ---
 
-## 11. Naming Case Rules
+## 7. GitHub Issue Hierarchy
 
-### GitHub issue titles
+DeskVault uses the following work hierarchy:
 
-Use sentence case.
+```text
+Epic
+  └── Product Backlog Item (PBI)
+        └── Technical Task / Bug / Spike
+              └── Pull Request
+```
 
-Example:
+PBIs represent product outcomes.
 
-`Expand support for text-oriented knowledge formats`
+Technical Tasks, Bugs, and Spikes represent the implementation, correction, or investigation work required to achieve those outcomes.
 
-### Technical task titles
-
-Use the `task(<area>):` convention with sentence-style wording after the colon.
-
-Example:
-
-`task(documents): implement JSON and XML text extraction`
-
-### Commit messages
-
-Use Conventional Commit syntax with lowercase wording after the prefix.
-
-Example:
-
-`feat(documents): add JSON extraction`
-
-### Branch names
-
-Use lowercase kebab-case.
-
-Example:
-
-`task/json-xml-extraction`
-
-### Labels
-
-Use lowercase.
-
-Example:
-
-`task`
-
-### C# types and classes
-
-Use PascalCase.
-
-Example:
-
-`DocumentTextExtractorResolver`
-
-### C# methods and properties
-
-Use PascalCase.
-
-Examples:
-
-`ExtractAsync`
-
-`DatabasePath`
-
-### Namespaces and folders
-
-Follow the established C# and repository conventions.
+GitHub sub-issues are used to represent the relationship between a PBI and its child implementation work.
 
 ---
 
-## 12. Issue Numbers
+## 8. Labels and Project Fields
 
-Do not manually include GitHub issue numbers in issue titles.
+Labels identify the broad issue type.
 
-Good:
+The primary issue-type labels are:
 
-`task(documents): implement JSON and XML text extraction`
+```text
+feature
+technical-task
+bugs
+spike
+documentation
+```
 
-Avoid:
+The meanings are:
 
-`#26 task(documents): implement JSON and XML text extraction`
+| Label            | Meaning                    |
+| ---------------- | -------------------------- |
+| `feature`        | Product Backlog Item (PBI) |
+| `technical-task` | Technical Task             |
+| `bugs`           | Bug                        |
+| `spike`          | Technical Spike            |
+| `documentation`  | Documentation work         |
 
-GitHub already owns the issue number.
+The `feature` label identifies an issue as a **PBI**.
 
-Issue numbers may appear naturally in GitHub-generated dependency or PR metadata and do not require rewriting of historical commits.
+Project fields are used for execution and planning metadata, including:
 
----
+* Status
+* Priority
+* Estimate
+* Sprint
+* Other project-specific planning fields
 
-## 13. Scope Rule
-
-Use the smallest meaningful technical scope.
-
-Good:
-
-`task(documents): implement JSON and XML text extraction`
-
-Avoid unnecessarily large scopes such as:
-
-`task(application-documents-processing): implement JSON and XML text extraction pipeline`
-
-The scope should normally correspond to a stable architectural or product area rather than a specific class.
-
----
-
-## 14. Product-to-Code Naming Relationship
-
-The development hierarchy is:
-
-Product Backlog Item
-    |
-    +-- Technical Task
-            |
-            +-- Branch
-                    |
-                    +-- Commit(s)
-                            |
-                            +-- Pull Request
-
-Each level has a different purpose.
-
-### Product Backlog Item
-
-Describes:
-
-WHAT the product needs and WHY.
-
-### Technical Task
-
-Describes:
-
-WHAT engineering work is required to deliver part of the Product Backlog Item.
-
-### Branch
-
-Identifies:
-
-WHERE the implementation is being developed.
-
-### Commit
-
-Describes:
-
-WHAT logical code change was made.
-
-### Pull Request
-
-Describes:
-
-WHAT coherent change is being reviewed.
-
-### Label
-
-Describes:
-
-WHAT KIND of work the issue represents.
-
-### GitHub Project fields
-
-Describe:
-
-WHEN, PRIORITY, ESTIMATE, STATUS, and SPRINT information.
+Do not encode these values into issue titles or create labels for information already represented by Project fields.
 
 ---
 
-## 15. Example: Document Format Expansion
+## 9. Branch Naming
 
-Product Backlog Item:
+Branches use the following format:
 
-`#21 — Expand support for text-oriented knowledge formats`
+```text
+<type>/<issue-number>-<short-description>
+```
 
-Technical tasks:
+Feature implementation branches use:
 
-- `#25 — task(documents): define supported document formats`
-- `#26 — task(documents): implement JSON and XML text extraction`
-- `#27 — task(documents): implement JSON and XML document rendering`
-- `#28 — task(documents): integrate and validate expanded document formats`
+```text
+feat/<issue-number>-<short-description>
+```
 
-Example branch:
+A `feat/` branch is the standard implementation branch for feature and Technical Task work.
 
-`task/json-xml-extraction`
+The branch normally corresponds to the GitHub issue being implemented, whether that issue is a PBI or a Technical Task.
 
-Example commits:
+### Examples
 
-- `feat(documents): add JSON extraction`
-- `feat(documents): add XML extraction`
-- `test(documents): validate JSON and XML extraction`
+```text
+feat/23-richer-document-discovery
+feat/74-reliable-document-processing
+feat/75-stable-chunk-identity
+fix/81-corrupt-document-handling
+spike/82-encrypted-database-provider
+```
 
-Example Pull Request:
-
-`feat(documents): add JSON and XML extraction`
-
----
-
-## 16. Example: Database Encryption
-
-Product Backlog Item:
-
-`#24 — Encrypt Local Database at Rest`
-
-Example technical task:
-
-`task(security): protect database encryption key`
-
-Example branch:
-
-`task/database-key-protection`
-
-Example commit:
-
-`feat(security): protect database encryption key`
-
-Example Pull Request:
-
-`feat(security): protect database encryption key`
+The branch prefix identifies the implementation workflow and does not need to match the GitHub issue label exactly.
 
 ---
 
-## 17. General Rules
+## 10. Commit Naming
 
-- Product language and technical language must remain distinct.
-- Prefer clear names over clever names.
-- Avoid unnecessary abbreviations.
-- Avoid implementation details in Product Backlog Item titles.
-- Avoid product-level language in technical task titles.
-- Avoid putting metadata into names when GitHub already provides a field for it.
-- Keep terminology consistent across issues, documentation, branches, commits, and Pull Requests.
-- When an existing convention is sufficient, do not introduce another naming pattern.
-- New naming patterns should be introduced only when there is a clear project-level need.
-- Existing historical commits do not need to be rewritten solely to conform to this document.
+Commits follow Conventional Commits.
+
+### Format
+
+```text
+<type>(<scope>): <description>
+```
+
+### Examples
+
+```text
+feat(search): add document discovery filters
+feat(documents): add structured text extraction
+fix(processing): preserve failed execution state
+refactor(persistence): separate document and chunk storage
+test(search): add relevance ordering coverage
+docs(architecture): clarify processing boundaries
+```
+
+The commit should describe the change introduced by that commit, not necessarily repeat the full GitHub issue title.
 
 ---
 
-## 18. DeskVault Standard
+## 11. Pull Request Naming
 
-From this point forward, DeskVault follows this naming hierarchy:
+Pull request titles should follow Conventional Commit style where practical.
 
-Product Backlog Item
-    |
-    +-- Technical Task(s)
-            |
-            +-- Branch
-                    |
-                    +-- Commit(s)
-                            |
-                            +-- Pull Request
+### Format
 
-The standard Product Backlog Item format is:
+```text
+<type>(<scope>): <description>
+```
 
-`<Verb> <object/capability>`
+### Examples
 
-The standard Technical Task format is:
+```text
+feat(search): evolve search into richer document discovery
+feat(documents): expand text-oriented format support
+fix(processing): handle cancelled document processing
+docs(documentation): update engineering conventions
+```
 
-`task(<area>): <technical action>`
+The PR description should reference the relevant GitHub issue and explain the implementation, validation, and any relevant architectural considerations.
 
-The standard Bug format is:
+---
 
-`fix(<area>): <problem>`
+## 12. Scope Naming
 
-The standard Technical Spike format is:
+Scopes should use the same controlled vocabulary used by Technical Tasks where possible:
 
-`spike(<area>): <question or investigation>`
+```text
+documents
+workspace
+search
+persistence
+security
+processing
+rendering
+ui
+testing
+build
+ci
+documentation
+database
+github
+repo
+```
 
-The standard Documentation format is:
+Use the smallest meaningful scope.
 
-`docs(<area>): <action>`
+Avoid introducing new scopes for individual classes, files, or implementation details unless there is a clear repository-wide need.
 
-These conventions should be applied consistently to all new GitHub work and repository development activity.
+---
+
+## 13. General Naming Rules
+
+Across the repository:
+
+* Prefer clear, descriptive names over abbreviations.
+* Use established domain terminology consistently.
+* Avoid names that describe temporary implementation details when a stable domain concept exists.
+* Keep terminology consistent between code, issues, ADRs, and product documentation.
+* Do not encode workflow metadata into product or technical work titles.
+* Do not use sprint numbers, estimates, priorities, or statuses as part of work titles.
+* Preserve established names when changing them would create unnecessary historical or technical churn.
+
+---
+
+## 14. Examples
+
+| Work type      | Label            | Example                                                      |
+| -------------- | ---------------- | ------------------------------------------------------------ |
+| PBI            | `feature`        | `Expand support for text-oriented knowledge formats`         |
+| PBI            | `feature`        | `Evolve document workspace into multi-document workspaces`   |
+| Technical Task | `technical-task` | `task(documentation): update naming conventions`             |
+| Technical Task | `technical-task` | `task(processing): persist processing execution state`       |
+| Bug            | `bugs`           | `fix(search): preserve result ordering`                      |
+| Spike          | `spike`          | `spike(database): evaluate encrypted SQLite providers`       |
+| Documentation  | `documentation`  | `docs(architecture): clarify processing boundaries`          |
+| Commit         | —                | `feat(search): add document discovery filters`               |
+| Pull Request   | —                | `feat(search): evolve search into richer document discovery` |
+
+This document is the authoritative reference for naming work items and development artifacts in the DeskVault repository.
