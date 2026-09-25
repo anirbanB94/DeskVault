@@ -55,7 +55,9 @@ Search
 Settings
 ```
 
-The initial `DocumentViewForm` will represent one primary document.
+The document workspace presentation can represent either a temporary single-document session or a persistent workspace containing multiple documents.
+
+A temporary document session is created when a document is opened directly from the document library. A persistent workspace can contain multiple document members and presents those documents through the same workspace presentation.
 
 The document workspace will use a hybrid layout in which the document remains the primary content area and the AI assistant is presented as a collapsible side panel.
 
@@ -100,7 +102,7 @@ CSV
 
 Additional renderers, such as PDF and DOCX rendering, can be introduced independently as the application evolves.
 
-Formats that do not yet have an appropriate in-app renderer may temporarily use the existing external-view fallback.
+Formats that do not yet have an appropriate in-app renderer use the explicit user-controlled external-open action.
 
 The AI assistant area will initially provide the structural foundation for future functionality. It will not imply that AI analysis, retrieval, or RAG functionality is already implemented.
 
@@ -109,83 +111,89 @@ Future AI capabilities may operate over the primary document and its related doc
 ## MVP 1 Scope Boundary
 
 The workspace architecture described by this ADR includes both the current
-MVP 1 implementation and the longer-term product direction.
+MVP implementation and the longer-term product direction.
 
-For MVP 1, the implemented workspace is intentionally limited to the
-document-viewing and document-management capabilities required by the
-current vertical slice.
+For the current implementation, the workspace provides both temporary
+single-document sessions and persistent multi-document workspace contexts.
 
-The current MVP 1 workspace provides:
+The current workspace presentation provides:
 
 ```text
-DocumentViewForm
-├── Document identity
-├── Document content
+Workspace Presentation
+├── Workspace / document identity
+├── Document presentation
+├── Multiple document presentation where applicable
 ├── Document information
-└── Required workspace/document actions
+├── Workspace/document actions
+└── Adaptive AI presentation boundary
 ```
 
-Future-oriented controls and capabilities such as AI interaction, related
-documents, persistent workspaces, Recent activity, and other workspace
-management features are architectural direction only and are not required
-to be exposed as active MVP 1 functionality.
+Current workspace interaction includes:
 
-Where future controls exist in the current UI structure, they may remain
-present but hidden or disabled until their corresponding capability is
-implemented.
+- temporary document presentation when opening directly from Documents
+- persistent workspaces containing multiple documents
+- Tabs as the default persistent-workspace navigation mode
+- Sidebar as an alternative persistent-workspace navigation mode
+- activation of existing workspace presentations instead of duplicate presentation
+- closing a document presentation without removing workspace membership
+- reopening a workspace member after its presentation has been closed
+- explicit Save as Workspace conversion from a temporary session
+- workspace-level add/remove/details/delete actions for persistent workspaces
 
-This keeps the current MVP focused without requiring the underlying
-workspace architecture to be redesigned when future capabilities are
-introduced.
+Functional AI processing, Recent activity implementation, workspace recovery,
+PDF/DOCX in-app rendering, and other future knowledge-work capabilities
+remain outside the current implementation unless otherwise documented by
+their own implementation decisions.
+
+The workspace presentation is therefore intentionally functional for document
+and workspace lifecycle while preserving the architectural boundaries required
+for future AI-assisted and multi-document knowledge workflows.
 
 ## Current Implementation and Deferred Scope
 
-The architectural direction described by this ADR remains valid, but the
-workspace implementation is intentionally narrower than the long-term
-workspace model described above.
-
-The currently implemented workspace provides:
-
-```text
-MainForm
-    ↓
-DocumentViewForm
-    ├── Document content
-    ├── Document information
-    └── Workspace actions
-```
+The architectural direction described by this ADR remains valid, and the
+current implementation now includes the core multi-document workspace
+presentation model described by the Issue #36 workspace vertical slice.
 
 The current implementation includes:
 
-- a dedicated document workspace
-- application-managed document opening
-- workspace open/close lifecycle
-- document information
-- document removal
+- a dedicated application-managed workspace presentation
+- temporary single-document workspace sessions for direct document opening
+- persistent named workspaces
+- multiple documents within a persistent workspace
+- multiple simultaneous workspace presentation contexts
+- activation/reuse of an existing workspace presentation rather than duplication
+- Tabs as the default persistent workspace navigation mode
+- Sidebar as an alternative persistent workspace navigation mode
+- explicit separation between document presentation and workspace membership
+- closing a document presentation without removing its workspace membership
+- reopening a workspace member after its presentation has been closed
+- workspace and document identity presentation
+- explicit Save as Workspace conversion for temporary sessions
+- workspace add/remove/details/delete actions for persistent workspaces
+- document information and document removal behavior
 - format-specific rendering through the renderer abstraction
 - TXT, Markdown, and CSV in-app rendering
-- an explicit fallback for unsupported formats
+- an explicit user-controlled fallback for unsupported formats
 - renderer lifecycle and resource ownership boundaries
 
-The following capabilities remain future or deferred scope and are not
-required by the current MVP 1 implementation:
+The following capabilities remain future or deferred scope:
 
-- related-document grouping
-- persistent named workspaces
-- multiple simultaneous workspace windows
-- workspace recovery
-- Recent activity
-- a functional local AI assistant
+- functional local AI processing
 - retrieval, RAG, or AI interaction inside the workspace
+- workspace recovery
+- Recent activity implementation
 - PDF and DOCX in-app rendering
+- future primary-document semantics if a later workspace model introduces
+  such a concept
 
 These future capabilities remain architectural directions established by
 this ADR. They must not be interpreted as implemented functionality.
 
-The current MVP 1 workspace therefore establishes the document-centric
-workspace and rendering boundaries without requiring the complete
-multi-document, persistent-workspace, or AI-assisted experience described
-as the long-term direction.
+The current workspace implementation therefore establishes both the
+document-centric rendering boundary and the persistent multi-document
+workspace/presentation lifecycle without coupling those concerns to future
+AI or search functionality.
 
 ## Architectural Boundaries
 
@@ -270,91 +278,122 @@ DocumentViewForm
 In-app document workspace
 ```
 
-The existing external viewer implementation may remain temporarily available as a fallback while in-app rendering capabilities are introduced.
+The external viewer remains available as an explicit user-controlled action when an in-app renderer is unavailable.
 
 ## Document Workspace Model
 
-Initially, each `DocumentViewForm` represents one primary document.
+A workspace is a document context, while a document presentation is the UI
+representation of an individual member of that context.
 
-This keeps the initial implementation simple while preserving a scalable model for future AI processing.
-
-The workspace is not architecturally limited to a single file.
-
-Future versions will allow related documents to be associated with the workspace.
-
-For example:
+The current model supports:
 
 ```text
-Project Alpha Workspace
-├── requirements.pdf
-├── architecture.docx
-├── api-spec.md
-├── meeting-notes.txt
-└── budget.xlsx
+Temporary Workspace
+└── Document
+
+Persistent Workspace
+├── Document
+├── Document
+└── Document
 ```
 
-These related documents may eventually participate in a shared AI processing and retrieval context.
+Workspace membership and document presentation are deliberately separate.
+Closing a presented document removes its presentation from the workspace UI
+but does not remove the document from persistent workspace membership.
 
-The document itself and the AI context remain separate concepts:
+A closed member can therefore be presented again without re-adding it to the
+workspace.
+
+The workspace itself and the AI context remain separate concepts:
 
 ```text
-Document
+Documents
     ↓
-Document Workspace / Context
+Workspace Membership
     ↓
-Related Documents
+Document Presentations
     ↓
-Retrieval / AI
+Future Retrieval / AI Context
 ```
+
+This preserves a path toward shared processing and retrieval without making
+rendered UI controls the source of truth for document membership or future AI
+state.
 
 ## Related Documents and Workspaces
 
-DeskVault will support both ad-hoc and persistent grouping of related documents.
+DeskVault now supports persistent grouping of related documents through
+named workspaces.
 
-Initially, a user may open a document and add related documents to the current workspace when required.
+A persistent workspace can add document members and remove document members
+without deleting the underlying documents from the document library.
 
-In a future implementation, the user may save that group as a named workspace or collection.
-
-The intended progression is:
+The current interaction is:
 
 ```text
-Primary Document
+Persistent Workspace
     ↓
-Add Related Documents
+Add Documents
     ↓
-Document Group
+Workspace Membership
     ↓
-Save as Named Workspace / Collection
-    ↓
-Shared AI Context
+Open / Present Documents
 ```
 
-This allows simple document handling to remain simple while providing a path toward larger knowledge-work workflows.
+A document presentation can subsequently be closed while membership remains
+intact. The member can be reopened from the workspace.
+
+A temporary document session can also be explicitly converted into a
+persistent workspace:
+
+```text
+Open Document
+    ↓
+Temporary Workspace
+    ↓
+Save as Workspace
+    ↓
+Persistent Workspace
+```
+
+The conversion retains the existing workspace identity and presentation
+rather than creating a second workspace.
+
+The workspace remains distinct from future AI context so that persistence
+and presentation decisions do not determine future retrieval or AI
+semantics.
 
 ## Multiple Document Workspaces
 
-DeskVault will use an application-managed workspace model.
-
-Each primary document may have its own `DocumentViewForm`.
+DeskVault uses an application-managed workspace model in which a persistent
+workspace can present multiple documents.
 
 Conceptually:
 
 ```text
 MainForm
     │
-    ├── DocumentViewForm
-    │       └── Report.pdf
+    ├── Workspace A
+    │     ├── Document A1
+    │     └── Document A2
     │
-    ├── DocumentViewForm
-    │       └── Contract.pdf
-    │
-    └── DocumentViewForm
-            └── Research.pdf
+    └── Workspace B
+          ├── Document B1
+          └── Document B2
 ```
 
-If a user attempts to open a document that already has an active workspace, DeskVault should activate the existing workspace rather than creating a duplicate workspace for the same document.
+Multiple workspace presentation contexts can exist simultaneously.
 
-The exact window-management implementation may evolve as the application grows.
+If a workspace is already represented by an active presentation, opening or
+activating that workspace reuses the existing presentation rather than
+creating a duplicate.
+
+For direct document opening, an existing active temporary presentation for
+the same document is activated rather than duplicated.
+
+Document presentation identity and workspace identity are therefore
+explicitly maintained independently of the eventual window-management
+strategy.
 
 ## MDI Consideration
 
@@ -552,7 +591,8 @@ These trade-offs are acceptable because the decisions align with DeskVault's lon
 
 ## Result
 
-DeskVault will evolve from a document-management application with external document opening into a document-centric knowledge workspace.
+DeskVault will evolve from a document-management application with external
+document opening into a document-centric knowledge workspace.
 
 The resulting UI direction is:
 
@@ -563,14 +603,33 @@ Application Shell
     ↓
 Document Library
     ↓
-Document Workspace
-    ├── Primary Document
-    ├── Related Documents
-    └── Adaptive Local AI Assistant
+Temporary Document Workspace
+    └── Document Presentation
+             ↓
+        Save as Workspace
+             ↓
+      Persistent Workspace
+        ├── Document
+        ├── Document
+        └── Document
+             ↓
+      Future Adaptive Local AI Assistant
 ```
 
-The existing Application and Infrastructure boundaries remain responsible for document retrieval, decryption, persistence, and storage.
+The existing Application and Infrastructure boundaries remain responsible
+for document retrieval, decryption, persistence, and storage.
 
-The new document workspace establishes the UI foundation for future document processing, search, semantic retrieval, multi-document context, RAG, and source-grounded local AI capabilities.
+The current workspace architecture establishes explicit separation between
+workspace identity, workspace membership, document presentation, and future
+AI context. It also supports multiple simultaneous workspace presentation
+contexts without coupling the model to MDI or another specific windowing
+strategy.
 
-The architecture remains flexible enough to support future window-management strategies, additional document renderers, persistent workspaces, and enterprise identity integration without requiring a fundamental redesign of the document workspace.
+The new document workspace establishes the UI foundation for future document
+processing, search, semantic retrieval, multi-document context, RAG, and
+source-grounded local AI capabilities.
+
+The architecture remains flexible enough to support future window-management
+strategies, additional document renderers, workspace recovery, Recent
+activity, and enterprise identity integration without requiring a
+fundamental redesign of the document workspace.
