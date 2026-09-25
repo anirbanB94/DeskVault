@@ -32,6 +32,12 @@ public static class LogMessages
     public const string DocumentImportFailed =
         "Document import failed.";
 
+    public const string TemporaryWorkspaceCreationFailed =
+        "Temporary workspace creation failed.";
+
+    public const string DocumentProcessingSkippedWithoutTextExtractor =
+        "Document processing skipped because no text extractor is available for {FileName}.";
+
     public const string DocumentOpenSkippedWithoutSelection =
         "Document open skipped because no document is selected.";
 
@@ -68,6 +74,9 @@ public static class LogMessages
     public const string DocumentReprocessSkippedWithoutSelection =
         "Document reprocessing skipped because no document is selected.";
 
+    public const string DocumentReprocessSkippedWithoutTextExtractor =
+        "Document reprocessing skipped because no text extractor is available for {FileName}.";
+
     public const string DocumentReprocessStarted =
         "Document reprocessing started.";
 
@@ -88,6 +97,9 @@ public static class LogMessages
 
     public const string DocumentSearchCompletedWithResults =
         "Document search completed with {DocumentCount} document(s).";
+
+    public const string DocumentSearchSuperseded =
+        "Document search operation was superseded.";
 
     public const string DocumentSearchFailed =
         "Document search failed.";
@@ -154,6 +166,141 @@ public static class LogMessages
 
     public const string DocumentWorkspaceCloseRequested =
         "Document workspace close requested.";
+
+    public const string WorkspaceSelected =
+        "Workspace selected: {WorkspaceId}.";
+
+    public const string WorkspaceCreationRequested =
+        "Workspace creation requested.";
+
+    public const string WorkspaceCreationFailed =
+        "Workspace creation failed: {Description}.";
+
+    public const string WorkspaceCreatedAndOpened =
+        "Workspace {WorkspaceId} was created and opened.";
+
+    public const string WorkspaceCreationUnexpectedFailure =
+        "Failed to create workspace.";
+
+    public const string WorkspaceOpenSkippedWithoutSelection =
+        "Workspace open skipped without selection.";
+
+    public const string WorkspaceOpenStarted =
+        "Opening workspace {WorkspaceId}.";
+
+    public const string WorkspaceOpenRejected =
+        "Workspace {WorkspaceId} could not be opened: {Description}.";
+
+    public const string WorkspaceOpenedWithMissingDocuments =
+        "Workspace {WorkspaceId} opened with {MissingDocumentCount} missing document(s).";
+
+    public const string WorkspaceOpened =
+        "Workspace {WorkspaceId} was opened.";
+
+    public const string WorkspaceOpenFailed =
+        "Failed to open workspace {WorkspaceId}.";
+
+    public const string WorkspaceCloseUnexpectedSender =
+        "Workspace close request was received from an unexpected sender.";
+
+    public const string WorkspaceCloseRequested =
+        "Workspace close requested for {WorkspaceId}.";
+
+    public const string WorkspaceCloseRejected =
+        "Workspace {WorkspaceId} could not be closed: {Description}.";
+
+    public const string WorkspaceClosed =
+        "Workspace {WorkspaceId} was closed.";
+
+    public const string WorkspaceCloseFailed =
+        "Failed to close workspace {WorkspaceId}.";
+
+    public const string WorkspaceRemovalSkippedWithoutSelection =
+        "Workspace removal skipped without selection.";
+
+    public const string WorkspaceDeletionUnexpectedSender =
+        "Workspace deletion request was received from an unexpected sender.";
+
+    public const string WorkspaceRemovalCancelled =
+        "Workspace removal cancelled for {WorkspaceId}.";
+
+    public const string WorkspaceRemovalRequested =
+        "Workspace removal requested for {WorkspaceId}.";
+
+    public const string WorkspaceRemovalActivationFailed =
+        "Workspace {WorkspaceId} could not be activated for removal: {Description}.";
+
+    public const string WorkspaceRemovalRejected =
+        "Workspace {WorkspaceId} could not be removed: {Description}.";
+
+    public const string WorkspaceRemoved =
+        "Workspace {WorkspaceId} was removed.";
+
+    public const string WorkspaceRemovalFailed =
+        "Failed to remove workspace {WorkspaceId}.";
+
+    public const string WorkspaceListRefreshStarted =
+        "Refreshing workspace list.";
+
+    public const string WorkspaceListRefreshFailed =
+        "Workspace list refresh failed: {Description}.";
+
+    public const string WorkspaceListRefreshCompleted =
+        "Workspace list refreshed with {WorkspaceCount} workspace(s).";
+
+    public const string WorkspacePresentationDocumentOpenFailed =
+        "Workspace {WorkspaceId} document {DocumentId} presentation open failed: {Description}.";
+
+    public const string WorkspacePresentationDocumentOpened =
+        "Workspace {WorkspaceId} document {DocumentId} presentation opened.";
+
+    public const string WorkspacePresentationDocumentClosed =
+        "Workspace {WorkspaceId} document {DocumentId} presentation closed.";
+
+    public const string WorkspacePresentationDocumentAddRejected =
+        "Workspace {WorkspaceId} document {DocumentId} could not be added to the workspace.";
+
+    public const string WorkspacePresentationDocumentAdded =
+        "Workspace {WorkspaceId} document {DocumentId} was added to the workspace.";
+
+    public const string WorkspacePresentationDocumentRemoveRejected =
+        "Workspace {WorkspaceId} document {DocumentId} could not be removed from the workspace.";
+
+    public const string WorkspacePresentationDocumentRemoved =
+        "Workspace {WorkspaceId} document {DocumentId} was removed from the workspace.";
+
+    public const string WorkspacePresentationSaveAsRejected =
+        "Temporary workspace {WorkspaceId} could not be saved as a persistent workspace.";
+
+    public const string WorkspacePresentationSavedAsWorkspace =
+        "Temporary workspace {WorkspaceId} was saved as persistent workspace.";
+
+    public const string WorkspacePresentationDetailsUpdateRejected =
+        "Workspace {WorkspaceId} details update was rejected.";
+
+    public const string WorkspacePresentationDetailsUpdated =
+        "Workspace {WorkspaceId} details were updated.";
+
+    public const string WorkspacePresentationOperationFailed =
+        "Workspace {WorkspaceId} presentation operation failed during {Operation}: {Description}.";
+
+    public const string WorkspacePresentationDisposed =
+        "Workspace presentation {WorkspaceId} disposed.";
+
+    public const string WorkspacePresentationAddDocumentsOperation =
+        "add documents";
+
+    public const string WorkspacePresentationRemoveDocumentsOperation =
+        "remove documents";
+
+    public const string WorkspacePresentationSaveAsWorkspaceOperation =
+        "save as workspace";
+
+    public const string WorkspacePresentationUpdateDetailsOperation =
+        "update workspace details";
+
+    public const string WorkspacePresentationActivateDocumentOperation =
+        "activate document";
 
     public const string MainFormLoadStarted =
         "Main form load started.";

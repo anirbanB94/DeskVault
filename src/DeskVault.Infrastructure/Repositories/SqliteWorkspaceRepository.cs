@@ -136,9 +136,11 @@ public sealed class SqliteWorkspaceRepository
         }
 
         workspaceEntity.Name = workspace.Name;
+        workspaceEntity.Description = workspace.Description;
         workspaceEntity.Type = (int)workspace.TypeOfWorkspace;
         workspaceEntity.LastActiveDocumentId =
             workspace.LastActiveDocumentId;
+        workspaceEntity.LastUpdated = workspace.LastUpdated;
 
         var existingMemberships = await dbContext
             .WorkspaceDocumentMemberships
@@ -221,9 +223,11 @@ public sealed class SqliteWorkspaceRepository
         {
             Id = workspace.Id,
             Name = workspace.Name,
+            Description = workspace.Description,
             Type = (int)workspace.TypeOfWorkspace,
             LastActiveDocumentId =
-                workspace.LastActiveDocumentId
+                workspace.LastActiveDocumentId,
+            LastUpdated = workspace.LastUpdated
         };
     }
 
@@ -243,8 +247,10 @@ public sealed class SqliteWorkspaceRepository
         return Workspace.Restore(
             workspace.Id,
             workspace.Name,
+            workspace.Description,
             (WorkspaceType)workspace.Type,
             domainMemberships,
-            workspace.LastActiveDocumentId);
+            workspace.LastActiveDocumentId,
+            workspace.LastUpdated);
     }
 }

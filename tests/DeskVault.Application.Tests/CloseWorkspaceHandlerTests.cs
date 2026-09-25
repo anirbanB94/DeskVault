@@ -1,6 +1,7 @@
 using DeskVault.Application.Workspaces;
 using DeskVault.Application.Workspaces.Commands.CloseWorkspace;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Application.Tests;
 
@@ -10,7 +11,7 @@ public sealed class CloseWorkspaceHandlerTests
     public async Task HandleAsync_ReturnsWorkspaceNotFound_WhenWorkspaceIsNotActive()
     {
         var registry = new ActiveWorkspaceRegistry();
-        var handler = new CloseWorkspaceHandler(registry);
+        var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
         var workspaceId = Guid.NewGuid();
 
@@ -32,7 +33,7 @@ public sealed class CloseWorkspaceHandlerTests
 
         registry.Add(workspace);
 
-        var handler = new CloseWorkspaceHandler(registry);
+        var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new CloseWorkspaceCommand(workspace.Id));
@@ -54,7 +55,7 @@ public sealed class CloseWorkspaceHandlerTests
 
         registry.Add(workspace);
 
-        var handler = new CloseWorkspaceHandler(registry);
+        var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new CloseWorkspaceCommand(workspace.Id));
@@ -80,7 +81,7 @@ public sealed class CloseWorkspaceHandlerTests
         registry.Add(firstWorkspace);
         registry.Add(secondWorkspace);
 
-        var handler = new CloseWorkspaceHandler(registry);
+        var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
         var result = await handler.HandleAsync(
             new CloseWorkspaceCommand(firstWorkspace.Id));
@@ -113,7 +114,7 @@ public sealed class CloseWorkspaceHandlerTests
         registry.Add(firstWorkspace);
         registry.Add(secondWorkspace);
 
-        var handler = new CloseWorkspaceHandler(registry);
+        var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
         var firstResult = await handler.HandleAsync(
             new CloseWorkspaceCommand(firstWorkspace.Id));

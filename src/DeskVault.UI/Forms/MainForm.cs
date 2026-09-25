@@ -17,6 +17,7 @@ public partial class MainForm : Form, IMainFormView
     private readonly List<SearchResultListItem> _searchResults = [];
 
     private bool _isUpdatingDocumentGrid;
+    private bool _isUpdatingWorkspaceGrid;
 
     public MainForm(
         IApplicationInfoService applicationInfo,
@@ -63,6 +64,9 @@ public partial class MainForm : Form, IMainFormView
         openButton.Click += OnOpenButtonClick;
         removeButton.Click += OnRemoveButtonClick;
         reprocessButton.Click += OnReprocessButtonClick;
+        createWorkspaceButton.Click += OnCreateWorkspaceButtonClick;
+        openWorkspaceButton.Click += OnOpenWorkspaceButtonClick;
+        removeWorkspaceButton.Click += OnRemoveWorkspaceButtonClick;
         searchButton.Click += OnSearchButtonClick;
         clearSearchButton.Click += OnClearSearchButtonClick;
         loadMoreButton.Click += OnLoadMoreButtonClick;
@@ -70,6 +74,8 @@ public partial class MainForm : Form, IMainFormView
         searchTextBox.KeyDown += OnSearchTextBoxKeyDown;
         documentGridView.SelectionChanged += OnDocumentSelectionChanged;
         documentGridView.CellDoubleClick += OnDocumentDoubleClick;
+        workspaceGridView.SelectionChanged += OnWorkspaceSelectionChanged;
+        workspaceGridView.CellDoubleClick += OnWorkspaceDoubleClick;
         FormClosed += OnFormClosed;
     }
 
@@ -86,6 +92,14 @@ public partial class MainForm : Form, IMainFormView
     public event EventHandler? SearchRequested;
 
     public event EventHandler? LoadMoreSearchResultsRequested;
+
+    public event EventHandler? WorkspaceSelectionChanged;
+
+    public event EventHandler? WorkspaceCreateRequested;
+
+    public event EventHandler? WorkspaceOpenRequested;
+
+    public event EventHandler? WorkspaceRemoveRequested;
 
     public Guid? SelectedDocumentId
     {
@@ -143,6 +157,29 @@ public partial class MainForm : Form, IMainFormView
             ? selectedFileType
             : null;
 
+    public Guid? SelectedWorkspaceId =>
+        workspaceGridView.CurrentRow?.DataBoundItem
+            is WorkspaceListItem workspace
+                ? workspace.Id
+                : null;
+
+    public string? SelectedWorkspaceName =>
+        workspaceGridView.CurrentRow?.DataBoundItem
+            is WorkspaceListItem workspace
+                ? workspace.WorkspaceName
+                : null;
+
+    public WorkspaceCreateRequest? ShowCreateWorkspaceDialog()
+    {
+        using var dialog = new WorkspaceCreateDialog();
+
+        return dialog.ShowDialog(this) == DialogResult.OK
+            ? new WorkspaceCreateRequest(
+                dialog.WorkspaceName,
+                dialog.WorkspaceDescription)
+            : null;
+    }
+
     private async void MainForm_Load(
         object? sender,
         EventArgs e)
@@ -162,8 +199,6 @@ public partial class MainForm : Form, IMainFormView
             _logger.LogError(
                 ex,
                 LogMessages.MainFormLoadFailed);
-
-            throw;
         }
     }
 
@@ -195,6 +230,27 @@ public partial class MainForm : Form, IMainFormView
         ReprocessRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    private void OnCreateWorkspaceButtonClick(
+        object? sender,
+        EventArgs e)
+    {
+        WorkspaceCreateRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnOpenWorkspaceButtonClick(
+        object? sender,
+        EventArgs e)
+    {
+        WorkspaceOpenRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnRemoveWorkspaceButtonClick(
+        object? sender,
+        EventArgs e)
+    {
+        WorkspaceRemoveRequested?.Invoke(this, EventArgs.Empty);
+    }
+
     private void OnSearchButtonClick(
         object? sender,
         EventArgs e)
@@ -209,7 +265,6 @@ public partial class MainForm : Form, IMainFormView
     {
         _searchDebounceTimer.Stop();
         searchTextBox.Clear();
-        _searchDebounceTimer.Stop();
         SearchRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -286,6 +341,33 @@ public partial class MainForm : Form, IMainFormView
         }
     }
 
+    private void OnWorkspaceSelectionChanged(
+        object? sender,
+        EventArgs e)
+    {
+        if (_isUpdatingWorkspaceGrid)
+        {
+            return;
+        }
+
+        WorkspaceSelectionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnWorkspaceDoubleClick(
+        object? sender,
+        DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0)
+        {
+            return;
+        }
+
+        if (SelectedWorkspaceId is not null)
+        {
+            WorkspaceOpenRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     public void SetSelectedDocumentId(Guid? documentId)
     {
         if (documentId is null)
@@ -314,6 +396,26 @@ public partial class MainForm : Form, IMainFormView
         }
     }
 
+    public void SetSelectedWorkspaceId(Guid? workspaceId)
+    {
+        if (workspaceId is null)
+        {
+            workspaceGridView.ClearSelection();
+            return;
+        }
+
+        foreach (DataGridViewRow row in workspaceGridView.Rows)
+        {
+            if (row.DataBoundItem is WorkspaceListItem workspace &&
+                workspace.Id == workspaceId.Value)
+            {
+                row.Selected = true;
+                workspaceGridView.CurrentCell = row.Cells[0];
+                return;
+            }
+        }
+    }
+
     public void SetImportEnabled(bool enabled)
     {
         importButton.Enabled = enabled;
@@ -334,6 +436,16 @@ public partial class MainForm : Form, IMainFormView
         reprocessButton.Enabled = enabled;
     }
 
+    public void SetWorkspaceOpenEnabled(bool enabled)
+    {
+        openWorkspaceButton.Enabled = enabled;
+    }
+
+    public void SetWorkspaceRemoveEnabled(bool enabled)
+    {
+        removeWorkspaceButton.Enabled = enabled;
+    }
+
     public void SetLoadMoreEnabled(bool enabled)
     {
         loadMoreButton.Enabled = enabled;
@@ -343,6 +455,16 @@ public partial class MainForm : Form, IMainFormView
     public void SetStatus(string message)
     {
         statusLabel.Text = message;
+    }
+
+    public void SetDocumentsCount(int count)
+    {
+        documentsCountLabel.Text = string.Format(UiMessages.DocumentCount, count);
+    }
+
+    public void SetWorkspacesCount(int count)
+    {
+        workspacesCountLabel.Text = string.Format(UiMessages.WorkspaceCount, count);
     }
 
     public void ShowInformation(
@@ -394,6 +516,19 @@ public partial class MainForm : Form, IMainFormView
         return result == DialogResult.Yes;
     }
 
+    public bool ConfirmWorkspaceRemoval(string workspaceName)
+    {
+        var result = MessageBox.Show(
+            this,
+            UiMessages.ConfirmDeleteWorkspace(workspaceName),
+            UiMessages.DeleteWorkspace,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+
+        return result == DialogResult.Yes;
+    }
+
     public void ShowDocuments(
         IReadOnlyList<DocumentListItem> documents)
     {
@@ -405,14 +540,50 @@ public partial class MainForm : Form, IMainFormView
 
             documentGridView.DataSource = null;
             documentGridView.Columns.Clear();
+            documentGridView.AutoGenerateColumns = false;
 
             documentGridView.Columns.Add(
                 new DataGridViewTextBoxColumn
                 {
                     Name = "documentNameColumn",
-                    HeaderText = UiMessages.DocumentColumnHeader,
+                    HeaderText = UiMessages.FileNameColumnHeader,
                     DataPropertyName = nameof(DocumentListItem.FileName),
-                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                    FillWeight = 40
+                });
+
+            documentGridView.Columns.Add(
+                new DataGridViewTextBoxColumn
+                {
+                    Name = "documentTypeColumn",
+                    HeaderText = UiMessages.TypeColumnHeader,
+                    DataPropertyName = nameof(DocumentListItem.Type),
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                    FillWeight = 15
+                });
+
+            documentGridView.Columns.Add(
+                new DataGridViewTextBoxColumn
+                {
+                    Name = "documentImportedColumn",
+                    HeaderText = UiMessages.ImportedColumnHeader,
+                    DataPropertyName = nameof(DocumentListItem.Imported),
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                    FillWeight = 25,
+                    DefaultCellStyle = new DataGridViewCellStyle
+                    {
+                        Format = "g"
+                    }
+                });
+
+            documentGridView.Columns.Add(
+                new DataGridViewTextBoxColumn
+                {
+                    Name = "documentStatusColumn",
+                    HeaderText = UiMessages.StatusColumnHeader,
+                    DataPropertyName = nameof(DocumentListItem.Status),
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                    FillWeight = 20
                 });
 
             documentGridView.DataSource = documents.ToList();
@@ -454,7 +625,7 @@ public partial class MainForm : Form, IMainFormView
                 new DataGridViewTextBoxColumn
                 {
                     Name = "searchDisplayNameColumn",
-                    HeaderText = "Name",
+                    HeaderText = UiMessages.NameColumnHeader,
                     DataPropertyName =
                         nameof(SearchResultListItem.DisplayName),
                     AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
@@ -464,7 +635,7 @@ public partial class MainForm : Form, IMainFormView
                 new DataGridViewTextBoxColumn
                 {
                     Name = "searchFileNameColumn",
-                    HeaderText = "File",
+                    HeaderText = UiMessages.FileColumnHeader,
                     DataPropertyName =
                         nameof(SearchResultListItem.FileName),
                     AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
@@ -474,7 +645,7 @@ public partial class MainForm : Form, IMainFormView
                 new DataGridViewTextBoxColumn
                 {
                     Name = "searchSnippetColumn",
-                    HeaderText = "Match",
+                    HeaderText = UiMessages.MatchColumnHeader,
                     DataPropertyName =
                         nameof(SearchResultListItem.Snippet),
                     AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
@@ -484,7 +655,7 @@ public partial class MainForm : Form, IMainFormView
                 new DataGridViewTextBoxColumn
                 {
                     Name = "searchMatchCountColumn",
-                    HeaderText = "Matches",
+                    HeaderText = UiMessages.MatchesColumnHeader,
                     DataPropertyName =
                         nameof(SearchResultListItem.MatchCount),
                     AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
@@ -527,6 +698,82 @@ public partial class MainForm : Form, IMainFormView
         {
             _isUpdatingDocumentGrid = false;
         }
+    }
+
+    public void ShowWorkspaces(
+        IReadOnlyList<WorkspaceListItem> workspaces)
+    {
+        _isUpdatingWorkspaceGrid = true;
+
+        try
+        {
+            workspaceGridView.DataSource = null;
+            workspaceGridView.Columns.Clear();
+            workspaceGridView.AutoGenerateColumns = false;
+
+            workspaceGridView.Columns.Add(
+                new DataGridViewTextBoxColumn
+                {
+                    Name = "workspaceNameColumn",
+                    HeaderText = UiMessages.WorkspaceNameColumnHeader,
+                    DataPropertyName = nameof(WorkspaceListItem.WorkspaceName),
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                    FillWeight = 22
+                });
+
+            workspaceGridView.Columns.Add(
+                new DataGridViewTextBoxColumn
+                {
+                    Name = "workspaceDescriptionColumn",
+                    HeaderText = UiMessages.DescriptionColumnHeader,
+                    DataPropertyName = nameof(WorkspaceListItem.Description),
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                    FillWeight = 25
+                });
+
+            workspaceGridView.Columns.Add(
+                new DataGridViewTextBoxColumn
+                {
+                    Name = "workspaceFilesColumn",
+                    HeaderText = UiMessages.FilesColumnHeader,
+                    DataPropertyName = nameof(WorkspaceListItem.Files),
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                    FillWeight = 33
+                });
+
+            workspaceGridView.Columns.Add(
+                new DataGridViewTextBoxColumn
+                {
+                    Name = "workspaceLastUpdatedColumn",
+                    HeaderText = UiMessages.LastUpdatedColumnHeader,
+                    DataPropertyName = nameof(WorkspaceListItem.LastUpdated),
+                    AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                    FillWeight = 20,
+                    DefaultCellStyle = new DataGridViewCellStyle
+                    {
+                        Format = "g"
+                    }
+                });
+
+            workspaceGridView.DataSource = workspaces.ToList();
+
+            workspaceGridView.Visible = workspaces.Count > 0;
+            workspaceEmptyStateLabel.Visible = workspaces.Count == 0;
+
+            if (workspaces.Count > 0)
+            {
+                workspaceGridView.ClearSelection();
+                workspaceGridView.Rows[0].Selected = true;
+                workspaceGridView.CurrentCell =
+                    workspaceGridView.Rows[0].Cells[0];
+            }
+        }
+        finally
+        {
+            _isUpdatingWorkspaceGrid = false;
+        }
+
+        WorkspaceSelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void ShowEmptyState()

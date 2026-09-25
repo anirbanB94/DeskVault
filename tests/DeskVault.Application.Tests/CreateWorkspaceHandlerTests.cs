@@ -2,6 +2,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Application.Workspaces.Commands.CreateWorkspace;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -15,6 +16,7 @@ public sealed class CreateWorkspaceHandlerTests
         CreateWorkspaceTestContext context = CreateContext();
 
         var command = new CreateWorkspaceCommand(
+            null,
             null,
             false,
             null);
@@ -56,6 +58,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         var command = new CreateWorkspaceCommand(
             "My Workspace",
+            "My workspace description.",
             true,
             null);
 
@@ -78,6 +81,10 @@ public sealed class CreateWorkspaceHandlerTests
         Assert.Equal(
             "My Workspace",
             workspace.Name);
+
+        Assert.Equal(
+            "My workspace description.",
+            workspace.Description);
 
         context.WorkspaceRepository.Verify(
             repository =>
@@ -105,6 +112,7 @@ public sealed class CreateWorkspaceHandlerTests
                 secondDocumentId);
 
         var command = new CreateWorkspaceCommand(
+            null,
             null,
             false,
             [
@@ -156,6 +164,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         var command = new CreateWorkspaceCommand(
             null,
+            null,
             false,
             [
                 existingDocumentId,
@@ -200,6 +209,7 @@ public sealed class CreateWorkspaceHandlerTests
             CreateContext(documentId);
 
         var command = new CreateWorkspaceCommand(
+            null,
             null,
             false,
             [
@@ -246,6 +256,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         var command = new CreateWorkspaceCommand(
             "My Workspace",
+            "My workspace description.",
             true,
             null);
 
@@ -287,7 +298,8 @@ public sealed class CreateWorkspaceHandlerTests
             new CreateWorkspaceHandler(
                 documentRepository.Object,
                 workspaceRepository.Object,
-                registry.Object);
+                registry.Object,
+                NullLogger<CreateWorkspaceHandler>.Instance);
 
         return new CreateWorkspaceTestContext(
             handler,

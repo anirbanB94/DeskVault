@@ -1,16 +1,21 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Workspaces.Commands.CloseWorkspace;
 
 public sealed class CloseWorkspaceHandler
 {
     private readonly IActiveWorkspaceRegistry _activeWorkspaceRegistry;
+    private readonly ILogger<CloseWorkspaceHandler> _logger;
 
     public CloseWorkspaceHandler(
-        IActiveWorkspaceRegistry activeWorkspaceRegistry)
+        IActiveWorkspaceRegistry activeWorkspaceRegistry,
+        ILogger<CloseWorkspaceHandler> logger)
     {
         _activeWorkspaceRegistry = activeWorkspaceRegistry;
+        _logger = logger;
     }
 
     public Task<CloseWorkspaceResult> HandleAsync(
@@ -24,6 +29,9 @@ public sealed class CloseWorkspaceHandler
 
         if (workspace is null)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceCloseNotFound);
+
             return Task.FromResult(
                 new CloseWorkspaceResult(
                     CloseWorkspaceResultStatus.WorkspaceNotFound,
@@ -32,6 +40,9 @@ public sealed class CloseWorkspaceHandler
         }
 
         _activeWorkspaceRegistry.Remove(workspace.Id);
+
+        _logger.LogInformation(
+            LogMessages.WorkspaceCloseCompleted);
 
         return Task.FromResult(
             new CloseWorkspaceResult(

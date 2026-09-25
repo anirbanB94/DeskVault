@@ -1,6 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -227,7 +228,8 @@ public sealed class RemoveDocumentFromWorkspaceHandlerTests
 
         var handler = new RemoveDocumentFromWorkspaceHandler(
             workspaceRepository.Object,
-            activeWorkspaceRegistry.Object);
+            activeWorkspaceRegistry.Object,
+            NullLogger<RemoveDocumentFromWorkspaceHandler>.Instance);
 
         return new RemoveDocumentTestContext(
             handler,

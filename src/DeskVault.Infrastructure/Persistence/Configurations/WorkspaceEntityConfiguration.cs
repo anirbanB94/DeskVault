@@ -24,10 +24,18 @@ public sealed class WorkspaceEntityConfiguration
             .HasMaxLength(260);
 
         builder.Property(
+                workspace => workspace.Description)
+            .HasMaxLength(400);
+
+        builder.Property(
                 workspace => workspace.Type)
             .IsRequired();
 
         builder.Property(
                 workspace => workspace.LastActiveDocumentId);
+
+        builder.Property(
+                workspace => workspace.LastUpdated)
+            .IsRequired();
     }
 }

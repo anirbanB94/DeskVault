@@ -1,5 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 
@@ -7,13 +9,16 @@ public sealed class RemoveDocumentFromWorkspaceHandler
 {
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IActiveWorkspaceRegistry _activeWorkspaceRegistry;
+    private readonly ILogger<RemoveDocumentFromWorkspaceHandler> _logger;
 
     public RemoveDocumentFromWorkspaceHandler(
         IWorkspaceRepository workspaceRepository,
-        IActiveWorkspaceRegistry activeWorkspaceRegistry)
+        IActiveWorkspaceRegistry activeWorkspaceRegistry,
+        ILogger<RemoveDocumentFromWorkspaceHandler> logger)
     {
         _workspaceRepository = workspaceRepository;
         _activeWorkspaceRegistry = activeWorkspaceRegistry;
+        _logger = logger;
     }
 
     public async Task<RemoveDocumentFromWorkspaceResult> HandleAsync(
@@ -27,6 +32,9 @@ public sealed class RemoveDocumentFromWorkspaceHandler
 
         if (workspace is null)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceDocumentRemovalWorkspaceNotFound);
+
             return new RemoveDocumentFromWorkspaceResult(
                 RemoveDocumentFromWorkspaceResultStatus.WorkspaceNotFound,
                 null,
@@ -36,6 +44,9 @@ public sealed class RemoveDocumentFromWorkspaceHandler
         if (!workspace.Memberships.Any(
                 membership => membership.DocumentId == command.DocumentId))
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceDocumentRemovalNotMember);
+
             return new RemoveDocumentFromWorkspaceResult(
                 RemoveDocumentFromWorkspaceResultStatus.DocumentNotMember,
                 workspace,
@@ -45,6 +56,9 @@ public sealed class RemoveDocumentFromWorkspaceHandler
         if (workspace.TypeOfWorkspace == WorkspaceType.Temporary)
         {
             workspace.RemoveDocument(command.DocumentId);
+
+            _logger.LogInformation(
+                LogMessages.WorkspaceDocumentRemovalCompleted);
 
             return new RemoveDocumentFromWorkspaceResult(
                 RemoveDocumentFromWorkspaceResultStatus.Success,
@@ -61,6 +75,9 @@ public sealed class RemoveDocumentFromWorkspaceHandler
 
         _activeWorkspaceRegistry.Replace(updatedWorkspace);
 
+        _logger.LogInformation(
+            LogMessages.WorkspaceDocumentRemovalCompleted);
+
         return new RemoveDocumentFromWorkspaceResult(
             RemoveDocumentFromWorkspaceResultStatus.Success,
             updatedWorkspace,
@@ -73,8 +90,10 @@ public sealed class RemoveDocumentFromWorkspaceHandler
         return Workspace.Restore(
             workspace.Id,
             workspace.Name,
+            workspace.Description,
             workspace.TypeOfWorkspace,
             workspace.Memberships,
-            workspace.LastActiveDocumentId);
+            workspace.LastActiveDocumentId,
+            workspace.LastUpdated);
     }
 }

@@ -2,6 +2,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Application.Workspaces;
 using DeskVault.Application.Workspaces.Commands.DeleteWorkspace;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -224,7 +225,8 @@ public sealed class DeleteWorkspaceHandlerTests
     {
         return new DeleteWorkspaceHandler(
             context.WorkspaceRepository.Object,
-            context.ActiveWorkspaceRegistry);
+            context.ActiveWorkspaceRegistry,
+            NullLogger<DeleteWorkspaceHandler>.Instance);
     }
 
     private static TestContext CreateContext()

@@ -1,5 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Workspaces.Commands.CreateWorkspace;
 
@@ -8,15 +10,18 @@ public sealed class CreateWorkspaceHandler
     private readonly IDocumentRepository _documentRepository;
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IActiveWorkspaceRegistry _activeWorkspaceRegistry;
+    private readonly ILogger<CreateWorkspaceHandler> _logger;
 
     public CreateWorkspaceHandler(
         IDocumentRepository documentRepository,
         IWorkspaceRepository workspaceRepository,
-        IActiveWorkspaceRegistry activeWorkspaceRegistry)
+        IActiveWorkspaceRegistry activeWorkspaceRegistry,
+        ILogger<CreateWorkspaceHandler> logger)
     {
         _documentRepository = documentRepository;
         _workspaceRepository = workspaceRepository;
         _activeWorkspaceRegistry = activeWorkspaceRegistry;
+        _logger = logger;
     }
 
     public async Task<CreateWorkspaceResult> HandleAsync(
@@ -48,6 +53,9 @@ public sealed class CreateWorkspaceHandler
 
         if (missingDocumentIds.Count > 0)
         {
+            _logger.LogWarning(
+                LogMessages.WorkspaceCreationMissingDocuments);
+
             return new CreateWorkspaceResult(
                 CreateWorkspaceResultStatus.DocumentNotFound,
                 null,
@@ -58,7 +66,8 @@ public sealed class CreateWorkspaceHandler
         Workspace workspace = command.IsPersistent
             ? Workspace.CreatePersistent(
                 Guid.NewGuid(),
-                command.Name ?? string.Empty)
+                command.Name ?? string.Empty,
+                command.Description ?? string.Empty)
             : Workspace.CreateTemporary(Guid.NewGuid());
 
         foreach (Guid documentId in documentIds)
@@ -75,6 +84,9 @@ public sealed class CreateWorkspaceHandler
         }
 
         _activeWorkspaceRegistry.Add(workspace);
+
+        _logger.LogInformation(
+            LogMessages.WorkspaceCreationCompleted);
 
         return new CreateWorkspaceResult(
             CreateWorkspaceResultStatus.Success,

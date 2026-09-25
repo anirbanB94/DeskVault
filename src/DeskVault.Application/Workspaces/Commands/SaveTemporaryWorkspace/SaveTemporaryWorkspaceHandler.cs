@@ -1,5 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 
@@ -7,13 +9,16 @@ public sealed class SaveTemporaryWorkspaceHandler
 {
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IActiveWorkspaceRegistry _activeWorkspaceRegistry;
+    private readonly ILogger<SaveTemporaryWorkspaceHandler> _logger;
 
     public SaveTemporaryWorkspaceHandler(
         IWorkspaceRepository workspaceRepository,
-        IActiveWorkspaceRegistry activeWorkspaceRegistry)
+        IActiveWorkspaceRegistry activeWorkspaceRegistry,
+        ILogger<SaveTemporaryWorkspaceHandler> logger)
     {
         _workspaceRepository = workspaceRepository;
         _activeWorkspaceRegistry = activeWorkspaceRegistry;
+        _logger = logger;
     }
 
     public async Task<SaveTemporaryWorkspaceResult> HandleAsync(
@@ -27,6 +32,9 @@ public sealed class SaveTemporaryWorkspaceHandler
 
         if (workspace is null)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceSaveTemporaryNotFound);
+
             return new SaveTemporaryWorkspaceResult(
                 SaveTemporaryWorkspaceResultStatus.WorkspaceNotFound,
                 null,
@@ -35,6 +43,9 @@ public sealed class SaveTemporaryWorkspaceHandler
 
         if (workspace.TypeOfWorkspace != WorkspaceType.Temporary)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceSaveTemporaryNotTemporary);
+
             return new SaveTemporaryWorkspaceResult(
                 SaveTemporaryWorkspaceResultStatus.WorkspaceNotTemporary,
                 workspace,
@@ -43,6 +54,9 @@ public sealed class SaveTemporaryWorkspaceHandler
 
         if (string.IsNullOrWhiteSpace(command.Name))
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceSaveTemporaryNameRequired);
+
             return new SaveTemporaryWorkspaceResult(
                 SaveTemporaryWorkspaceResultStatus.NameRequired,
                 workspace,
@@ -53,9 +67,11 @@ public sealed class SaveTemporaryWorkspaceHandler
             Workspace.Restore(
                 workspace.Id,
                 command.Name,
+                command.Description,
                 WorkspaceType.Persistent,
                 workspace.Memberships,
-                workspace.LastActiveDocumentId);
+                workspace.LastActiveDocumentId,
+                workspace.LastUpdated);
 
         await _workspaceRepository.AddAsync(
             persistentWorkspace,
@@ -63,6 +79,9 @@ public sealed class SaveTemporaryWorkspaceHandler
 
         _activeWorkspaceRegistry.Replace(
             persistentWorkspace);
+
+        _logger.LogInformation(
+            LogMessages.WorkspaceSaveTemporaryCompleted);
 
         return new SaveTemporaryWorkspaceResult(
             SaveTemporaryWorkspaceResultStatus.Success,

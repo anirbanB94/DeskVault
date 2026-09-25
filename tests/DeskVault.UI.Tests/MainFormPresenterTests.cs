@@ -1,14 +1,27 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
+using DeskVault.Application.Workspaces.Commands.CloseWorkspace;
+using DeskVault.Application.Workspaces.Commands.CreateWorkspace;
+using DeskVault.Application.Workspaces.Commands.DeleteWorkspace;
+using DeskVault.Application.Workspaces.Commands.OpenWorkspace;
+using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
+using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
+using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
 using DeskVault.Domain.Documents;
+using DeskVault.Domain.Workspaces;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
-using DeskVault.UI.Services;
+using DeskVault.UI.Services.Interfaces;
+using DeskVault.UI.Services.Workspace;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -49,14 +62,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns("security");
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -128,14 +137,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchFileType)
             .Returns((string?)null);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -189,14 +194,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchFileType)
             .Returns(fileType);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -238,14 +239,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns("unknown");
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -317,14 +314,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns(searchText);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -430,14 +423,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns(() => searchText);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -581,14 +570,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns(() => currentSearchText);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -680,14 +665,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns(searchText);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -772,14 +753,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchFileType)
             .Returns(fileType);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -845,14 +822,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns(searchText);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -894,14 +867,10 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns(searchText);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         _ =
             CreatePresenter(
                 view,
-                searchStore,
-                documentWorkspace);
+                searchStore);
 
         view.Raise(
             x => x.LoadMoreSearchResultsRequested += null,
@@ -942,9 +911,6 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SelectedDocumentId)
             .Returns(documentId);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -971,13 +937,146 @@ public sealed class MainFormPresenterTests
                 CreateContentStream(
                     content));
 
+        var workspaceView =
+            new Mock<IDocumentWorkspaceView>();
+
+        var documentViewer =
+            new Mock<IDocumentViewer>();
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var getDocumentHandler =
+            new GetDocumentHandler(
+                repository.Object,
+                NullLogger<GetDocumentHandler>.Instance);
+
+        var openDocumentHandler =
+            new OpenDocumentHandler(
+                repository.Object,
+                documentReader.Object,
+                NullLogger<OpenDocumentHandler>.Instance);
+
+        var removeDocumentHandler =
+            new RemoveDocumentHandler(
+                repository.Object,
+                workspaceRepository.Object,
+                new Mock<IStorageService>().Object,
+                NullLogger<RemoveDocumentHandler>.Instance);
+
+        var workspaceId =
+            Guid.NewGuid();
+
+        var workspacePresenter =
+            new DocumentWorkspacePresenter(
+                workspaceId,
+                workspaceView.Object,
+                documentViewer.Object,
+                getDocumentHandler,
+                openDocumentHandler,
+                removeDocumentHandler,
+                NullLogger<DocumentWorkspacePresenter>.Instance);
+
+        var documentPresentation =
+            new WorkspaceDocumentPresentation(
+                documentId,
+                workspacePresenter,
+                workspaceView.Object);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(x => x.Create(
+                workspaceId,
+                documentId))
+            .Returns(documentPresentation);
+
+        var workspacePresentationView =
+            new Mock<IWorkspacePresentationView>();
+
+        var listDocumentsHandler =
+            new ListDocumentsHandler(
+                repository.Object,
+                NullLogger<ListDocumentsHandler>.Instance);
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(registry => registry.Get(workspaceId))
+            .Returns((Workspace?)null);
+
+        var addDocumentToWorkspaceHandler =
+            new AddDocumentToWorkspaceHandler(
+                repository.Object,
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<AddDocumentToWorkspaceHandler>.Instance);
+
+        var removeDocumentFromWorkspaceHandler =
+            new RemoveDocumentFromWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<RemoveDocumentFromWorkspaceHandler>.Instance);
+
+        var renameWorkspaceHandler =
+            new RenameWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<RenameWorkspaceHandler>.Instance);
+
+        var saveTemporaryWorkspaceHandler =
+            new SaveTemporaryWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<SaveTemporaryWorkspaceHandler>.Instance);
+
+        var updateWorkspaceDescriptionHandler =
+            new UpdateWorkspaceDescriptionHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
+
+        var workspaceDialogService =
+            new Mock<IWorkspaceDialogService>();
+
+        var workspacePresentation =
+            new WorkspacePresentation(
+                workspaceId,
+                WorkspaceType.Temporary,
+                null,
+                null,
+                documentPresentationFactory.Object,
+                listDocumentsHandler,
+                addDocumentToWorkspaceHandler,
+                removeDocumentFromWorkspaceHandler,
+                renameWorkspaceHandler,
+                saveTemporaryWorkspaceHandler,
+                updateWorkspaceDescriptionHandler,
+                workspaceDialogService.Object,
+                workspacePresentationView.Object,
+                NullLogger<WorkspacePresentation>.Instance);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        workspacePresentationManager
+            .Setup(x => x.GetOrCreate(
+                It.IsAny<Guid>(),
+                It.IsAny<WorkspaceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()))
+            .Returns(workspacePresentation);
+
         _ =
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 repository,
-                documentReader);
+                documentReader,
+                workspacePresentationManager:
+                    workspacePresentationManager);
 
         view.Raise(
             x => x.OpenRequested += null,
@@ -991,19 +1090,153 @@ public sealed class MainFormPresenterTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
-        documentReader.Verify(
-            x => x.OpenReadAsync(
-                "document.dvault",
+        repository.Verify(
+            x => x.GetAllAsync(
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
-        documentWorkspace.Verify(
-            x => x.OpenAsync(
-                documentId,
-                It.Is<Stream>(
-                    stream =>
-                        ReadStream(stream) == content),
-                fileName),
+        workspacePresentationManager.Verify(
+            x => x.GetOrCreate(
+                It.IsAny<Guid>(),
+                It.IsAny<WorkspaceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()),
+            Times.Once);
+
+    }
+
+    [Fact]
+    public async Task OpenRequested_WhenTemporaryPresentationAlreadyExists_ActivatesExistingPresentationWithoutCreatingAnother()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Guid workspaceId =
+            Guid.NewGuid();
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(registry => registry.Get(workspaceId))
+            .Returns((Workspace?)null);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        var workspacePresentationView =
+            new Mock<IWorkspacePresentationView>();
+
+        var listDocumentsHandler =
+            new ListDocumentsHandler(
+                repository.Object,
+                NullLogger<ListDocumentsHandler>.Instance);
+
+        var addDocumentToWorkspaceHandler =
+            new AddDocumentToWorkspaceHandler(
+                repository.Object,
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<AddDocumentToWorkspaceHandler>.Instance);
+
+        var removeDocumentFromWorkspaceHandler =
+            new RemoveDocumentFromWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<RemoveDocumentFromWorkspaceHandler>.Instance);
+
+        var renameWorkspaceHandler =
+            new RenameWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<RenameWorkspaceHandler>.Instance);
+
+        var saveTemporaryWorkspaceHandler =
+            new SaveTemporaryWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<SaveTemporaryWorkspaceHandler>.Instance);
+
+        var updateWorkspaceDescriptionHandler =
+            new UpdateWorkspaceDescriptionHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
+
+        var workspaceDialogService =
+            new Mock<IWorkspaceDialogService>();
+
+        var workspacePresentation =
+            new WorkspacePresentation(
+                workspaceId,
+                WorkspaceType.Temporary,
+                null,
+                null,
+                documentPresentationFactory.Object,
+                listDocumentsHandler,
+                addDocumentToWorkspaceHandler,
+                removeDocumentFromWorkspaceHandler,
+                renameWorkspaceHandler,
+                saveTemporaryWorkspaceHandler,
+                updateWorkspaceDescriptionHandler,
+                workspaceDialogService.Object,
+                workspacePresentationView.Object,
+                NullLogger<WorkspacePresentation>.Instance);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        workspacePresentationManager
+            .Setup(x =>
+                x.FindTemporaryByDocument(documentId))
+            .Returns(workspacePresentation);
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                repository,
+                workspacePresentationManager:
+                    workspacePresentationManager);
+
+        view.Raise(
+            x => x.OpenRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        workspacePresentationManager.Verify(
+            x =>
+                x.FindTemporaryByDocument(documentId),
+            Times.Once);
+
+        workspacePresentationManager.Verify(
+            x =>
+                x.GetOrCreate(
+                    It.IsAny<Guid>(),
+                    It.IsAny<WorkspaceType>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<string?>()),
+            Times.Never);
+
+        workspacePresentationView.Verify(
+            x => x.ActivateWorkspace(),
             Times.Once);
 
         view.Verify(
@@ -1025,9 +1258,6 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SelectedDocumentId)
             .Returns((Guid?)null);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -1038,7 +1268,6 @@ public sealed class MainFormPresenterTests
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 repository,
                 documentReader);
 
@@ -1058,13 +1287,6 @@ public sealed class MainFormPresenterTests
             x => x.OpenReadAsync(
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
-            Times.Never);
-
-        documentWorkspace.Verify(
-            x => x.OpenAsync(
-                It.IsAny<Guid>(),
-                It.IsAny<Stream>(),
-                It.IsAny<string>()),
             Times.Never);
     }
 
@@ -1086,9 +1308,6 @@ public sealed class MainFormPresenterTests
         view
             .SetupGet(x => x.SelectedDocumentId)
             .Returns(documentId);
-
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
 
         var repository =
             new Mock<IDocumentRepository>();
@@ -1120,7 +1339,6 @@ public sealed class MainFormPresenterTests
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 repository,
                 documentReader);
 
@@ -1140,13 +1358,6 @@ public sealed class MainFormPresenterTests
                 UiMessages.UnableToOpenDocument,
                 UiMessages.OpenDocumentTitle),
             Times.Once);
-
-        documentWorkspace.Verify(
-            x => x.OpenAsync(
-                It.IsAny<Guid>(),
-                It.IsAny<Stream>(),
-                It.IsAny<string>()),
-            Times.Never);
 
         view.Verify(
             x => x.SetOpenEnabled(
@@ -1176,9 +1387,6 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SelectedFilePath)
             .Returns(filePath);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -1204,7 +1412,6 @@ public sealed class MainFormPresenterTests
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 repository,
                 hashService: hashService,
                 importValidator: importValidator);
@@ -1275,9 +1482,6 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SelectedFilePath)
             .Returns(filePath);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -1347,7 +1551,6 @@ public sealed class MainFormPresenterTests
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 repository,
                 hashService: hashService,
                 storageService: storageService,
@@ -1458,9 +1661,6 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SelectedFilePath)
             .Returns(filePath);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -1530,7 +1730,6 @@ public sealed class MainFormPresenterTests
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 repository,
                 hashService: hashService,
                 storageService: storageService,
@@ -1623,9 +1822,6 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SelectedFilePath)
             .Returns(filePath);
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -1680,7 +1876,6 @@ public sealed class MainFormPresenterTests
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 repository,
                 hashService: hashService,
                 storageService: storageService,
@@ -1763,9 +1958,6 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SelectedDocumentFileName)
             .Returns("security-policy.md");
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -1797,7 +1989,6 @@ public sealed class MainFormPresenterTests
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 repository,
                 processingService: processingService);
 
@@ -1875,9 +2066,6 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SelectedDocumentFileName)
             .Returns("unsupported.docx");
 
-        var documentWorkspace =
-            new Mock<IDocumentWorkspace>();
-
         var processingService =
             new Mock<IDocumentProcessingService>();
 
@@ -1885,7 +2073,6 @@ public sealed class MainFormPresenterTests
             CreatePresenter(
                 view,
                 searchStore,
-                documentWorkspace,
                 processingService: processingService);
 
         view.Raise(
@@ -2021,14 +2208,16 @@ public sealed class MainFormPresenterTests
     private static MainFormPresenter CreatePresenter(
         Mock<IMainFormView> view,
         Mock<IDocumentSearchStore> searchStore,
-        Mock<IDocumentWorkspace> documentWorkspace,
         Mock<IDocumentRepository>? repository = null,
         Mock<IDocumentReader>? documentReader = null,
         Mock<IHashService>? hashService = null,
         Mock<IImportDocumentValidator>? importValidator = null,
         Mock<IStorageService>? storageService = null,
         Mock<IDocumentProcessingService>? processingService = null,
-        DocumentTextExtractorResolver? documentTextExtractorResolver = null)
+        DocumentTextExtractorResolver? documentTextExtractorResolver = null,
+        Mock<IWorkspacePresentationManager>? workspacePresentationManager = null,
+        Mock<IWorkspaceRepository>? workspaceRepository = null,
+        Mock<IActiveWorkspaceRegistry>? activeWorkspaceRegistry = null)
     {
         repository ??=
             new Mock<IDocumentRepository>();
@@ -2051,6 +2240,15 @@ public sealed class MainFormPresenterTests
         documentTextExtractorResolver ??=
             CreateDocumentTextExtractorResolver();
 
+        workspacePresentationManager ??=
+            new Mock<IWorkspacePresentationManager>();
+
+        workspaceRepository ??=
+            new Mock<IWorkspaceRepository>();
+
+        activeWorkspaceRegistry ??=
+            new Mock<IActiveWorkspaceRegistry>();
+
         var importDocumentHandler =
             new ImportDocumentHandler(
                 importValidator.Object,
@@ -2062,15 +2260,9 @@ public sealed class MainFormPresenterTests
         var removeDocumentHandler =
             new RemoveDocumentHandler(
                 repository.Object,
-                new Mock<IWorkspaceRepository>().Object,
+                workspaceRepository.Object,
                 storageService.Object,
                 NullLogger<RemoveDocumentHandler>.Instance);
-
-        var openDocumentHandler =
-            new OpenDocumentHandler(
-                repository.Object,
-                documentReader.Object,
-                NullLogger<OpenDocumentHandler>.Instance);
 
         var listDocumentsHandler =
             new ListDocumentsHandler(
@@ -2083,6 +2275,35 @@ public sealed class MainFormPresenterTests
                 new SearchDocumentsRanker(),
                 NullLogger<SearchDocumentsHandler>.Instance);
 
+        var createWorkspaceHandler =
+            new CreateWorkspaceHandler(
+                repository.Object,
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<CreateWorkspaceHandler>.Instance);
+
+        var deleteWorkspaceHandler =
+            new DeleteWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<DeleteWorkspaceHandler>.Instance);
+
+        var getWorkspacesHandler =
+            new GetWorkspacesHandler(
+                workspaceRepository.Object);
+
+        var openWorkspaceHandler =
+            new OpenWorkspaceHandler(
+                repository.Object,
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<OpenWorkspaceHandler>.Instance);
+
+        var closeWorkspaceHandler =
+            new CloseWorkspaceHandler(
+                activeWorkspaceRegistry.Object,
+                NullLogger<CloseWorkspaceHandler>.Instance);
+
         var searchOptions =
             Options.Create(
                 new SearchOptions
@@ -2094,10 +2315,14 @@ public sealed class MainFormPresenterTests
             view.Object,
             importDocumentHandler,
             removeDocumentHandler,
-            openDocumentHandler,
             listDocumentsHandler,
             searchDocumentsHandler,
-            documentWorkspace.Object,
+            createWorkspaceHandler,
+            deleteWorkspaceHandler,
+            getWorkspacesHandler,
+            openWorkspaceHandler,
+            closeWorkspaceHandler,
+            workspacePresentationManager.Object,
             processingService.Object,
             documentTextExtractorResolver,
             NullLogger<MainFormPresenter>.Instance,

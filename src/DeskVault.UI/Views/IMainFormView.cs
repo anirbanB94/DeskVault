@@ -16,6 +16,14 @@ public interface IMainFormView
 
     event EventHandler? LoadMoreSearchResultsRequested;
 
+    event EventHandler WorkspaceSelectionChanged;
+
+    event EventHandler WorkspaceCreateRequested;
+
+    event EventHandler WorkspaceOpenRequested;
+
+    event EventHandler WorkspaceRemoveRequested;
+
     Guid? SelectedDocumentId { get; }
 
     string? SelectedDocumentFileName { get; }
@@ -26,7 +34,15 @@ public interface IMainFormView
 
     string? SearchFileType { get; }
 
+    Guid? SelectedWorkspaceId { get; }
+
+    string? SelectedWorkspaceName { get; }
+
+    WorkspaceCreateRequest? ShowCreateWorkspaceDialog();
+
     void SetSelectedDocumentId(Guid? documentId);
+
+    void SetSelectedWorkspaceId(Guid? workspaceId);
 
     void SetImportEnabled(bool enabled);
 
@@ -38,7 +54,15 @@ public interface IMainFormView
 
     void SetLoadMoreEnabled(bool enabled);
 
+    void SetWorkspaceOpenEnabled(bool enabled);
+
+    void SetWorkspaceRemoveEnabled(bool enabled);
+
     void SetStatus(string message);
+
+    void SetDocumentsCount(int count);
+
+    void SetWorkspacesCount(int count);
 
     void ShowInformation(
         string message,
@@ -50,6 +74,9 @@ public interface IMainFormView
 
     bool ConfirmRemoval(
         string fileName);
+
+    bool ConfirmWorkspaceRemoval(
+        string workspaceName);
 
     void ShowError(
         string message,
@@ -63,6 +90,9 @@ public interface IMainFormView
 
     void AppendSearchResults(
         IReadOnlyList<SearchResultListItem> results);
+
+    void ShowWorkspaces(
+        IReadOnlyList<WorkspaceListItem> workspaces);
 
     void ShowEmptyState();
 }

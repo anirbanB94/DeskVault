@@ -1,6 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Workspaces.Commands.ActivateWorkspace;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -168,7 +169,8 @@ public sealed class ActivateWorkspaceHandlerTests
 
         var handler = new ActivateWorkspaceHandler(
             workspaceRepository.Object,
-            activeWorkspaceRegistry.Object);
+            activeWorkspaceRegistry.Object,
+            NullLogger<ActivateWorkspaceHandler>.Instance);
 
         return new ActivateWorkspaceTestContext(
             handler,
