@@ -123,7 +123,14 @@ namespace DeskVault.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("LastActiveDocumentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("LastUpdated")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")

@@ -1,5 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Workspaces.Commands.DeleteWorkspace;
 
@@ -7,13 +9,16 @@ public sealed class DeleteWorkspaceHandler
 {
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IActiveWorkspaceRegistry _activeWorkspaceRegistry;
+    private readonly ILogger<DeleteWorkspaceHandler> _logger;
 
     public DeleteWorkspaceHandler(
         IWorkspaceRepository workspaceRepository,
-        IActiveWorkspaceRegistry activeWorkspaceRegistry)
+        IActiveWorkspaceRegistry activeWorkspaceRegistry,
+        ILogger<DeleteWorkspaceHandler> logger)
     {
         _workspaceRepository = workspaceRepository;
         _activeWorkspaceRegistry = activeWorkspaceRegistry;
+        _logger = logger;
     }
 
     public async Task<DeleteWorkspaceResult> HandleAsync(
@@ -27,6 +32,9 @@ public sealed class DeleteWorkspaceHandler
 
         if (workspace is null)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceDeletionNotFound);
+
             return new DeleteWorkspaceResult(
                 DeleteWorkspaceResultStatus.WorkspaceNotFound,
                 null,
@@ -42,6 +50,9 @@ public sealed class DeleteWorkspaceHandler
         }
 
         _activeWorkspaceRegistry.Remove(workspace.Id);
+
+        _logger.LogInformation(
+            LogMessages.WorkspaceDeletionCompleted);
 
         return new DeleteWorkspaceResult(
             DeleteWorkspaceResultStatus.Success,

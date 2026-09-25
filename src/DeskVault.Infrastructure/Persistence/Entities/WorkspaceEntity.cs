@@ -6,7 +6,11 @@ public sealed class WorkspaceEntity
 
     public string? Name { get; set; }
 
+    public string? Description { get; set; }
+
     public int Type { get; set; }
 
     public Guid? LastActiveDocumentId { get; set; }
+
+    public DateTimeOffset LastUpdated { get; set; }
 }

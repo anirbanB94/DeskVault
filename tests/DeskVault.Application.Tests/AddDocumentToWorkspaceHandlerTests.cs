@@ -2,6 +2,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -271,7 +272,8 @@ public sealed class AddDocumentToWorkspaceHandlerTests
         var handler = new AddDocumentToWorkspaceHandler(
             documentRepository.Object,
             workspaceRepository.Object,
-            activeWorkspaceRegistry.Object);
+            activeWorkspaceRegistry.Object,
+            NullLogger<AddDocumentToWorkspaceHandler>.Instance);
 
         return new AddDocumentTestContext(
             handler,

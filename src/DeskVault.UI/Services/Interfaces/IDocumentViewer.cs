@@ -1,4 +1,4 @@
-﻿namespace DeskVault.UI.Services;
+namespace DeskVault.UI.Services.Interfaces;
 
 public interface IDocumentViewer
 {

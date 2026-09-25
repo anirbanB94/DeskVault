@@ -2,6 +2,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Application.Workspaces;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -237,7 +238,8 @@ public sealed class RenameWorkspaceHandlerTests
     {
         return new RenameWorkspaceHandler(
             context.WorkspaceRepository.Object,
-            context.ActiveWorkspaceRegistry);
+            context.ActiveWorkspaceRegistry,
+            NullLogger<RenameWorkspaceHandler>.Instance);
     }
 
     private static TestContext CreateContext()

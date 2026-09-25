@@ -10,7 +10,9 @@ using DeskVault.UI.Rendering;
 using DeskVault.UI.Rendering.CsvDocumentRendering;
 using DeskVault.UI.Rendering.MarkdownDocumentRendering;
 using DeskVault.UI.Rendering.TextDocumentRendering;
-using DeskVault.UI.Services;
+using DeskVault.UI.Services.Document;
+using DeskVault.UI.Services.Interfaces;
+using DeskVault.UI.Services.Workspace;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -96,10 +98,12 @@ internal static class HostConfigurator
         services.AddTransient<MainForm>();
         services.AddTransient<IMainFormPresenterFactory, MainFormPresenterFactory>();
         services.AddTransient<DocumentViewForm>();
-        services.AddTransient<IDocumentWorkspaceView>(
-            provider => provider.GetRequiredService<DocumentViewForm>());
+        services.AddTransient<IDocumentWorkspaceView>(provider => provider.GetRequiredService<DocumentViewForm>());
         services.AddTransient<IDocumentViewer, DocumentViewer>();
-        services.AddTransient<IDocumentWorkspace, DocumentWorkspacePresenter>();
+        services.AddTransient<IWorkspaceDocumentPresentationFactory, WorkspaceDocumentPresentationFactory>();
+        services.AddTransient<IWorkspacePresentationFactory, WorkspacePresentationFactory>();
+        services.AddTransient<IWorkspaceDialogService, WorkspaceDialogService>();
+        services.AddSingleton<IWorkspacePresentationManager, WorkspacePresentationManager>();
         services.AddTransient<GetDocumentHandler>();
 
         // Document rendering
@@ -112,9 +116,7 @@ internal static class HostConfigurator
                 .GetRequiredService<
                     IOptions<CsvParsingOptions>>()
                 .Value));
-        services.AddTransient<
-            IDocumentContentRenderer,
-            CsvDocumentContentRenderer>();
+        services.AddTransient<IDocumentContentRenderer, CsvDocumentContentRenderer>();
         services.AddTransient<IDocumentContentRendererResolver, DocumentContentRendererResolver>();
     }
 }

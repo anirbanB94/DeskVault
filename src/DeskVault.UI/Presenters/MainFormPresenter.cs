@@ -1,13 +1,17 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
-using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.ListDocuments;
-using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Workspaces.Commands.CloseWorkspace;
+using DeskVault.Application.Workspaces.Commands.CreateWorkspace;
+using DeskVault.Application.Workspaces.Commands.DeleteWorkspace;
+using DeskVault.Application.Workspaces.Commands.OpenWorkspace;
+using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
 using DeskVault.UI.Resources;
-using DeskVault.UI.Services;
+using DeskVault.UI.Services.Interfaces;
+using DeskVault.UI.Services.Workspace;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -19,15 +23,18 @@ public sealed class MainFormPresenter
     private readonly IMainFormView _view;
     private readonly ImportDocumentHandler _importDocumentHandler;
     private readonly RemoveDocumentHandler _removeDocumentHandler;
-    private readonly OpenDocumentHandler _openDocumentHandler;
     private readonly ListDocumentsHandler _listDocumentsHandler;
     private readonly SearchDocumentsHandler _searchDocumentsHandler;
-    private readonly IDocumentWorkspace _documentWorkspace;
+    private readonly CreateWorkspaceHandler _createWorkspaceHandler;
+    private readonly DeleteWorkspaceHandler _deleteWorkspaceHandler;
+    private readonly GetWorkspacesHandler _getWorkspacesHandler;
+    private readonly OpenWorkspaceHandler _openWorkspaceHandler;
+    private readonly CloseWorkspaceHandler _closeWorkspaceHandler;
+    private readonly IWorkspacePresentationManager _workspacePresentationManager;
     private readonly IDocumentProcessingService _documentProcessingService;
     private readonly DocumentTextExtractorResolver _documentTextExtractorResolver;
     private readonly ILogger<MainFormPresenter> _logger;
     private readonly int _searchPageSize;
-
     private string? _currentSearchText;
     private SearchDocumentsContinuation? _currentSearchContinuation;
     private CancellationTokenSource? _searchCancellationTokenSource;
@@ -37,10 +44,14 @@ public sealed class MainFormPresenter
         IMainFormView view,
         ImportDocumentHandler importDocumentHandler,
         RemoveDocumentHandler removeDocumentHandler,
-        OpenDocumentHandler openDocumentHandler,
         ListDocumentsHandler listDocumentsHandler,
         SearchDocumentsHandler searchDocumentsHandler,
-        IDocumentWorkspace documentWorkspace,
+        CreateWorkspaceHandler createWorkspaceHandler,
+        DeleteWorkspaceHandler deleteWorkspaceHandler,
+        GetWorkspacesHandler getWorkspacesHandler,
+        OpenWorkspaceHandler openWorkspaceHandler,
+        CloseWorkspaceHandler closeWorkspaceHandler,
+        IWorkspacePresentationManager workspacePresentationManager,
         IDocumentProcessingService documentProcessingService,
         DocumentTextExtractorResolver documentTextExtractorResolver,
         ILogger<MainFormPresenter> logger,
@@ -49,10 +60,14 @@ public sealed class MainFormPresenter
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(importDocumentHandler);
         ArgumentNullException.ThrowIfNull(removeDocumentHandler);
-        ArgumentNullException.ThrowIfNull(openDocumentHandler);
         ArgumentNullException.ThrowIfNull(listDocumentsHandler);
         ArgumentNullException.ThrowIfNull(searchDocumentsHandler);
-        ArgumentNullException.ThrowIfNull(documentWorkspace);
+        ArgumentNullException.ThrowIfNull(createWorkspaceHandler);
+        ArgumentNullException.ThrowIfNull(deleteWorkspaceHandler);
+        ArgumentNullException.ThrowIfNull(getWorkspacesHandler);
+        ArgumentNullException.ThrowIfNull(openWorkspaceHandler);
+        ArgumentNullException.ThrowIfNull(closeWorkspaceHandler);
+        ArgumentNullException.ThrowIfNull(workspacePresentationManager);
         ArgumentNullException.ThrowIfNull(documentProcessingService);
         ArgumentNullException.ThrowIfNull(documentTextExtractorResolver);
         ArgumentNullException.ThrowIfNull(logger);
@@ -61,10 +76,14 @@ public sealed class MainFormPresenter
         _view = view;
         _importDocumentHandler = importDocumentHandler;
         _removeDocumentHandler = removeDocumentHandler;
-        _openDocumentHandler = openDocumentHandler;
         _listDocumentsHandler = listDocumentsHandler;
         _searchDocumentsHandler = searchDocumentsHandler;
-        _documentWorkspace = documentWorkspace;
+        _createWorkspaceHandler = createWorkspaceHandler;
+        _deleteWorkspaceHandler = deleteWorkspaceHandler;
+        _getWorkspacesHandler = getWorkspacesHandler;
+        _openWorkspaceHandler = openWorkspaceHandler;
+        _closeWorkspaceHandler = closeWorkspaceHandler;
+        _workspacePresentationManager = workspacePresentationManager;
         _documentProcessingService = documentProcessingService;
         _documentTextExtractorResolver = documentTextExtractorResolver;
         _logger = logger;
@@ -83,10 +102,12 @@ public sealed class MainFormPresenter
         _view.RemoveRequested += OnRemoveRequested;
         _view.DocumentSelectionChanged += OnDocumentSelectionChanged;
         _view.SearchRequested += OnSearchRequested;
-        _view.LoadMoreSearchResultsRequested +=
-            OnLoadMoreSearchResultsRequested;
+        _view.LoadMoreSearchResultsRequested += OnLoadMoreSearchResultsRequested;
         _view.ReprocessRequested += OnReprocessRequested;
-        _documentWorkspace.DocumentRemoved += OnDocumentRemoved;
+        _view.WorkspaceSelectionChanged += OnWorkspaceSelectionChanged;
+        _view.WorkspaceCreateRequested += OnWorkspaceCreateRequested;
+        _view.WorkspaceOpenRequested += OnWorkspaceOpenRequested;
+        _view.WorkspaceRemoveRequested += OnWorkspaceRemoveRequested;
     }
 
     public async Task InitializeAsync()
@@ -98,6 +119,8 @@ public sealed class MainFormPresenter
         {
             var documentCount =
                 await RefreshDocumentsAsync();
+
+            await RefreshWorkspacesAsync();
 
             if (documentCount == 0)
             {
@@ -187,7 +210,7 @@ public sealed class MainFormPresenter
                 else
                 {
                     _logger.LogDebug(
-                        "Document processing skipped because no text extractor is available for {FileName}.",
+                        LogMessages.DocumentProcessingSkippedWithoutTextExtractor,
                         fileName);
                 }
 
@@ -264,14 +287,64 @@ public sealed class MainFormPresenter
 
         try
         {
-            var result =
-                await _openDocumentHandler.HandleAsync(
-                    new OpenDocumentQuery(documentId));
+            WorkspacePresentation? existingTemporaryPresentation =
+                _workspacePresentationManager.FindTemporaryByDocument(
+                    documentId);
 
-            await _documentWorkspace.OpenAsync(
-                documentId,
-                result.Content,
-                result.FileName);
+            if (existingTemporaryPresentation is not null)
+            {
+                existingTemporaryPresentation.Activate();
+
+                _view.SetStatus(
+                    UiMessages.DocumentOpenedStatus);
+
+                _logger.LogInformation(
+                    LogMessages.DocumentOpenCompleted);
+
+                return;
+            }
+
+            var workspaceResult =
+                await _createWorkspaceHandler.HandleAsync(
+                    new CreateWorkspaceCommand(
+                        Name: null,
+                        Description: null,
+                        IsPersistent: false,
+                        DocumentIds: [documentId]));
+
+            if (workspaceResult.Status !=
+                CreateWorkspaceResultStatus.Success ||
+                workspaceResult.Workspace is null)
+            {
+                _logger.LogWarning(
+                    LogMessages.TemporaryWorkspaceCreationFailed);
+
+                _view.SetStatus(
+                    workspaceResult.Description);
+
+                _view.ShowError(
+                    workspaceResult.Description,
+                    UiMessages.OpenDocumentTitle);
+
+                return;
+            }
+
+            var presentation =
+                _workspacePresentationManager.GetOrCreate(
+                    workspaceResult.Workspace.Id,
+                    workspaceResult.Workspace.TypeOfWorkspace,
+                    workspaceResult.Workspace.Name,
+                    workspaceResult.Workspace.Description);
+
+            SubscribeWorkspacePresentation(
+                presentation);
+
+            await presentation.SetWorkspaceDocumentsAsync(
+                workspaceResult.Workspace.Memberships.Select(
+                    membership => membership.DocumentId));
+
+            await presentation.OpenDocumentAsync(
+                documentId);
 
             _view.SetStatus(
                 UiMessages.DocumentOpenedStatus);
@@ -299,6 +372,476 @@ public sealed class MainFormPresenter
 
             UpdateReprocessEnabled();
         }
+    }
+
+    private void OnWorkspaceSelectionChanged(
+        object? sender,
+        EventArgs e)
+    {
+        if (_view.SelectedWorkspaceId is not Guid workspaceId)
+        {
+            _view.SetWorkspaceOpenEnabled(false);
+            _view.SetWorkspaceRemoveEnabled(false);
+
+            return;
+        }
+
+        _view.SetWorkspaceOpenEnabled(true);
+        _view.SetWorkspaceRemoveEnabled(true);
+
+        _logger.LogDebug(
+            LogMessages.WorkspaceSelected,
+            workspaceId);
+    }
+
+    private async void OnWorkspaceCreateRequested(
+        object? sender,
+        EventArgs e)
+    {
+        _logger.LogInformation(
+            LogMessages.WorkspaceCreationRequested);
+
+        WorkspaceCreateRequest? request =
+            _view.ShowCreateWorkspaceDialog();
+
+        if (request is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var result =
+                await _createWorkspaceHandler.HandleAsync(
+                    new CreateWorkspaceCommand(
+                        Name: request.Name,
+                        Description: request.Description,
+                        IsPersistent: true,
+                        DocumentIds: []));
+
+            if (result.Status !=
+                CreateWorkspaceResultStatus.Success ||
+                result.Workspace is null)
+            {
+                _logger.LogWarning(
+                    LogMessages.WorkspaceCreationFailed,
+                    result.Description);
+
+                _view.SetStatus(
+                    result.Description);
+
+                _view.ShowWarning(
+                    result.Description,
+                    UiMessages.CreateWorkspaceTitle);
+
+                return;
+            }
+
+            await RefreshWorkspacesAsync();
+
+            _view.SetSelectedWorkspaceId(
+                result.Workspace.Id);
+
+            await OpenWorkspaceAsync(
+                result.Workspace.Id);
+
+            _logger.LogInformation(
+                LogMessages.WorkspaceCreatedAndOpened,
+                result.Workspace.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.WorkspaceCreationUnexpectedFailure);
+
+            _view.SetStatus(
+                UiMessages.UnableToCreateWorkspace);
+
+            _view.ShowError(
+                ex.ToString(),
+                UiMessages.CreateWorkspaceTitle);
+        }
+    }
+
+    private async void OnWorkspaceOpenRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (_view.SelectedWorkspaceId is not Guid workspaceId)
+        {
+            _logger.LogDebug(
+                LogMessages.WorkspaceOpenSkippedWithoutSelection);
+
+            return;
+        }
+
+        await OpenWorkspaceAsync(workspaceId);
+    }
+
+    private async void OnWorkspaceRemoveRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (_view.SelectedWorkspaceId is not Guid workspaceId)
+        {
+            _logger.LogDebug(
+                LogMessages.WorkspaceRemovalSkippedWithoutSelection);
+
+            return;
+        }
+
+        string workspaceName =
+            _view.SelectedWorkspaceName ??
+            UiMessages.CurrentWorkspaceFallbackName;
+
+        await DeleteWorkspaceAsync(
+            workspaceId,
+            workspaceName,
+            clearMainWorkspaceSelection: true);
+    }
+
+    private async void OnWorkspaceDocumentsUpdated(
+        object? sender,
+        EventArgs e)
+    {
+        await RefreshWorkspacesAsync();
+    }
+
+    private async void OnWorkspaceDetailsUpdated(
+        object? sender,
+        EventArgs e)
+    {
+        await RefreshWorkspacesAsync();
+    }
+
+    private async void OnWorkspaceDeleteRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (sender is not WorkspacePresentation presentation)
+        {
+            _logger.LogWarning(
+                LogMessages.WorkspaceDeletionUnexpectedSender);
+
+            return;
+        }
+
+        await DeleteWorkspaceAsync(
+            presentation.WorkspaceId,
+            presentation.WorkspaceName ??
+                UiMessages.CurrentWorkspaceFallbackName,
+            clearMainWorkspaceSelection:
+                _view.SelectedWorkspaceId ==
+                presentation.WorkspaceId);
+    }
+
+    private async void OnWorkspaceCloseRequested(
+        object? sender,
+        EventArgs e)
+    {
+        if (sender is not WorkspacePresentation presentation)
+        {
+            _logger.LogWarning(
+                LogMessages.WorkspaceCloseUnexpectedSender);
+
+            return;
+        }
+
+        Guid workspaceId =
+            presentation.WorkspaceId;
+
+        _logger.LogInformation(
+            LogMessages.WorkspaceCloseRequested,
+            workspaceId);
+
+        try
+        {
+            var result =
+                await _closeWorkspaceHandler.HandleAsync(
+                    new CloseWorkspaceCommand(
+                        workspaceId));
+
+            if (result.Status !=
+                CloseWorkspaceResultStatus.Success)
+            {
+                _logger.LogWarning(
+                    LogMessages.WorkspaceCloseRejected,
+                    workspaceId,
+                    result.Description);
+
+                _view.SetStatus(
+                    result.Description);
+
+                _view.ShowWarning(
+                    result.Description,
+                    UiMessages.CloseWorkspace);
+
+                return;
+            }
+
+            _workspacePresentationManager.Close(
+                workspaceId);
+
+            _view.SetStatus(
+                result.Description);
+
+            _logger.LogInformation(
+                LogMessages.WorkspaceClosed,
+                workspaceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.WorkspaceCloseFailed,
+                workspaceId);
+
+            _view.SetStatus(
+                UiMessages.UnableToCloseWorkspace);
+
+            _view.ShowError(
+                ex.ToString(),
+                UiMessages.CloseWorkspace);
+        }
+    }
+
+    private async Task DeleteWorkspaceAsync(
+        Guid workspaceId,
+        string workspaceName,
+        bool clearMainWorkspaceSelection)
+    {
+        if (!_view.ConfirmWorkspaceRemoval(
+            workspaceName))
+        {
+            _logger.LogInformation(
+                LogMessages.WorkspaceRemovalCancelled,
+                workspaceId);
+
+            return;
+        }
+
+        _logger.LogInformation(
+            LogMessages.WorkspaceRemovalRequested,
+            workspaceId);
+
+        try
+        {
+            var openResult =
+                await _openWorkspaceHandler.HandleAsync(
+                    new OpenWorkspaceCommand(workspaceId));
+
+            if (openResult.Status !=
+                    OpenWorkspaceResultStatus.Activated &&
+                openResult.Status !=
+                    OpenWorkspaceResultStatus.AlreadyActive)
+            {
+                _logger.LogWarning(
+                    LogMessages.WorkspaceRemovalActivationFailed,
+                    workspaceId,
+                    openResult.Description);
+
+                _view.SetStatus(
+                    openResult.Description);
+
+                _view.ShowWarning(
+                    openResult.Description,
+                    UiMessages.DeleteWorkspace);
+
+                return;
+            }
+
+            var result =
+                await _deleteWorkspaceHandler.HandleAsync(
+                    new DeleteWorkspaceCommand(workspaceId));
+
+            if (result.Status !=
+                DeleteWorkspaceResultStatus.Success)
+            {
+                _logger.LogWarning(
+                    LogMessages.WorkspaceRemovalRejected,
+                    workspaceId,
+                    result.Description);
+
+                _view.SetStatus(
+                    result.Description);
+
+                _view.ShowWarning(
+                    result.Description,
+                    UiMessages.DeleteWorkspace);
+
+                return;
+            }
+
+            _workspacePresentationManager.Close(
+                workspaceId);
+
+            await RefreshWorkspacesAsync();
+
+            if (clearMainWorkspaceSelection)
+            {
+                _view.SetSelectedWorkspaceId(null);
+            }
+
+            _view.SetStatus(
+                result.Description);
+
+            _logger.LogInformation(
+                LogMessages.WorkspaceRemoved,
+                workspaceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.WorkspaceRemovalFailed,
+                workspaceId);
+
+            _view.SetStatus(
+                UiMessages.UnableToRemoveWorkspace);
+
+            _view.ShowError(
+                ex.ToString(),
+                UiMessages.DeleteWorkspace);
+        }
+    }
+
+    private async Task OpenWorkspaceAsync(
+        Guid workspaceId)
+    {
+        _logger.LogInformation(
+            LogMessages.WorkspaceOpenStarted,
+            workspaceId);
+
+        try
+        {
+            var result =
+                await _openWorkspaceHandler.HandleAsync(
+                    new OpenWorkspaceCommand(workspaceId));
+
+            if (result.Status != OpenWorkspaceResultStatus.Activated &&
+                result.Status != OpenWorkspaceResultStatus.AlreadyActive)
+            {
+                _logger.LogWarning(
+                    LogMessages.WorkspaceOpenRejected,
+                    workspaceId,
+                    result.Description);
+
+                _view.SetStatus(
+                    result.Description);
+
+                _view.ShowWarning(
+                    result.Description,
+                    UiMessages.OpenWorkspaceTitle);
+
+                return;
+            }
+
+            if (result.MissingDocumentIds.Count > 0)
+            {
+                _logger.LogWarning(
+                    LogMessages.WorkspaceOpenedWithMissingDocuments,
+                    workspaceId,
+                    result.MissingDocumentIds.Count);
+
+                _view.ShowWarning(
+                    result.Description,
+                    UiMessages.OpenWorkspaceTitle);
+            }
+
+            if (result.Workspace is null)
+            {
+                throw new InvalidOperationException(
+                    "A successful workspace open did not return a workspace.");
+            }
+
+            var presentation =
+                _workspacePresentationManager.GetOrCreate(
+                    result.Workspace.Id,
+                    result.Workspace.TypeOfWorkspace,
+                    result.Workspace.Name,
+                    result.Workspace.Description);
+
+            SubscribeWorkspacePresentation(
+                presentation);
+
+            await presentation.SetWorkspaceDocumentsAsync(
+                result.Workspace.Memberships.Select(
+                    membership => membership.DocumentId));
+
+            foreach (var membership in
+                     result.Workspace.Memberships.OrderBy(
+                         membership => membership.Order))
+            {
+                if (!presentation.ContainsDocument(
+                        membership.DocumentId))
+                {
+                    await presentation.OpenDocumentAsync(
+                        membership.DocumentId);
+                }
+            }
+
+            if (result.Workspace.LastActiveDocumentId is Guid lastActiveDocumentId)
+            {
+                presentation.ActivateDocument(
+                    lastActiveDocumentId);
+            }
+
+            _view.SetStatus(
+                result.Description);
+
+            _logger.LogInformation(
+                LogMessages.WorkspaceOpened,
+                workspaceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.WorkspaceOpenFailed,
+                workspaceId);
+
+            _view.SetStatus(
+                UiMessages.UnableToOpenWorkspace);
+
+            _view.ShowError(
+                ex.ToString(),
+                UiMessages.OpenWorkspaceTitle);
+        }
+    }
+
+    private void SubscribeWorkspacePresentation(
+        WorkspacePresentation presentation)
+    {
+        presentation.DocumentRemoved -=
+            OnDocumentRemoved;
+
+        presentation.DocumentRemoved +=
+            OnDocumentRemoved;
+
+        presentation.WorkspaceDetailsUpdated -=
+            OnWorkspaceDetailsUpdated;
+
+        presentation.WorkspaceDetailsUpdated +=
+            OnWorkspaceDetailsUpdated;
+
+        presentation.WorkspaceDeleteRequested -=
+            OnWorkspaceDeleteRequested;
+
+        presentation.WorkspaceDeleteRequested +=
+            OnWorkspaceDeleteRequested;
+
+        presentation.WorkspaceDocumentsUpdated -=
+            OnWorkspaceDocumentsUpdated;
+
+        presentation.WorkspaceDocumentsUpdated +=
+            OnWorkspaceDocumentsUpdated;
+
+        presentation.WorkspaceCloseRequested -=
+            OnWorkspaceCloseRequested;
+
+        presentation.WorkspaceCloseRequested +=
+            OnWorkspaceCloseRequested;
     }
 
     private async void OnRemoveRequested(
@@ -352,6 +895,7 @@ public sealed class MainFormPresenter
                 RemoveDocumentResultStatus.Success)
             {
                 await RefreshDocumentsAsync();
+                await RefreshWorkspacesAsync();
 
                 _view.SetStatus(result.Message);
 
@@ -429,7 +973,7 @@ public sealed class MainFormPresenter
         if (!_documentTextExtractorResolver.CanResolve(fileName))
         {
             _logger.LogDebug(
-                "Document reprocessing skipped because no text extractor is available for {FileName}.",
+                LogMessages.DocumentReprocessSkippedWithoutTextExtractor,
                 fileName);
 
             _view.SetReprocessEnabled(false);
@@ -532,6 +1076,9 @@ public sealed class MainFormPresenter
             _currentSearchText = searchText;
             _currentSearchContinuation = null;
 
+            _logger.LogInformation(
+                LogMessages.DocumentSearchStarted);
+
             string? searchFileType =
                 _view.SearchFileType;
 
@@ -539,9 +1086,6 @@ public sealed class MainFormPresenter
                 string.IsNullOrWhiteSpace(searchFileType)
                     ? null
                     : [searchFileType];
-
-            _logger.LogInformation(
-                LogMessages.DocumentSearchStarted);
 
             var page =
                 await _searchDocumentsHandler.HandleAsync(
@@ -601,7 +1145,7 @@ public sealed class MainFormPresenter
             when (cancellationToken.IsCancellationRequested)
         {
             _logger.LogDebug(
-                "Document search operation was superseded.");
+                LogMessages.DocumentSearchSuperseded);
         }
         catch (Exception ex)
         {
@@ -717,7 +1261,7 @@ public sealed class MainFormPresenter
             when (cancellationToken.IsCancellationRequested)
         {
             _logger.LogDebug(
-                "Document search operation was superseded.");
+                LogMessages.DocumentSearchSuperseded);
 
             if (IsCurrentSearchOperation(operationVersion))
             {
@@ -826,6 +1370,7 @@ public sealed class MainFormPresenter
                 LogMessages.DocumentListRefreshCompletedWithoutDocuments);
 
             _view.ShowEmptyState();
+            _view.SetDocumentsCount(0);
             _view.SetOpenEnabled(false);
             _view.SetRemoveEnabled(false);
             _view.SetReprocessEnabled(false);
@@ -836,10 +1381,19 @@ public sealed class MainFormPresenter
         var items = documents
             .Select(document => new DocumentListItem(
                 document.Id,
-                document.FileName))
+                document.FileName,
+                Path.GetExtension(document.FileName)
+                    .TrimStart('.')
+                    .ToUpperInvariant(),
+                new DateTimeOffset(
+                    DateTime.SpecifyKind(
+                        document.ImportedAt,
+                        DateTimeKind.Utc)),
+                document.Status.ToString()))
             .ToList();
 
         _view.ShowDocuments(items);
+        _view.SetDocumentsCount(documents.Count);
 
         bool hasSelection =
             _view.SelectedDocumentId.HasValue;
@@ -854,6 +1408,66 @@ public sealed class MainFormPresenter
             documents.Count);
 
         return documents.Count;
+    }
+
+    private async Task RefreshWorkspacesAsync()
+    {
+        _logger.LogDebug(
+            LogMessages.WorkspaceListRefreshStarted);
+
+        var result =
+            await _getWorkspacesHandler.HandleAsync(
+                new GetWorkspacesQuery());
+
+        if (result.Status != GetWorkspacesResultStatus.Success)
+        {
+            _logger.LogWarning(
+                LogMessages.WorkspaceListRefreshFailed,
+                result.Description);
+
+            _view.ShowWarning(
+                result.Description,
+                UiMessages.Workspaces);
+
+            return;
+        }
+
+        var documents =
+            await _listDocumentsHandler.HandleAsync(
+                new ListDocumentsQuery());
+
+        var documentNames =
+            documents.ToDictionary(
+                document => document.Id,
+                document => document.FileName);
+
+        var items = result.Workspaces
+            .Select(workspace => new WorkspaceListItem(
+                workspace.Id,
+                workspace.Name ?? string.Empty,
+                workspace.Description ?? string.Empty,
+                string.Join(
+                    ", ",
+                    workspace.Memberships
+                        .OrderBy(
+                            membership => membership.Order)
+                        .Select(
+                            membership => documentNames.TryGetValue(
+                                membership.DocumentId,
+                                out string? fileName)
+                                    ? fileName
+                                    : string.Empty)
+                        .Where(
+                            fileName => !string.IsNullOrWhiteSpace(fileName))),
+                workspace.LastUpdated))
+            .ToList();
+
+        _view.ShowWorkspaces(items);
+        _view.SetWorkspacesCount(items.Count);
+
+        _logger.LogDebug(
+            LogMessages.WorkspaceListRefreshCompleted,
+            items.Count);
     }
 
     private void OnDocumentSelectionChanged(
@@ -891,7 +1505,7 @@ public sealed class MainFormPresenter
 
     private async void OnDocumentRemoved(
         object? sender,
-        EventArgs e)
+        DocumentRemovedEventArgs e)
     {
         _logger.LogDebug(
             LogMessages.DocumentWorkspaceRemovalNotificationReceived);

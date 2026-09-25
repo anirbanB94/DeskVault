@@ -1,5 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 
@@ -7,13 +9,16 @@ public sealed class RenameWorkspaceHandler
 {
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IActiveWorkspaceRegistry _activeWorkspaceRegistry;
+    private readonly ILogger<RenameWorkspaceHandler> _logger;
 
     public RenameWorkspaceHandler(
         IWorkspaceRepository workspaceRepository,
-        IActiveWorkspaceRegistry activeWorkspaceRegistry)
+        IActiveWorkspaceRegistry activeWorkspaceRegistry,
+        ILogger<RenameWorkspaceHandler> logger)
     {
         _workspaceRepository = workspaceRepository;
         _activeWorkspaceRegistry = activeWorkspaceRegistry;
+        _logger = logger;
     }
 
     public async Task<RenameWorkspaceResult> HandleAsync(
@@ -27,6 +32,9 @@ public sealed class RenameWorkspaceHandler
 
         if (workspace is null)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceRenameWorkspaceNotFound);
+
             return new RenameWorkspaceResult(
                 RenameWorkspaceResultStatus.WorkspaceNotFound,
                 null,
@@ -35,6 +43,9 @@ public sealed class RenameWorkspaceHandler
 
         if (workspace.TypeOfWorkspace != WorkspaceType.Persistent)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceRenameNotPersistent);
+
             return new RenameWorkspaceResult(
                 RenameWorkspaceResultStatus.WorkspaceNotPersistent,
                 workspace,
@@ -43,6 +54,9 @@ public sealed class RenameWorkspaceHandler
 
         if (string.IsNullOrWhiteSpace(command.Name))
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceRenameNameRequired);
+
             return new RenameWorkspaceResult(
                 RenameWorkspaceResultStatus.NameRequired,
                 workspace,
@@ -53,9 +67,11 @@ public sealed class RenameWorkspaceHandler
             Workspace.Restore(
                 workspace.Id,
                 workspace.Name,
+                workspace.Description,
                 workspace.TypeOfWorkspace,
                 workspace.Memberships,
-                workspace.LastActiveDocumentId);
+                workspace.LastActiveDocumentId,
+                workspace.LastUpdated);
 
         updatedWorkspace.Rename(command.Name);
 
@@ -65,6 +81,9 @@ public sealed class RenameWorkspaceHandler
 
         _activeWorkspaceRegistry.Replace(
             updatedWorkspace);
+
+        _logger.LogInformation(
+            LogMessages.WorkspaceRenameCompleted);
 
         return new RenameWorkspaceResult(
             RenameWorkspaceResultStatus.Success,

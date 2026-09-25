@@ -65,6 +65,113 @@ public static class LogMessages
     public const string DocumentListRefreshCompleted =
         "Application document list refresh completed with {DocumentCount} document(s).";
 
+    public const string WorkspaceActivationAlreadyActive =
+        "Application workspace activation skipped because the workspace is already active.";
+
+    public const string WorkspaceActivationNotFound =
+        "Application workspace activation skipped because the workspace was not found.";
+
+    public const string WorkspaceActivationCompleted =
+        "Application workspace activation completed.";
+
+    public const string WorkspaceCreationMissingDocuments =
+        "Application workspace creation rejected because one or more documents were not found.";
+
+    public const string WorkspaceCreationCompleted =
+        "Application workspace creation completed.";
+
+    public const string WorkspaceOpenAlreadyActive =
+        "Application workspace open skipped because the workspace is already active.";
+
+    public const string WorkspaceOpenNotFound =
+        "Application workspace open skipped because the workspace was not found.";
+
+    public const string WorkspaceOpenCompleted =
+        "Application workspace open completed.";
+
+    public const string WorkspaceOpenCompletedWithMissingDocuments =
+        "Application workspace open completed with {MissingDocumentCount} missing document(s).";
+
+    public const string WorkspaceCloseNotFound =
+        "Application workspace close skipped because the workspace was not active.";
+
+    public const string WorkspaceCloseCompleted =
+        "Application workspace close completed.";
+
+    public const string WorkspaceDeletionNotFound =
+        "Application workspace deletion skipped because the workspace was not active.";
+
+    public const string WorkspaceDeletionCompleted =
+        "Application workspace deletion completed.";
+
+    public const string WorkspaceDocumentAdditionWorkspaceNotFound =
+        "Application workspace document addition skipped because the workspace was not active.";
+
+    public const string WorkspaceDocumentAdditionAlreadyMember =
+        "Application workspace document addition skipped because the document is already a member.";
+
+    public const string WorkspaceDocumentAdditionDocumentNotFound =
+        "Application workspace document addition skipped because the document was not found.";
+
+    public const string WorkspaceDocumentAdditionCompleted =
+        "Application workspace document addition completed.";
+
+    public const string WorkspaceDocumentRemovalWorkspaceNotFound =
+        "Application workspace document removal skipped because the workspace was not active.";
+
+    public const string WorkspaceDocumentRemovalNotMember =
+        "Application workspace document removal skipped because the document is not a member.";
+
+    public const string WorkspaceDocumentRemovalCompleted =
+        "Application workspace document removal completed.";
+
+    public const string WorkspaceRenameWorkspaceNotFound =
+        "Application workspace rename skipped because the workspace was not active.";
+
+    public const string WorkspaceRenameNotPersistent =
+        "Application workspace rename skipped because the workspace is not persistent.";
+
+    public const string WorkspaceRenameNameRequired =
+        "Application workspace rename skipped because a workspace name is required.";
+
+    public const string WorkspaceRenameCompleted =
+        "Application workspace rename completed.";
+
+    public const string WorkspaceSaveTemporaryNotFound =
+        "Application temporary workspace save skipped because the workspace was not active.";
+
+    public const string WorkspaceSaveTemporaryNotTemporary =
+        "Application temporary workspace save skipped because the workspace is not temporary.";
+
+    public const string WorkspaceSaveTemporaryNameRequired =
+        "Application temporary workspace save skipped because a workspace name is required.";
+
+    public const string WorkspaceSaveTemporaryCompleted =
+        "Application temporary workspace save completed.";
+
+    public const string WorkspaceDescriptionUpdateWorkspaceNotFound =
+        "Application workspace description update skipped because the workspace was not active.";
+
+    public const string WorkspaceDescriptionUpdateNotPersistent =
+        "Application workspace description update skipped because the workspace is not persistent.";
+
+    public const string WorkspaceDescriptionUpdateCompleted =
+        "Application workspace description update completed.";
+
+    public const string WorkspacePresentationAddDocumentsOperation =
+        "add documents";
+
+    public const string WorkspacePresentationRemoveDocumentsOperation =
+        "remove documents";
+
+    public const string WorkspacePresentationSaveAsWorkspaceOperation =
+        "save as workspace";
+
+    public const string WorkspacePresentationUpdateDetailsOperation =
+        "update workspace details";
+
+    public const string WorkspacePresentationActivateDocumentOperation =
+        "activate document";
     public const string DatabaseInitializationStarted =
         "Infrastructure database initialization started.";
 

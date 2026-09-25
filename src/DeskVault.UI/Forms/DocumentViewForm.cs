@@ -67,12 +67,12 @@ public partial class DocumentViewForm :
     {
         MessageBox.Show(
             this,
-            $"Display Name: {displayName}{Environment.NewLine}" +
-            $"File Name: {fileName}{Environment.NewLine}" +
-            $"File Type: {fileType}{Environment.NewLine}" +
-            $"Imported At: {importedAt.ToLocalTime():g}{Environment.NewLine}" +
-            $"Status: {status}{Environment.NewLine}" +
-            $"SHA-256: {sha256Hash}",
+            $"{UiMessages.DisplayNameLabel} {displayName}{Environment.NewLine}" +
+            $"{UiMessages.DocumentFileNameLabel} {fileName}{Environment.NewLine}" +
+            $"{UiMessages.DocumentFileTypeLabel} {fileType}{Environment.NewLine}" +
+            $"{UiMessages.ImportedAtLabel} {importedAt.ToLocalTime():g}{Environment.NewLine}" +
+            $"{UiMessages.StatusLabel} {status}{Environment.NewLine}" +
+            $"{UiMessages.Sha256Label} {sha256Hash}",
             UiMessages.DocumentInformation,
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -107,6 +107,13 @@ public partial class DocumentViewForm :
         Activate();
     }
 
+    public void ActivateWorkspace()
+    {
+        Show();
+        BringToFront();
+        Activate();
+    }
+
     public void CloseWorkspace()
     {
         Hide();
@@ -122,6 +129,17 @@ public partial class DocumentViewForm :
             title,
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);
+    }
+
+    protected override void OnParentChanged(
+        EventArgs e)
+    {
+        base.OnParentChanged(e);
+
+        if (Parent is not null)
+        {
+            workspaceHeaderPanel.Visible = false;
+        }
     }
 
     private void openExternallyButton_Click(

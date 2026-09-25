@@ -29,6 +29,8 @@ public interface IDocumentWorkspaceView
     bool ConfirmRemoval(
         string fileName);
 
+    void ActivateWorkspace();
+
     void CloseWorkspace();
 
     void ShowError(

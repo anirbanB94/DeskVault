@@ -1,10 +1,11 @@
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.GetDocument;
+using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
-using DeskVault.UI.Services;
+using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -517,7 +518,7 @@ public sealed class DocumentWorkspacePresenterTests
     }
 
     [Fact]
-    public async Task RemoveDocument_Success_DisposesStreamClosesWorkspaceAndRaisesEvent()
+    public async Task RemoveDocument_Success_DisposesStreamKeepsWorkspaceOpenAndRaisesEvent()
     {
         Guid documentId =
             Guid.NewGuid();
@@ -604,7 +605,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         view.Verify(
             x => x.CloseWorkspace(),
-            Times.Once);
+            Times.Never);
 
         Assert.True(
             documentRemovedRaised);
@@ -798,11 +799,16 @@ public sealed class DocumentWorkspacePresenterTests
         Mock<IStorageService> storageService)
     {
         return new DocumentWorkspacePresenter(
+            Guid.NewGuid(),
             view.Object,
             documentViewer.Object,
             new GetDocumentHandler(
                 repository.Object,
                 NullLogger<GetDocumentHandler>.Instance),
+            new OpenDocumentHandler(
+                repository.Object,
+                new Mock<IDocumentReader>().Object,
+                NullLogger<OpenDocumentHandler>.Instance),
             new RemoveDocumentHandler(
                 repository.Object,
                 new Mock<IWorkspaceRepository>().Object,

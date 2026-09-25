@@ -2,6 +2,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Application.Workspaces;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -17,7 +18,8 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
         var result = await handler.HandleAsync(
             new SaveTemporaryWorkspaceCommand(
                 Guid.NewGuid(),
-                "Saved Workspace"));
+                "Saved Workspace",
+                null));
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.WorkspaceNotFound,
@@ -46,7 +48,8 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
         var result = await handler.HandleAsync(
             new SaveTemporaryWorkspaceCommand(
                 workspace.Id,
-                "New Name"));
+                "New Name",
+                null));
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.WorkspaceNotTemporary,
@@ -73,7 +76,8 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
         var result = await handler.HandleAsync(
             new SaveTemporaryWorkspaceCommand(
                 workspace.Id,
-                "   "));
+                "   ",
+                null));
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.NameRequired,
@@ -103,7 +107,8 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
         var result = await handler.HandleAsync(
             new SaveTemporaryWorkspaceCommand(
                 workspace.Id,
-                "My Workspace"));
+                "My Workspace",
+                "My workspace description."));
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.Success,
@@ -116,6 +121,9 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
         Assert.Equal(
             "My Workspace",
             result.Workspace.Name);
+        Assert.Equal(
+            "My workspace description.",
+            result.Workspace.Description);
         Assert.Equal(
             workspace.Id,
             result.Workspace.Id);
@@ -163,7 +171,8 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
         var result = await handler.HandleAsync(
             new SaveTemporaryWorkspaceCommand(
                 workspace.Id,
-                "Ordered Workspace"));
+                "Ordered Workspace",
+                null));
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.Success,
@@ -215,7 +224,8 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
             () => handler.HandleAsync(
                 new SaveTemporaryWorkspaceCommand(
                     workspace.Id,
-                    "Workspace")));
+                    "Workspace",
+                    null)));
 
         Assert.Same(
             workspace,
@@ -233,7 +243,8 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
     {
         return new SaveTemporaryWorkspaceHandler(
             context.WorkspaceRepository.Object,
-            context.ActiveWorkspaceRegistry);
+            context.ActiveWorkspaceRegistry,
+            NullLogger<SaveTemporaryWorkspaceHandler>.Instance);
     }
 
     private static TestContext CreateContext()

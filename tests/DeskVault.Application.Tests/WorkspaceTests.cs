@@ -24,8 +24,10 @@ public sealed class WorkspaceTests
             workspace.TypeOfWorkspace);
 
         Assert.Null(workspace.Name);
+        Assert.Null(workspace.Description);
         Assert.Empty(workspace.Memberships);
         Assert.Null(workspace.LastActiveDocumentId);
+        Assert.NotEqual(default, workspace.LastUpdated);
     }
 
     [Fact]
@@ -53,6 +55,12 @@ public sealed class WorkspaceTests
         Assert.Equal(
             workspaceName,
             workspace.Name);
+
+        Assert.Null(workspace.Description);
+
+        Assert.NotEqual(
+            default,
+            workspace.LastUpdated);
     }
 
     [Fact]
@@ -271,12 +279,14 @@ public sealed class WorkspaceTests
             () => Workspace.Restore(
                 Guid.NewGuid(),
                 "Research",
+                null,
                 WorkspaceType.Persistent,
                 [
                     firstMembership,
                     duplicateMembership
                 ],
-                null);
+                null,
+                DateTimeOffset.UtcNow);
 
         // Assert
         Assert.Throws<ArgumentException>(action);
@@ -301,12 +311,14 @@ public sealed class WorkspaceTests
             () => Workspace.Restore(
                 Guid.NewGuid(),
                 "Research",
+                null,
                 WorkspaceType.Persistent,
                 [
                     firstMembership,
                     secondMembership
                 ],
-                null);
+                null,
+                DateTimeOffset.UtcNow);
 
         // Assert
         Assert.Throws<ArgumentException>(action);
@@ -328,9 +340,11 @@ public sealed class WorkspaceTests
             () => Workspace.Restore(
                 Guid.NewGuid(),
                 "Research",
+                null,
                 WorkspaceType.Persistent,
                 [membership],
-                nonMemberDocumentId);
+                nonMemberDocumentId,
+                DateTimeOffset.UtcNow);
 
         // Assert
         Assert.Throws<ArgumentException>(action);
@@ -342,6 +356,7 @@ public sealed class WorkspaceTests
         // Arrange
         Guid firstDocumentId = Guid.NewGuid();
         Guid secondDocumentId = Guid.NewGuid();
+        DateTimeOffset lastUpdated = DateTimeOffset.UtcNow;
 
         WorkspaceDocumentMembership firstMembership =
             WorkspaceDocumentMembership.Create(
@@ -358,12 +373,14 @@ public sealed class WorkspaceTests
             Workspace.Restore(
                 Guid.NewGuid(),
                 "Research",
+                "Research workspace",
                 WorkspaceType.Persistent,
                 [
                     firstMembership,
                     secondMembership
                 ],
-                secondDocumentId);
+                secondDocumentId,
+                lastUpdated);
 
         // Assert
         Assert.Equal(
@@ -373,6 +390,14 @@ public sealed class WorkspaceTests
         Assert.Equal(
             "Research",
             workspace.Name);
+
+        Assert.Equal(
+            "Research workspace",
+            workspace.Description);
+
+        Assert.Equal(
+            lastUpdated,
+            workspace.LastUpdated);
 
         Assert.Collection(
             workspace.Memberships,

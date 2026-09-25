@@ -27,6 +27,7 @@ using DeskVault.Application.Workspaces.Commands.OpenWorkspace;
 using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
 using DeskVault.Application.Workspaces.Queries.GetWorkspace;
 using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,6 +94,8 @@ public static class DependencyInjection
         services.AddSingleton<CloseWorkspaceHandler>();
 
         services.AddSingleton<RenameWorkspaceHandler>();
+
+        services.AddSingleton<UpdateWorkspaceDescriptionHandler>();
 
         services.AddSingleton<OpenWorkspaceHandler>();
 

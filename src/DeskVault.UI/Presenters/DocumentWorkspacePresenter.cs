@@ -1,37 +1,62 @@
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.GetDocument;
+using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.UI.Resources;
-using DeskVault.UI.Services;
+using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
 
 namespace DeskVault.UI.Presenters;
 
 public sealed class DocumentWorkspacePresenter :
-    IDocumentWorkspace
+    IDocumentWorkspace,
+    IDisposable
 {
     private readonly IDocumentWorkspaceView _view;
     private readonly IDocumentViewer _documentViewer;
     private readonly GetDocumentHandler _getDocumentHandler;
+    private readonly OpenDocumentHandler _openDocumentHandler;
     private readonly RemoveDocumentHandler _removeDocumentHandler;
     private readonly ILogger<DocumentWorkspacePresenter> _logger;
-
     private GetDocumentResult? _currentDocument;
     private Stream? _currentDocumentStream;
     private string? _currentFileName;
+    private bool _disposed;
+
+    public Guid WorkspaceId { get; }
+
+    public Guid? CurrentDocumentId =>
+        _currentDocument?.Id;
+
+    public string? CurrentDocumentDisplayName =>
+        _currentDocument?.DisplayName;
+
+    public string? CurrentDocumentFileName =>
+        _currentDocument?.FileName;
 
     public event EventHandler DocumentRemoved = null!;
 
     public DocumentWorkspacePresenter(
+        Guid workspaceId,
         IDocumentWorkspaceView view,
         IDocumentViewer documentViewer,
         GetDocumentHandler getDocumentHandler,
+        OpenDocumentHandler openDocumentHandler,
         RemoveDocumentHandler removeDocumentHandler,
         ILogger<DocumentWorkspacePresenter> logger)
     {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(documentViewer);
+        ArgumentNullException.ThrowIfNull(getDocumentHandler);
+        ArgumentNullException.ThrowIfNull(openDocumentHandler);
+        ArgumentNullException.ThrowIfNull(removeDocumentHandler);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        WorkspaceId = workspaceId;
         _view = view;
         _documentViewer = documentViewer;
         _getDocumentHandler = getDocumentHandler;
+        _openDocumentHandler = openDocumentHandler;
         _removeDocumentHandler = removeDocumentHandler;
         _logger = logger;
 
@@ -48,12 +73,39 @@ public sealed class DocumentWorkspacePresenter :
             OnCloseWorkspaceRequested;
     }
 
+    public void Activate()
+    {
+        ThrowIfDisposed();
+
+        _view.ActivateWorkspace();
+    }
+
+    public async Task OpenAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+
+        OpenDocumentResult result =
+            await _openDocumentHandler.HandleAsync(
+                new OpenDocumentQuery(documentId),
+                cancellationToken);
+
+        await OpenAsync(
+            documentId,
+            result.Content,
+            result.FileName,
+            cancellationToken);
+    }
+
     public async Task OpenAsync(
         Guid documentId,
         Stream documentStream,
         string fileName,
         CancellationToken cancellationToken = default)
     {
+        ThrowIfDisposed();
+
         _logger.LogInformation(
             LogMessages.DocumentWorkspaceOpenStarted);
 
@@ -104,6 +156,41 @@ public sealed class DocumentWorkspacePresenter :
         }
     }
 
+    public void ShowDocumentInformation()
+    {
+        ThrowIfDisposed();
+
+        if (_currentDocument is null)
+        {
+            _logger.LogDebug(
+                LogMessages.DocumentInformationSkippedWithoutDocument);
+
+            return;
+        }
+
+        string fileType =
+            Path.GetExtension(_currentDocument.FileName)
+                .TrimStart('.')
+                .ToUpperInvariant();
+
+        _view.ShowDocumentInformation(
+            _currentDocument.DisplayName,
+            _currentDocument.FileName,
+            fileType,
+            _currentDocument.ImportedAt,
+            _currentDocument.Status.ToString(),
+            _currentDocument.Sha256Hash);
+    }
+
+    public void RequestRemoveDocument()
+    {
+        ThrowIfDisposed();
+
+        OnRemoveDocumentRequested(
+            this,
+            EventArgs.Empty);
+    }
+
     private async void OnOpenExternallyRequested(
         object? sender,
         EventArgs e)
@@ -147,26 +234,7 @@ public sealed class DocumentWorkspacePresenter :
         object? sender,
         EventArgs e)
     {
-        if (_currentDocument is null)
-        {
-            _logger.LogDebug(
-                LogMessages.DocumentInformationSkippedWithoutDocument);
-
-            return;
-        }
-
-        string fileType =
-            Path.GetExtension(_currentDocument.FileName)
-                .TrimStart('.')
-                .ToUpperInvariant();
-
-        _view.ShowDocumentInformation(
-            _currentDocument.DisplayName,
-            _currentDocument.FileName,
-            fileType,
-            _currentDocument.ImportedAt,
-            _currentDocument.Status.ToString(),
-            _currentDocument.Sha256Hash);
+        ShowDocumentInformation();
     }
 
     private async void OnRemoveDocumentRequested(
@@ -209,8 +277,6 @@ public sealed class DocumentWorkspacePresenter :
                 _currentDocumentStream = null;
                 _currentFileName = null;
 
-                _view.CloseWorkspace();
-
                 _logger.LogInformation(
                     LogMessages.DocumentWorkspaceRemovalCompleted);
 
@@ -248,5 +314,40 @@ public sealed class DocumentWorkspacePresenter :
             LogMessages.DocumentWorkspaceCloseRequested);
 
         _view.CloseWorkspace();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        _view.OpenExternallyRequested -=
+            OnOpenExternallyRequested;
+
+        _view.DocumentInformationRequested -=
+            OnDocumentInformationRequested;
+
+        _view.RemoveDocumentRequested -=
+            OnRemoveDocumentRequested;
+
+        _view.CloseWorkspaceRequested -=
+            OnCloseWorkspaceRequested;
+
+        _currentDocumentStream?.Dispose();
+
+        _currentDocument = null;
+        _currentDocumentStream = null;
+        _currentFileName = null;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(
+            _disposed,
+            this);
     }
 }

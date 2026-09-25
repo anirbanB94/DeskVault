@@ -8,6 +8,8 @@ public sealed class Workspace
 
     public string? Name { get; private set; }
 
+    public string? Description { get; private set; }
+
     public WorkspaceType TypeOfWorkspace { get; }
 
     public IReadOnlyCollection<WorkspaceDocumentMembership> Memberships =>
@@ -15,18 +17,24 @@ public sealed class Workspace
 
     public Guid? LastActiveDocumentId { get; private set; }
 
+    public DateTimeOffset LastUpdated { get; private set; }
+
     private Workspace(
         Guid id,
         string? name,
+        string? description,
         WorkspaceType type,
         IEnumerable<WorkspaceDocumentMembership> memberships,
-        Guid? lastActiveDocumentId)
+        Guid? lastActiveDocumentId,
+        DateTimeOffset lastUpdated)
     {
         Id = id;
         Name = name;
+        Description = description;
         TypeOfWorkspace = type;
         _memberships.AddRange(memberships);
         LastActiveDocumentId = lastActiveDocumentId;
+        LastUpdated = lastUpdated;
     }
 
     public static Workspace CreateTemporary(Guid id)
@@ -36,12 +44,17 @@ public sealed class Workspace
         return new Workspace(
             id,
             null,
+            null,
             WorkspaceType.Temporary,
             [],
-            null);
+            null,
+            DateTimeOffset.UtcNow);
     }
 
-    public static Workspace CreatePersistent(Guid id, string name)
+    public static Workspace CreatePersistent(
+        Guid id,
+        string name,
+        string? description = null)
     {
         ValidateId(id);
         ValidatePersistentName(name);
@@ -49,17 +62,21 @@ public sealed class Workspace
         return new Workspace(
             id,
             name,
+            description,
             WorkspaceType.Persistent,
             [],
-            null);
+            null,
+            DateTimeOffset.UtcNow);
     }
 
     public static Workspace Restore(
         Guid id,
         string? name,
+        string? description,
         WorkspaceType type,
         IEnumerable<WorkspaceDocumentMembership> memberships,
-        Guid? lastActiveDocumentId)
+        Guid? lastActiveDocumentId,
+        DateTimeOffset lastUpdated)
     {
         ValidateId(id);
         ArgumentNullException.ThrowIfNull(memberships);
@@ -109,9 +126,11 @@ public sealed class Workspace
         return new Workspace(
             id,
             name,
+            description,
             type,
             restoredMemberships,
-            lastActiveDocumentId);
+            lastActiveDocumentId,
+            lastUpdated);
     }
 
     public void AddDocument(Guid documentId)
@@ -138,6 +157,8 @@ public sealed class Workspace
             WorkspaceDocumentMembership.Create(
                 documentId,
                 nextOrder));
+
+        LastUpdated = DateTimeOffset.UtcNow;
     }
 
     public void RemoveDocument(Guid documentId)
@@ -158,6 +179,8 @@ public sealed class Workspace
         {
             LastActiveDocumentId = null;
         }
+
+        LastUpdated = DateTimeOffset.UtcNow;
     }
 
     public void SetLastActiveDocument(Guid? documentId)
@@ -171,7 +194,14 @@ public sealed class Workspace
                 "Last active document must be a workspace member.");
         }
 
+        if (LastActiveDocumentId == documentId)
+        {
+            return;
+        }
+
         LastActiveDocumentId = documentId;
+
+        LastUpdated = DateTimeOffset.UtcNow;
     }
 
     public void Rename(string name)
@@ -183,7 +213,38 @@ public sealed class Workspace
         }
 
         ValidatePersistentName(name);
+
+        if (Name == name)
+        {
+            return;
+        }
+
         Name = name;
+
+        LastUpdated = DateTimeOffset.UtcNow;
+    }
+
+    public void ChangeDescription(string? description)
+    {
+        if (TypeOfWorkspace != WorkspaceType.Persistent)
+        {
+            throw new InvalidOperationException(
+                "Only persistent workspaces can have a description.");
+        }
+
+        string? normalizedDescription =
+            string.IsNullOrWhiteSpace(description)
+                ? null
+                : description.Trim();
+
+        if (Description == normalizedDescription)
+        {
+            return;
+        }
+
+        Description = normalizedDescription;
+
+        LastUpdated = DateTimeOffset.UtcNow;
     }
 
     private static void ValidateId(Guid id)

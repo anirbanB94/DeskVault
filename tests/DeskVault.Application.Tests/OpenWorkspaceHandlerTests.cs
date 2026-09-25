@@ -3,6 +3,7 @@ using DeskVault.Application.Workspaces;
 using DeskVault.Application.Workspaces.Commands.OpenWorkspace;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace DeskVault.Application.Tests;
@@ -354,7 +355,8 @@ public sealed class OpenWorkspaceHandlerTests
         return new OpenWorkspaceHandler(
             context.DocumentRepository.Object,
             context.WorkspaceRepository.Object,
-            context.ActiveWorkspaceRegistry);
+            context.ActiveWorkspaceRegistry,
+            NullLogger<OpenWorkspaceHandler>.Instance);
     }
 
     private static TestContext CreateContext()

@@ -1,5 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
 
@@ -8,15 +10,18 @@ public sealed class AddDocumentToWorkspaceHandler
     private readonly IDocumentRepository _documentRepository;
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IActiveWorkspaceRegistry _activeWorkspaceRegistry;
+    private readonly ILogger<AddDocumentToWorkspaceHandler> _logger;
 
     public AddDocumentToWorkspaceHandler(
         IDocumentRepository documentRepository,
         IWorkspaceRepository workspaceRepository,
-        IActiveWorkspaceRegistry activeWorkspaceRegistry)
+        IActiveWorkspaceRegistry activeWorkspaceRegistry,
+        ILogger<AddDocumentToWorkspaceHandler> logger)
     {
         _documentRepository = documentRepository;
         _workspaceRepository = workspaceRepository;
         _activeWorkspaceRegistry = activeWorkspaceRegistry;
+        _logger = logger;
     }
 
     public async Task<AddDocumentToWorkspaceResult> HandleAsync(
@@ -30,6 +35,9 @@ public sealed class AddDocumentToWorkspaceHandler
 
         if (workspace is null)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceDocumentAdditionWorkspaceNotFound);
+
             return new AddDocumentToWorkspaceResult(
                 AddDocumentToWorkspaceResultStatus.WorkspaceNotFound,
                 null,
@@ -39,6 +47,9 @@ public sealed class AddDocumentToWorkspaceHandler
         if (workspace.Memberships.Any(
                 membership => membership.DocumentId == command.DocumentId))
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceDocumentAdditionAlreadyMember);
+
             return new AddDocumentToWorkspaceResult(
                 AddDocumentToWorkspaceResultStatus.AlreadyMember,
                 workspace,
@@ -52,6 +63,9 @@ public sealed class AddDocumentToWorkspaceHandler
 
         if (document is null)
         {
+            _logger.LogWarning(
+                LogMessages.WorkspaceDocumentAdditionDocumentNotFound);
+
             return new AddDocumentToWorkspaceResult(
                 AddDocumentToWorkspaceResultStatus.DocumentNotFound,
                 workspace,
@@ -61,6 +75,9 @@ public sealed class AddDocumentToWorkspaceHandler
         if (workspace.TypeOfWorkspace == WorkspaceType.Temporary)
         {
             workspace.AddDocument(command.DocumentId);
+
+            _logger.LogInformation(
+                LogMessages.WorkspaceDocumentAdditionCompleted);
 
             return new AddDocumentToWorkspaceResult(
                 AddDocumentToWorkspaceResultStatus.Success,
@@ -77,6 +94,9 @@ public sealed class AddDocumentToWorkspaceHandler
 
         _activeWorkspaceRegistry.Replace(updatedWorkspace);
 
+        _logger.LogInformation(
+            LogMessages.WorkspaceDocumentAdditionCompleted);
+
         return new AddDocumentToWorkspaceResult(
             AddDocumentToWorkspaceResultStatus.Success,
             updatedWorkspace,
@@ -89,8 +109,10 @@ public sealed class AddDocumentToWorkspaceHandler
         return Workspace.Restore(
             workspace.Id,
             workspace.Name,
+            workspace.Description,
             workspace.TypeOfWorkspace,
             workspace.Memberships,
-            workspace.LastActiveDocumentId);
+            workspace.LastActiveDocumentId,
+            workspace.LastUpdated);
     }
 }

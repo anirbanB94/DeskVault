@@ -1,6 +1,7 @@
-﻿using System.Diagnostics;
+using DeskVault.UI.Services.Interfaces;
+using System.Diagnostics;
 
-namespace DeskVault.UI.Services;
+namespace DeskVault.UI.Services.Document;
 
 public sealed class DocumentViewer : IDocumentViewer
 {

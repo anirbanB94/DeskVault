@@ -1,5 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Workspaces.Commands.OpenWorkspace;
 
@@ -8,15 +10,18 @@ public sealed class OpenWorkspaceHandler
     private readonly IDocumentRepository _documentRepository;
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IActiveWorkspaceRegistry _activeWorkspaceRegistry;
+    private readonly ILogger<OpenWorkspaceHandler> _logger;
 
     public OpenWorkspaceHandler(
         IDocumentRepository documentRepository,
         IWorkspaceRepository workspaceRepository,
-        IActiveWorkspaceRegistry activeWorkspaceRegistry)
+        IActiveWorkspaceRegistry activeWorkspaceRegistry,
+        ILogger<OpenWorkspaceHandler> logger)
     {
         _documentRepository = documentRepository;
         _workspaceRepository = workspaceRepository;
         _activeWorkspaceRegistry = activeWorkspaceRegistry;
+        _logger = logger;
     }
 
     public async Task<OpenWorkspaceResult> HandleAsync(
@@ -30,6 +35,9 @@ public sealed class OpenWorkspaceHandler
 
         if (activeWorkspace is not null)
         {
+            _logger.LogDebug(
+                LogMessages.WorkspaceOpenAlreadyActive);
+
             return new OpenWorkspaceResult(
                 OpenWorkspaceResultStatus.AlreadyActive,
                 activeWorkspace,
@@ -44,6 +52,9 @@ public sealed class OpenWorkspaceHandler
 
         if (workspace is null)
         {
+            _logger.LogWarning(
+                LogMessages.WorkspaceOpenNotFound);
+
             return new OpenWorkspaceResult(
                 OpenWorkspaceResultStatus.WorkspaceNotFound,
                 null,
@@ -88,11 +99,25 @@ public sealed class OpenWorkspaceHandler
             Workspace.Restore(
                 workspace.Id,
                 workspace.Name,
+                workspace.Description,
                 workspace.TypeOfWorkspace,
                 validMemberships,
-                lastActiveDocumentId);
+                lastActiveDocumentId,
+                workspace.LastUpdated);
 
         _activeWorkspaceRegistry.Add(restoredWorkspace);
+
+        if (missingDocumentIds.Count > 0)
+        {
+            _logger.LogWarning(
+                LogMessages.WorkspaceOpenCompletedWithMissingDocuments,
+                missingDocumentIds.Count);
+        }
+        else
+        {
+            _logger.LogInformation(
+                LogMessages.WorkspaceOpenCompleted);
+        }
 
         return new OpenWorkspaceResult(
             OpenWorkspaceResultStatus.Activated,
