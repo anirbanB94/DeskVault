@@ -216,6 +216,60 @@ public sealed class ProcessDocumentHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenCallerIsCancelledBeforeFailurePublication_PublishesFailureAndRethrowsOriginalException()
+    {
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        var processingContext =
+            CreateProcessingContext(repository);
+
+        processingContext.Extractor.BeforeThrow =
+            cancellationTokenSource.Cancel;
+
+        processingContext.Extractor.ThrowOnExtract = true;
+
+        InvalidOperationException exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    processingContext.Handler.HandleAsync(
+                        new ProcessDocumentCommand(document.Id),
+                        cancellationTokenSource.Token));
+
+        Assert.Equal(
+            "Test extraction failure.",
+            exception.Message);
+
+        Assert.Equal(
+            [
+                DocumentStatus.Processing,
+                DocumentStatus.Failed
+            ],
+            processingContext.ProcessingStore.PublishedStates
+                .Select(x => x.Status)
+                .ToArray());
+
+        Assert.True(
+            processingContext.ProcessingStore
+                .FailurePublicationReceivedNonCancelledToken);
+
+        Assert.False(
+            processingContext.ProcessingStore
+                .WasSuccessfulProcessingPublished);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenNoExtractorSupportsDocument_MarksDocumentAsFailedAndRethrows()
     {
         Document document =
@@ -715,6 +769,8 @@ public sealed class ProcessDocumentHandlerTests
 
         public bool CancelOnExtract { get; set; }
 
+        public Action? BeforeThrow { get; set; }
+
         public string? FileName { get; private set; }
 
         public bool CanExtract(
@@ -737,6 +793,8 @@ public sealed class ProcessDocumentHandlerTests
 
             if (ThrowOnExtract)
             {
+                BeforeThrow?.Invoke();
+
                 throw new InvalidOperationException(
                     "Test extraction failure.");
             }
@@ -776,6 +834,8 @@ public sealed class ProcessDocumentHandlerTests
 
         public bool WasCancellationRecoveryRequested { get; private set; }
 
+        public bool FailurePublicationReceivedNonCancelledToken { get; private set; }
+
         public long CancellationRecoveryGeneration { get; private set; }
 
         public Task<long> AcquireProcessingGenerationAsync(
@@ -797,6 +857,13 @@ public sealed class ProcessDocumentHandlerTests
             DocumentStatus status,
             CancellationToken cancellationToken = default)
         {
+
+            if (status == DocumentStatus.Failed &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                FailurePublicationReceivedNonCancelledToken = true;
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
 
             DocumentId = documentId;

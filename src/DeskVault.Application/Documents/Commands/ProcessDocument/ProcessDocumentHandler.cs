@@ -146,7 +146,7 @@ public sealed class ProcessDocumentHandler
                     document.Id,
                     processingGeneration,
                     DocumentStatus.Failed,
-                    cancellationToken);
+                    CancellationToken.None);
             }
 
             _logger.LogError(
