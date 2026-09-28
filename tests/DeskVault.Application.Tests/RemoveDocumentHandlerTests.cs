@@ -483,5 +483,16 @@ public sealed class RemoveDocumentHandlerTests
 
             return Task.CompletedTask;
         }
+
+        public Task<string> StoreAsync(
+            string sourceFilePath,
+            Guid documentId,
+            CancellationToken cancellationToken = default,
+            string? expectedSha256Hash = null)
+        {
+            return Task.FromResult(
+                "stored.dvault");
+        }
+
     }
 }

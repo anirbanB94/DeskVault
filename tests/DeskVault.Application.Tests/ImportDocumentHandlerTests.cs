@@ -143,7 +143,7 @@ public sealed class ImportDocumentHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_WhenImportSucceeds_PersistsDocument()
+    public async Task HandleAsync_WhenImportSucceeds_PersistsDocumentWithCalculatedHash()
     {
         var validator =
             new Mock<IImportDocumentValidator>();
@@ -181,7 +181,8 @@ public sealed class ImportDocumentHandlerTests
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                "test-hash"))
             .ReturnsAsync("stored/test.txt");
 
         Document? addedDocument = null;
@@ -244,6 +245,14 @@ public sealed class ImportDocumentHandlerTests
             DocumentStatus.Imported,
             addedDocument.Status);
 
+        storageService.Verify(
+            x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                "test-hash"),
+            Times.Once);
+
         repository.Verify(
             x => x.AddAsync(
                 It.IsAny<Document>(),
@@ -290,7 +299,8 @@ public sealed class ImportDocumentHandlerTests
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                "test-hash"))
             .ReturnsAsync("stored/report.txt");
 
         Document? addedDocument = null;
@@ -385,7 +395,8 @@ public sealed class ImportDocumentHandlerTests
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                "test-hash"))
             .ReturnsAsync("stored/test.txt");
 
         repository
@@ -417,7 +428,8 @@ public sealed class ImportDocumentHandlerTests
             x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                "test-hash"),
             Times.Once);
 
         repository.Verify(
@@ -466,7 +478,8 @@ public sealed class ImportDocumentHandlerTests
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()))
             .ThrowsAsync(
                 new IOException("Storage failed."));
 
@@ -537,7 +550,8 @@ public sealed class ImportDocumentHandlerTests
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()))
             .ThrowsAsync(
                 new UnauthorizedAccessException(
                     "Access denied."));

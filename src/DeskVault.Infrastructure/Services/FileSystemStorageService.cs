@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
@@ -25,7 +26,8 @@ public sealed class FileSystemStorageService : IStorageService
     public async Task<string> StoreAsync(
         string sourceFilePath,
         Guid documentId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? expectedSha256Hash = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -67,10 +69,35 @@ public sealed class FileSystemStorageService : IStorageService
 
             destinationCreated = true;
 
-            await _encryptionService.EncryptAsync(
-                source,
-                destination,
-                cancellationToken);
+            if (string.IsNullOrWhiteSpace(
+                expectedSha256Hash))
+            {
+                await _encryptionService.EncryptAsync(
+                    source,
+                    destination,
+                    cancellationToken);
+            }
+            else
+            {
+                using var hashingSource =
+                    new HashingReadStream(source);
+
+                await _encryptionService.EncryptAsync(
+                    hashingSource,
+                    destination,
+                    cancellationToken);
+
+                string actualSha256Hash =
+                    hashingSource.GetHashHex();
+
+                if (!string.Equals(
+                    actualSha256Hash,
+                    expectedSha256Hash,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new DocumentImportContentMismatchException();
+                }
+            }
 
             _logger.LogInformation(
                 LogMessages.DocumentStorageCompleted);

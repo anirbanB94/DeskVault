@@ -1541,7 +1541,8 @@ public sealed class MainFormPresenterTests
             .Setup(x => x.StoreAsync(
                 filePath,
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                hash))
             .ReturnsAsync("document.dvault");
 
         var processingService =
@@ -1580,7 +1581,8 @@ public sealed class MainFormPresenterTests
             x => x.StoreAsync(
                 filePath,
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()),
+                It.IsAny<CancellationToken>(),
+                hash),
             Times.Once);
 
         repository.Verify(
@@ -1720,7 +1722,8 @@ public sealed class MainFormPresenterTests
             .Setup(x => x.StoreAsync(
                 filePath,
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                hash))
             .ReturnsAsync("document.dvault");
 
         var processingService =
@@ -1858,7 +1861,8 @@ public sealed class MainFormPresenterTests
             .Setup(x => x.StoreAsync(
                 filePath,
                 It.IsAny<Guid>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(),
+                hash))
             .ReturnsAsync("document.dvault");
 
         var processingService =

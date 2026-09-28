@@ -5,7 +5,8 @@ public interface IStorageService
     Task<string> StoreAsync(
         string sourceFilePath,
         Guid documentId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? expectedSha256Hash = null);
 
     Task DeleteAsync(
         string storedFilePath,

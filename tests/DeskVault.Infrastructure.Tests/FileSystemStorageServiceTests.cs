@@ -1,6 +1,7 @@
-using System.Security.Cryptography;
+using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -120,6 +121,125 @@ public sealed class FileSystemStorageServiceTests
             Assert.Equal(
                 originalContent,
                 decryptedContent);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task StoreAsync_WhenExpectedHashMatchesStoredContent_CompletesSuccessfully()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
+
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "source.txt");
+
+            byte[] content =
+                "DeskVault hash verification test."u8.ToArray();
+
+            await File.WriteAllBytesAsync(
+                sourceFilePath,
+                content);
+
+            string expectedHash =
+                Convert.ToHexString(
+                    SHA256.HashData(content))
+                .ToLowerInvariant();
+
+            Guid documentId =
+                Guid.NewGuid();
+
+            string storedFilePath =
+                await storageService.StoreAsync(
+                    sourceFilePath,
+                    documentId,
+                    expectedSha256Hash: expectedHash);
+
+            Assert.True(
+                File.Exists(
+                    storedFilePath));
+
+            Assert.Equal(
+                Path.Combine(
+                    dataPaths.DocumentsDirectory,
+                    $"{documentId}.dvault"),
+                storedFilePath);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task StoreAsync_WhenExpectedHashDoesNotMatchStoredContent_ThrowsAndDeletesArtifact()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
+
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "source.txt");
+
+            byte[] content =
+                "DeskVault hash mismatch test."u8.ToArray();
+
+            await File.WriteAllBytesAsync(
+                sourceFilePath,
+                content);
+
+            string expectedHash =
+                Convert.ToHexString(
+                    SHA256.HashData(
+                        "Different content."u8.ToArray()))
+                .ToLowerInvariant();
+
+            Guid documentId =
+                Guid.NewGuid();
+
+            string expectedStoredFilePath =
+                Path.Combine(
+                    dataPaths.DocumentsDirectory,
+                    $"{documentId}.dvault");
+
+            await Assert.ThrowsAsync<DocumentImportContentMismatchException>(
+                () =>
+                    storageService.StoreAsync(
+                        sourceFilePath,
+                        documentId,
+                        expectedSha256Hash: expectedHash));
+
+            Assert.False(
+                File.Exists(
+                    expectedStoredFilePath));
         }
         finally
         {

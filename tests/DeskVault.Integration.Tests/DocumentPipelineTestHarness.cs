@@ -4,16 +4,17 @@ using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
-using DeskVault.Application.Documents.Extraction.MarkdownDocument;
-using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Extraction.IniDocument;
 using DeskVault.Application.Documents.Extraction.JsonDocument;
+using DeskVault.Application.Documents.Extraction.MarkdownDocument;
+using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Extraction.XmlDocument;
 using DeskVault.Application.Documents.Extraction.YamlDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
+using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
@@ -52,7 +53,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         string rootDirectory,
         string databasePath,
         byte[] encryptionKey,
-        IEnumerable<IDocumentTextExtractor>? extractors = null)
+        IEnumerable<IDocumentTextExtractor>? extractors = null,
+        IHashService? hashService = null)
     {
         ArgumentNullException.ThrowIfNull(encryptionKey);
 
@@ -120,8 +122,9 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         ImportHandler =
             new ImportDocumentHandler(
                 new ImportDocumentValidator(),
-                new Sha256HashService(
-                    NullLogger<Sha256HashService>.Instance),
+                hashService ??
+                    new Sha256HashService(
+                        NullLogger<Sha256HashService>.Instance),
                 _storageService,
                 repository,
                 NullLogger<ImportDocumentHandler>.Instance);

@@ -86,7 +86,8 @@ public sealed class ImportDocumentHandler
                 await _storageService.StoreAsync(
                     command.FilePath,
                     documentId,
-                    cancellationToken);
+                    cancellationToken,
+                    expectedSha256Hash: sha256Hash);
 
             var document =
                 Document.Create(
