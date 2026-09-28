@@ -1,8 +1,10 @@
+using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Shared.Resources;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -65,8 +67,17 @@ public sealed class SqliteDocumentRepository
             entity,
             cancellationToken);
 
-        await dbContext.SaveChangesAsync(
-            cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(
+                cancellationToken);
+        }
+        catch (DbUpdateException ex) when (
+            IsSha256UniqueConstraintViolation(ex))
+        {
+            throw new DocumentHashConflictException(
+                ex);
+        }
 
         _logger.LogInformation(
             LogMessages.DocumentRepositoryAddCompleted);
@@ -170,6 +181,20 @@ public sealed class SqliteDocumentRepository
 
         _logger.LogInformation(
             LogMessages.DocumentRepositoryUpdateCompleted);
+    }
+
+    private static bool IsSha256UniqueConstraintViolation(
+        DbUpdateException exception)
+    {
+        SqliteException? sqliteException =
+            exception.InnerException as SqliteException;
+
+        return sqliteException is not null &&
+               sqliteException.SqliteErrorCode == 19 &&
+               sqliteException.SqliteExtendedErrorCode == 2067 &&
+               sqliteException.Message.Contains(
+                   "Documents.Sha256Hash",
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     private static Document ToDomain(

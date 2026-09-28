@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Repositories;
@@ -130,6 +131,104 @@ public sealed class SqliteDocumentRepositoryTests
         Assert.Equal(
             5L,
             result.LastSuccessfulProcessingGeneration);
+    }
+
+    [Fact]
+    public async Task AddAsync_WhenDocumentHashAlreadyExists_ThrowsDocumentHashConflictException()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        const string duplicateHash =
+            "duplicate-sha256-hash";
+
+        Document firstDocument =
+            Document.Create(
+                Guid.NewGuid(),
+                "first.txt",
+                "First Document",
+                duplicateHash,
+                "first.dvault");
+
+        Document secondDocument =
+            Document.Create(
+                Guid.NewGuid(),
+                "second.txt",
+                "Second Document",
+                duplicateHash,
+                "second.dvault");
+
+        await repository.AddAsync(
+            firstDocument);
+
+        DocumentHashConflictException exception =
+            await Assert.ThrowsAsync<DocumentHashConflictException>(
+                () =>
+                    repository.AddAsync(
+                        secondDocument));
+
+        Assert.IsType<DbUpdateException>(
+            exception.InnerException);
+
+        Assert.IsType<SqliteException>(
+            exception.InnerException!.InnerException);
+
+        IReadOnlyList<Document> documents =
+            await repository.GetAllAsync();
+
+        Assert.Single(documents);
+
+        Assert.Equal(
+            firstDocument.Id,
+            documents[0].Id);
+
+        Assert.Equal(
+            duplicateHash,
+            documents[0].Sha256Hash);
+    }
+
+    [Fact]
+    public async Task AddAsync_WhenDocumentIdAlreadyExists_PropagatesPersistenceConflict()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document firstDocument =
+            Document.Create(
+                documentId,
+                "first.txt",
+                "First Document",
+                "first-hash",
+                "first.dvault");
+
+        Document secondDocument =
+            Document.Create(
+                documentId,
+                "second.txt",
+                "Second Document",
+                "second-hash",
+                "second.dvault");
+
+        await repository.AddAsync(
+            firstDocument);
+
+        DbUpdateException exception =
+            await Assert.ThrowsAsync<DbUpdateException>(
+                () =>
+                    repository.AddAsync(
+                        secondDocument));
+
+        Assert.IsType<SqliteException>(
+            exception.InnerException);
     }
 
     [Fact]
