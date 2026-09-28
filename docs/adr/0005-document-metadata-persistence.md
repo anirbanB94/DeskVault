@@ -185,7 +185,65 @@ The document metadata table currently enforces:
 * required stored-file path
 * an index on `ImportedAt`
 
-The unique SHA-256 constraint provides a database-level safeguard against duplicate documents in addition to application-level duplicate detection.
+The unique SHA-256 constraint provides the persistence-level concurrency
+safeguard for document deduplication in addition to the application-level
+duplicate detection fast path.
+
+The application-level duplicate check is intentionally retained as an early
+duplicate-detection path, but it cannot by itself guarantee correctness when
+multiple imports observe the same pre-existing state concurrently.
+
+The SQLite unique SHA-256 constraint is therefore the authoritative persistence
+boundary for concurrent duplicate imports.
+
+## Duplicate Concurrency Boundary
+
+Document import performs an application-level SHA-256 existence check before
+creating and persisting a new document.
+
+That check is a fast path, not the authoritative concurrency guarantee,
+because two concurrent imports can both observe that the hash does not yet
+exist before either import reaches persistence.
+
+The authoritative guarantee is the unique SHA-256 constraint enforced by
+SQLite on the `Documents.Sha256Hash` value.
+
+The Infrastructure repository recognizes the specific SQLite uniqueness
+conflict for the `Documents.Sha256Hash` constraint and translates it into the
+application-defined `DocumentHashConflictException`.
+
+The Application import handler translates that persistence conflict into the
+existing `Duplicate` import result.
+
+This creates the following responsibility boundary:
+
+```text
+Application
+    |
+    +-- ExistsByHashAsync() ----> Duplicate fast path
+    |
+    v
+Infrastructure
+    |
+    +-- AddAsync()
+            |
+            v
+        SQLite unique SHA-256 constraint
+            |
+            +-- success ----> document persisted
+            |
+            +-- SHA-256 conflict ----> DocumentHashConflictException
+                                              |
+                                              v
+                                      Duplicate import result
+```
+
+Only the specific SHA-256 uniqueness conflict is translated this way.
+Unrelated persistence conflicts continue to propagate normally.
+
+This preserves the existing Application/Infrastructure separation while making
+the SQLite persistence boundary authoritative for concurrent duplicate
+protection.
 
 ## Domain Restoration
 
@@ -299,7 +357,8 @@ These trade-offs are acceptable for the current MVP.
 
 ## Result
 
-DeskVault now has a persistent local document metadata layer while retaining encrypted filesystem storage for document content.
+DeskVault now has a persistent local document metadata layer while retaining
+encrypted filesystem storage for document content.
 
 The resulting workflow is:
 
@@ -308,11 +367,13 @@ Import
     ↓
 Hash
     ↓
-Duplicate detection
+Application duplicate detection
     ↓
-Encrypt
+Encrypt + store source content
     ↓
-Store encrypted content
+SQLite unique SHA-256 constraint
+    ↓
+Duplicate rejected at persistence boundary when required
     ↓
 Persist metadata
     ↓
@@ -323,4 +384,16 @@ Restore metadata
 Open and decrypt document
 ```
 
-This establishes the persistence foundation for future document processing, search, embeddings, and local AI capabilities.
+The application-level duplicate check provides the normal fast path, while
+the SQLite unique SHA-256 constraint provides the authoritative concurrency
+guarantee when concurrent imports reach persistence simultaneously.
+
+A SHA-256 uniqueness conflict is translated into the existing duplicate import
+outcome. Other persistence failures are not converted into duplicate results.
+
+Encrypted document content remains stored separately as `.dvault` files, and
+the Application layer remains independent of EF Core and SQLite-specific
+implementation details.
+
+This establishes the persistence foundation for future document processing,
+search, embeddings, and local AI capabilities.
