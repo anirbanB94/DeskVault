@@ -377,9 +377,17 @@ public sealed class SqliteDocumentProcessingStoreTests
             await store.AcquireProcessingGenerationAsync(
                 document.Id);
 
+        IReadOnlyList<DocumentChunk> chunks =
+        [
+            new DocumentChunk(
+                0,
+                "Successful processing result.")
+        ];
+
         await store.PublishSuccessfulProcessingAsync(
             document.Id,
-            generation);
+            generation,
+            chunks);
 
         DocumentStatus persistedStatus =
             await GetDocumentStatusAsync(
@@ -391,6 +399,13 @@ public sealed class SqliteDocumentProcessingStoreTests
                 connection,
                 document.Id);
 
+        List<DocumentChunkEntity> persistedChunks =
+            await GetChunksAsync(connection);
+
+        DocumentChunkEntity chunk =
+            Assert.Single(
+                persistedChunks);
+
         Assert.Equal(
             DocumentStatus.Available,
             persistedStatus);
@@ -398,6 +413,22 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             generation,
             persistedSuccessfulGeneration);
+
+        Assert.Equal(
+            document.Id,
+            chunk.DocumentId);
+
+        Assert.Equal(
+            0,
+            chunk.Order);
+
+        Assert.Equal(
+            "Successful processing result.",
+            chunk.Text);
+
+        Assert.Equal(
+            generation,
+            chunk.ProcessingGeneration);
     }
 
     [Fact]
@@ -418,7 +449,12 @@ public sealed class SqliteDocumentProcessingStoreTests
 
         await store.PublishSuccessfulProcessingAsync(
             document.Id,
-            firstGeneration);
+            firstGeneration,
+            [
+                new DocumentChunk(
+                    0,
+                    "FIRST SUCCESSFUL RESULT.")
+            ]);
 
         long secondGeneration =
             await store.AcquireProcessingGenerationAsync(
@@ -433,7 +469,12 @@ public sealed class SqliteDocumentProcessingStoreTests
                 () =>
                     store.PublishSuccessfulProcessingAsync(
                         document.Id,
-                        firstGeneration));
+                        firstGeneration,
+                        [
+                            new DocumentChunk(
+                                0,
+                                "STALE RESULT.")
+                        ]));
 
         Assert.Equal(
             document.Id,
@@ -457,6 +498,13 @@ public sealed class SqliteDocumentProcessingStoreTests
                 connection,
                 document.Id);
 
+        List<DocumentChunkEntity> persistedChunks =
+            await GetChunksAsync(connection);
+
+        DocumentChunkEntity chunk =
+            Assert.Single(
+                persistedChunks);
+
         Assert.Equal(
             DocumentStatus.Available,
             persistedStatus);
@@ -464,6 +512,14 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             firstGeneration,
             persistedSuccessfulGeneration);
+
+        Assert.Equal(
+            "FIRST SUCCESSFUL RESULT.",
+            chunk.Text);
+
+        Assert.Equal(
+            firstGeneration,
+            chunk.ProcessingGeneration);
     }
 
     [Fact]
@@ -492,6 +548,11 @@ public sealed class SqliteDocumentProcessingStoreTests
                 store.PublishSuccessfulProcessingAsync(
                     document.Id,
                     generation,
+                    [
+                        new DocumentChunk(
+                            0,
+                            "Cancelled candidate.")
+                    ],
                     cancellationTokenSource.Token));
 
         DocumentStatus persistedStatus =
@@ -504,6 +565,9 @@ public sealed class SqliteDocumentProcessingStoreTests
                 connection,
                 document.Id);
 
+        List<DocumentChunkEntity> persistedChunks =
+            await GetChunksAsync(connection);
+
         Assert.Equal(
             DocumentStatus.Imported,
             persistedStatus);
@@ -511,6 +575,9 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             0L,
             persistedSuccessfulGeneration);
+
+        Assert.Empty(
+            persistedChunks);
     }
 
     [Fact]
@@ -576,7 +643,12 @@ public sealed class SqliteDocumentProcessingStoreTests
 
         await store.PublishSuccessfulProcessingAsync(
             document.Id,
-            firstGeneration);
+            firstGeneration,
+            [
+                new DocumentChunk(
+                    0,
+                    "PREVIOUS SUCCESSFUL RESULT.")
+            ]);
 
         long secondGeneration =
             await store.AcquireProcessingGenerationAsync(
@@ -607,6 +679,13 @@ public sealed class SqliteDocumentProcessingStoreTests
                 connection,
                 document.Id);
 
+        List<DocumentChunkEntity> persistedChunks =
+            await GetChunksAsync(connection);
+
+        DocumentChunkEntity chunk =
+            Assert.Single(
+                persistedChunks);
+
         Assert.Equal(
             DocumentStatus.Available,
             persistedStatus);
@@ -618,6 +697,14 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             firstGeneration,
             persistedSuccessfulGeneration);
+
+        Assert.Equal(
+            "PREVIOUS SUCCESSFUL RESULT.",
+            chunk.Text);
+
+        Assert.Equal(
+            firstGeneration,
+            chunk.ProcessingGeneration);
     }
 
     [Fact]

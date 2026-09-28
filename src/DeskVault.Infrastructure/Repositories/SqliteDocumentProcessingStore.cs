@@ -130,55 +130,116 @@ public sealed class SqliteDocumentProcessingStore
     public async Task PublishSuccessfulProcessingAsync(
         Guid documentId,
         long processingGeneration,
+        IReadOnlyList<DocumentChunk> chunks,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(chunks);
+
         cancellationToken.ThrowIfCancellationRequested();
 
-        await using var dbContext =
-            await _dbContextFactory.CreateDbContextAsync(
+        _logger.LogInformation(
+            LogMessages.DocumentChunkReplacementStarted);
+
+        try
+        {
+            await using var dbContext =
+                await _dbContextFactory.CreateDbContextAsync(
+                    cancellationToken);
+
+            await using var transaction =
+                await dbContext.Database.BeginTransactionAsync(
+                    cancellationToken);
+
+            DocumentEntity? document =
+                await dbContext.Documents
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(
+                        entity => entity.Id == documentId,
+                        cancellationToken);
+
+            if (document is null)
+            {
+                throw new InvalidOperationException(
+                    $"Document '{documentId}' was not found.");
+            }
+
+            if (document.ProcessingGeneration !=
+                processingGeneration)
+            {
+                throw new StaleProcessingGenerationException(
+                    documentId,
+                    processingGeneration,
+                    document.ProcessingGeneration);
+            }
+
+            await ReplaceChunksWithinTransactionAsync(
+                dbContext,
+                documentId,
+                processingGeneration,
+                chunks,
                 cancellationToken);
 
-        int rowsAffected =
-            await dbContext.Documents
-                .Where(
-                    document =>
-                        document.Id == documentId &&
-                        document.ProcessingGeneration ==
-                        processingGeneration)
-                .ExecuteUpdateAsync(
-                    setters =>
-                        setters
-                            .SetProperty(
-                                document => document.Status,
-                                (int)DocumentStatus.Available)
-                            .SetProperty(
-                                document =>
-                                    document.LastSuccessfulProcessingGeneration,
-                                processingGeneration),
-                    cancellationToken);
+            int rowsAffected =
+                await dbContext.Documents
+                    .Where(
+                        entity =>
+                            entity.Id == documentId &&
+                            entity.ProcessingGeneration ==
+                            processingGeneration)
+                    .ExecuteUpdateAsync(
+                        setters =>
+                            setters
+                                .SetProperty(
+                                    entity => entity.Status,
+                                    (int)DocumentStatus.Available)
+                                .SetProperty(
+                                    entity =>
+                                        entity.LastSuccessfulProcessingGeneration,
+                                    processingGeneration),
+                        cancellationToken);
 
-        if (rowsAffected != 0)
-        {
-            return;
+            if (rowsAffected == 0)
+            {
+                DocumentEntity? currentDocument =
+                    await dbContext.Documents
+                        .AsNoTracking()
+                        .SingleOrDefaultAsync(
+                            entity => entity.Id == documentId,
+                            cancellationToken);
+
+                if (currentDocument is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Document '{documentId}' was not found.");
+                }
+
+                throw new StaleProcessingGenerationException(
+                    documentId,
+                    processingGeneration,
+                    currentDocument.ProcessingGeneration);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await transaction.CommitAsync(
+                CancellationToken.None);
+
+            _logger.LogInformation(
+                LogMessages.DocumentChunkReplacementCompleted,
+                chunks.Count);
         }
-
-        DocumentEntity? document =
-            await dbContext.Documents
-                .AsNoTracking()
-                .SingleOrDefaultAsync(
-                    entity => entity.Id == documentId,
-                    cancellationToken);
-
-        if (document is null)
+        catch (OperationCanceledException)
         {
-            throw new InvalidOperationException(
-                $"Document '{documentId}' was not found.");
+            throw;
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentChunkReplacementFailed);
 
-        throw new StaleProcessingGenerationException(
-            documentId,
-            processingGeneration,
-            document.ProcessingGeneration);
+            throw;
+        }
     }
 
     public async Task RecoverCancelledProcessingAsync(
@@ -302,40 +363,11 @@ public sealed class SqliteDocumentProcessingStore
                     document.ProcessingGeneration);
             }
 
-            await dbContext.DocumentChunks
-                .Where(
-                    chunk => chunk.DocumentId == documentId)
-                .ExecuteDeleteAsync(
-                    cancellationToken);
-
-            foreach (DocumentChunk chunk in chunks)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                Guid logicalId =
-                    DocumentChunkIdentity.CreateLogicalId(
-                        documentId,
-                        chunk.Order);
-
-                string contentHash =
-                    DocumentChunkIdentity.ComputeContentHash(
-                        chunk.Text);
-
-                await dbContext.DocumentChunks.AddAsync(
-                    new DocumentChunkEntity
-                    {
-                        Id = logicalId,
-                        DocumentId = documentId,
-                        Order = chunk.Order,
-                        Text = chunk.Text,
-                        ContentHash = contentHash,
-                        ProcessingGeneration =
-                            processingGeneration
-                    },
-                    cancellationToken);
-            }
-
-            await dbContext.SaveChangesAsync(
+            await ReplaceChunksWithinTransactionAsync(
+                dbContext,
+                documentId,
+                processingGeneration,
+                chunks,
                 cancellationToken);
 
             await transaction.CommitAsync(
@@ -357,5 +389,49 @@ public sealed class SqliteDocumentProcessingStore
 
             throw;
         }
+    }
+
+    private static async Task ReplaceChunksWithinTransactionAsync(
+        DeskVaultDbContext dbContext,
+        Guid documentId,
+        long processingGeneration,
+        IReadOnlyList<DocumentChunk> chunks,
+        CancellationToken cancellationToken)
+    {
+        await dbContext.DocumentChunks
+            .Where(
+                chunk => chunk.DocumentId == documentId)
+            .ExecuteDeleteAsync(
+                cancellationToken);
+
+        foreach (DocumentChunk chunk in chunks)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Guid logicalId =
+                DocumentChunkIdentity.CreateLogicalId(
+                    documentId,
+                    chunk.Order);
+
+            string contentHash =
+                DocumentChunkIdentity.ComputeContentHash(
+                    chunk.Text);
+
+            await dbContext.DocumentChunks.AddAsync(
+                new DocumentChunkEntity
+                {
+                    Id = logicalId,
+                    DocumentId = documentId,
+                    Order = chunk.Order,
+                    Text = chunk.Text,
+                    ContentHash = contentHash,
+                    ProcessingGeneration =
+                        processingGeneration
+                },
+                cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(
+            cancellationToken);
     }
 }
