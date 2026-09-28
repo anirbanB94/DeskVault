@@ -128,8 +128,41 @@ cease to be authoritative.
 Persisted document chunks represent the current successful derived processing
 result.
 
-Chunk replacement remains transactional, but publication must also verify
-that the processing generation is still authoritative.
+Chunk replacement and successful-processing publication must form a single
+atomic persistence boundary for an authoritative processing generation.
+
+The successful publication operation must:
+
+1. verify that the supplied processing generation is still authoritative;
+2. replace the document's derived chunks with the candidate derived result;
+3. mark the document `Available`;
+4. set `LastSuccessfulProcessingGeneration` to the same processing generation;
+5. commit all of those changes as one transaction.
+
+Conceptually:
+
+```text
+Extract
+    ↓
+Normalize
+    ↓
+Chunk
+    ↓
+ONE TRANSACTION
+    ├── Replace derived chunks
+    ├── Status = Available
+    └── LastSuccessfulProcessingGeneration = current generation
+    ↓
+Commit
+```
+
+The candidate derived result remains non-authoritative until the transaction
+commits successfully.
+
+If processing fails, is cancelled, or the generation becomes stale before the
+transaction commits, the transaction must not leave a partially replaced
+derived result behind. The previous successful derived result and its
+`LastSuccessfulProcessingGeneration` must remain intact.
 
 An obsolete processing attempt must not replace chunks produced by a newer
 authoritative attempt.
@@ -181,9 +214,13 @@ state were published.
 
 These values serve different purposes and must not be treated as interchangeable.
 
-A successful processing attempt updates `LastSuccessfulProcessingGeneration`
-only after its derived content has been durably replaced and its successful
-processing state has been published.
+A successful processing attempt updates
+`LastSuccessfulProcessingGeneration` in the same atomic transaction that
+replaces its derived content and publishes `Available`.
+
+The generation therefore becomes the last-successful generation only when the
+corresponding derived representation and successful document state have been
+committed together.
 
 Starting a new processing attempt advances `ProcessingGeneration` but does not
 change `LastSuccessfulProcessingGeneration`.
@@ -378,6 +415,8 @@ The implementation must:
 * prevent obsolete attempts from publishing document state;
 * prevent obsolete attempts from publishing derived chunks;
 * preserve transactional chunk replacement;
+* make successful derived-content replacement, `Available` publication, and
+  `LastSuccessfulProcessingGeneration` update one atomic commit boundary;
 * preserve deterministic repeated processing;
 * provide consistent cancellation behavior;
 * provide consistent failure behavior;
