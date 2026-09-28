@@ -17,6 +17,9 @@ public static class LogMessages
     public const string DocumentImportStorageFailed =
         "Application document import failed during storage or processing.";
 
+    public const string DocumentImportCleanupFailed =
+        "Application document import artifact cleanup failed.";
+
     public const string DocumentProcessingStarted =
         "Application document processing started.";
 

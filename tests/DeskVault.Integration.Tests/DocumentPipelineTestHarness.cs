@@ -55,7 +55,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         byte[] encryptionKey,
         IEnumerable<IDocumentTextExtractor>? extractors = null,
         IHashService? hashService = null,
-        Func<IStorageService, IStorageService>? importStorageDecorator = null)
+        Func<IStorageService, IStorageService>? importStorageDecorator = null,
+        Func<IDocumentRepository, IDocumentRepository>? importRepositoryDecorator = null)
     {
         ArgumentNullException.ThrowIfNull(encryptionKey);
 
@@ -72,6 +73,12 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
         var repository =
             CreateRepository();
+
+        IDocumentRepository importRepository =
+            importRepositoryDecorator is null
+            ? repository
+            : importRepositoryDecorator(
+                repository);
 
         var processingStore =
             CreateProcessingStore();
@@ -133,7 +140,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     new Sha256HashService(
                         NullLogger<Sha256HashService>.Instance),
                 importStorageService,
-                repository,
+                importRepository,
                 NullLogger<ImportDocumentHandler>.Instance);
 
         SearchHandler =

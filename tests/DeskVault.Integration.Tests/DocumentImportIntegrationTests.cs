@@ -775,6 +775,204 @@ public sealed class DocumentImportIntegrationTests
     }
 
     [Fact]
+    public async Task ImportDocument_WhenMetadataPersistenceFailsAfterStorageSucceeds_RemovesStoredArtifact()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(
+            rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        string? storedFilePath = null;
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "failed-import-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "DeskVault failed import cleanup integration test.",
+                Encoding.UTF8);
+
+            var persistenceException =
+                new InvalidOperationException(
+                    "Metadata persistence failed.");
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    importRepositoryDecorator:
+                        repository =>
+                            new ImportDocumentRepositoryDecorator(
+                                repository,
+                                (document, _) =>
+                                {
+                                    storedFilePath =
+                                        document.StoredFilePath;
+
+                                    throw persistenceException;
+                                }));
+
+            var exception =
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    () =>
+                        harness.ImportHandler.HandleAsync(
+                            new ImportDocumentCommand(
+                                sourceFilePath,
+                                "Failed Import Test Document")));
+
+            Assert.Same(
+                persistenceException,
+                exception);
+
+            Assert.NotNull(
+                storedFilePath);
+
+            Assert.False(
+                File.Exists(
+                    storedFilePath));
+
+            IReadOnlyList<Document> documents =
+                await harness.GetDocumentsAsync();
+
+            Assert.Empty(
+                documents);
+
+            if (Directory.Exists(
+                harness.DataPaths.DocumentsDirectory))
+            {
+                Assert.Empty(
+                    Directory.GetFiles(
+                        harness.DataPaths.DocumentsDirectory,
+                        "*.dvault"));
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenCancelledAfterStorageSucceeds_RemovesStoredArtifact()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(
+            rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        string? storedFilePath = null;
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "cancelled-import-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "DeskVault cancelled import cleanup integration test.",
+                Encoding.UTF8);
+
+            using var cancellationTokenSource =
+                new CancellationTokenSource();
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    importRepositoryDecorator:
+                        repository =>
+                            new ImportDocumentRepositoryDecorator(
+                                repository,
+                                (document, _) =>
+                                {
+                                    storedFilePath =
+                                        document.StoredFilePath;
+
+                                    cancellationTokenSource.Cancel();
+
+                                    throw new OperationCanceledException(
+                                        cancellationTokenSource.Token);
+                                }));
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () =>
+                    harness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Cancelled Import Test Document"),
+                        cancellationTokenSource.Token));
+
+            Assert.NotNull(
+                storedFilePath);
+
+            Assert.False(
+                File.Exists(
+                    storedFilePath));
+
+            IReadOnlyList<Document> documents =
+                await harness.GetDocumentsAsync();
+
+            Assert.Empty(
+                documents);
+
+            if (Directory.Exists(
+                harness.DataPaths.DocumentsDirectory))
+            {
+                Assert.Empty(
+                    Directory.GetFiles(
+                        harness.DataPaths.DocumentsDirectory,
+                        "*.dvault"));
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ImportDocument_WhenSameDocumentIsProcessedConcurrently_PreventsStaleAttemptFromOverwritingNewerResult()
     {
         string rootDirectory =
@@ -1106,6 +1304,22 @@ public sealed class DocumentImportIntegrationTests
                             sourceFilePath)))
                     .ToLowerInvariant(),
                 documents[0].Sha256Hash);
+
+            Assert.True(
+                File.Exists(
+                    documents[0].StoredFilePath));
+
+            string[] storedArtifacts =
+                Directory.GetFiles(
+                    firstHarness.DataPaths.DocumentsDirectory,
+                    "*.dvault");
+
+            Assert.Single(
+                storedArtifacts);
+
+            Assert.Equal(
+                documents[0].StoredFilePath,
+                storedArtifacts[0]);
         }
         finally
         {
@@ -2088,6 +2302,84 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     recursive: true);
             }
+        }
+    }
+
+    private sealed class ImportDocumentRepositoryDecorator
+        : IDocumentRepository
+    {
+        private readonly IDocumentRepository _inner;
+
+        private readonly Action<Document, CancellationToken>?
+            _addAsyncOverride;
+
+        public ImportDocumentRepositoryDecorator(
+            IDocumentRepository inner,
+            Action<Document, CancellationToken>? addAsyncOverride = null)
+        {
+            _inner = inner;
+            _addAsyncOverride = addAsyncOverride;
+        }
+
+        public Task<bool> ExistsByHashAsync(
+            string sha256Hash,
+            CancellationToken cancellationToken = default)
+        {
+            return _inner.ExistsByHashAsync(
+                sha256Hash,
+                cancellationToken);
+        }
+
+        public Task AddAsync(
+            Document document,
+            CancellationToken cancellationToken = default)
+        {
+            if (_addAsyncOverride is not null)
+            {
+                _addAsyncOverride(
+                    document,
+                    cancellationToken);
+
+                return Task.CompletedTask;
+            }
+
+            return _inner.AddAsync(
+                document,
+                cancellationToken);
+        }
+
+        public Task<Document?> GetByIdAsync(
+            Guid documentId,
+            CancellationToken cancellationToken = default)
+        {
+            return _inner.GetByIdAsync(
+                documentId,
+                cancellationToken);
+        }
+
+        public Task<IReadOnlyList<Document>> GetAllAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return _inner.GetAllAsync(
+                cancellationToken);
+        }
+
+        public Task DeleteAsync(
+            Guid documentId,
+            CancellationToken cancellationToken = default)
+        {
+            return _inner.DeleteAsync(
+                documentId,
+                cancellationToken);
+        }
+
+        public Task UpdateAsync(
+            Document document,
+            CancellationToken cancellationToken = default)
+        {
+            return _inner.UpdateAsync(
+                document,
+                cancellationToken);
         }
     }
 
