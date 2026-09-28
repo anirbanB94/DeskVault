@@ -2,6 +2,7 @@ using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
+using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Infrastructure.Services;
@@ -506,79 +507,78 @@ public sealed class DocumentImportIntegrationTests
             var cancellingExtractor =
                 new CancellingDocumentTextExtractor();
 
-            await using (
-                var reprocessingHarness =
+            await using var reprocessingHarness =
                     new DocumentPipelineTestHarness(
                         rootDirectory,
                         databasePath,
                         encryptionKey,
-                        [cancellingExtractor]))
-            {
-                using var cancellationTokenSource =
-                    new CancellationTokenSource();
+                        [cancellingExtractor]);
 
-                Task processingTask =
-                    reprocessingHarness.ProcessingService.ProcessAsync(
-                        documentId,
-                        cancellationTokenSource.Token);
+            using var cancellationTokenSource =
+                new CancellationTokenSource();
 
-                await cancellingExtractor.WaitUntilExtractionStartedAsync();
+            Task processingTask =
+                reprocessingHarness.ProcessingService.ProcessAsync(
+                    documentId,
+                    cancellationTokenSource.Token);
 
-                cancellationTokenSource.Cancel();
+            await cancellingExtractor.WaitUntilExtractionStartedAsync();
 
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                    () => processingTask);
+            cancellationTokenSource.Cancel();
 
-                Document? recoveredDocument =
-                    await reprocessingHarness.GetDocumentAsync(
-                        documentId);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => processingTask);
 
-                Assert.NotNull(recoveredDocument);
+            Document? recoveredDocument =
+                await reprocessingHarness.GetDocumentAsync(
+                    documentId);
 
-                Assert.Equal(
-                    DocumentStatus.Available,
-                    recoveredDocument.Status);
+            Assert.NotNull(recoveredDocument);
 
-                Assert.Equal(
-                    2L,
-                    recoveredDocument.ProcessingGeneration);
+            Assert.Equal(
+                DocumentStatus.Available,
+                recoveredDocument.Status);
 
-                Assert.Equal(
-                    1L,
-                    recoveredDocument.LastSuccessfulProcessingGeneration);
+            Assert.Equal(
+                2L,
+                recoveredDocument.ProcessingGeneration);
 
-                Assert.Equal(
-                    storedFilePath,
-                    recoveredDocument.StoredFilePath);
+            Assert.Equal(
+                1L,
+                recoveredDocument.LastSuccessfulProcessingGeneration);
 
-                Assert.True(
-                    File.Exists(
-                        recoveredDocument.StoredFilePath));
+            Assert.Equal(
+                storedFilePath,
+                recoveredDocument.StoredFilePath);
 
-                List<DocumentChunkEntity> recoveredChunks =
-                    await reprocessingHarness.GetChunksAsync(
-                        documentId);
+            Assert.True(
+                File.Exists(
+                    recoveredDocument.StoredFilePath));
 
-                Assert.NotEmpty(recoveredChunks);
+            List<DocumentChunkEntity> recoveredChunks =
+                await reprocessingHarness.GetChunksAsync(
+                    documentId);
 
-                string recoveredIndexedText =
-                    string.Join(
-                        "\n",
-                        recoveredChunks
-                            .OrderBy(
-                                chunk => chunk.Order)
-                            .Select(
-                                chunk => chunk.Text));
+            Assert.NotEmpty(recoveredChunks);
 
-                Assert.Contains(
-                    "previously successful indexed result",
-                    recoveredIndexedText,
-                    StringComparison.OrdinalIgnoreCase);
+            string recoveredIndexedText =
+                string.Join(
+                    "\n",
+                    recoveredChunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
 
-                Assert.True(
-                    cancellingExtractor.WasCalled);
-            }
+            Assert.Contains(
+                "previously successful indexed result",
+                recoveredIndexedText,
+                StringComparison.OrdinalIgnoreCase);
+
+            Assert.True(
+                cancellingExtractor.WasCalled);
         }
+
         finally
         {
             if (Directory.Exists(rootDirectory))
@@ -702,68 +702,67 @@ public sealed class DocumentImportIntegrationTests
             var failingExtractor =
                 new FailingDocumentTextExtractor();
 
-            await using (
-                var reprocessingHarness =
+            await using var reprocessingHarness =
                     new DocumentPipelineTestHarness(
                         rootDirectory,
                         databasePath,
                         encryptionKey,
-                        [failingExtractor]))
-            {
-                await Assert.ThrowsAsync<InvalidOperationException>(
-                    () =>
-                        reprocessingHarness.ProcessingService.ProcessAsync(
-                            documentId));
+                        [failingExtractor]);
 
-                Document? failedDocument =
-                    await reprocessingHarness.GetDocumentAsync(
-                        documentId);
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    reprocessingHarness.ProcessingService.ProcessAsync(
+                        documentId));
 
-                Assert.NotNull(failedDocument);
+            Document? failedDocument =
+                await reprocessingHarness.GetDocumentAsync(
+                    documentId);
 
-                Assert.Equal(
-                    DocumentStatus.Failed,
-                    failedDocument.Status);
+            Assert.NotNull(failedDocument);
 
-                Assert.Equal(
-                    2L,
-                    failedDocument.ProcessingGeneration);
+            Assert.Equal(
+                DocumentStatus.Failed,
+                failedDocument.Status);
 
-                Assert.Equal(
-                    1L,
-                    failedDocument.LastSuccessfulProcessingGeneration);
+            Assert.Equal(
+                2L,
+                failedDocument.ProcessingGeneration);
 
-                Assert.Equal(
-                    storedFilePath,
-                    failedDocument.StoredFilePath);
+            Assert.Equal(
+                1L,
+                failedDocument.LastSuccessfulProcessingGeneration);
 
-                Assert.True(
-                    File.Exists(
-                        failedDocument.StoredFilePath));
+            Assert.Equal(
+                storedFilePath,
+                failedDocument.StoredFilePath);
 
-                List<DocumentChunkEntity> preservedChunks =
-                    await reprocessingHarness.GetChunksAsync(
-                        documentId);
+            Assert.True(
+                File.Exists(
+                    failedDocument.StoredFilePath));
 
-                Assert.NotEmpty(preservedChunks);
+            List<DocumentChunkEntity> preservedChunks =
+                await reprocessingHarness.GetChunksAsync(
+                    documentId);
 
-                string preservedIndexedText =
-                    string.Join(
-                        "\n",
-                        preservedChunks
-                            .OrderBy(
-                                chunk => chunk.Order)
-                            .Select(
-                                chunk => chunk.Text));
+            Assert.NotEmpty(preservedChunks);
 
-                Assert.Equal(
-                    successfulIndexedText,
-                    preservedIndexedText);
+            string preservedIndexedText =
+                string.Join(
+                    "\n",
+                    preservedChunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
 
-                Assert.True(
-                    failingExtractor.WasCalled);
-            }
+            Assert.Equal(
+                successfulIndexedText,
+                preservedIndexedText);
+
+            Assert.True(
+                failingExtractor.WasCalled);
         }
+
         finally
         {
             if (Directory.Exists(rootDirectory))
@@ -1088,89 +1087,88 @@ public sealed class DocumentImportIntegrationTests
             Guid documentId;
             string storedFilePath;
 
-            await using (
-                var instance =
+            await using var instance =
                     new DocumentPipelineTestHarness(
                         rootDirectory,
                         databasePath,
-                        encryptionKey))
-            {
-                ImportDocumentResult importResult =
-                    await instance.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
-                            sourceFilePath,
-                            "Removal Integration Test Document"));
+                        encryptionKey);
 
-                Assert.Equal(
-                    ImportDocumentResultStatus.Success,
-                    importResult.Status);
+            ImportDocumentResult importResult =
+                await instance.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Removal Integration Test Document"));
 
-                Assert.NotNull(
-                    importResult.DocumentId);
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
 
-                documentId =
-                    importResult.DocumentId.Value;
+            Assert.NotNull(
+                importResult.DocumentId);
 
-                Document? importedDocument =
-                    await instance.GetDocumentAsync(
-                        documentId);
+            documentId =
+                importResult.DocumentId.Value;
 
-                Assert.NotNull(importedDocument);
-
-                Assert.Equal(
-                    DocumentStatus.Imported,
-                    importedDocument.Status);
-
-                await instance.ProcessingService.ProcessAsync(
+            Document? importedDocument =
+                await instance.GetDocumentAsync(
                     documentId);
 
-                Document? document =
-                    await instance.GetDocumentAsync(
-                        documentId);
+            Assert.NotNull(importedDocument);
 
-                Assert.NotNull(document);
+            Assert.Equal(
+                DocumentStatus.Imported,
+                importedDocument.Status);
 
-                storedFilePath =
-                    document.StoredFilePath;
+            await instance.ProcessingService.ProcessAsync(
+                documentId);
 
-                Assert.True(
-                    File.Exists(
-                        storedFilePath));
+            Document? document =
+                await instance.GetDocumentAsync(
+                    documentId);
 
-                List<DocumentChunkEntity> chunks =
-                    await instance.GetChunksAsync(
-                        documentId);
+            Assert.NotNull(document);
 
-                Assert.NotEmpty(chunks);
+            storedFilePath =
+                document.StoredFilePath;
 
-                RemoveDocumentResult removeResult =
-                    await instance.RemoveHandler.HandleAsync(
-                        new RemoveDocumentCommand(
-                            documentId));
+            Assert.True(
+                File.Exists(
+                    storedFilePath));
 
-                Assert.Equal(
-                    RemoveDocumentResultStatus.Success,
-                    removeResult.Status);
+            List<DocumentChunkEntity> chunks =
+                await instance.GetChunksAsync(
+                    documentId);
 
-                Assert.False(
-                    File.Exists(
-                        storedFilePath));
+            Assert.NotEmpty(chunks);
 
-                Document? removedDocument =
-                    await instance.GetDocumentAsync(
-                        documentId);
+            RemoveDocumentResult removeResult =
+                await instance.RemoveHandler.HandleAsync(
+                    new RemoveDocumentCommand(
+                        documentId));
 
-                Assert.Null(
-                    removedDocument);
+            Assert.Equal(
+                RemoveDocumentResultStatus.Success,
+                removeResult.Status);
 
-                List<DocumentChunkEntity> removedChunks =
-                    await instance.GetChunksAsync(
-                        documentId);
+            Assert.False(
+                File.Exists(
+                    storedFilePath));
 
-                Assert.Empty(
-                    removedChunks);
-            }
+            Document? removedDocument =
+                await instance.GetDocumentAsync(
+                    documentId);
+
+            Assert.Null(
+                removedDocument);
+
+            List<DocumentChunkEntity> removedChunks =
+                await instance.GetChunksAsync(
+                    documentId);
+
+            Assert.Empty(
+                removedChunks);
         }
+
         finally
         {
             if (Directory.Exists(rootDirectory))
@@ -1702,13 +1700,108 @@ public sealed class DocumentImportIntegrationTests
             await decryptedStream.CopyToAsync(
                 decryptedContent);
 
+            byte[] decryptedBytes =
+                decryptedContent.ToArray();
+
+            string storedContentHash =
+                Convert.ToHexString(
+                    SHA256.HashData(
+                        decryptedBytes))
+                .ToLowerInvariant();
+
             Assert.Equal(
                 originalBytes,
-                decryptedContent.ToArray());
+                decryptedBytes);
+
+            Assert.Equal(
+                storedContentHash,
+                document.Sha256Hash);
         }
         finally
         {
             if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenSourceChangesAfterHashing_RejectsImportAndRemovesArtifact()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(
+            rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "mutation-test.txt");
+
+            byte[] originalBytes =
+                "Original document content."u8.ToArray();
+
+            byte[] mutatedBytes =
+                "Mutated document content."u8.ToArray();
+
+            await File.WriteAllBytesAsync(
+                sourceFilePath,
+                originalBytes);
+
+            var hashService =
+                new MutatingHashService(
+                    mutatedBytes);
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    hashService: hashService);
+
+            await Assert.ThrowsAsync<DocumentImportContentMismatchException>(
+                () =>
+                    harness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Mutation Test Document")));
+
+            IReadOnlyList<Document> documents =
+                await harness.GetDocumentsAsync();
+
+            Assert.Empty(
+                documents);
+
+            if (Directory.Exists(
+                harness.DataPaths.DocumentsDirectory))
+            {
+                Assert.Empty(
+                    Directory.GetFiles(
+                        harness.DataPaths.DocumentsDirectory,
+                        "*.dvault"));
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
             {
                 Directory.Delete(
                     rootDirectory,
@@ -1877,6 +1970,44 @@ public sealed class DocumentImportIntegrationTests
             return Task.FromResult(
                 new DocumentTextExtractionResult(
                     _text));
+        }
+    }
+
+    private sealed class MutatingHashService
+    : IHashService
+    {
+        private readonly byte[] _mutatedBytes;
+
+        public MutatingHashService(
+            byte[] mutatedBytes)
+        {
+            _mutatedBytes =
+                [.. mutatedBytes];
+        }
+
+        public async Task<string> ComputeSha256Async(
+            string filePath,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            byte[] originalBytes =
+                await File.ReadAllBytesAsync(
+                    filePath,
+                    cancellationToken);
+
+            string originalHash =
+                Convert.ToHexString(
+                    SHA256.HashData(
+                        originalBytes))
+                .ToLowerInvariant();
+
+            await File.WriteAllBytesAsync(
+                filePath,
+                _mutatedBytes,
+                cancellationToken);
+
+            return originalHash;
         }
     }
 
