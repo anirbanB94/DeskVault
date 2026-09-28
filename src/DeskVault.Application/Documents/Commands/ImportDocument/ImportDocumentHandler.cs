@@ -109,6 +109,17 @@ public sealed class ImportDocumentHandler
                 document.Id,
                 "Document imported successfully.");
         }
+        catch (DocumentHashConflictException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                LogMessages.DocumentImportDuplicate);
+
+            return new ImportDocumentResult(
+                ImportDocumentResultStatus.Duplicate,
+                null,
+                "The document has already been imported.");
+        }
         catch (IOException ex)
         {
             _logger.LogError(

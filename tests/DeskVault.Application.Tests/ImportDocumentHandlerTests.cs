@@ -261,6 +261,99 @@ public sealed class ImportDocumentHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenDocumentHashPersistenceConflicts_ReturnsDuplicate()
+    {
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        validator
+            .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("duplicate-hash");
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                "duplicate-hash",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                "duplicate-hash"))
+            .ReturnsAsync("stored/test.dvault");
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new DocumentHashConflictException(
+                    new InvalidOperationException(
+                        "Duplicate SHA-256 constraint violation.")));
+
+        var handler =
+            CreateHandler(
+                validator.Object,
+                hashService.Object,
+                storageService.Object,
+                repository);
+
+        var command =
+            new ImportDocumentCommand(
+                "C:\\Documents\\test.txt",
+                "Test Document");
+
+        var result =
+            await handler.HandleAsync(command);
+
+        Assert.Equal(
+            ImportDocumentResultStatus.Duplicate,
+            result.Status);
+
+        Assert.Null(
+            result.DocumentId);
+
+        Assert.Equal(
+            "The document has already been imported.",
+            result.Description);
+
+        storageService.Verify(
+            x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                "duplicate-hash"),
+            Times.Once);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenDisplayNameIsNotProvided_DerivesDisplayNameFromFileName()
     {
         var validator =

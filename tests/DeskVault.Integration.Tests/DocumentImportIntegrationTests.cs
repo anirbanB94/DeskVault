@@ -965,6 +965,287 @@ public sealed class DocumentImportIntegrationTests
     }
 
     [Fact]
+    public async Task ImportDocument_WhenSameDocumentIsImportedConcurrently_ReturnsOneSuccessAndOneDuplicate()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        var storageBarrier =
+            new ConcurrentImportStorageBarrier();
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "concurrent-duplicate-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "DeskVault concurrent duplicate import test.",
+                Encoding.UTF8);
+
+            await using var firstHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    importStorageDecorator:
+                        storage =>
+                            new BarrierStorageService(
+                                storage,
+                                storageBarrier));
+
+            await using var secondHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    importStorageDecorator:
+                        storage =>
+                            new BarrierStorageService(
+                                storage,
+                                storageBarrier));
+
+            Task<ImportDocumentResult> firstImportTask =
+                firstHarness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "First Concurrent Document"));
+
+            Task<ImportDocumentResult> secondImportTask =
+                secondHarness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Second Concurrent Document"));
+
+            await storageBarrier.WaitUntilBothStoresCompleteAsync();
+
+            storageBarrier.Release();
+
+            ImportDocumentResult[] results =
+                await Task.WhenAll(
+                    firstImportTask,
+                    secondImportTask);
+
+            Assert.Equal(
+                1,
+                results.Count(
+                    result =>
+                        result.Status ==
+                        ImportDocumentResultStatus.Success));
+
+            Assert.Equal(
+                1,
+                results.Count(
+                    result =>
+                        result.Status ==
+                        ImportDocumentResultStatus.Duplicate));
+
+            ImportDocumentResult successResult =
+                Assert.Single(
+                    results,
+                    result =>
+                        result.Status ==
+                        ImportDocumentResultStatus.Success);
+
+            ImportDocumentResult duplicateResult =
+                Assert.Single(
+                    results,
+                    result =>
+                        result.Status ==
+                        ImportDocumentResultStatus.Duplicate);
+
+            Assert.NotNull(
+                successResult.DocumentId);
+
+            Assert.Null(
+                duplicateResult.DocumentId);
+
+            Assert.Equal(
+                "The document has already been imported.",
+                duplicateResult.Description);
+
+            IReadOnlyList<Document> documents =
+                await firstHarness.GetDocumentsAsync();
+
+            Assert.Single(
+                documents);
+
+            Assert.Equal(
+                successResult.DocumentId,
+                documents[0].Id);
+
+            string expectedDisplayName =
+                results[0].Status ==
+                ImportDocumentResultStatus.Success
+                    ? "First Concurrent Document"
+                    : "Second Concurrent Document";
+
+            Assert.Equal(
+                expectedDisplayName,
+                documents[0].DisplayName);
+
+            Assert.Equal(
+                Convert.ToHexString(
+                    SHA256.HashData(
+                        await File.ReadAllBytesAsync(
+                            sourceFilePath)))
+                    .ToLowerInvariant(),
+                documents[0].Sha256Hash);
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenDifferentDocumentsAreImportedConcurrently_CompletesBothImports()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string firstSourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "concurrent-first.txt");
+
+            string secondSourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "concurrent-second.txt");
+
+            await File.WriteAllTextAsync(
+                firstSourceFilePath,
+                "First concurrent document content.",
+                Encoding.UTF8);
+
+            await File.WriteAllTextAsync(
+                secondSourceFilePath,
+                "Second concurrent document content.",
+                Encoding.UTF8);
+
+            await using var firstHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            await using var secondHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            Task<ImportDocumentResult> firstImportTask =
+                firstHarness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        firstSourceFilePath,
+                        "First Concurrent Document"));
+
+            Task<ImportDocumentResult> secondImportTask =
+                secondHarness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        secondSourceFilePath,
+                        "Second Concurrent Document"));
+
+            ImportDocumentResult[] results =
+                await Task.WhenAll(
+                    firstImportTask,
+                    secondImportTask);
+
+            Assert.All(
+                results,
+                result =>
+                    Assert.Equal(
+                        ImportDocumentResultStatus.Success,
+                        result.Status));
+
+            Assert.All(
+                results,
+                result =>
+                    Assert.NotNull(
+                        result.DocumentId));
+
+            Assert.NotEqual(
+                results[0].DocumentId,
+                results[1].DocumentId);
+
+            IReadOnlyList<Document> documents =
+                await firstHarness.GetDocumentsAsync();
+
+            Assert.Equal(
+                2,
+                documents.Count);
+
+            Assert.Equal(
+                2,
+                documents.Select(
+                        document =>
+                            document.Sha256Hash)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count());
+
+            Assert.Contains(
+                documents,
+                document =>
+                    document.DisplayName ==
+                    "First Concurrent Document");
+
+            Assert.Contains(
+                documents,
+                document =>
+                    document.DisplayName ==
+                    "Second Concurrent Document");
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ImportDocument_WhenSameDocumentIsImportedTwice_ReturnsDuplicateAndDoesNotCreateSecondDocument()
     {
         string rootDirectory =
@@ -1807,6 +2088,93 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     recursive: true);
             }
+        }
+    }
+
+    private sealed class ConcurrentImportStorageBarrier
+    {
+        private readonly TaskCompletionSource<bool>
+            _bothStoresComplete =
+                new(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private readonly TaskCompletionSource<bool>
+            _release =
+                new(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private int _completedStoreCount;
+
+        public Task WaitUntilBothStoresCompleteAsync()
+        {
+            return _bothStoresComplete.Task;
+        }
+
+        public void StoreCompleted()
+        {
+            if (Interlocked.Increment(
+                    ref _completedStoreCount) == 2)
+            {
+                _bothStoresComplete.TrySetResult(true);
+            }
+        }
+
+        public Task WaitUntilReleasedAsync(
+            CancellationToken cancellationToken)
+        {
+            return _release.Task.WaitAsync(
+                cancellationToken);
+        }
+
+        public void Release()
+        {
+            _release.TrySetResult(true);
+        }
+    }
+
+    private sealed class BarrierStorageService
+        : IStorageService
+    {
+        private readonly IStorageService _inner;
+
+        private readonly ConcurrentImportStorageBarrier _barrier;
+
+        public BarrierStorageService(
+            IStorageService inner,
+            ConcurrentImportStorageBarrier barrier)
+        {
+            _inner = inner;
+            _barrier = barrier;
+        }
+
+        public async Task<string> StoreAsync(
+            string sourceFilePath,
+            Guid documentId,
+            CancellationToken cancellationToken = default,
+            string? expectedSha256Hash = null)
+        {
+            string storedFilePath =
+                await _inner.StoreAsync(
+                    sourceFilePath,
+                    documentId,
+                    cancellationToken,
+                    expectedSha256Hash);
+
+            _barrier.StoreCompleted();
+
+            await _barrier.WaitUntilReleasedAsync(
+                cancellationToken);
+
+            return storedFilePath;
+        }
+
+        public Task DeleteAsync(
+            string storedFilePath,
+            CancellationToken cancellationToken = default)
+        {
+            return _inner.DeleteAsync(
+                storedFilePath,
+                cancellationToken);
         }
     }
 
