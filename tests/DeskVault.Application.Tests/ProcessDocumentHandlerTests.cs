@@ -39,7 +39,11 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Null(result.DocumentId);
 
         Assert.Empty(
-            processingContext.ProcessingStore.ReplacedChunks);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
 
         Assert.Equal(
             0L,
@@ -95,31 +99,20 @@ public sealed class ProcessDocumentHandlerTests
             processingContext.ProcessingStore.AcquiredGeneration);
 
         Assert.Equal(
-            1L,
-            processingContext.ProcessingStore.ReplacedGeneration);
-
-        Assert.Equal(
             1,
-            processingContext.ProcessingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
 
-        Assert.Equal(
-            2,
-            processingContext.ProcessingStore.PublishedStates.Count);
+        Assert.Single(
+            processingContext.ProcessingStore.PublishedStates);
 
         Assert.Equal(
             DocumentStatus.Processing,
             processingContext.ProcessingStore.PublishedStates[0].Status);
 
         Assert.Equal(
-            DocumentStatus.Indexed,
-            processingContext.ProcessingStore.PublishedStates[1].Status);
-
-        Assert.All(
-            processingContext.ProcessingStore.PublishedStates,
-            publication =>
-                Assert.Equal(
-                    1L,
-                    publication.ProcessingGeneration));
+            1L,
+            processingContext.ProcessingStore.PublishedStates[0]
+                .ProcessingGeneration);
 
         Assert.True(
             processingContext.ProcessingStore.WasSuccessfulProcessingPublished);
@@ -132,15 +125,15 @@ public sealed class ProcessDocumentHandlerTests
             processingContext.ProcessingStore.WasCancellationRecoveryRequested);
 
         Assert.Single(
-            processingContext.ProcessingStore.ReplacedChunks);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
 
         Assert.Equal(
             0,
-            processingContext.ProcessingStore.ReplacedChunks[0].Order);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks[0].Order);
 
         Assert.Equal(
             "First paragraph.\n\nSecond paragraph.",
-            processingContext.ProcessingStore.ReplacedChunks[0].Text);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks[0].Text);
 
         Assert.True(
             processingContext.Reader.WasOpened);
@@ -212,7 +205,10 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             0,
-            processingContext.ProcessingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
     }
 
     [Fact]
@@ -267,6 +263,13 @@ public sealed class ProcessDocumentHandlerTests
         Assert.False(
             processingContext.ProcessingStore
                 .WasSuccessfulProcessingPublished);
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
     }
 
     [Fact]
@@ -332,7 +335,10 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             0,
-            processingContext.ProcessingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
     }
 
     [Fact]
@@ -368,28 +374,32 @@ public sealed class ProcessDocumentHandlerTests
             processingContext.ProcessingStore.AcquiredGeneration);
 
         Assert.Equal(
+            1,
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Equal(
             1L,
-            processingContext.ProcessingStore.ReplacedGeneration);
+            processingContext.ProcessingStore.SuccessfulProcessingGeneration);
 
         Assert.Equal(
             2,
-            processingContext.ProcessingStore.ReplacedChunks.Count);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks.Count);
 
         Assert.Equal(
             0,
-            processingContext.ProcessingStore.ReplacedChunks[0].Order);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks[0].Order);
 
         Assert.Equal(
             1,
-            processingContext.ProcessingStore.ReplacedChunks[1].Order);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks[1].Order);
 
         Assert.Equal(
             "First paragraph.",
-            processingContext.ProcessingStore.ReplacedChunks[0].Text);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks[0].Text);
 
         Assert.Equal(
             "Second paragraph.",
-            processingContext.ProcessingStore.ReplacedChunks[1].Text);
+            processingContext.ProcessingStore.SuccessfulProcessingChunks[1].Text);
     }
 
     [Fact]
@@ -428,7 +438,10 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             0,
-            processingContext.ProcessingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
 
         repository.Verify(
             x => x.GetByIdAsync(
@@ -506,7 +519,10 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             0,
-            processingContext.ProcessingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
     }
 
     [Fact]
@@ -558,21 +574,19 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             2,
-            processingContext.ProcessingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Equal(
+            2L,
+            processingContext.ProcessingStore.SuccessfulProcessingGeneration);
 
         Assert.Equal(
             2,
-            processingContext.ProcessingStore.ReplacedGeneration);
-
-        Assert.Equal(
-            4,
             processingContext.ProcessingStore.PublishedStates.Count);
 
         Assert.Equal(
             [
                 1L,
-                1L,
-                2L,
                 2L
             ],
             processingContext.ProcessingStore.PublishedStates
@@ -583,8 +597,12 @@ public sealed class ProcessDocumentHandlerTests
             processingContext.ProcessingStore.WasSuccessfulProcessingPublished);
 
         Assert.Equal(
-            2L,
-            processingContext.ProcessingStore.SuccessfulProcessingGeneration);
+            0,
+            processingContext.ProcessingStore.SuccessfulProcessingChunks[0].Order);
+
+        Assert.Equal(
+            "First paragraph.\n\nSecond paragraph.",
+            processingContext.ProcessingStore.SuccessfulProcessingChunks[0].Text);
     }
 
     [Fact]
@@ -621,21 +639,17 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             1,
-            processingContext.ProcessingStore.ReplaceCallCount);
-
-        Assert.Equal(
-            1L,
-            processingContext.ProcessingStore.ReplacedGeneration);
-
-        Assert.Single(
-            processingContext.ProcessingStore.ReplacedChunks);
-
-        Assert.True(
-            processingContext.ProcessingStore.WasSuccessfulProcessingPublished);
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
 
         Assert.Equal(
             1L,
             processingContext.ProcessingStore.SuccessfulProcessingGeneration);
+
+        Assert.Single(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.True(
+            processingContext.ProcessingStore.WasSuccessfulProcessingPublished);
     }
 
     [Fact]
@@ -668,7 +682,10 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             0,
-            processingContext.ProcessingStore.ReplaceCallCount);
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
 
         Assert.False(
             processingContext.Reader.WasOpened);
@@ -816,13 +833,11 @@ public sealed class ProcessDocumentHandlerTests
     {
         public Guid DocumentId { get; private set; }
 
-        public int ReplaceCallCount { get; private set; }
+        public int SuccessfulProcessingCallCount { get; private set; }
 
         public long AcquiredGeneration { get; private set; }
 
-        public long ReplacedGeneration { get; private set; }
-
-        public IReadOnlyList<DocumentChunk> ReplacedChunks { get; private set; } =
+        public IReadOnlyList<DocumentChunk> SuccessfulProcessingChunks { get; private set; } =
             [];
 
         public List<StatePublication> PublishedStates { get; } =
@@ -857,7 +872,6 @@ public sealed class ProcessDocumentHandlerTests
             DocumentStatus status,
             CancellationToken cancellationToken = default)
         {
-
             if (status == DocumentStatus.Failed &&
                 !cancellationToken.IsCancellationRequested)
             {
@@ -879,13 +893,21 @@ public sealed class ProcessDocumentHandlerTests
         public Task PublishSuccessfulProcessingAsync(
             Guid documentId,
             long processingGeneration,
+            IReadOnlyList<DocumentChunk> chunks,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             DocumentId = documentId;
+
             SuccessfulProcessingGeneration =
                 processingGeneration;
+
+            SuccessfulProcessingChunks =
+                chunks.ToList();
+
+            SuccessfulProcessingCallCount++;
+
             WasSuccessfulProcessingPublished = true;
 
             return Task.CompletedTask;
@@ -913,11 +935,6 @@ public sealed class ProcessDocumentHandlerTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            DocumentId = documentId;
-            ReplacedGeneration = processingGeneration;
-            ReplaceCallCount++;
-            ReplacedChunks = chunks.ToList();
 
             return Task.CompletedTask;
         }

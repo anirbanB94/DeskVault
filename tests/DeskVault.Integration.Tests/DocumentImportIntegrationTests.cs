@@ -1,6 +1,8 @@
+using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
@@ -1919,6 +1921,607 @@ public sealed class DocumentImportIntegrationTests
     }
 
     [Fact]
+    public async Task ImportDocument_WhenCandidatePublicationFails_PreservesLastSuccessfulResult()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "candidate-failure-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                """
+            Previous successful processing result.
+
+            This result must remain searchable after candidate publication fails.
+            """,
+                Encoding.UTF8);
+
+            Guid documentId;
+            string successfulIndexedText;
+
+            await using (
+                var initialHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await initialHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Candidate Failure Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
+                await initialHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? successfulDocument =
+                    await initialHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(successfulDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    successfulDocument.Status);
+
+                Assert.Equal(
+                    1L,
+                    successfulDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    1L,
+                    successfulDocument.LastSuccessfulProcessingGeneration);
+
+                List<DocumentChunkEntity> successfulChunks =
+                    await initialHarness.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(successfulChunks);
+
+                successfulIndexedText =
+                    string.Join(
+                        "\n",
+                        successfulChunks
+                            .OrderBy(
+                                chunk => chunk.Order)
+                            .Select(
+                                chunk => chunk.Text));
+            }
+
+            var failingChunker =
+                new FixedDocumentTextChunker(
+                [
+                    new DocumentChunk(
+                    0,
+                    "Candidate chunk one."),
+
+                new DocumentChunk(
+                    0,
+                    "Candidate chunk with duplicate order.")
+                ]);
+
+            await using var failingHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    chunker: failingChunker);
+
+            await Assert.ThrowsAnyAsync<Exception>(
+                () =>
+                    failingHarness.ProcessingService.ProcessAsync(
+                        documentId));
+
+            Assert.True(
+                failingChunker.WasCalled);
+
+            Assert.True(
+                failingChunker.CandidateOutputProduced);
+
+            Document? failedDocument =
+                await failingHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(failedDocument);
+
+            Assert.Equal(
+                DocumentStatus.Failed,
+                failedDocument.Status);
+
+            Assert.Equal(
+                2L,
+                failedDocument.ProcessingGeneration);
+
+            Assert.Equal(
+                1L,
+                failedDocument.LastSuccessfulProcessingGeneration);
+
+            List<DocumentChunkEntity> preservedChunks =
+                await failingHarness.GetChunksAsync(
+                    documentId);
+
+            Assert.NotEmpty(
+                preservedChunks);
+
+            string preservedIndexedText =
+                string.Join(
+                    "\n",
+                    preservedChunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Equal(
+                successfulIndexedText,
+                preservedIndexedText);
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenCandidatePublicationIsCancelled_PreservesLastSuccessfulResult()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "candidate-cancellation-test.txt");
+
+            string sourceText =
+                """
+            Previous successful processing result.
+
+            This result must remain available when candidate publication is cancelled.
+            """;
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            Guid documentId;
+            string successfulIndexedText;
+
+            await using (
+                var initialHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await initialHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Candidate Cancellation Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
+                await initialHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? successfulDocument =
+                    await initialHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(successfulDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    successfulDocument.Status);
+
+                Assert.Equal(
+                    1L,
+                    successfulDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    1L,
+                    successfulDocument.LastSuccessfulProcessingGeneration);
+
+                List<DocumentChunkEntity> successfulChunks =
+                    await initialHarness.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(successfulChunks);
+
+                successfulIndexedText =
+                    string.Join(
+                        "\n",
+                        successfulChunks
+                            .OrderBy(
+                                chunk => chunk.Order)
+                            .Select(
+                                chunk => chunk.Text));
+            }
+
+            using var cancellationTokenSource =
+                new CancellationTokenSource();
+
+            var cancellingChunker =
+                new CancellingCandidateDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                            0,
+                            "Cancelled candidate chunk one."),
+
+                        new DocumentChunk(
+                            1,
+                            "Cancelled candidate chunk two.")
+                    ],
+                    cancellationTokenSource);
+
+            await using var reprocessingHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    chunker: cancellingChunker);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () =>
+                    reprocessingHarness.ProcessingService.ProcessAsync(
+                        documentId,
+                        cancellationTokenSource.Token));
+
+            Assert.True(
+                cancellingChunker.WasCalled);
+
+            Assert.True(
+                cancellingChunker.CandidateOutputProduced);
+
+            Document? recoveredDocument =
+                await reprocessingHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(recoveredDocument);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                recoveredDocument.Status);
+
+            Assert.Equal(
+                2L,
+                recoveredDocument.ProcessingGeneration);
+
+            Assert.Equal(
+                1L,
+                recoveredDocument.LastSuccessfulProcessingGeneration);
+
+            List<DocumentChunkEntity> preservedChunks =
+                await reprocessingHarness.GetChunksAsync(
+                    documentId);
+
+            Assert.NotEmpty(
+                preservedChunks);
+
+            string preservedIndexedText =
+                string.Join(
+                    "\n",
+                    preservedChunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Equal(
+                successfulIndexedText,
+                preservedIndexedText);
+
+            Assert.DoesNotContain(
+                "Cancelled candidate chunk one.",
+                preservedIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.DoesNotContain(
+                "Cancelled candidate chunk two.",
+                preservedIndexedText,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenCandidatePublicationFails_CanRetryAndReplacePreviousSuccessfulResult()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "candidate-retry-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                """
+            Previous successful processing result.
+
+            This result must be replaced by the successful retry.
+            """,
+                Encoding.UTF8);
+
+            Guid documentId;
+
+            await using (
+                var initialHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await initialHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Candidate Retry Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
+                await initialHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? successfulDocument =
+                    await initialHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(successfulDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    successfulDocument.Status);
+
+                Assert.Equal(
+                    1L,
+                    successfulDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    1L,
+                    successfulDocument.LastSuccessfulProcessingGeneration);
+            }
+
+            var failingChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                            0,
+                            "Failed candidate chunk."),
+
+                        new DocumentChunk(
+                            0,
+                            "Failed candidate duplicate order.")
+                    ]);
+
+            await using (
+                var failingHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey,
+                        chunker: failingChunker))
+            {
+                await Assert.ThrowsAnyAsync<Exception>(
+                    () =>
+                        failingHarness.ProcessingService.ProcessAsync(
+                            documentId));
+
+                Document? failedDocument =
+                    await failingHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(failedDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Failed,
+                    failedDocument.Status);
+
+                Assert.Equal(
+                    2L,
+                    failedDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    1L,
+                    failedDocument.LastSuccessfulProcessingGeneration);
+
+                Assert.True(
+                    failingChunker.WasCalled);
+
+                Assert.True(
+                    failingChunker.CandidateOutputProduced);
+            }
+
+            var successfulRetryChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                            0,
+                            "NEW SUCCESSFUL RESULT."),
+
+                        new DocumentChunk(
+                            1,
+                            "SECOND NEW SUCCESSFUL CHUNK.")
+                    ]);
+
+            await using var retryHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    chunker: successfulRetryChunker);
+
+            await retryHarness.ProcessingService.ProcessAsync(
+                documentId);
+
+            Document? retriedDocument =
+                await retryHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(retriedDocument);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                retriedDocument.Status);
+
+            Assert.Equal(
+                3L,
+                retriedDocument.ProcessingGeneration);
+
+            Assert.Equal(
+                3L,
+                retriedDocument.LastSuccessfulProcessingGeneration);
+
+            List<DocumentChunkEntity> retryChunks =
+                await retryHarness.GetChunksAsync(
+                    documentId);
+
+            Assert.Equal(
+                2,
+                retryChunks.Count);
+
+            Assert.All(
+                retryChunks,
+                chunk =>
+                    Assert.Equal(
+                        3L,
+                        chunk.ProcessingGeneration));
+
+            string retriedIndexedText =
+                string.Join(
+                    "\n",
+                    retryChunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Contains(
+                "NEW SUCCESSFUL RESULT.",
+                retriedIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.Contains(
+                "SECOND NEW SUCCESSFUL CHUNK.",
+                retriedIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.DoesNotContain(
+                "Previous successful processing result.",
+                retriedIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.DoesNotContain(
+                "Failed candidate chunk.",
+                retriedIndexedText,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ImportDocument_WhenValidCsvDocument_CompletesProcessingAndMakesDocumentSearchable()
     {
         string rootDirectory =
@@ -2597,6 +3200,111 @@ public sealed class DocumentImportIntegrationTests
             return _inner.DeleteAsync(
                 storedFilePath,
                 cancellationToken);
+        }
+    }
+
+    private sealed class FixedDocumentTextChunker
+        : IDocumentTextChunker
+    {
+        private readonly IReadOnlyList<DocumentChunk> _chunks;
+
+        public FixedDocumentTextChunker(
+            IReadOnlyList<DocumentChunk> chunks)
+        {
+            _chunks = chunks;
+        }
+
+        public bool WasCalled { get; private set; }
+
+        public bool CandidateOutputProduced { get; private set; }
+
+        public Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
+            DocumentTextNormalizationResult normalizationResult,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            WasCalled = true;
+            CandidateOutputProduced = true;
+
+            return Task.FromResult(
+                _chunks);
+        }
+    }
+
+    private sealed class CancellingCandidateDocumentTextChunker
+        : IDocumentTextChunker
+    {
+        private readonly IReadOnlyList<DocumentChunk> _chunks;
+        private readonly CancellationTokenSource _cancellationTokenSource;
+
+        public CancellingCandidateDocumentTextChunker(
+            IReadOnlyList<DocumentChunk> chunks,
+            CancellationTokenSource cancellationTokenSource)
+        {
+            _chunks = chunks;
+            _cancellationTokenSource = cancellationTokenSource;
+        }
+
+        public bool WasCalled { get; private set; }
+
+        public bool CandidateOutputProduced { get; private set; }
+
+        public Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
+            DocumentTextNormalizationResult normalizationResult,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            WasCalled = true;
+            CandidateOutputProduced = true;
+
+            return Task.FromResult<IReadOnlyList<DocumentChunk>>(
+                new CancellingDocumentChunkList(
+                    _chunks,
+                    _cancellationTokenSource));
+        }
+    }
+
+    private sealed class CancellingDocumentChunkList
+        : IReadOnlyList<DocumentChunk>
+    {
+        private readonly IReadOnlyList<DocumentChunk> _chunks;
+        private readonly CancellationTokenSource _cancellationTokenSource;
+
+        public CancellingDocumentChunkList(
+            IReadOnlyList<DocumentChunk> chunks,
+            CancellationTokenSource cancellationTokenSource)
+        {
+            _chunks = chunks;
+            _cancellationTokenSource = cancellationTokenSource;
+        }
+
+        public int Count =>
+            _chunks.Count;
+
+        public DocumentChunk this[int index] =>
+            _chunks[index];
+
+        public IEnumerator<DocumentChunk> GetEnumerator()
+        {
+            for (int index = 0;
+                 index < _chunks.Count;
+                 index++)
+            {
+                yield return _chunks[index];
+
+                if (index == 0)
+                {
+                    _cancellationTokenSource.Cancel();
+                }
+            }
+        }
+
+        System.Collections.IEnumerator
+            System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
         }
     }
 

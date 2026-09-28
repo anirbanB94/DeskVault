@@ -231,7 +231,7 @@ public sealed class SqliteDocumentSearchStoreTests
             1L,
             firstGeneration);
 
-        await processingStore.ReplaceChunksAsync(
+        await processingStore.PublishSuccessfulProcessingAsync(
             document.Id,
             firstGeneration,
             [
@@ -239,10 +239,6 @@ public sealed class SqliteDocumentSearchStoreTests
                     0,
                     "The authoritative-search-term is current content.")
             ]);
-
-        await processingStore.PublishSuccessfulProcessingAsync(
-            document.Id,
-            firstGeneration);
 
         long secondGeneration =
             await processingStore.AcquireProcessingGenerationAsync(
@@ -254,7 +250,8 @@ public sealed class SqliteDocumentSearchStoreTests
 
         await processingStore.PublishSuccessfulProcessingAsync(
             document.Id,
-            secondGeneration);
+            secondGeneration,
+            []);
 
         var searchStore =
             CreateSearchStore(connection);

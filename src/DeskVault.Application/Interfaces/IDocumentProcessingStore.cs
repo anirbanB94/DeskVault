@@ -18,6 +18,7 @@ public interface IDocumentProcessingStore
     Task PublishSuccessfulProcessingAsync(
         Guid documentId,
         long processingGeneration,
+        IReadOnlyList<DocumentChunk> chunks,
         CancellationToken cancellationToken = default);
 
     Task RecoverCancelledProcessingAsync(

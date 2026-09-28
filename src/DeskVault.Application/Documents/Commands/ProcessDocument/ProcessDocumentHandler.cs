@@ -101,21 +101,10 @@ public sealed class ProcessDocumentHandler
                     normalizationResult,
                     cancellationToken);
 
-            await _processingStore.ReplaceChunksAsync(
-                document.Id,
-                processingGeneration,
-                chunks,
-                cancellationToken);
-
-            await _processingStore.PublishProcessingStateAsync(
-                document.Id,
-                processingGeneration,
-                DocumentStatus.Indexed,
-                cancellationToken);
-
             await _processingStore.PublishSuccessfulProcessingAsync(
                 document.Id,
                 processingGeneration,
+                chunks,
                 cancellationToken);
 
             _logger.LogInformation(

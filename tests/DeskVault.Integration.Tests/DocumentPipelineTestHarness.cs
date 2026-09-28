@@ -56,7 +56,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         IEnumerable<IDocumentTextExtractor>? extractors = null,
         IHashService? hashService = null,
         Func<IStorageService, IStorageService>? importStorageDecorator = null,
-        Func<IDocumentRepository, IDocumentRepository>? importRepositoryDecorator = null)
+        Func<IDocumentRepository, IDocumentRepository>? importRepositoryDecorator = null,
+        IDocumentTextChunker? chunker = null)
     {
         ArgumentNullException.ThrowIfNull(encryptionKey);
 
@@ -121,7 +122,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 repository,
                 processingStore,
                 DocumentReader,
-                extractorResolver);
+                extractorResolver,
+                chunker);
 
         ProcessingService =
             new DocumentProcessingService(
@@ -227,15 +229,17 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         SqliteDocumentRepository repository,
         SqliteDocumentProcessingStore processingStore,
         EncryptedDocumentReader reader,
-        DocumentTextExtractorResolver extractorResolver)
+        DocumentTextExtractorResolver extractorResolver,
+        IDocumentTextChunker? chunker)
     {
         return new ProcessDocumentHandler(
             repository,
             reader,
             extractorResolver,
             new DocumentTextNormalizer(),
-            new DocumentTextChunker(
-                maxChunkSize: 4000),
+            chunker ??
+                new DocumentTextChunker(
+                    maxChunkSize: 4000),
             processingStore,
             NullLogger<ProcessDocumentHandler>.Instance);
     }
