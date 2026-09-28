@@ -1789,6 +1789,136 @@ public sealed class DocumentImportIntegrationTests
     }
 
     [Fact]
+    public async Task ImportDocument_WhenProcessingFails_CanBeProcessedAgainSuccessfully()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "processing-retry-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "DeskVault processing retry integration test.",
+                Encoding.UTF8);
+
+            Guid documentId;
+
+            var failingExtractor =
+                new FailingDocumentTextExtractor();
+
+            await using (
+                var failingHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey,
+                        [failingExtractor]))
+            {
+                ImportDocumentResult importResult =
+                    await failingHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Processing Retry Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    () =>
+                        failingHarness.ProcessingService.ProcessAsync(
+                            documentId));
+
+                Document? failedDocument =
+                    await failingHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(failedDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Failed,
+                    failedDocument.Status);
+
+                Assert.Equal(
+                    1L,
+                    failedDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    0L,
+                    failedDocument.LastSuccessfulProcessingGeneration);
+
+                Assert.Empty(
+                    await failingHarness.GetChunksAsync(
+                        documentId));
+            }
+
+            await using var retryHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            await retryHarness.ProcessingService.ProcessAsync(
+                documentId);
+
+            Document? retriedDocument =
+                await retryHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(retriedDocument);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                retriedDocument.Status);
+
+            Assert.Equal(
+                2L,
+                retriedDocument.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                retriedDocument.LastSuccessfulProcessingGeneration);
+
+            Assert.NotEmpty(
+                await retryHarness.GetChunksAsync(
+                    documentId));
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ImportDocument_WhenValidCsvDocument_CompletesProcessingAndMakesDocumentSearchable()
     {
         string rootDirectory =
