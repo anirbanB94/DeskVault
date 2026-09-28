@@ -70,6 +70,12 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -132,6 +138,12 @@ public sealed class ImportDocumentHandlerTests
             x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -253,6 +265,12 @@ public sealed class ImportDocumentHandlerTests
                 "test-hash"),
             Times.Once);
 
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
         repository.Verify(
             x => x.AddAsync(
                 It.IsAny<Document>(),
@@ -303,6 +321,12 @@ public sealed class ImportDocumentHandlerTests
                 "duplicate-hash"))
             .ReturnsAsync("stored/test.dvault");
 
+        storageService
+            .Setup(x => x.DeleteAsync(
+                "stored/test.dvault",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
         repository
             .Setup(x => x.AddAsync(
                 It.IsAny<Document>(),
@@ -344,6 +368,12 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>(),
                 "duplicate-hash"),
+            Times.Once);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                "stored/test.dvault",
+                CancellationToken.None),
             Times.Once);
 
         repository.Verify(
@@ -442,6 +472,12 @@ public sealed class ImportDocumentHandlerTests
             DocumentStatus.Imported,
             addedDocument.Status);
 
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
         repository.Verify(
             x => x.AddAsync(
                 It.IsAny<Document>(),
@@ -492,13 +528,22 @@ public sealed class ImportDocumentHandlerTests
                 "test-hash"))
             .ReturnsAsync("stored/test.txt");
 
+        storageService
+            .Setup(x => x.DeleteAsync(
+                "stored/test.txt",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var persistenceException =
+            new InvalidOperationException(
+                "Metadata persistence failed.");
+
         repository
             .Setup(x => x.AddAsync(
                 It.IsAny<Document>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
-                new InvalidOperationException(
-                    "Metadata persistence failed."));
+                persistenceException);
 
         var handler =
             CreateHandler(
@@ -513,9 +558,15 @@ public sealed class ImportDocumentHandlerTests
                 "Test Document");
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () =>
-                handler.HandleAsync(command));
+
+        var exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    handler.HandleAsync(command));
+
+        Assert.Same(
+            persistenceException,
+            exception);
 
         storageService.Verify(
             x => x.StoreAsync(
@@ -525,10 +576,202 @@ public sealed class ImportDocumentHandlerTests
                 "test-hash"),
             Times.Once);
 
+        storageService.Verify(
+            x => x.DeleteAsync(
+                "stored/test.txt",
+                CancellationToken.None),
+            Times.Once);
+
         repository.Verify(
             x => x.AddAsync(
                 It.IsAny<Document>(),
                 It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenImportIsCancelledAfterStorageSucceeds_CleansUpStoredArtifact()
+    {
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        validator
+            .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-hash");
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                "test-hash",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                "test-hash"))
+            .ReturnsAsync("stored/test.txt");
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                "stored/test.txt",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (_, _) =>
+                {
+                    cancellationTokenSource.Cancel();
+                })
+            .ThrowsAsync(
+                new OperationCanceledException(
+                    cancellationTokenSource.Token));
+
+        var handler =
+            CreateHandler(
+                validator.Object,
+                hashService.Object,
+                storageService.Object,
+                repository);
+
+        var command =
+            new ImportDocumentCommand(
+                "C:\\Documents\\test.txt",
+                "Test Document");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () =>
+                handler.HandleAsync(
+                    command,
+                    cancellationTokenSource.Token));
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                "stored/test.txt",
+                CancellationToken.None),
+            Times.Once);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCleanupFailsAfterMetadataPersistenceFailure_PropagatesOriginalFailure()
+    {
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        validator
+            .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-hash");
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                "test-hash",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                "test-hash"))
+            .ReturnsAsync("stored/test.txt");
+
+        var persistenceException =
+            new InvalidOperationException(
+                "Metadata persistence failed.");
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                persistenceException);
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                "stored/test.txt",
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new IOException(
+                    "Cleanup failed."));
+
+        var handler =
+            CreateHandler(
+                validator.Object,
+                hashService.Object,
+                storageService.Object,
+                repository);
+
+        var command =
+            new ImportDocumentCommand(
+                "C:\\Documents\\test.txt",
+                "Test Document");
+
+        var exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    handler.HandleAsync(command));
+
+        Assert.Same(
+            persistenceException,
+            exception);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                "stored/test.txt",
+                CancellationToken.None),
             Times.Once);
     }
 
@@ -596,6 +839,12 @@ public sealed class ImportDocumentHandlerTests
             result.Status);
 
         Assert.Null(result.DocumentId);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
 
         repository.Verify(
             x => x.AddAsync(
@@ -669,6 +918,12 @@ public sealed class ImportDocumentHandlerTests
             result.Status);
 
         Assert.Null(result.DocumentId);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
 
         repository.Verify(
             x => x.AddAsync(

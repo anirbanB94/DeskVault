@@ -80,9 +80,13 @@ public sealed class ImportDocumentHandler
                     command.FilePath)
                 : command.DisplayName;
 
+        string? storedFilePath = null;
+
+        bool importCompleted = false;
+
         try
         {
-            var storedFilePath =
+            storedFilePath =
                 await _storageService.StoreAsync(
                     command.FilePath,
                     documentId,
@@ -100,6 +104,8 @@ public sealed class ImportDocumentHandler
             await _repository.AddAsync(
                 document,
                 cancellationToken);
+
+            importCompleted = true;
 
             _logger.LogInformation(
                 LogMessages.DocumentImportCompleted);
@@ -141,6 +147,32 @@ public sealed class ImportDocumentHandler
                 ImportDocumentResultStatus.StorageFailed,
                 null,
                 ex.Message);
+        }
+        finally
+        {
+            if (!importCompleted &&
+                storedFilePath is not null)
+            {
+                await TryCleanupStoredArtifactAsync(
+                    storedFilePath);
+            }
+        }
+    }
+
+    private async Task TryCleanupStoredArtifactAsync(
+        string storedFilePath)
+    {
+        try
+        {
+            await _storageService.DeleteAsync(
+                storedFilePath,
+                CancellationToken.None);
+        }
+        catch (Exception cleanupException)
+        {
+            _logger.LogError(
+                cleanupException,
+                LogMessages.DocumentImportCleanupFailed);
         }
     }
 }
