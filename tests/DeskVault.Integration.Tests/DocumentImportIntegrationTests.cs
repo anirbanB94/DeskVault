@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
@@ -268,6 +269,419 @@ public sealed class DocumentImportIntegrationTests
                             "enterprise architecture",
                             StringComparison.OrdinalIgnoreCase));
             }
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenProcessingExceedsResourceLimit_MarksFailedAndCanBeRetried()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "resource-limit-test.txt");
+
+            string sourceText =
+                """
+            DeskVault resource limit integration test.
+
+            This document must exceed the configured processing boundary.
+            """;
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            Guid documentId;
+
+            await using (
+                var limitedHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey,
+                        processingOptions:
+                            new DocumentProcessingOptions
+                            {
+                                MaxDecryptedDocumentBytes = 16
+                            }))
+            {
+                ImportDocumentResult importResult =
+                    await limitedHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Resource Limit Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
+                ResourceLimitExceededException exception =
+                    await Assert.ThrowsAsync<
+                        ResourceLimitExceededException>(
+                        () =>
+                            limitedHarness.ProcessingService.ProcessAsync(
+                                documentId));
+
+                Assert.Equal(
+                    16L,
+                    exception.LimitBytes);
+
+                Document? failedDocument =
+                    await limitedHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(
+                    failedDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Failed,
+                    failedDocument.Status);
+
+                Assert.Equal(
+                    1L,
+                    failedDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    0L,
+                    failedDocument.LastSuccessfulProcessingGeneration);
+
+                Assert.True(
+                    File.Exists(
+                        failedDocument.StoredFilePath));
+
+                List<DocumentChunkEntity> chunks =
+                    await limitedHarness.GetChunksAsync(
+                        documentId);
+
+                Assert.Empty(chunks);
+            }
+
+            await using (
+                var retryHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                await retryHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? retriedDocument =
+                    await retryHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(
+                    retriedDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    retriedDocument.Status);
+
+                Assert.Equal(
+                    2L,
+                    retriedDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    2L,
+                    retriedDocument.LastSuccessfulProcessingGeneration);
+
+                List<DocumentChunkEntity> chunks =
+                    await retryHarness.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(chunks);
+
+                string indexedText =
+                    string.Join(
+                        "\n",
+                        chunks
+                            .OrderBy(
+                                chunk => chunk.Order)
+                            .Select(
+                                chunk => chunk.Text));
+
+                Assert.Contains(
+                    "resource limit integration test",
+                    indexedText,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenProcessingIsWithinResourceLimit_CompletesSuccessfully()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "resource-limit-success-test.txt");
+
+            string sourceText =
+                """
+            DeskVault resource boundary success test.
+
+            This document must remain fully processable at the configured boundary.
+            """;
+
+            byte[] sourceBytes =
+                Encoding.UTF8.GetBytes(
+                    sourceText);
+
+            await File.WriteAllBytesAsync(
+                sourceFilePath,
+                sourceBytes);
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    processingOptions:
+                        new DocumentProcessingOptions
+                        {
+                            MaxDecryptedDocumentBytes =
+                                sourceBytes.Length
+                        });
+
+            ImportDocumentResult importResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Resource Limit Success Test Document"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Guid documentId =
+                importResult.DocumentId.Value;
+
+            await harness.ProcessingService.ProcessAsync(
+                documentId);
+
+            Document? document =
+                await harness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(document);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                document.Status);
+
+            Assert.Equal(
+                1L,
+                document.ProcessingGeneration);
+
+            Assert.Equal(
+                1L,
+                document.LastSuccessfulProcessingGeneration);
+
+            List<DocumentChunkEntity> chunks =
+                await harness.GetChunksAsync(
+                    documentId);
+
+            Assert.NotEmpty(chunks);
+
+            string indexedText =
+                string.Join(
+                    "\n",
+                    chunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Contains(
+                "resource boundary success test",
+                indexedText,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenLargeDocumentExceedsResourceLimit_MarksFailedWithoutUnboundedProcessing()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        const int resourceLimitBytes = 1024 * 1024;
+        const int documentSizeBytes = (1024 * 1024) + 1;
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "large-resource-limit-test.txt");
+
+            byte[] sourceBytes =
+                new byte[documentSizeBytes];
+
+            Array.Fill(
+                sourceBytes,
+                (byte)'A');
+
+            await File.WriteAllBytesAsync(
+                sourceFilePath,
+                sourceBytes);
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    processingOptions:
+                        new DocumentProcessingOptions
+                        {
+                            MaxDecryptedDocumentBytes =
+                                resourceLimitBytes
+                        });
+
+            ImportDocumentResult importResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Large Resource Limit Test Document"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Guid documentId =
+                importResult.DocumentId.Value;
+
+            ResourceLimitExceededException exception =
+                await Assert.ThrowsAsync<
+                    ResourceLimitExceededException>(
+                    () =>
+                        harness.ProcessingService.ProcessAsync(
+                            documentId));
+
+            Assert.Equal(
+                resourceLimitBytes,
+                exception.LimitBytes);
+
+            Assert.Equal(
+                documentSizeBytes,
+                exception.AttemptedBytes);
+
+            Document? document =
+                await harness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(document);
+
+            Assert.Equal(
+                DocumentStatus.Failed,
+                document.Status);
+
+            Assert.Equal(
+                1L,
+                document.ProcessingGeneration);
+
+            Assert.Equal(
+                0L,
+                document.LastSuccessfulProcessingGeneration);
+
+            List<DocumentChunkEntity> chunks =
+                await harness.GetChunksAsync(
+                    documentId);
+
+            Assert.Empty(chunks);
+
+            Assert.True(
+                File.Exists(
+                    document.StoredFilePath));
         }
         finally
         {

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 
@@ -111,9 +112,19 @@ public sealed class DocumentEncryptionService
     public async Task DecryptAsync(
         Stream source,
         Stream destination,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        long? maximumPlaintextBytes = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (maximumPlaintextBytes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumPlaintextBytes),
+                "Maximum plaintext bytes must be greater than zero.");
+        }
+
+        long totalPlaintextBytes = 0L;
 
         _logger.LogInformation(
             LogMessages.DocumentDecryptionStarted);
@@ -150,6 +161,15 @@ public sealed class DocumentEncryptionService
                         "The encrypted document contains an invalid chunk.");
                 }
 
+                if (maximumPlaintextBytes.HasValue &&
+                    totalPlaintextBytes >
+                        maximumPlaintextBytes.Value - ciphertextLength)
+                {
+                    throw new ResourceLimitExceededException(
+                        maximumPlaintextBytes.Value,
+                        totalPlaintextBytes + ciphertextLength);
+                }
+
                 await ReadExactlyAsync(
                     source,
                     nonce,
@@ -180,6 +200,8 @@ public sealed class DocumentEncryptionService
                 await destination.WriteAsync(
                     plaintext,
                     cancellationToken);
+
+                totalPlaintextBytes += ciphertextLength;
             }
 
             _logger.LogInformation(

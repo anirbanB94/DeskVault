@@ -1,12 +1,30 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Parsing.Csv;
-using System.Text;
+using DeskVault.Application.Documents.Processing;
 
 namespace DeskVault.Application.Documents.Extraction.CSVDocument;
 
 public sealed class CsvDocumentTextExtractor
     : IDocumentTextExtractor
 {
-    public bool CanExtract(string fileName)
+    private readonly long _maxProcessedTextBytes;
+
+    public CsvDocumentTextExtractor()
+        : this(new DocumentProcessingOptions())
+    {
+    }
+
+    public CsvDocumentTextExtractor(
+        DocumentProcessingOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        _maxProcessedTextBytes =
+            options.MaxProcessedTextBytes;
+    }
+
+    public bool CanExtract(
+        string fileName)
     {
         return string.Equals(
             Path.GetExtension(fileName),
@@ -19,6 +37,11 @@ public sealed class CsvDocumentTextExtractor
         string fileName,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(
+            documentStream);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         var parser =
             new CsvDocumentParser(
                 new CsvParsingOptions
@@ -33,8 +56,9 @@ public sealed class CsvDocumentTextExtractor
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var builder =
-            new StringBuilder();
+        var output =
+            new DocumentProcessingTextBuffer(
+                _maxProcessedTextBytes);
 
         for (int rowIndex = 0;
              rowIndex < document.Rows.Count;
@@ -49,31 +73,52 @@ public sealed class CsvDocumentTextExtractor
                  columnIndex < document.Columns.Count;
                  columnIndex++)
             {
-                if (columnIndex > 0)
+                cancellationToken.ThrowIfCancellationRequested();
+
+                string columnName =
+                    document.Columns[columnIndex].Header;
+
+                output.Append(
+                    columnName);
+
+                output.Append(
+                    ": ");
+
+                string value =
+                    columnIndex < row.Count
+                        ? row[columnIndex]
+                        : string.Empty;
+
+                bool isLastColumn =
+                    columnIndex ==
+                    document.Columns.Count - 1;
+
+                bool isLastRow =
+                    rowIndex ==
+                    document.Rows.Count - 1;
+
+                if (isLastColumn && isLastRow)
                 {
-                    builder.AppendLine();
+                    output.Append(
+                        value);
                 }
-
-                builder.Append(
-                    document.Columns[columnIndex].Header);
-
-                builder.Append(": ");
-
-                if (columnIndex < row.Count)
+                else
                 {
-                    builder.Append(
-                        row[columnIndex]);
+                    output.AppendLine(
+                        value);
                 }
             }
 
-            if (rowIndex < document.Rows.Count - 1)
+            if (rowIndex <
+                document.Rows.Count - 1)
             {
-                builder.AppendLine();
-                builder.AppendLine();
+                output.AppendLine();
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         return new DocumentTextExtractionResult(
-            builder.ToString());
+            output.ToString());
     }
 }

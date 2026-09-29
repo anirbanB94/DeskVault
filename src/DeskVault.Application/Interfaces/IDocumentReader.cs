@@ -1,8 +1,9 @@
-﻿namespace DeskVault.Application.Interfaces;
+namespace DeskVault.Application.Interfaces;
 
 public interface IDocumentReader
 {
     Task<Stream> OpenReadAsync(
         string storedFilePath,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        long? maximumPlaintextBytes = null);
 }

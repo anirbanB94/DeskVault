@@ -1,6 +1,8 @@
 using System.Text;
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.YamlDocument;
+using DeskVault.Application.Documents.Processing;
 
 namespace DeskVault.Application.Tests;
 
@@ -11,13 +13,16 @@ public sealed class YamlDocumentTextExtractorTests
     [InlineData("document.YAML")]
     [InlineData("document.Yaml")]
     [InlineData("document.yMl")]
-    public void CanExtract_WhenFileIsYaml_ReturnsTrue(string fileName)
+    public void CanExtract_WhenFileIsYaml_ReturnsTrue(
+        string fileName)
     {
         // Arrange
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.True(result);
@@ -28,13 +33,16 @@ public sealed class YamlDocumentTextExtractorTests
     [InlineData("document.YML")]
     [InlineData("document.Yml")]
     [InlineData("document.yMl")]
-    public void CanExtract_WhenFileIsYml_ReturnsTrue(string fileName)
+    public void CanExtract_WhenFileIsYml_ReturnsTrue(
+        string fileName)
     {
         // Arrange
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.True(result);
@@ -44,13 +52,16 @@ public sealed class YamlDocumentTextExtractorTests
     [InlineData("document.txt")]
     [InlineData("document.json")]
     [InlineData("document.yaml.txt")]
-    public void CanExtract_WhenFileIsNotYaml_ReturnsFalse(string fileName)
+    public void CanExtract_WhenFileIsNotYaml_ReturnsFalse(
+        string fileName)
     {
         // Arrange
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.False(result);
@@ -74,14 +85,19 @@ public sealed class YamlDocumentTextExtractorTests
             enabled: true
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -102,14 +118,19 @@ public sealed class YamlDocumentTextExtractorTests
               encrypted: true
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -130,14 +151,19 @@ public sealed class YamlDocumentTextExtractorTests
               [1]: extraction
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -164,14 +190,19 @@ public sealed class YamlDocumentTextExtractorTests
                 type: json
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -190,14 +221,19 @@ public sealed class YamlDocumentTextExtractorTests
             features:
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -220,32 +256,44 @@ public sealed class YamlDocumentTextExtractorTests
               name: second
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
     public async Task ExtractAsync_WhenScalarRoot_ReturnsScalarText()
     {
         // Arrange
-        const string yaml = "DeskVault";
+        const string yaml =
+            "DeskVault";
 
-        const string expected = "DeskVault";
+        const string expected =
+            "DeskVault";
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -262,14 +310,19 @@ public sealed class YamlDocumentTextExtractorTests
             description: null
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -297,14 +350,19 @@ public sealed class YamlDocumentTextExtractorTests
                 encrypted: true
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -319,17 +377,24 @@ public sealed class YamlDocumentTextExtractorTests
               - extraction
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult first =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         DocumentTextExtractionResult second =
-            await ExtractAsync(extractor, yaml);
+            await ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
-        Assert.Equal(first.Text, second.Text);
+        Assert.Equal(
+            first.Text,
+            second.Text);
     }
 
     [Fact]
@@ -343,11 +408,14 @@ public sealed class YamlDocumentTextExtractorTests
                encrypted: true
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(extractor, yaml);
+            ExtractAsync(
+                extractor,
+                yaml);
 
         // Assert
         await Assert.ThrowsAnyAsync<YamlDotNet.Core.YamlException>(
@@ -363,9 +431,12 @@ public sealed class YamlDocumentTextExtractorTests
             name: DeskVault
             """;
 
-        YamlDocumentTextExtractor extractor = new();
+        YamlDocumentTextExtractor extractor =
+            new();
 
-        using CancellationTokenSource cancellationTokenSource = new();
+        using CancellationTokenSource cancellationTokenSource =
+            new();
+
         cancellationTokenSource.Cancel();
 
         // Act
@@ -380,6 +451,83 @@ public sealed class YamlDocumentTextExtractorTests
             () => extractionTask);
     }
 
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextExceedsLimit_ThrowsResourceLimitExceededException()
+    {
+        // Arrange
+        const string yaml =
+            """
+            name: DeskVault
+            version: 1.0
+            enabled: true
+            """;
+
+        var extractor =
+            new YamlDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes = 10
+                });
+
+        // Act
+        Task<DocumentTextExtractionResult> extractionTask =
+            ExtractAsync(
+                extractor,
+                yaml);
+
+        // Assert
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () => extractionTask);
+
+        Assert.Equal(
+            10,
+            exception.LimitBytes);
+
+        Assert.True(
+            exception.AttemptedBytes >
+            exception.LimitBytes);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextIsWithinLimit_ReturnsCompleteText()
+    {
+        // Arrange
+        const string yaml =
+            """
+            name: DeskVault
+            """;
+
+        const string expected =
+            """
+            name: DeskVault
+            """;
+
+        long maximumProcessedTextBytes =
+            Encoding.UTF8.GetByteCount(
+                expected +
+                Environment.NewLine);
+
+        var extractor =
+            new YamlDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes =
+                        maximumProcessedTextBytes
+                });
+
+        // Act
+        DocumentTextExtractionResult result =
+            await ExtractAsync(
+                extractor,
+                yaml);
+
+        // Assert
+        Assert.Equal(
+            expected,
+            result.Text);
+    }
+
     private static async Task<DocumentTextExtractionResult> ExtractAsync(
         YamlDocumentTextExtractor extractor,
         string yaml,
@@ -387,7 +535,9 @@ public sealed class YamlDocumentTextExtractorTests
     {
         // Arrange
         await using MemoryStream stream =
-            new(Encoding.UTF8.GetBytes(yaml));
+            new(
+                Encoding.UTF8.GetBytes(
+                    yaml));
 
         // Act
         return await extractor.ExtractAsync(

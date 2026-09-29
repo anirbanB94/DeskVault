@@ -1,5 +1,7 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
+using DeskVault.Application.Documents.Processing;
 
 namespace DeskVault.Application.Tests;
 
@@ -220,5 +222,83 @@ public sealed class DocumentTextNormalizerTests
                 normalizer.NormalizeAsync(
                     extractionResult,
                     cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task NormalizeAsync_WhenNormalizedTextExceedsLimit_ThrowsResourceLimitExceededException()
+    {
+        const string text = "\u0958";
+
+        var extractionResult =
+            new DocumentTextExtractionResult(
+                text);
+
+        var options =
+            new DocumentProcessingOptions
+            {
+                MaxProcessedTextBytes = 3
+            };
+
+        var normalizer =
+            new DocumentTextNormalizer(
+                options);
+
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () =>
+                    normalizer.NormalizeAsync(
+                        extractionResult));
+
+        Assert.Equal(
+            3,
+            exception.LimitBytes);
+
+        Assert.Equal(
+            6,
+            exception.AttemptedBytes);
+    }
+
+    [Fact]
+    public async Task NormalizeAsync_WhenNormalizedTextIsWithinLimit_ReturnsNormalizedText()
+    {
+        const string text = "\u0958";
+        const string expected = "\u0915\u093c";
+
+        var extractionResult =
+            new DocumentTextExtractionResult(
+                text);
+
+        var options =
+            new DocumentProcessingOptions
+            {
+                MaxProcessedTextBytes = 6
+            };
+
+        var normalizer =
+            new DocumentTextNormalizer(
+                options);
+
+        DocumentTextNormalizationResult result =
+            await normalizer.NormalizeAsync(
+                extractionResult);
+
+        Assert.Equal(
+            expected,
+            result.Text);
+    }
+
+    [Fact]
+    public async Task NormalizeAsync_WhenProcessedTextLimitIsNonPositive_ThrowsArgumentOutOfRangeException()
+    {
+        var options =
+            new DocumentProcessingOptions
+            {
+                MaxProcessedTextBytes = 0
+            };
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () =>
+                new DocumentTextNormalizer(
+                    options));
     }
 }

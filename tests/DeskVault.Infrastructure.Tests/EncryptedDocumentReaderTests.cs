@@ -1,7 +1,8 @@
-using System.Security.Cryptography;
-using System.Text;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -48,6 +49,55 @@ public sealed class EncryptedDocumentReaderTests
             Assert.Equal(
                 originalContent,
                 memory.ToArray());
+        }
+        finally
+        {
+            DeleteIfExists(
+                filePath);
+        }
+    }
+
+    [Fact]
+    public async Task OpenReadAsync_WhenPlaintextExceedsMaximum_ThrowsResourceLimitExceededException()
+    {
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "DeskVault encrypted document reader resource limit test.");
+
+        string filePath =
+            CreateTempFilePath();
+
+        DocumentEncryptionService encryptionService =
+            CreateEncryptionService();
+
+        EncryptedDocumentReader reader =
+            CreateReader(
+                encryptionService);
+
+        try
+        {
+            await CreateEncryptedFileAsync(
+                filePath,
+                originalContent,
+                encryptionService);
+
+            long maximumPlaintextBytes =
+                originalContent.Length - 1;
+
+            ResourceLimitExceededException exception =
+                await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                    () =>
+                        reader.OpenReadAsync(
+                            filePath,
+                            maximumPlaintextBytes: maximumPlaintextBytes));
+
+            Assert.Equal(
+                maximumPlaintextBytes,
+                exception.LimitBytes);
+
+            Assert.Equal(
+                originalContent.Length,
+                exception.AttemptedBytes);
         }
         finally
         {

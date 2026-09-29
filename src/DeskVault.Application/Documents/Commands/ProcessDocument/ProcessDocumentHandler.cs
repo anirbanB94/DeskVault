@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
@@ -16,6 +17,7 @@ public sealed class ProcessDocumentHandler
     private readonly IDocumentTextNormalizer _normalizer;
     private readonly IDocumentTextChunker _chunker;
     private readonly IDocumentProcessingStore _processingStore;
+    private readonly long _maxDecryptedDocumentBytes;
     private readonly ILogger<ProcessDocumentHandler> _logger;
 
     public ProcessDocumentHandler(
@@ -25,14 +27,25 @@ public sealed class ProcessDocumentHandler
         IDocumentTextNormalizer normalizer,
         IDocumentTextChunker chunker,
         IDocumentProcessingStore processingStore,
+        DocumentProcessingOptions processingOptions,
         ILogger<ProcessDocumentHandler> logger)
     {
+        ArgumentNullException.ThrowIfNull(processingOptions);
+
+        if (processingOptions.MaxDecryptedDocumentBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(processingOptions),
+                "Maximum decrypted document bytes must be greater than zero.");
+        }
+
         _documentRepository = documentRepository;
         _documentReader = documentReader;
         _extractorResolver = extractorResolver;
         _normalizer = normalizer;
         _chunker = chunker;
         _processingStore = processingStore;
+        _maxDecryptedDocumentBytes = processingOptions.MaxDecryptedDocumentBytes;
         _logger = logger;
     }
 
@@ -83,7 +96,8 @@ public sealed class ProcessDocumentHandler
             await using var documentStream =
                 await _documentReader.OpenReadAsync(
                     document.StoredFilePath,
-                    cancellationToken);
+                    cancellationToken,
+                    _maxDecryptedDocumentBytes);
 
             var extractionResult =
                 await extractor.ExtractAsync(

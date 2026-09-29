@@ -88,6 +88,17 @@ internal static class HostConfigurator
             configuration.GetSection(
                 SearchOptions.SectionName));
 
+        services.Configure<DocumentProcessingOptions>(
+            configuration.GetSection(
+                DocumentProcessingOptions.SectionName));
+
+        services.AddSingleton(
+            provider =>
+                provider
+                    .GetRequiredService<
+                        IOptions<DocumentProcessingOptions>>()
+                    .Value);
+
         // Application
         services.AddApplication();
 
