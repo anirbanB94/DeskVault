@@ -75,9 +75,11 @@ The processing workflow is responsible for publishing a coherent derived
 result. Derived chunks must be replaceable so that retries or repeated
 processing do not accumulate duplicate content.
 
-The exact processing orchestration and lifecycle rules are defined by
-ADR-0008. This ADR establishes only the persistence responsibility and
-SQLite boundary for those processing results.
+The processing orchestration and semantic-processing boundary are described
+by ADR-0008. The authoritative processing lifecycle, processing-generation
+fencing, cancellation and failure behavior, and retry/idempotency rules are
+defined by ADR-0010. This ADR establishes only the persistence responsibility
+and SQLite boundary for those processing results.
 
 The existing Application/Infrastructure separation remains unchanged:
 

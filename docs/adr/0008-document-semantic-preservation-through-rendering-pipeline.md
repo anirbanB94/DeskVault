@@ -741,7 +741,15 @@ This prevents document-processing components from unexpectedly closing resources
 
 ## Document Processing Lifecycle
 
-The semantic-preservation boundary also governs the lifecycle of application-level document processing.
+The semantic-preservation boundary also defines the separation between
+application-level document processing and document rendering.
+
+The processing lifecycle described in this section represents the conceptual
+processing-state model and its separation from the document and presentation
+lifecycles. The authoritative reliability rules for processing attempts,
+including generation acquisition, stale-attempt fencing, processing-state
+publication, cancellation recovery, failure publication, and atomic
+successful-result publication, are governed by ADR-0010.
 
 Document lifecycle and processing lifecycle are separate concepts.
 

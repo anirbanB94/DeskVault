@@ -3,6 +3,7 @@ using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
@@ -1085,8 +1086,21 @@ public sealed class DocumentImportIntegrationTests
 
             firstExtractor.ReleaseExtraction();
 
-            await Assert.ThrowsAnyAsync<Exception>(
-                () => firstProcessingTask);
+            StaleProcessingGenerationException staleException =
+                await Assert.ThrowsAsync<StaleProcessingGenerationException>(
+                    () => firstProcessingTask);
+
+            Assert.Equal(
+                documentId,
+                staleException.DocumentId);
+
+            Assert.Equal(
+                1L,
+                staleException.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                staleException.CurrentGeneration);
 
             Document? finalDocument =
                 await secondHarness.GetDocumentAsync(
@@ -1156,6 +1170,372 @@ public sealed class DocumentImportIntegrationTests
         finally
         {
             if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenOlderProcessingAttemptIsCancelledAfterNewerAttemptSucceeds_DoesNotRecoverNewerProcessingState()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(
+            rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "concurrent-cancellation-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "Original source content.",
+                Encoding.UTF8);
+
+            Guid documentId;
+
+            await using (
+                var setupHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await setupHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Concurrent Cancellation Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+            }
+
+            var firstExtractor =
+                new BlockingDocumentTextExtractor(
+                    "Stale generation one content.");
+
+            var secondExtractor =
+                new ImmediateDocumentTextExtractor(
+                    "Authoritative generation two content.");
+
+            await using var firstHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    [firstExtractor]);
+
+            await using var secondHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    [secondExtractor]);
+
+            using var firstCancellation =
+                new CancellationTokenSource();
+
+            Task firstProcessingTask =
+                firstHarness.ProcessingService.ProcessAsync(
+                    documentId,
+                    firstCancellation.Token);
+
+            await firstExtractor.WaitUntilExtractionStartedAsync();
+
+            Task secondProcessingTask =
+                secondHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+            await secondProcessingTask;
+
+            Document? afterSecondProcessing =
+                await secondHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(afterSecondProcessing);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                afterSecondProcessing.Status);
+
+            Assert.Equal(
+                2L,
+                afterSecondProcessing.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                afterSecondProcessing.LastSuccessfulProcessingGeneration);
+
+            firstCancellation.Cancel();
+
+            StaleProcessingGenerationException staleException =
+                await Assert.ThrowsAsync<StaleProcessingGenerationException>(
+                    () => firstProcessingTask);
+
+            Assert.Equal(
+                documentId,
+                staleException.DocumentId);
+
+            Assert.Equal(
+                1L,
+                staleException.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                staleException.CurrentGeneration);
+
+            Document? finalDocument =
+                await secondHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(finalDocument);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                finalDocument.Status);
+
+            Assert.Equal(
+                2L,
+                finalDocument.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                finalDocument.LastSuccessfulProcessingGeneration);
+
+            List<DocumentChunkEntity> finalChunks =
+                await secondHarness.GetChunksAsync(
+                    documentId);
+
+            string finalIndexedText =
+                string.Join(
+                    "\n",
+                    finalChunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Contains(
+                "Authoritative generation two content.",
+                finalIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.DoesNotContain(
+                "Stale generation one content.",
+                finalIndexedText,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenOlderProcessingAttemptFailsAfterNewerAttemptSucceeds_DoesNotOverwriteNewerProcessingState()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(
+            rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "concurrent-failure-test.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                "Original source content.",
+                Encoding.UTF8);
+
+            Guid documentId;
+
+            await using (
+                var setupHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await setupHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Concurrent Failure Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+            }
+
+            var firstExtractor =
+                new BlockingFailingDocumentTextExtractor(
+                    "Stale generation one processing failure.");
+
+            var secondExtractor =
+                new ImmediateDocumentTextExtractor(
+                    "Authoritative generation two content.");
+
+            await using var firstHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    [firstExtractor]);
+
+            await using var secondHarness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    [secondExtractor]);
+
+            Task firstProcessingTask =
+                firstHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+            await firstExtractor.WaitUntilExtractionStartedAsync();
+
+            Task secondProcessingTask =
+                secondHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+            await secondProcessingTask;
+
+            Document? afterSecondProcessing =
+                await secondHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(afterSecondProcessing);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                afterSecondProcessing.Status);
+
+            Assert.Equal(
+                2L,
+                afterSecondProcessing.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                afterSecondProcessing.LastSuccessfulProcessingGeneration);
+
+            firstExtractor.ReleaseFailure();
+
+            StaleProcessingGenerationException staleException =
+                await Assert.ThrowsAsync<StaleProcessingGenerationException>(
+                    () => firstProcessingTask);
+
+            Assert.Equal(
+                documentId,
+                staleException.DocumentId);
+
+            Assert.Equal(
+                1L,
+                staleException.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                staleException.CurrentGeneration);
+
+            Document? finalDocument =
+                await secondHarness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(finalDocument);
+
+            Assert.Equal(
+                DocumentStatus.Available,
+                finalDocument.Status);
+
+            Assert.Equal(
+                2L,
+                finalDocument.ProcessingGeneration);
+
+            Assert.Equal(
+                2L,
+                finalDocument.LastSuccessfulProcessingGeneration);
+
+            List<DocumentChunkEntity> finalChunks =
+                await secondHarness.GetChunksAsync(
+                    documentId);
+
+            string finalIndexedText =
+                string.Join(
+                    "\n",
+                    finalChunks
+                        .OrderBy(
+                            chunk => chunk.Order)
+                        .Select(
+                            chunk => chunk.Text));
+
+            Assert.Contains(
+                "Authoritative generation two content.",
+                finalIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.DoesNotContain(
+                "Stale generation one processing failure.",
+                finalIndexedText,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
             {
                 Directory.Delete(
                     rootDirectory,
@@ -3372,6 +3752,66 @@ public sealed class DocumentImportIntegrationTests
         public Task WaitUntilExtractionStartedAsync()
         {
             return _extractionStarted.Task;
+        }
+    }
+
+    private sealed class BlockingFailingDocumentTextExtractor
+        : IDocumentTextExtractor
+    {
+        private readonly string _message;
+
+        private readonly TaskCompletionSource<bool>
+            _extractionStarted =
+                new(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private readonly TaskCompletionSource<bool>
+            _releaseFailure =
+                new(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public BlockingFailingDocumentTextExtractor(
+            string message)
+        {
+            _message = message;
+        }
+
+        public bool WasCalled { get; private set; }
+
+        public bool CanExtract(
+            string fileName)
+        {
+            return fileName.EndsWith(
+                ".txt",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        public async Task<DocumentTextExtractionResult> ExtractAsync(
+            Stream documentStream,
+            string fileName,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            WasCalled = true;
+
+            _extractionStarted.TrySetResult(true);
+
+            await _releaseFailure.Task.WaitAsync(
+                cancellationToken);
+
+            throw new InvalidOperationException(
+                _message);
+        }
+
+        public Task WaitUntilExtractionStartedAsync()
+        {
+            return _extractionStarted.Task;
+        }
+
+        public void ReleaseFailure()
+        {
+            _releaseFailure.TrySetResult(true);
         }
     }
 
