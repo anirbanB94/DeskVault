@@ -1,6 +1,8 @@
 using System.Text;
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.IniDocument;
+using DeskVault.Application.Documents.Processing;
 using IniParser.Exceptions;
 
 namespace DeskVault.Application.Tests;
@@ -11,13 +13,15 @@ public sealed class IniDocumentTextExtractorTests
     [InlineData("document.ini")]
     [InlineData("document.INI")]
     [InlineData("document.Ini")]
-    public void CanExtract_WhenFileIsIni_ReturnsTrue(string fileName)
+    public void CanExtract_WhenFileIsIni_ReturnsTrue(
+        string fileName)
     {
         // Arrange
         IniDocumentTextExtractor extractor = new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.True(result);
@@ -27,13 +31,15 @@ public sealed class IniDocumentTextExtractorTests
     [InlineData("document.config")]
     [InlineData("document.CONFIG")]
     [InlineData("document.Config")]
-    public void CanExtract_WhenFileIsConfig_ReturnsTrue(string fileName)
+    public void CanExtract_WhenFileIsConfig_ReturnsTrue(
+        string fileName)
     {
         // Arrange
         IniDocumentTextExtractor extractor = new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.True(result);
@@ -50,7 +56,8 @@ public sealed class IniDocumentTextExtractorTests
         IniDocumentTextExtractor extractor = new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.False(result);
@@ -74,14 +81,19 @@ public sealed class IniDocumentTextExtractorTests
             encrypted: true
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, ini);
+            await ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -107,14 +119,19 @@ public sealed class IniDocumentTextExtractorTests
             provider: SQLite
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, ini);
+            await ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -145,14 +162,19 @@ public sealed class IniDocumentTextExtractorTests
             second: 2
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, ini);
+            await ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -171,14 +193,19 @@ public sealed class IniDocumentTextExtractorTests
             connection:
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, ini);
+            await ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -199,14 +226,19 @@ public sealed class IniDocumentTextExtractorTests
             path: 'C:\DeskVault'
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, ini);
+            await ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -220,17 +252,24 @@ public sealed class IniDocumentTextExtractorTests
             encrypted=true
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult first =
-            await ExtractAsync(extractor, ini);
+            await ExtractAsync(
+                extractor,
+                ini);
 
         DocumentTextExtractionResult second =
-            await ExtractAsync(extractor, ini);
+            await ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
-        Assert.Equal(first.Text, second.Text);
+        Assert.Equal(
+            first.Text,
+            second.Text);
     }
 
     [Fact]
@@ -244,11 +283,14 @@ public sealed class IniDocumentTextExtractorTests
             provider=PostgreSQL
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(extractor, ini);
+            ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
         await Assert.ThrowsAnyAsync<ParsingException>(
@@ -268,11 +310,14 @@ public sealed class IniDocumentTextExtractorTests
             encrypted=true
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(extractor, ini);
+            ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
         await Assert.ThrowsAnyAsync<ParsingException>(
@@ -289,11 +334,14 @@ public sealed class IniDocumentTextExtractorTests
             provider=SQLite
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(extractor, ini);
+            ExtractAsync(
+                extractor,
+                ini);
 
         // Assert
         await Assert.ThrowsAnyAsync<ParsingException>(
@@ -310,9 +358,12 @@ public sealed class IniDocumentTextExtractorTests
             provider=SQLite
             """;
 
-        IniDocumentTextExtractor extractor = new();
+        IniDocumentTextExtractor extractor =
+            new();
 
-        using CancellationTokenSource cancellationTokenSource = new();
+        using CancellationTokenSource cancellationTokenSource =
+            new();
+
         cancellationTokenSource.Cancel();
 
         // Act
@@ -327,6 +378,81 @@ public sealed class IniDocumentTextExtractorTests
             () => extractionTask);
     }
 
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextExceedsLimit_ThrowsResourceLimitExceededException()
+    {
+        // Arrange
+        const string ini =
+            """
+            [database]
+            provider=SQLite
+            encrypted=true
+            """;
+
+        var extractor =
+            new IniDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes = 10
+                });
+
+        // Act
+        Task<DocumentTextExtractionResult> extractionTask =
+            ExtractAsync(
+                extractor,
+                ini);
+
+        // Assert
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () => extractionTask);
+
+        Assert.Equal(
+            10,
+            exception.LimitBytes);
+
+        Assert.True(
+            exception.AttemptedBytes >
+            exception.LimitBytes);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextIsWithinLimit_ReturnsCompleteText()
+    {
+        // Arrange
+        const string ini =
+            """
+            [database]
+            provider=SQLite
+            """;
+
+        const string expected =
+            """
+            [database]
+            provider: SQLite
+            """;
+
+        var extractor =
+            new IniDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes =
+                        Encoding.UTF8.GetByteCount(
+                            expected)
+                });
+
+        // Act
+        DocumentTextExtractionResult result =
+            await ExtractAsync(
+                extractor,
+                ini);
+
+        // Assert
+        Assert.Equal(
+            expected,
+            result.Text);
+    }
+
     private static async Task<DocumentTextExtractionResult> ExtractAsync(
         IniDocumentTextExtractor extractor,
         string ini,
@@ -334,7 +460,9 @@ public sealed class IniDocumentTextExtractorTests
     {
         // Arrange
         await using MemoryStream stream =
-            new(Encoding.UTF8.GetBytes(ini));
+            new(
+                Encoding.UTF8.GetBytes(
+                    ini));
 
         // Act
         return await extractor.ExtractAsync(

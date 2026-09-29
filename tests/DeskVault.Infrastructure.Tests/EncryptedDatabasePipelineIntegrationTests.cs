@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using DeskVault.Application;
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
@@ -494,6 +495,9 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
             new DeskVaultDataPaths(
                 rootDirectory));
 
+        services.AddSingleton(
+            new DocumentProcessingOptions());
+
         services.AddApplication();
 
         services.AddInfrastructure(
@@ -521,6 +525,9 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         services.AddSingleton(
             new DeskVaultDataPaths(
                 rootDirectory));
+
+        services.AddSingleton(
+            new DocumentProcessingOptions());
 
         services.AddApplication();
 

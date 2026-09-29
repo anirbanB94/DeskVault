@@ -249,6 +249,55 @@ derived content.
 The implementation must not rely on timing assumptions to determine which
 attempt is authoritative.
 
+### Processing Resource Boundary
+
+Document processing must operate within an explicit maximum plaintext-size
+boundary.
+
+The configured boundary applies to plaintext produced while decrypting the
+stored document for processing. The decryption boundary must evaluate the
+cumulative plaintext size before allocating buffers for the next encrypted
+chunk.
+
+If the next decrypted chunk would cause the configured maximum to be
+exceeded, processing must fail with the dedicated
+`ResourceLimitExceededException`.
+
+A resource-limit failure is a processing failure, not a successful completion
+and not a cancellation. The existing processing lifecycle therefore records
+the processing attempt as `Failed` through the normal generation-aware failure
+publication path.
+
+The resource boundary is a processing policy and does not change the
+encrypted document format, encryption algorithm, or key-management boundary.
+
+The reader contract keeps the resource limit optional so consumers outside
+the processing workflow are not implicitly subject to the processing
+boundary.
+
+The boundary limits decrypted source materialization. It is not a
+process-wide operating-system memory cap. Extractors, normalization, and
+chunking may still materialize representations of content within the
+supported processing boundary; those stages remain subject to the bounded
+input established here.
+
+Processing also enforces an explicit maximum processed-text size.
+
+The configured processed-text boundary applies to text accumulated by
+document extraction and normalization before chunking. Implementations must
+check the cumulative processed-text size before accepting additional content.
+
+If the configured maximum processed-text size would be exceeded, processing
+must fail with the dedicated `ResourceLimitExceededException`.
+
+The decrypted-source boundary and processed-text boundary are independent
+processing-policy limits. The decrypted-source boundary protects source
+materialization, while the processed-text boundary protects accumulation of
+the derived textual representation.
+
+Neither boundary is a process-wide operating-system memory cap. Parser-specific
+preview limits remain separate from these processing resource policies.
+
 ### Architectural Boundaries
 
 The processing lifecycle remains an Application-layer use case.
@@ -395,7 +444,7 @@ Stable chunk identity and provenance are addressed separately.
 
 * The document persistence model requires a new processing-generation field.
 * Processing persistence operations become conditional on the authoritative
-  generation.
+generation.
 * Additional lifecycle tests are required.
 * Existing repository and processing-store contracts may require
   processing-specific lifecycle operations.
@@ -431,7 +480,15 @@ The implementation must:
 * never silently recreate, overwrite, or activate document artifacts during
   reconciliation;
 * keep destructive artifact cleanup behind an explicit safe recovery decision
-  supported by sufficient evidence.
+  supported by sufficient evidence;
+* enforce the configured maximum plaintext size before allocating the next
+  decrypted chunk;
+* distinguish resource-limit failures from cancellation and successful
+  processing;
+* preserve the existing encrypted document format and key-management
+  boundary;
+* keep processing resource policy separate from parser-specific preview
+  limits.
 
 The exact Application method signatures, EF Core implementation details,
 migration shape, and test structure are implementation concerns of the
@@ -452,7 +509,8 @@ work.
 * The document-artifact reconciliation work establishes a separate
   consistency boundary between persisted document metadata and encrypted
   document artifacts.
-* The implementation is tracked by the reliable document processing task.
+* The bounded document-processing resource policy is part of this lifecycle
+  decision.
 * Stable chunk identity and provenance are tracked separately.
 * Document-artifact reconciliation is tracked separately from database
   migration recovery.

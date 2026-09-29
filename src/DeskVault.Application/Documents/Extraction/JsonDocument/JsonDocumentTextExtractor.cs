@@ -1,17 +1,38 @@
-using System.Text;
+using DeskVault.Application.Configurations;
+using DeskVault.Application.Documents.Processing;
 using System.Text.Json;
 using SystemTextJsonDocument = System.Text.Json.JsonDocument;
 
 namespace DeskVault.Application.Documents.Extraction.JsonDocument;
 
-public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
+public sealed class JsonDocumentTextExtractor
+    : IDocumentTextExtractor
 {
     private const string SupportedExtension = ".json";
 
-    public bool CanExtract(string fileName)
+    private readonly long _maxProcessedTextBytes;
+
+    public JsonDocumentTextExtractor()
+        : this(new DocumentProcessingOptions())
+    {
+    }
+
+    public JsonDocumentTextExtractor(
+        DocumentProcessingOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        _maxProcessedTextBytes =
+            options.MaxProcessedTextBytes;
+    }
+
+    public bool CanExtract(
+        string fileName)
     {
         return Path.GetExtension(fileName)
-            .Equals(SupportedExtension, StringComparison.OrdinalIgnoreCase);
+            .Equals(
+                SupportedExtension,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(
@@ -26,7 +47,9 @@ public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
                 documentStream,
                 cancellationToken: cancellationToken);
 
-        StringBuilder output = new();
+        var output =
+            new DocumentProcessingTextBuffer(
+                _maxProcessedTextBytes);
 
         AppendElement(
             document.RootElement,
@@ -36,12 +59,14 @@ public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
             cancellationToken);
 
         return new DocumentTextExtractionResult(
-            output.ToString().TrimEnd('\r', '\n'));
+            output
+                .ToString()
+                .TrimEnd('\r', '\n'));
     }
 
     private static void AppendElement(
         JsonElement element,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel,
         string? propertyName,
         CancellationToken cancellationToken)
@@ -80,14 +105,17 @@ public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
 
     private static void AppendObject(
         JsonElement element,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel,
         string? propertyName,
         CancellationToken cancellationToken)
     {
         if (propertyName is not null)
         {
-            AppendIndentation(output, indentationLevel);
+            AppendIndentation(
+                output,
+                indentationLevel);
+
             output.Append(propertyName);
             output.Append(':');
             output.AppendLine();
@@ -110,14 +138,17 @@ public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
 
     private static void AppendArray(
         JsonElement element,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel,
         string? propertyName,
         CancellationToken cancellationToken)
     {
         if (propertyName is not null)
         {
-            AppendIndentation(output, indentationLevel);
+            AppendIndentation(
+                output,
+                indentationLevel);
+
             output.Append(propertyName);
             output.Append(':');
             output.AppendLine();
@@ -139,7 +170,9 @@ public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
             output.Append(index);
             output.Append(']');
 
-            if (item.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+            if (item.ValueKind is
+                JsonValueKind.Object or
+                JsonValueKind.Array)
             {
                 output.Append(':');
                 output.AppendLine();
@@ -156,7 +189,8 @@ public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
             else
             {
                 output.Append(": ");
-                output.Append(GetScalarText(item));
+                output.Append(
+                    GetScalarText(item));
                 output.AppendLine();
             }
 
@@ -166,11 +200,13 @@ public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
 
     private static void AppendScalar(
         JsonElement element,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel,
         string? propertyName)
     {
-        AppendIndentation(output, indentationLevel);
+        AppendIndentation(
+            output,
+            indentationLevel);
 
         if (propertyName is not null)
         {
@@ -178,27 +214,49 @@ public sealed class JsonDocumentTextExtractor : IDocumentTextExtractor
             output.Append(": ");
         }
 
-        output.Append(GetScalarText(element));
+        output.Append(
+            GetScalarText(element));
+
         output.AppendLine();
     }
 
-    private static string GetScalarText(JsonElement element)
+    private static string GetScalarText(
+        JsonElement element)
     {
         return element.ValueKind switch
         {
-            JsonValueKind.String => element.GetString() ?? string.Empty,
-            JsonValueKind.Number => element.GetRawText(),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            JsonValueKind.Null => "null",
-            _ => element.GetRawText()
+            JsonValueKind.String =>
+                element.GetString() ?? string.Empty,
+
+            JsonValueKind.Number =>
+                element.GetRawText(),
+
+            JsonValueKind.True =>
+                "true",
+
+            JsonValueKind.False =>
+                "false",
+
+            JsonValueKind.Null =>
+                "null",
+
+            _ =>
+                element.GetRawText()
         };
     }
 
     private static void AppendIndentation(
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel)
     {
-        output.Append(' ', indentationLevel * 2);
+        int indentationWidth =
+            indentationLevel * 2;
+
+        for (int index = 0;
+             index < indentationWidth;
+             index++)
+        {
+            output.Append(' ');
+        }
     }
 }

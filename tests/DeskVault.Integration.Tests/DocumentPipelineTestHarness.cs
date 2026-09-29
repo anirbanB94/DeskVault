@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.ProcessDocument;
@@ -57,7 +58,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         IHashService? hashService = null,
         Func<IStorageService, IStorageService>? importStorageDecorator = null,
         Func<IDocumentRepository, IDocumentRepository>? importRepositoryDecorator = null,
-        IDocumentTextChunker? chunker = null)
+        IDocumentTextChunker? chunker = null,
+        DocumentProcessingOptions? processingOptions = null)
     {
         ArgumentNullException.ThrowIfNull(encryptionKey);
 
@@ -123,7 +125,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 processingStore,
                 DocumentReader,
                 extractorResolver,
-                chunker);
+                chunker,
+                processingOptions);
 
         ProcessingService =
             new DocumentProcessingService(
@@ -230,7 +233,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         SqliteDocumentProcessingStore processingStore,
         EncryptedDocumentReader reader,
         DocumentTextExtractorResolver extractorResolver,
-        IDocumentTextChunker? chunker)
+        IDocumentTextChunker? chunker,
+        DocumentProcessingOptions? processingOptions)
     {
         return new ProcessDocumentHandler(
             repository,
@@ -241,6 +245,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 new DocumentTextChunker(
                     maxChunkSize: 4000),
             processingStore,
+            processingOptions ??
+                new DocumentProcessingOptions(),
             NullLogger<ProcessDocumentHandler>.Instance);
     }
 

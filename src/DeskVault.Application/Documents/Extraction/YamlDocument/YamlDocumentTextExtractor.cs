@@ -1,17 +1,38 @@
+using DeskVault.Application.Configurations;
+using DeskVault.Application.Documents.Processing;
 using System.Text;
 using YamlDotNet.RepresentationModel;
 using YamlDotNetDocument = YamlDotNet.RepresentationModel.YamlDocument;
 
 namespace DeskVault.Application.Documents.Extraction.YamlDocument;
 
-public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
+public sealed class YamlDocumentTextExtractor
+    : IDocumentTextExtractor
 {
     private const string SupportedYamlExtension = ".yaml";
     private const string SupportedYmlExtension = ".yml";
 
-    public bool CanExtract(string fileName)
+    private readonly long _maxProcessedTextBytes;
+
+    public YamlDocumentTextExtractor()
+        : this(new DocumentProcessingOptions())
     {
-        string extension = Path.GetExtension(fileName);
+    }
+
+    public YamlDocumentTextExtractor(
+        DocumentProcessingOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        _maxProcessedTextBytes =
+            options.MaxProcessedTextBytes;
+    }
+
+    public bool CanExtract(
+        string fileName)
+    {
+        string extension =
+            Path.GetExtension(fileName);
 
         return extension.Equals(
                    SupportedYamlExtension,
@@ -28,18 +49,26 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using StreamReader reader = new(
-            documentStream,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true,
-            leaveOpen: true);
+        using StreamReader reader =
+            new(
+                documentStream,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true,
+                leaveOpen: true);
 
-        YamlStream yamlStream = new();
+        YamlStream yamlStream =
+            new();
+
         yamlStream.Load(reader);
 
-        StringBuilder output = new();
+        cancellationToken.ThrowIfCancellationRequested();
 
-        bool multipleDocuments = yamlStream.Documents.Count > 1;
+        var output =
+            new DocumentProcessingTextBuffer(
+                _maxProcessedTextBytes);
+
+        bool multipleDocuments =
+            yamlStream.Documents.Count > 1;
 
         for (int documentIndex = 0;
              documentIndex < yamlStream.Documents.Count;
@@ -56,9 +85,14 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
                     output,
                     indentationLevel: 0);
 
-                output.Append("[document ");
-                output.Append(documentIndex);
-                output.AppendLine("]:");
+                output.Append(
+                    "[document ");
+
+                output.Append(
+                    documentIndex);
+
+                output.AppendLine(
+                    "]:");
 
                 AppendNode(
                     document.RootNode,
@@ -77,12 +111,16 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
         }
 
         return new DocumentTextExtractionResult(
-            output.ToString().TrimEnd('\r', '\n'));
+            output
+                .ToString()
+                .TrimEnd(
+                    '\r',
+                    '\n'));
     }
 
     private static void AppendNode(
         YamlNode node,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel,
         CancellationToken cancellationToken)
     {
@@ -121,11 +159,13 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
 
     private static void AppendMapping(
         YamlMappingNode mapping,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel,
         CancellationToken cancellationToken)
     {
-        foreach (KeyValuePair<YamlNode, YamlNode> pair in mapping.Children)
+        foreach (
+            KeyValuePair<YamlNode, YamlNode> pair
+            in mapping.Children)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -135,19 +175,24 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
                     "YAML mapping keys must be scalar values.");
             }
 
-            string keyText = key.Value ?? string.Empty;
+            string keyText =
+                key.Value ?? string.Empty;
 
             AppendIndentation(
                 output,
                 indentationLevel);
 
-            output.Append(keyText);
+            output.Append(
+                keyText);
+
             output.Append(':');
 
             if (pair.Value is YamlScalarNode scalar)
             {
                 output.Append(' ');
-                output.Append(scalar.Value ?? string.Empty);
+                output.Append(
+                    scalar.Value ?? string.Empty);
+
                 output.AppendLine();
             }
             else
@@ -165,7 +210,7 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
 
     private static void AppendSequence(
         YamlSequenceNode sequence,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel,
         CancellationToken cancellationToken)
     {
@@ -175,7 +220,8 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            YamlNode child = sequence.Children[index];
+            YamlNode child =
+                sequence.Children[index];
 
             AppendIndentation(
                 output,
@@ -188,7 +234,9 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
             if (child is YamlScalarNode scalar)
             {
                 output.Append(": ");
-                output.Append(scalar.Value ?? string.Empty);
+                output.Append(
+                    scalar.Value ?? string.Empty);
+
                 output.AppendLine();
             }
             else
@@ -207,23 +255,31 @@ public sealed class YamlDocumentTextExtractor : IDocumentTextExtractor
 
     private static void AppendScalar(
         YamlScalarNode scalar,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel)
     {
         AppendIndentation(
             output,
             indentationLevel);
 
-        output.Append(scalar.Value ?? string.Empty);
+        output.Append(
+            scalar.Value ?? string.Empty);
+
         output.AppendLine();
     }
 
     private static void AppendIndentation(
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel)
     {
-        output.Append(
-            ' ',
-            indentationLevel * 2);
+        int indentationWidth =
+            indentationLevel * 2;
+
+        for (int index = 0;
+             index < indentationWidth;
+             index++)
+        {
+            output.Append(' ');
+        }
     }
 }

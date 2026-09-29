@@ -19,7 +19,8 @@ public sealed class EncryptedDocumentReader : IDocumentReader
 
     public async Task<Stream> OpenReadAsync(
         string storedFilePath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        long? maximumPlaintextBytes = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -41,7 +42,8 @@ public sealed class EncryptedDocumentReader : IDocumentReader
             await _encryptionService.DecryptAsync(
                 source,
                 decryptedStream,
-                cancellationToken);
+                cancellationToken,
+                maximumPlaintextBytes);
 
             decryptedStream.Position = 0;
 

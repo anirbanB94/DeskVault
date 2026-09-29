@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.ProcessDocument;
@@ -55,19 +56,40 @@ public static class DependencyInjection
 
         services.AddSingleton<ReconcileDocumentArtifactsHandler>();
 
-        services.AddSingleton<IDocumentTextExtractor, TextDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor>(
+            serviceProvider =>
+                new TextDocumentTextExtractor(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
-        services.AddSingleton<IDocumentTextExtractor, MarkdownDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor>(
+            serviceProvider =>
+                new MarkdownDocumentTextExtractor(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
-        services.AddSingleton<IDocumentTextExtractor, CsvDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor>(
+            serviceProvider =>
+                new CsvDocumentTextExtractor(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
-        services.AddSingleton<IDocumentTextExtractor, JsonDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor>(
+            serviceProvider =>
+                new JsonDocumentTextExtractor(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
-        services.AddSingleton<IDocumentTextExtractor, XmlDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor>(
+            serviceProvider =>
+                new XmlDocumentTextExtractor(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
-        services.AddSingleton<IDocumentTextExtractor, YamlDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor>(
+            serviceProvider =>
+                new YamlDocumentTextExtractor(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
-        services.AddSingleton<IDocumentTextExtractor, IniDocumentTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor>(
+            serviceProvider =>
+                new IniDocumentTextExtractor(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
         services.AddSingleton<DocumentTextExtractorResolver>();
 
@@ -75,7 +97,10 @@ public static class DependencyInjection
 
         services.AddSingleton<IDocumentProcessingService, DocumentProcessingService>();
 
-        services.AddSingleton<IDocumentTextNormalizer, DocumentTextNormalizer>();
+        services.AddSingleton<IDocumentTextNormalizer>(
+            serviceProvider =>
+                new DocumentTextNormalizer(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
         services.AddSingleton<IDocumentTextChunker>(_ => new DocumentTextChunker(maxChunkSize: 4000));
 
@@ -104,7 +129,6 @@ public static class DependencyInjection
         services.AddSingleton<GetWorkspaceHandler>();
 
         services.AddSingleton<GetWorkspacesHandler>();
-
 
         return services;
     }

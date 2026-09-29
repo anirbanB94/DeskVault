@@ -1,6 +1,8 @@
 using System.Text;
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.XmlDocument;
+using DeskVault.Application.Documents.Processing;
 
 namespace DeskVault.Application.Tests;
 
@@ -11,13 +13,16 @@ public sealed class XmlDocumentTextExtractorTests
     [InlineData("document.XML")]
     [InlineData("document.Xml")]
     [InlineData("document.xMl")]
-    public void CanExtract_WhenFileIsXml_ReturnsTrue(string fileName)
+    public void CanExtract_WhenFileIsXml_ReturnsTrue(
+        string fileName)
     {
         // Arrange
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.True(result);
@@ -27,13 +32,16 @@ public sealed class XmlDocumentTextExtractorTests
     [InlineData("document.txt")]
     [InlineData("document.json")]
     [InlineData("document.xml.txt")]
-    public void CanExtract_WhenFileIsNotXml_ReturnsFalse(string fileName)
+    public void CanExtract_WhenFileIsNotXml_ReturnsFalse(
+        string fileName)
     {
         // Arrange
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.False(result);
@@ -58,14 +66,19 @@ public sealed class XmlDocumentTextExtractorTests
               enabled: true
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, xml);
+            await ExtractAsync(
+                extractor,
+                xml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -90,14 +103,19 @@ public sealed class XmlDocumentTextExtractorTests
                 encrypted: true
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, xml);
+            await ExtractAsync(
+                extractor,
+                xml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -119,14 +137,19 @@ public sealed class XmlDocumentTextExtractorTests
               !
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, xml);
+            await ExtractAsync(
+                extractor,
+                xml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -148,14 +171,19 @@ public sealed class XmlDocumentTextExtractorTests
               name: DeskVault
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, xml);
+            await ExtractAsync(
+                extractor,
+                xml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -179,14 +207,19 @@ public sealed class XmlDocumentTextExtractorTests
               tag: search
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, xml);
+            await ExtractAsync(
+                extractor,
+                xml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -206,14 +239,19 @@ public sealed class XmlDocumentTextExtractorTests
               description:
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, xml);
+            await ExtractAsync(
+                extractor,
+                xml);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -229,17 +267,24 @@ public sealed class XmlDocumentTextExtractorTests
             </configuration>
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult first =
-            await ExtractAsync(extractor, xml);
+            await ExtractAsync(
+                extractor,
+                xml);
 
         DocumentTextExtractionResult second =
-            await ExtractAsync(extractor, xml);
+            await ExtractAsync(
+                extractor,
+                xml);
 
         // Assert
-        Assert.Equal(first.Text, second.Text);
+        Assert.Equal(
+            first.Text,
+            second.Text);
     }
 
     [Fact]
@@ -252,11 +297,14 @@ public sealed class XmlDocumentTextExtractorTests
               <database>
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(extractor, xml);
+            ExtractAsync(
+                extractor,
+                xml);
 
         // Assert
         await Assert.ThrowsAnyAsync<System.Xml.XmlException>(
@@ -274,9 +322,12 @@ public sealed class XmlDocumentTextExtractorTests
             </configuration>
             """;
 
-        XmlDocumentTextExtractor extractor = new();
+        XmlDocumentTextExtractor extractor =
+            new();
 
-        using CancellationTokenSource cancellationTokenSource = new();
+        using CancellationTokenSource cancellationTokenSource =
+            new();
+
         cancellationTokenSource.Cancel();
 
         // Act
@@ -291,6 +342,87 @@ public sealed class XmlDocumentTextExtractorTests
             () => extractionTask);
     }
 
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextExceedsLimit_ThrowsResourceLimitExceededException()
+    {
+        // Arrange
+        const string xml =
+            """
+            <configuration>
+              <environment>Production</environment>
+              <enabled>true</enabled>
+            </configuration>
+            """;
+
+        var extractor =
+            new XmlDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes = 10
+                });
+
+        // Act
+        Task<DocumentTextExtractionResult> extractionTask =
+            ExtractAsync(
+                extractor,
+                xml);
+
+        // Assert
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () => extractionTask);
+
+        Assert.Equal(
+            10,
+            exception.LimitBytes);
+
+        Assert.True(
+            exception.AttemptedBytes >
+            exception.LimitBytes);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextIsWithinLimit_ReturnsCompleteText()
+    {
+        // Arrange
+        const string xml =
+            """
+            <configuration>
+              <environment>Production</environment>
+            </configuration>
+            """;
+
+        const string expected =
+            """
+            configuration:
+              environment: Production
+            """;
+
+        long maximumProcessedTextBytes =
+            Encoding.UTF8.GetByteCount(
+                expected +
+                Environment.NewLine);
+
+        var extractor =
+            new XmlDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes =
+                        maximumProcessedTextBytes
+                });
+
+        // Act
+        DocumentTextExtractionResult result =
+            await ExtractAsync(
+                extractor,
+                xml);
+
+        // Assert
+        Assert.Equal(
+            expected,
+            result.Text);
+    }
+
     private static async Task<DocumentTextExtractionResult> ExtractAsync(
         XmlDocumentTextExtractor extractor,
         string xml,
@@ -298,7 +430,9 @@ public sealed class XmlDocumentTextExtractorTests
     {
         // Arrange
         await using MemoryStream stream =
-            new(Encoding.UTF8.GetBytes(xml));
+            new(
+                Encoding.UTF8.GetBytes(
+                    xml));
 
         // Act
         return await extractor.ExtractAsync(

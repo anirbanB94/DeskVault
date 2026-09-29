@@ -1,6 +1,8 @@
 using System.Text;
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.JsonDocument;
+using DeskVault.Application.Documents.Processing;
 
 namespace DeskVault.Application.Tests;
 
@@ -11,13 +13,16 @@ public sealed class JsonDocumentTextExtractorTests
     [InlineData("document.JSON")]
     [InlineData("document.Json")]
     [InlineData("document.jSoN")]
-    public void CanExtract_WhenFileIsJson_ReturnsTrue(string fileName)
+    public void CanExtract_WhenFileIsJson_ReturnsTrue(
+        string fileName)
     {
         // Arrange
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.True(result);
@@ -27,13 +32,16 @@ public sealed class JsonDocumentTextExtractorTests
     [InlineData("document.txt")]
     [InlineData("document.xml")]
     [InlineData("document.json.txt")]
-    public void CanExtract_WhenFileIsNotJson_ReturnsFalse(string fileName)
+    public void CanExtract_WhenFileIsNotJson_ReturnsFalse(
+        string fileName)
     {
         // Arrange
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
-        bool result = extractor.CanExtract(fileName);
+        bool result =
+            extractor.CanExtract(fileName);
 
         // Assert
         Assert.False(result);
@@ -59,14 +67,19 @@ public sealed class JsonDocumentTextExtractorTests
             enabled: true
             """;
 
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, json);
+            await ExtractAsync(
+                extractor,
+                json);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -90,14 +103,19 @@ public sealed class JsonDocumentTextExtractorTests
               encrypted: true
             """;
 
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, json);
+            await ExtractAsync(
+                extractor,
+                json);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -121,14 +139,19 @@ public sealed class JsonDocumentTextExtractorTests
               [1]: documents
             """;
 
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, json);
+            await ExtractAsync(
+                extractor,
+                json);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -162,14 +185,19 @@ public sealed class JsonDocumentTextExtractorTests
                 type: json
             """;
 
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, json);
+            await ExtractAsync(
+                extractor,
+                json);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -188,14 +216,19 @@ public sealed class JsonDocumentTextExtractorTests
             description: null
             """;
 
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(extractor, json);
+            await ExtractAsync(
+                extractor,
+                json);
 
         // Assert
-        Assert.Equal(expected, result.Text);
+        Assert.Equal(
+            expected,
+            result.Text);
     }
 
     [Fact]
@@ -213,17 +246,24 @@ public sealed class JsonDocumentTextExtractorTests
             }
             """;
 
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
         DocumentTextExtractionResult first =
-            await ExtractAsync(extractor, json);
+            await ExtractAsync(
+                extractor,
+                json);
 
         DocumentTextExtractionResult second =
-            await ExtractAsync(extractor, json);
+            await ExtractAsync(
+                extractor,
+                json);
 
         // Assert
-        Assert.Equal(first.Text, second.Text);
+        Assert.Equal(
+            first.Text,
+            second.Text);
     }
 
     [Fact]
@@ -236,11 +276,14 @@ public sealed class JsonDocumentTextExtractorTests
               "name": "DeskVault"
             """;
 
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(extractor, json);
+            ExtractAsync(
+                extractor,
+                json);
 
         // Assert
         await Assert.ThrowsAnyAsync<System.Text.Json.JsonException>(
@@ -258,9 +301,12 @@ public sealed class JsonDocumentTextExtractorTests
             }
             """;
 
-        JsonDocumentTextExtractor extractor = new();
+        JsonDocumentTextExtractor extractor =
+            new();
 
-        using CancellationTokenSource cancellationTokenSource = new();
+        using CancellationTokenSource cancellationTokenSource =
+            new();
+
         cancellationTokenSource.Cancel();
 
         // Act
@@ -275,6 +321,85 @@ public sealed class JsonDocumentTextExtractorTests
             () => extractionTask);
     }
 
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextExceedsLimit_ThrowsResourceLimitExceededException()
+    {
+        // Arrange
+        const string json =
+            """
+            {
+              "name": "DeskVault"
+            }
+            """;
+
+        var extractor =
+            new JsonDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes = 10
+                });
+
+        // Act
+        Task<DocumentTextExtractionResult> extractionTask =
+            ExtractAsync(
+                extractor,
+                json);
+
+        // Assert
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () => extractionTask);
+
+        Assert.Equal(
+            10,
+            exception.LimitBytes);
+
+        Assert.True(
+            exception.AttemptedBytes >
+            exception.LimitBytes);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextIsWithinLimit_ReturnsCompleteText()
+    {
+        // Arrange
+        const string json =
+            """
+            {
+              "name": "DeskVault"
+            }
+            """;
+
+        const string expected =
+            """
+            name: DeskVault
+            """;
+
+        long maximumProcessedTextBytes =
+            Encoding.UTF8.GetByteCount(
+                expected +
+                Environment.NewLine);
+
+        var extractor =
+            new JsonDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes =
+                        maximumProcessedTextBytes
+                });
+
+        // Act
+        DocumentTextExtractionResult result =
+            await ExtractAsync(
+                extractor,
+                json);
+
+        // Assert
+        Assert.Equal(
+            expected,
+            result.Text);
+    }
+
     private static async Task<DocumentTextExtractionResult> ExtractAsync(
         JsonDocumentTextExtractor extractor,
         string json,
@@ -282,7 +407,9 @@ public sealed class JsonDocumentTextExtractorTests
     {
         // Arrange
         await using MemoryStream stream =
-            new(Encoding.UTF8.GetBytes(json));
+            new(
+                Encoding.UTF8.GetBytes(
+                    json));
 
         // Act
         return await extractor.ExtractAsync(

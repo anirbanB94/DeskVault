@@ -1,7 +1,9 @@
-using System.Text;
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Tests.TestInfrastructure;
+using System.Text;
 
 namespace DeskVault.Application.Tests;
 
@@ -145,5 +147,63 @@ public sealed class MarkdownDocumentTextExtractorTests
         Assert.Equal(
             "Simulated document read failure.",
             exception.Message);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextExceedsLimit_ThrowsResourceLimitExceededException()
+    {
+        var extractor =
+            new MarkdownDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes = 5
+                });
+
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes("123456"));
+
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () =>
+                    extractor.ExtractAsync(
+                        stream,
+                        "document.md"));
+
+        Assert.Equal(
+            5,
+            exception.LimitBytes);
+
+        Assert.Equal(
+            6,
+            exception.AttemptedBytes);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextIsWithinLimit_ReturnsCompleteMarkdown()
+    {
+        const string expectedMarkdown =
+            "# DeskVault\n\nBounded markdown extraction.";
+
+        var extractor =
+            new MarkdownDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes =
+                        Encoding.UTF8.GetByteCount(expectedMarkdown)
+                });
+
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(expectedMarkdown));
+
+        DocumentTextExtractionResult result =
+            await extractor.ExtractAsync(
+                stream,
+                "document.md");
+
+        Assert.Equal(
+            expectedMarkdown,
+            result.Text);
     }
 }

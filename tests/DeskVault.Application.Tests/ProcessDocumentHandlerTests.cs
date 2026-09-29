@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Extraction;
@@ -12,6 +13,64 @@ namespace DeskVault.Application.Tests;
 
 public sealed class ProcessDocumentHandlerTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_WhenMaximumDecryptedDocumentBytesIsNotPositive_ThrowsArgumentOutOfRangeException(
+        long maximumDecryptedDocumentBytes)
+    {
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var reader =
+            new TestDocumentReader();
+
+        var extractor =
+            new TestDocumentTextExtractor();
+
+        var resolver =
+            new DocumentTextExtractorResolver(
+                [extractor]);
+
+        var normalizer =
+            new DocumentTextNormalizer();
+
+        var chunker =
+            new DocumentTextChunker(
+                maxChunkSize: 100);
+
+        var processingStore =
+            new TestDocumentProcessingStore();
+
+        var processingOptions =
+            new DocumentProcessingOptions
+            {
+                MaxDecryptedDocumentBytes =
+                    maximumDecryptedDocumentBytes
+            };
+
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () =>
+                    new ProcessDocumentHandler(
+                        repository.Object,
+                        reader,
+                        resolver,
+                        normalizer,
+                        chunker,
+                        processingStore,
+                        processingOptions,
+                        NullLogger<ProcessDocumentHandler>.Instance));
+
+        Assert.Equal(
+            "processingOptions",
+            exception.ParamName);
+
+        Assert.Contains(
+            "Maximum decrypted document bytes must be greater than zero.",
+            exception.Message);
+    }
+
     [Fact]
     public async Task HandleAsync_WhenDocumentDoesNotExist_ReturnsNotFound()
     {
@@ -76,10 +135,13 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
+        const long maxDecryptedDocumentBytes = 1024;
+
         var processingContext =
             CreateProcessingContext(
                 repository,
-                maxChunkSize: 100);
+                maxChunkSize: 100,
+                maxDecryptedDocumentBytes);
 
         ProcessDocumentResult result =
             await processingContext.Handler.HandleAsync(
@@ -137,6 +199,10 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.True(
             processingContext.Reader.WasOpened);
+
+        Assert.Equal(
+            maxDecryptedDocumentBytes,
+            processingContext.Reader.MaximumPlaintextBytes);
 
         Assert.True(
             processingContext.Extractor.WasCalled);
@@ -209,6 +275,218 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Empty(
             processingContext.ProcessingStore.SuccessfulProcessingChunks);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenResourceLimitIsExceeded_MarksDocumentAsFailedAndRethrows()
+    {
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingContext =
+            CreateProcessingContext(
+                repository,
+                maxDecryptedDocumentBytes: 100);
+
+        processingContext.Reader.ThrowResourceLimitExceededOnOpen = true;
+
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () =>
+                    processingContext.Handler.HandleAsync(
+                        new ProcessDocumentCommand(
+                            document.Id)));
+
+        Assert.Equal(
+            100L,
+            processingContext.Reader.MaximumPlaintextBytes);
+
+        Assert.Equal(
+            100L,
+            exception.LimitBytes);
+
+        Assert.Equal(
+            101L,
+            exception.AttemptedBytes);
+
+        Assert.Equal(
+            [
+                DocumentStatus.Processing,
+                DocumentStatus.Failed
+            ],
+            processingContext.ProcessingStore.PublishedStates
+                .Select(x => x.Status)
+                .ToArray());
+
+        Assert.All(
+            processingContext.ProcessingStore.PublishedStates,
+            publication =>
+                Assert.Equal(
+                    1L,
+                    publication.ProcessingGeneration));
+
+        Assert.True(
+            processingContext.Reader.WasOpened);
+
+        Assert.False(
+            processingContext.Extractor.WasCalled);
+
+        Assert.False(
+            processingContext.ProcessingStore.WasSuccessfulProcessingPublished);
+
+        Assert.False(
+            processingContext.ProcessingStore.WasCancellationRecoveryRequested);
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenNormalizedTextExceedsResourceLimit_MarksDocumentAsFailedAndRethrows()
+    {
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingOptions =
+            new DocumentProcessingOptions
+            {
+                MaxDecryptedDocumentBytes =
+                    1024,
+                MaxProcessedTextBytes =
+                    5
+            };
+
+        var processingContext =
+            CreateProcessingContext(
+                repository,
+                processingOptions: processingOptions);
+
+        processingContext.Extractor.ReturnText =
+            "First paragraph.";
+
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () =>
+                    processingContext.Handler.HandleAsync(
+                        new ProcessDocumentCommand(
+                            document.Id)));
+
+        Assert.Equal(
+            5L,
+            exception.LimitBytes);
+
+        Assert.True(
+            exception.AttemptedBytes > exception.LimitBytes);
+
+        Assert.True(
+            processingContext.Reader.WasOpened);
+
+        Assert.True(
+            processingContext.Extractor.WasCalled);
+
+        Assert.Equal(
+            [
+                DocumentStatus.Processing,
+                DocumentStatus.Failed
+            ],
+            processingContext.ProcessingStore.PublishedStates
+                .Select(x => x.Status)
+                .ToArray());
+
+        Assert.All(
+            processingContext.ProcessingStore.PublishedStates,
+            publication =>
+                Assert.Equal(
+                    1L,
+                    publication.ProcessingGeneration));
+
+        Assert.False(
+            processingContext.ProcessingStore.WasSuccessfulProcessingPublished);
+
+        Assert.False(
+            processingContext.ProcessingStore.WasCancellationRecoveryRequested);
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenProcessedTextIsWithinResourceLimit_CompletesSuccessfully()
+    {
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingOptions =
+            new DocumentProcessingOptions
+            {
+                MaxDecryptedDocumentBytes =
+                    1024,
+                MaxProcessedTextBytes =
+                    1000
+            };
+
+        var processingContext =
+            CreateProcessingContext(
+                repository,
+                processingOptions: processingOptions);
+
+        ProcessDocumentResult result =
+            await processingContext.Handler.HandleAsync(
+                new ProcessDocumentCommand(
+                    document.Id));
+
+        Assert.Equal(
+            ProcessDocumentResultStatus.Success,
+            result.Status);
+
+        Assert.Equal(
+            document.Id,
+            result.DocumentId);
+
+        Assert.True(
+            processingContext.ProcessingStore
+                .WasSuccessfulProcessingPublished);
+
+        Assert.Equal(
+            1,
+            processingContext.ProcessingStore
+                .SuccessfulProcessingCallCount);
+
+        Assert.Single(
+            processingContext.ProcessingStore
+                .SuccessfulProcessingChunks);
     }
 
     [Fact]
@@ -712,7 +990,9 @@ public sealed class ProcessDocumentHandlerTests
 
     private static ProcessingContext CreateProcessingContext(
         Mock<IDocumentRepository> repository,
-        int maxChunkSize = 100)
+        int maxChunkSize = 100,
+        long maxDecryptedDocumentBytes = 32 * 1024 * 1024,
+        DocumentProcessingOptions? processingOptions = null)
     {
         var reader =
             new TestDocumentReader();
@@ -724,15 +1004,23 @@ public sealed class ProcessDocumentHandlerTests
             new DocumentTextExtractorResolver(
                 [extractor]);
 
+        var processingStore =
+            new TestDocumentProcessingStore();
+
+        processingOptions ??=
+            new DocumentProcessingOptions
+            {
+                MaxDecryptedDocumentBytes =
+                    maxDecryptedDocumentBytes
+            };
+
         var normalizer =
-            new DocumentTextNormalizer();
+            new DocumentTextNormalizer(
+                processingOptions);
 
         var chunker =
             new DocumentTextChunker(
                 maxChunkSize);
-
-        var processingStore =
-            new TestDocumentProcessingStore();
 
         var handler =
             new ProcessDocumentHandler(
@@ -742,6 +1030,7 @@ public sealed class ProcessDocumentHandlerTests
                 normalizer,
                 chunker,
                 processingStore,
+                processingOptions,
                 NullLogger<ProcessDocumentHandler>.Instance);
 
         return new ProcessingContext(
@@ -762,13 +1051,31 @@ public sealed class ProcessDocumentHandlerTests
     {
         public bool WasOpened { get; private set; }
 
+        public long? MaximumPlaintextBytes { get; private set; }
+
+        public bool ThrowResourceLimitExceededOnOpen { get; set; }
+
         public Task<Stream> OpenReadAsync(
             string storedFilePath,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            long? maximumPlaintextBytes = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             WasOpened = true;
+
+            MaximumPlaintextBytes =
+                maximumPlaintextBytes;
+
+            if (ThrowResourceLimitExceededOnOpen)
+            {
+                long limitBytes =
+                    maximumPlaintextBytes ?? 0L;
+
+                throw new ResourceLimitExceededException(
+                    limitBytes,
+                    limitBytes + 1L);
+            }
 
             Stream stream =
                 new MemoryStream();
@@ -789,6 +1096,9 @@ public sealed class ProcessDocumentHandlerTests
         public Action? BeforeThrow { get; set; }
 
         public string? FileName { get; private set; }
+
+        public string ReturnText { get; set; } =
+            "First paragraph.\n\nSecond paragraph.";
 
         public bool CanExtract(
             string fileName)
@@ -824,7 +1134,7 @@ public sealed class ProcessDocumentHandlerTests
 
             return Task.FromResult(
                 new DocumentTextExtractionResult(
-                    "First paragraph.\n\nSecond paragraph."));
+                    ReturnText));
         }
     }
 

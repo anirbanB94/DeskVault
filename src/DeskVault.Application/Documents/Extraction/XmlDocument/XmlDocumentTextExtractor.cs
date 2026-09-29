@@ -1,16 +1,37 @@
-using System.Text;
+using DeskVault.Application.Configurations;
+using DeskVault.Application.Documents.Processing;
 using System.Xml.Linq;
 
 namespace DeskVault.Application.Documents.Extraction.XmlDocument;
 
-public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
+public sealed class XmlDocumentTextExtractor
+    : IDocumentTextExtractor
 {
     private const string SupportedExtension = ".xml";
 
-    public bool CanExtract(string fileName)
+    private readonly long _maxProcessedTextBytes;
+
+    public XmlDocumentTextExtractor()
+        : this(new DocumentProcessingOptions())
+    {
+    }
+
+    public XmlDocumentTextExtractor(
+        DocumentProcessingOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        _maxProcessedTextBytes =
+            options.MaxProcessedTextBytes;
+    }
+
+    public bool CanExtract(
+        string fileName)
     {
         return Path.GetExtension(fileName)
-            .Equals(SupportedExtension, StringComparison.OrdinalIgnoreCase);
+            .Equals(
+                SupportedExtension,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(
@@ -32,7 +53,9 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
                 string.Empty);
         }
 
-        StringBuilder output = new();
+        var output =
+            new DocumentProcessingTextBuffer(
+                _maxProcessedTextBytes);
 
         AppendElement(
             document.Root,
@@ -41,12 +64,16 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
             cancellationToken);
 
         return new DocumentTextExtractionResult(
-            output.ToString().TrimEnd('\r', '\n'));
+            output
+                .ToString()
+                .TrimEnd(
+                    '\r',
+                    '\n'));
     }
 
     private static void AppendElement(
         XElement element,
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel,
         CancellationToken cancellationToken)
     {
@@ -56,7 +83,9 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
             output,
             indentationLevel);
 
-        output.Append(element.Name.LocalName);
+        output.Append(
+            element.Name.LocalName);
+
         output.Append(':');
 
         foreach (XAttribute attribute in element.Attributes())
@@ -64,13 +93,20 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
             cancellationToken.ThrowIfCancellationRequested();
 
             output.AppendLine();
+
             AppendIndentation(
                 output,
                 indentationLevel + 1);
+
             output.Append('@');
-            output.Append(attribute.Name.LocalName);
-            output.Append(": ");
-            output.Append(attribute.Value);
+            output.Append(
+                attribute.Name.LocalName);
+
+            output.Append(
+                ": ");
+
+            output.Append(
+                attribute.Value);
         }
 
         IReadOnlyList<XNode> childNodes =
@@ -86,7 +122,8 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
             string.Concat(
                 childNodes
                     .OfType<XText>()
-                    .Select(node => node.Value))
+                    .Select(
+                        node => node.Value))
             .Trim();
 
         if (childElements.Count == 0)
@@ -98,6 +135,7 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
             }
 
             output.AppendLine();
+
             return;
         }
 
@@ -117,7 +155,8 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
             }
             else if (childNode is XText textNode)
             {
-                string childText = textNode.Value.Trim();
+                string childText =
+                    textNode.Value.Trim();
 
                 if (childText.Length == 0)
                 {
@@ -127,18 +166,27 @@ public sealed class XmlDocumentTextExtractor : IDocumentTextExtractor
                 AppendIndentation(
                     output,
                     indentationLevel + 1);
-                output.Append(childText);
+
+                output.Append(
+                    childText);
+
                 output.AppendLine();
             }
         }
     }
 
     private static void AppendIndentation(
-        StringBuilder output,
+        DocumentProcessingTextBuffer output,
         int indentationLevel)
     {
-        output.Append(
-            ' ',
-            indentationLevel * 2);
+        int indentationWidth =
+            indentationLevel * 2;
+
+        for (int index = 0;
+             index < indentationWidth;
+             index++)
+        {
+            output.Append(' ');
+        }
     }
 }

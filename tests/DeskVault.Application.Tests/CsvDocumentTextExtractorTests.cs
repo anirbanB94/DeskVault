@@ -1,5 +1,7 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
+using DeskVault.Application.Documents.Processing;
 using System.Text;
 
 namespace DeskVault.Application.Tests;
@@ -221,6 +223,78 @@ public sealed class CsvDocumentTextExtractorTests
 
         Assert.True(
             stream.CanRead);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextExceedsLimit_ThrowsResourceLimitExceededException()
+    {
+        const string csv =
+            """
+            Id
+            123456
+            """;
+
+        var extractor =
+            new CsvDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes = 5
+                });
+
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(csv));
+
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () =>
+                    extractor.ExtractAsync(
+                        stream,
+                        DocumentFileName));
+
+        Assert.Equal(
+            5,
+            exception.LimitBytes);
+
+        Assert.True(
+            exception.AttemptedBytes > exception.LimitBytes);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WhenProcessedTextIsWithinLimit_ReturnsCompleteText()
+    {
+        const string csv =
+            """
+        Id,Name
+        1001,Alice
+        """;
+
+        string expectedText =
+            "Id: 1001" +
+            Environment.NewLine +
+            "Name: Alice";
+
+        var extractor =
+            new CsvDocumentTextExtractor(
+                new DocumentProcessingOptions
+                {
+                    MaxProcessedTextBytes =
+                        Encoding.UTF8.GetByteCount(
+                            expectedText)
+                });
+
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(csv));
+
+        DocumentTextExtractionResult result =
+            await extractor.ExtractAsync(
+                stream,
+                DocumentFileName);
+
+        Assert.Equal(
+            expectedText,
+            result.Text);
     }
 
     private static CsvDocumentTextExtractor CreateExtractor()
