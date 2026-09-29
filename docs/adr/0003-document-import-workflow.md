@@ -47,9 +47,13 @@ Chunk
 Persist Derived Result
 ```
 
-The processing lifecycle, orchestration boundary, processing state,
-cancellation, retry/idempotency requirements, and document-to-chunk
-persistence are governed by ADR-0008.
+The processing workflow remains separate from document import. Its semantic
+processing and orchestration boundary are described by ADR-0008, while the
+authoritative processing lifecycle, processing-state transitions,
+cancellation and failure behavior, retry/idempotency requirements, and
+processing-generation fencing are governed by ADR-0010. The persistence
+responsibility for processing state and document-to-chunk data is defined by
+ADR-0005.
 
 This separation keeps document acquisition and storage independent from
 document knowledge processing. The import use case remains responsible for
