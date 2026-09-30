@@ -1,63 +1,216 @@
+using System.Collections.Concurrent;
 using DeskVault.UI.Services.Interfaces;
-using System.Diagnostics;
 
 namespace DeskVault.UI.Services.Document;
 
-public sealed class DocumentViewer : IDocumentViewer
+public sealed class DocumentViewer :
+    IDocumentViewer,
+    IDisposable
 {
+    private readonly IExternalDocumentLauncher _externalDocumentLauncher;
+
+    private readonly ConcurrentDictionary<
+        Guid,
+        TemporaryDocumentArtifact> _activeArtifacts =
+        new();
+
+    private bool _disposed;
+
+    public DocumentViewer(
+        IExternalDocumentLauncher externalDocumentLauncher)
+    {
+        ArgumentNullException.ThrowIfNull(
+            externalDocumentLauncher);
+
+        _externalDocumentLauncher =
+            externalDocumentLauncher;
+    }
+
     public async Task OpenAsync(
         Stream documentStream,
         string fileName,
         CancellationToken cancellationToken = default)
     {
-        string extension = Path.GetExtension(fileName);
+        ObjectDisposedException.ThrowIf(
+            _disposed,
+            this);
 
-        string temporaryFilePath = Path.Combine(
-            Path.GetTempPath(),
-            $"{Guid.NewGuid():N}{extension}");
+        ArgumentNullException.ThrowIfNull(
+            documentStream);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            fileName);
+
+        string extension =
+            Path.GetExtension(fileName);
+
+        TemporaryDocumentArtifact artifact =
+            CreateTemporaryArtifact(
+                extension);
+
+        _activeArtifacts.TryAdd(
+            artifact.Id,
+            artifact);
 
         try
         {
-            await using (documentStream)
-            await using (var temporaryFile = new FileStream(
-                temporaryFilePath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 81920,
-                useAsync: true))
+            await using (
+                FileStream temporaryFile =
+                    new(
+                        artifact.FilePath,
+                        FileMode.Open,
+                        FileAccess.Write,
+                        FileShare.Read,
+                        bufferSize: 81920,
+                        options: FileOptions.Asynchronous))
             {
                 await documentStream.CopyToAsync(
                     temporaryFile,
                     cancellationToken);
+
+                await temporaryFile.FlushAsync(
+                    cancellationToken);
             }
 
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = temporaryFilePath,
-                UseShellExecute = true
-            });
+            IExternalDocumentLaunch launch =
+                _externalDocumentLauncher.Launch(
+                    artifact.FilePath);
+
+            artifact.HasObservableExternalLifecycle =
+                launch.Completion is not null;
+
+            _ = ObserveExternalLaunchAsync(
+                artifact,
+                launch);
         }
         catch
         {
-            TryDeleteTemporaryFile(temporaryFilePath);
+            RemoveArtifact(
+                artifact);
+
             throw;
         }
     }
 
-    private static void TryDeleteTemporaryFile(
-        string filePath)
+    private static TemporaryDocumentArtifact CreateTemporaryArtifact(
+        string extension)
+    {
+        string filePath =
+            Path.Combine(
+                Path.GetTempPath(),
+                $"{Guid.NewGuid():N}{extension}");
+
+        using (
+            FileStream temporaryFile =
+                new(
+                    filePath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.Read,
+                    bufferSize: 81920,
+                    options: FileOptions.Asynchronous))
+        {
+        }
+
+        return new TemporaryDocumentArtifact(
+            Guid.NewGuid(),
+            filePath);
+    }
+
+    private async Task ObserveExternalLaunchAsync(
+        TemporaryDocumentArtifact artifact,
+        IExternalDocumentLaunch launch)
     {
         try
         {
-            if (File.Exists(filePath))
+            if (launch.Completion is not null)
             {
-                File.Delete(filePath);
+                await launch.Completion.ConfigureAwait(
+                    false);
+
+                RemoveArtifact(
+                    artifact);
             }
         }
         catch
         {
-            // Best-effort cleanup.
+            RemoveArtifact(
+                artifact);
+        }
+        finally
+        {
+            launch.Dispose();
+        }
+    }
+
+    private void RemoveArtifact(
+        TemporaryDocumentArtifact artifact)
+    {
+        if (_activeArtifacts.TryRemove(
+            artifact.Id,
+            out TemporaryDocumentArtifact? removedArtifact))
+        {
+            removedArtifact.Dispose();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        foreach (
+            KeyValuePair<Guid, TemporaryDocumentArtifact> entry
+            in _activeArtifacts)
+        {
+            if (entry.Value.HasObservableExternalLifecycle)
+            {
+                continue;
+            }
+
+            if (_activeArtifacts.TryRemove(
+                entry.Key,
+                out TemporaryDocumentArtifact? artifact))
+            {
+                artifact.Dispose();
+            }
+        }
+    }
+
+    private sealed class TemporaryDocumentArtifact :
+        IDisposable
+    {
+        public TemporaryDocumentArtifact(
+            Guid id,
+            string filePath)
+        {
+            Id = id;
+            FilePath = filePath;
+        }
+
+        public Guid Id { get; }
+
+        public string FilePath { get; }
+
+        public bool HasObservableExternalLifecycle { get; set; }
+
+        public void Dispose()
+        {
+            try
+            {
+                if (File.Exists(FilePath))
+                {
+                    File.Delete(FilePath);
+                }
+            }
+            catch
+            {
+                // Best-effort cleanup.
+            }
         }
     }
 }
