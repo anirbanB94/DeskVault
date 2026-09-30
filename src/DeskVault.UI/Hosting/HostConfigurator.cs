@@ -110,7 +110,8 @@ internal static class HostConfigurator
         services.AddTransient<IMainFormPresenterFactory, MainFormPresenterFactory>();
         services.AddTransient<DocumentViewForm>();
         services.AddTransient<IDocumentWorkspaceView>(provider => provider.GetRequiredService<DocumentViewForm>());
-        services.AddTransient<IDocumentViewer, DocumentViewer>();
+        services.AddTransient<IExternalDocumentLauncher, ExternalDocumentLauncher>();
+        services.AddSingleton<IDocumentViewer, DocumentViewer>();
         services.AddTransient<IWorkspaceDocumentPresentationFactory, WorkspaceDocumentPresentationFactory>();
         services.AddTransient<IWorkspacePresentationFactory, WorkspacePresentationFactory>();
         services.AddTransient<IWorkspaceDialogService, WorkspaceDialogService>();

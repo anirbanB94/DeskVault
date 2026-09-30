@@ -470,6 +470,50 @@ Document streams remain owned by the caller. Renderers may read the supplied str
 
 This preserves a consistent ownership boundary across multiple renderer implementations.
 
+### External Document Opening Lifecycle
+
+External document opening remains an explicit workspace action for formats
+without an appropriate in-app renderer.
+
+The `IDocumentViewer` boundary receives document content through the existing
+caller-owned stream contract. Temporary plaintext materialization is an
+implementation detail of the external viewer and must remain outside the
+workspace presenter and view lifecycle.
+
+The external viewing lifecycle is:
+
+```text
+Caller-owned document stream
+        ↓
+IDocumentViewer
+        ↓
+Temporary plaintext artifact
+        ↓
+External application launch
+        ↓
+External lifecycle completion
+        ↓
+Temporary artifact cleanup
+```
+
+The temporary artifact must be fully written and its file handle closed before
+the external application is launched.
+
+A successful launch is not treated as proof that the external application has
+finished consuming the artifact. When external lifecycle completion is
+observable, the viewer retains the artifact until completion before cleaning
+it up.
+
+When external lifecycle completion is not observable, the viewer retains the
+artifact until its own lifetime ends and then performs best-effort cleanup.
+
+Failures during temporary-file creation, copying, or external launch must
+attempt cleanup of the temporary artifact.
+
+This lifecycle must not change the canonical encrypted document artifact or
+move external-viewing responsibilities into the Application layer,
+Infrastructure layer, workspace presenter, or workspace view.
+
 ### Renderer Registration and Composition
 
 Format-specific renderers are registered through dependency injection.
