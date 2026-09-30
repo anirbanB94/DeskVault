@@ -11,6 +11,7 @@ public sealed class RemoveDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentDoesNotExist_ReturnsNotFound()
     {
+        // Arrange
         Guid documentId =
             Guid.NewGuid();
 
@@ -27,20 +28,21 @@ public sealed class RemoveDocumentHandlerTests
             new Mock<IWorkspaceRepository>();
 
         var storageService =
-            new TestStorageService();
+            new Mock<IStorageService>();
 
         var handler =
-            new RemoveDocumentHandler(
-                repository.Object,
-                workspaceRepository.Object,
-                storageService,
-                NullLogger<RemoveDocumentHandler>.Instance);
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
 
+        // Act
         RemoveDocumentResult result =
             await handler.HandleAsync(
                 new RemoveDocumentCommand(
                     documentId));
 
+        // Assert
         Assert.Equal(
             RemoveDocumentResultStatus.NotFound,
             result.Status);
@@ -49,8 +51,11 @@ public sealed class RemoveDocumentHandlerTests
             "The requested document could not be found.",
             result.Message);
 
-        Assert.False(
-            storageService.DeleteWasCalled);
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
 
         repository.Verify(
             x => x.DeleteAsync(
@@ -68,41 +73,41 @@ public sealed class RemoveDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenStorageDeletionFails_ReturnsStorageDeletionFailed()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                document.Id,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var workspaceRepository =
             new Mock<IWorkspaceRepository>();
 
         var storageService =
-            new TestStorageService
-            {
-                ExceptionToThrow =
-                    new IOException(
-                        "Storage deletion failed.")
-            };
+            new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new IOException(
+                    "Storage deletion failed."));
 
         var handler =
-            new RemoveDocumentHandler(
-                repository.Object,
-                workspaceRepository.Object,
-                storageService,
-                NullLogger<RemoveDocumentHandler>.Instance);
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
 
+        // Act
         RemoveDocumentResult result =
             await handler.HandleAsync(
                 new RemoveDocumentCommand(
                     document.Id));
 
+        // Assert
         Assert.Equal(
             RemoveDocumentResultStatus.StorageDeletionFailed,
             result.Status);
@@ -111,8 +116,11 @@ public sealed class RemoveDocumentHandlerTests
             "Storage deletion failed.",
             result.Message);
 
-        Assert.True(
-            storageService.DeleteWasCalled);
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         repository.Verify(
             x => x.DeleteAsync(
@@ -130,36 +138,33 @@ public sealed class RemoveDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDeletionSucceeds_ReturnsSuccess()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                document.Id,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var workspaceRepository =
             new Mock<IWorkspaceRepository>();
 
         var storageService =
-            new TestStorageService();
+            new Mock<IStorageService>();
 
         var handler =
-            new RemoveDocumentHandler(
-                repository.Object,
-                workspaceRepository.Object,
-                storageService,
-                NullLogger<RemoveDocumentHandler>.Instance);
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
 
+        // Act
         RemoveDocumentResult result =
             await handler.HandleAsync(
                 new RemoveDocumentCommand(
                     document.Id));
 
+        // Assert
         Assert.Equal(
             RemoveDocumentResultStatus.Success,
             result.Status);
@@ -168,8 +173,11 @@ public sealed class RemoveDocumentHandlerTests
             "Document removed successfully.",
             result.Message);
 
-        Assert.True(
-            storageService.DeleteWasCalled);
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         repository.Verify(
             x => x.DeleteAsync(
@@ -187,17 +195,13 @@ public sealed class RemoveDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenMetadataDeletionFails_ReturnsMetadataDeletionFailed()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                document.Id,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         repository
             .Setup(x => x.DeleteAsync(
@@ -211,20 +215,21 @@ public sealed class RemoveDocumentHandlerTests
             new Mock<IWorkspaceRepository>();
 
         var storageService =
-            new TestStorageService();
+            new Mock<IStorageService>();
 
         var handler =
-            new RemoveDocumentHandler(
-                repository.Object,
-                workspaceRepository.Object,
-                storageService,
-                NullLogger<RemoveDocumentHandler>.Instance);
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
 
+        // Act
         RemoveDocumentResult result =
             await handler.HandleAsync(
                 new RemoveDocumentCommand(
                     document.Id));
 
+        // Assert
         Assert.Equal(
             RemoveDocumentResultStatus.MetadataDeletionFailed,
             result.Status);
@@ -233,8 +238,11 @@ public sealed class RemoveDocumentHandlerTests
             "Metadata deletion failed.",
             result.Message);
 
-        Assert.True(
-            storageService.DeleteWasCalled);
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         repository.Verify(
             x => x.DeleteAsync(
@@ -252,41 +260,41 @@ public sealed class RemoveDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenStorageDeletionIsUnauthorized_ReturnsStorageDeletionFailed()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                document.Id,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         var workspaceRepository =
             new Mock<IWorkspaceRepository>();
 
         var storageService =
-            new TestStorageService
-            {
-                ExceptionToThrow =
-                    new UnauthorizedAccessException(
-                        "Access denied.")
-            };
+            new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new UnauthorizedAccessException(
+                    "Access denied."));
 
         var handler =
-            new RemoveDocumentHandler(
-                repository.Object,
-                workspaceRepository.Object,
-                storageService,
-                NullLogger<RemoveDocumentHandler>.Instance);
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
 
+        // Act
         RemoveDocumentResult result =
             await handler.HandleAsync(
                 new RemoveDocumentCommand(
                     document.Id));
 
+        // Assert
         Assert.Equal(
             RemoveDocumentResultStatus.StorageDeletionFailed,
             result.Status);
@@ -294,6 +302,12 @@ public sealed class RemoveDocumentHandlerTests
         Assert.Equal(
             "Access denied.",
             result.Message);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         repository.Verify(
             x => x.DeleteAsync(
@@ -311,17 +325,13 @@ public sealed class RemoveDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenMetadataDeletionThrowsIOException_ReturnsMetadataDeletionFailed()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                document.Id,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         repository
             .Setup(x => x.DeleteAsync(
@@ -335,20 +345,21 @@ public sealed class RemoveDocumentHandlerTests
             new Mock<IWorkspaceRepository>();
 
         var storageService =
-            new TestStorageService();
+            new Mock<IStorageService>();
 
         var handler =
-            new RemoveDocumentHandler(
-                repository.Object,
-                workspaceRepository.Object,
-                storageService,
-                NullLogger<RemoveDocumentHandler>.Instance);
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
 
+        // Act
         RemoveDocumentResult result =
             await handler.HandleAsync(
                 new RemoveDocumentCommand(
                     document.Id));
 
+        // Assert
         Assert.Equal(
             RemoveDocumentResultStatus.MetadataDeletionFailed,
             result.Status);
@@ -357,8 +368,11 @@ public sealed class RemoveDocumentHandlerTests
             "Metadata storage operation failed.",
             result.Message);
 
-        Assert.True(
-            storageService.DeleteWasCalled);
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         repository.Verify(
             x => x.DeleteAsync(
@@ -376,17 +390,13 @@ public sealed class RemoveDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenWorkspaceMembershipCleanupFails_ReturnsWorkspaceMembershipCleanupFailed()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
         var repository =
-            new Mock<IDocumentRepository>();
-
-        repository
-            .Setup(x => x.GetByIdAsync(
-                document.Id,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(document);
+            CreateRepository(
+                document);
 
         repository
             .Setup(x => x.DeleteAsync(
@@ -406,20 +416,21 @@ public sealed class RemoveDocumentHandlerTests
                     "Workspace membership cleanup failed."));
 
         var storageService =
-            new TestStorageService();
+            new Mock<IStorageService>();
 
         var handler =
-            new RemoveDocumentHandler(
-                repository.Object,
-                workspaceRepository.Object,
-                storageService,
-                NullLogger<RemoveDocumentHandler>.Instance);
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
 
+        // Act
         RemoveDocumentResult result =
             await handler.HandleAsync(
                 new RemoveDocumentCommand(
                     document.Id));
 
+        // Assert
         Assert.Equal(
             RemoveDocumentResultStatus.WorkspaceMembershipCleanupFailed,
             result.Status);
@@ -428,8 +439,11 @@ public sealed class RemoveDocumentHandlerTests
             "Workspace membership cleanup failed.",
             result.Message);
 
-        Assert.True(
-            storageService.DeleteWasCalled);
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         repository.Verify(
             x => x.DeleteAsync(
@@ -444,6 +458,33 @@ public sealed class RemoveDocumentHandlerTests
             Times.Once);
     }
 
+    private static Mock<IDocumentRepository> CreateRepository(
+        Document document)
+    {
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        return repository;
+    }
+
+    private static RemoveDocumentHandler CreateHandler(
+        Mock<IDocumentRepository> repository,
+        Mock<IWorkspaceRepository> workspaceRepository,
+        Mock<IStorageService> storageService)
+    {
+        return new RemoveDocumentHandler(
+            repository.Object,
+            workspaceRepository.Object,
+            storageService.Object,
+            NullLogger<RemoveDocumentHandler>.Instance);
+    }
+
     private static Document CreateDocument()
     {
         return Document.Create(
@@ -452,47 +493,5 @@ public sealed class RemoveDocumentHandlerTests
             "Test Document",
             "sha256-test-hash",
             "document.dvault");
-    }
-
-    private sealed class TestStorageService
-        : IStorageService
-    {
-        public bool DeleteWasCalled { get; private set; }
-
-        public Exception? ExceptionToThrow { get; set; }
-
-        public Task<string> StoreAsync(
-            string sourceFilePath,
-            Guid documentId,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(
-                "stored.dvault");
-        }
-
-        public Task DeleteAsync(
-            string storedFilePath,
-            CancellationToken cancellationToken = default)
-        {
-            DeleteWasCalled = true;
-
-            if (ExceptionToThrow is not null)
-            {
-                throw ExceptionToThrow;
-            }
-
-            return Task.CompletedTask;
-        }
-
-        public Task<string> StoreAsync(
-            string sourceFilePath,
-            Guid documentId,
-            CancellationToken cancellationToken = default,
-            string? expectedSha256Hash = null)
-        {
-            return Task.FromResult(
-                "stored.dvault");
-        }
-
     }
 }

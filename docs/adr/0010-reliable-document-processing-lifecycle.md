@@ -324,14 +324,40 @@ while the corresponding encrypted `.dvault` artifact is the authoritative
 stored-content representation. Their relationship crosses the database and
 filesystem persistence boundary.
 
+Each document therefore has one canonical managed artifact identity derived
+from its document identifier:
+
+```text
+%LOCALAPPDATA%\DeskVault\Documents\{DocumentId}.dvault
+```
+
+Ownership is an exact identity rule, not a filename-only rule. A persisted
+`StoredFilePath` is considered an owned artifact reference only when it
+resolves to that document's canonical managed artifact. A path containing the
+same `{DocumentId}.dvault` filename in another directory is not considered
+owned by the document.
+
+The canonical ownership rule is enforced through application-defined storage
+abstractions. Ordinary document opening and lifecycle operations resolve the
+managed artifact from `DocumentId` rather than trusting the persisted physical
+path. Reconciliation may inspect `StoredFilePath` as evidence, but it must
+validate the reference against the canonical ownership boundary before it is
+classified as valid.
+
 Artifact reconciliation is therefore responsible for detecting and safely
 classifying inconsistencies such as:
 
 - a persisted document record whose expected encrypted artifact is missing;
+- a persisted document record whose stored artifact reference is outside its
+  canonical document-owned boundary;
 - an encrypted artifact with no corresponding persisted document record;
 - an encrypted artifact that exists but cannot be opened or validated;
 - incomplete import or removal operations that leave metadata and artifacts
   inconsistent.
+
+A persisted artifact-reference ownership mismatch must be surfaced as a path
+mismatch and must not be treated as a valid readable artifact merely because
+the file exists or the filename matches the document identifier.
 
 Artifact reconciliation must not alter the processing-generation authority
 defined by this ADR.
@@ -345,12 +371,14 @@ In particular:
 - reconciliation must not delete valid content without sufficient evidence
   and an explicit safe recovery decision;
 - reconciliation must preserve the existing encrypted storage and
-  key-management boundaries.
+  key-management boundaries;
+- reconciliation must not use a non-owned persisted path as the ordinary
+  document read target.
 
 Document-artifact reconciliation is an Application-level consistency
 capability implemented through application-defined storage abstractions.
-Filesystem inspection and encrypted-artifact validation remain Infrastructure
-concerns.
+Filesystem inspection, canonical artifact-path resolution, and
+encrypted-artifact validation remain Infrastructure concerns.
 
 This reconciliation boundary is intentionally separate from database
 migration recovery. Database migration recovery remains owned by database
@@ -488,7 +516,13 @@ The implementation must:
 * preserve the existing encrypted document format and key-management
   boundary;
 * keep processing resource policy separate from parser-specific preview
-  limits.
+  limits;
+* resolve ordinary document-owned artifact access from the document
+  identifier;
+* validate persisted artifact references against the canonical managed
+  document-owned artifact before treating them as valid;
+* reject or surface same-identity artifact paths outside the managed document
+  storage boundary as ownership mismatches.
 
 The exact Application method signatures, EF Core implementation details,
 migration shape, and test structure are implementation concerns of the
@@ -509,6 +543,8 @@ work.
 * The document-artifact reconciliation work establishes a separate
   consistency boundary between persisted document metadata and encrypted
   document artifacts.
+* The document-owned artifact boundary work establishes canonical
+  `{DocumentId}.dvault` identity and managed-storage ownership enforcement.
 * The bounded document-processing resource policy is part of this lifecycle
   decision.
 * Stable chunk identity and provenance are tracked separately.
@@ -525,6 +561,12 @@ processing attempt remains authoritative.
 
 Document-artifact consistency is handled separately through reconciliation
 between persisted document metadata and encrypted `.dvault` artifacts.
+
+The document-artifact consistency boundary uses canonical document-owned
+artifact identity. Ordinary document access resolves the managed artifact from
+the document identifier, while reconciliation treats persisted physical
+artifact references as evidence that must satisfy the canonical ownership
+rule before they are considered valid.
 
 This separation prevents obsolete processing attempts from overwriting newer
 document state or derived content while ensuring that database/filesystem

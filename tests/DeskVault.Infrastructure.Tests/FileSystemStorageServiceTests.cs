@@ -456,8 +456,9 @@ public sealed class FileSystemStorageServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_ExistingFile_DeletesFile()
+    public async Task DeleteAsync_ExistingArtifact_DeletesArtifactOwnedByDocument()
     {
+        // Arrange
         string rootDirectory =
             CreateTemporaryDirectory();
 
@@ -467,27 +468,35 @@ public sealed class FileSystemStorageServiceTests
                 new DeskVaultDataPaths(
                     rootDirectory);
 
-            string filePath =
-                Path.Combine(
-                    dataPaths.RootDirectory,
-                    "document.dvault");
-
-            Directory.CreateDirectory(
-                dataPaths.RootDirectory);
-
-            await File.WriteAllTextAsync(
-                filePath,
-                "encrypted-content");
+            var pathResolver =
+                new DocumentArtifactPathResolver(
+                    dataPaths);
 
             FileSystemStorageService storageService =
                 CreateStorageService(
                     dataPaths);
 
-            await storageService.DeleteAsync(
-                filePath);
+            Guid documentId =
+                Guid.NewGuid();
 
+            string storedFilePath =
+                pathResolver.GetPath(
+                    documentId);
+
+            Directory.CreateDirectory(
+                dataPaths.DocumentsDirectory);
+
+            await File.WriteAllTextAsync(
+                storedFilePath,
+                "encrypted-content");
+
+            // Act
+            await storageService.DeleteAsync(
+                documentId);
+
+            // Assert
             Assert.False(
-                File.Exists(filePath));
+                File.Exists(storedFilePath));
         }
         finally
         {
@@ -497,8 +506,9 @@ public sealed class FileSystemStorageServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_EmptyPath_ThrowsArgumentException()
+    public async Task DeleteAsync_EmptyDocumentId_ThrowsArgumentException()
     {
+        // Arrange
         string rootDirectory =
             CreateTemporaryDirectory();
 
@@ -512,10 +522,17 @@ public sealed class FileSystemStorageServiceTests
                 CreateStorageService(
                     dataPaths);
 
-            await Assert.ThrowsAsync<ArgumentException>(
-                () =>
-                    storageService.DeleteAsync(
-                        string.Empty));
+            // Act
+            ArgumentException exception =
+                await Assert.ThrowsAsync<ArgumentException>(
+                    () =>
+                        storageService.DeleteAsync(
+                            Guid.Empty));
+
+            // Assert
+            Assert.Equal(
+                "documentId",
+                exception.ParamName);
         }
         finally
         {
@@ -527,6 +544,7 @@ public sealed class FileSystemStorageServiceTests
     [Fact]
     public async Task DeleteAsync_Cancelled_ThrowsOperationCanceledException()
     {
+        // Arrange
         string rootDirectory =
             CreateTemporaryDirectory();
 
@@ -545,12 +563,11 @@ public sealed class FileSystemStorageServiceTests
 
             cancellationTokenSource.Cancel();
 
+            // Act & Assert
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () =>
                     storageService.DeleteAsync(
-                        Path.Combine(
-                            rootDirectory,
-                            "document.dvault"),
+                        Guid.NewGuid(),
                         cancellationTokenSource.Token));
         }
         finally
@@ -561,8 +578,9 @@ public sealed class FileSystemStorageServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_MissingFile_DoesNotThrow()
+    public async Task DeleteAsync_MissingArtifact_DoesNotThrow()
     {
+        // Arrange
         string rootDirectory =
             CreateTemporaryDirectory();
 
@@ -576,17 +594,89 @@ public sealed class FileSystemStorageServiceTests
                 CreateStorageService(
                     dataPaths);
 
-            string missingFilePath =
-                Path.Combine(
-                    rootDirectory,
-                    "missing.dvault");
+            Guid documentId =
+                Guid.NewGuid();
 
+            // Act
             await storageService.DeleteAsync(
-                missingFilePath);
+                documentId);
+
+            // Assert
+            string storedFilePath =
+                new DocumentArtifactPathResolver(
+                    dataPaths)
+                .GetPath(documentId);
 
             Assert.False(
-                File.Exists(
-                    missingFilePath));
+                File.Exists(storedFilePath));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteAsync_DeletesOnlyArtifactOwnedByRequestedDocument()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var pathResolver =
+                new DocumentArtifactPathResolver(
+                    dataPaths);
+
+            FileSystemStorageService storageService =
+                CreateStorageService(
+                    dataPaths);
+
+            Guid firstDocumentId =
+                Guid.NewGuid();
+
+            Guid secondDocumentId =
+                Guid.NewGuid();
+
+            string firstArtifactPath =
+                pathResolver.GetPath(
+                    firstDocumentId);
+
+            string secondArtifactPath =
+                pathResolver.GetPath(
+                    secondDocumentId);
+
+            Directory.CreateDirectory(
+                dataPaths.DocumentsDirectory);
+
+            await File.WriteAllTextAsync(
+                firstArtifactPath,
+                "first-artifact");
+
+            await File.WriteAllTextAsync(
+                secondArtifactPath,
+                "second-artifact");
+
+            // Act
+            await storageService.DeleteAsync(
+                firstDocumentId);
+
+            // Assert
+            Assert.False(
+                File.Exists(firstArtifactPath));
+
+            Assert.True(
+                File.Exists(secondArtifactPath));
+
+            Assert.Equal(
+                "second-artifact",
+                await File.ReadAllTextAsync(secondArtifactPath));
         }
         finally
         {
@@ -605,6 +695,7 @@ public sealed class FileSystemStorageServiceTests
         return new FileSystemStorageService(
             encryptionService,
             dataPaths,
+            new DocumentArtifactPathResolver(dataPaths),
             NullLogger<FileSystemStorageService>.Instance);
     }
 

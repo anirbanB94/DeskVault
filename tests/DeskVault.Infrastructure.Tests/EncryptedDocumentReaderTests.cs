@@ -11,226 +11,251 @@ public sealed class EncryptedDocumentReaderTests
     [Fact]
     public async Task OpenReadAsync_WhenStoredFileIsValid_ReturnsDecryptedContent()
     {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
         byte[] originalContent =
             Encoding.UTF8.GetBytes(
                 "DeskVault encrypted document reader test.");
 
-        string filePath =
-            CreateTempFilePath();
+        Guid documentId =
+            Guid.NewGuid();
 
-        DocumentEncryptionService encryptionService =
-            CreateEncryptionService();
+        string artifactPath =
+            context.PathResolver.GetPath(
+                documentId);
 
-        EncryptedDocumentReader reader =
-            CreateReader(
-                encryptionService);
+        await CreateEncryptedFileAsync(
+            artifactPath,
+            originalContent,
+            context.EncryptionService);
 
-        try
-        {
-            await CreateEncryptedFileAsync(
-                filePath,
-                originalContent,
-                encryptionService);
+        // Act
+        await using Stream result =
+            await context.Reader.OpenReadAsync(
+                documentId);
 
-            await using Stream result =
-                await reader.OpenReadAsync(
-                    filePath);
+        // Assert
+        Assert.Equal(
+            0,
+            result.Position);
 
-            Assert.Equal(
-                0,
-                result.Position);
+        using var memory =
+            new MemoryStream();
 
-            using var memory =
-                new MemoryStream();
+        await result.CopyToAsync(
+            memory);
 
-            await result.CopyToAsync(
-                memory);
-
-            Assert.Equal(
-                originalContent,
-                memory.ToArray());
-        }
-        finally
-        {
-            DeleteIfExists(
-                filePath);
-        }
+        Assert.Equal(
+            originalContent,
+            memory.ToArray());
     }
 
     [Fact]
     public async Task OpenReadAsync_WhenPlaintextExceedsMaximum_ThrowsResourceLimitExceededException()
     {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
         byte[] originalContent =
             Encoding.UTF8.GetBytes(
                 "DeskVault encrypted document reader resource limit test.");
 
-        string filePath =
-            CreateTempFilePath();
+        Guid documentId =
+            Guid.NewGuid();
 
-        DocumentEncryptionService encryptionService =
-            CreateEncryptionService();
+        string artifactPath =
+            context.PathResolver.GetPath(
+                documentId);
 
-        EncryptedDocumentReader reader =
-            CreateReader(
-                encryptionService);
+        await CreateEncryptedFileAsync(
+            artifactPath,
+            originalContent,
+            context.EncryptionService);
 
-        try
-        {
-            await CreateEncryptedFileAsync(
-                filePath,
-                originalContent,
-                encryptionService);
+        long maximumPlaintextBytes =
+            originalContent.Length - 1;
 
-            long maximumPlaintextBytes =
-                originalContent.Length - 1;
+        // Act
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () =>
+                    context.Reader.OpenReadAsync(
+                        documentId,
+                        maximumPlaintextBytes:
+                            maximumPlaintextBytes));
 
-            ResourceLimitExceededException exception =
-                await Assert.ThrowsAsync<ResourceLimitExceededException>(
-                    () =>
-                        reader.OpenReadAsync(
-                            filePath,
-                            maximumPlaintextBytes: maximumPlaintextBytes));
+        // Assert
+        Assert.Equal(
+            maximumPlaintextBytes,
+            exception.LimitBytes);
 
-            Assert.Equal(
-                maximumPlaintextBytes,
-                exception.LimitBytes);
-
-            Assert.Equal(
-                originalContent.Length,
-                exception.AttemptedBytes);
-        }
-        finally
-        {
-            DeleteIfExists(
-                filePath);
-        }
+        Assert.Equal(
+            originalContent.Length,
+            exception.AttemptedBytes);
     }
 
     [Fact]
     public async Task OpenReadAsync_WhenStoredFileIsTampered_ThrowsAuthenticationTagMismatchException()
     {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
         byte[] originalContent =
             Encoding.UTF8.GetBytes(
                 "DeskVault tampered document test.");
 
-        string filePath =
-            CreateTempFilePath();
+        Guid documentId =
+            Guid.NewGuid();
 
-        DocumentEncryptionService encryptionService =
-            CreateEncryptionService();
+        string artifactPath =
+            context.PathResolver.GetPath(
+                documentId);
 
-        EncryptedDocumentReader reader =
-            CreateReader(
-                encryptionService);
+        await CreateEncryptedFileAsync(
+            artifactPath,
+            originalContent,
+            context.EncryptionService);
 
-        try
-        {
-            await CreateEncryptedFileAsync(
-                filePath,
-                originalContent,
-                encryptionService);
+        byte[] encryptedContent =
+            await File.ReadAllBytesAsync(
+                artifactPath);
 
-            byte[] encryptedContent =
-                await File.ReadAllBytesAsync(
-                    filePath);
+        Assert.True(
+            encryptedContent.Length > 24);
 
-            Assert.True(
-                encryptedContent.Length > 24);
+        encryptedContent[^1] ^= 0xFF;
 
-            encryptedContent[^1] ^= 0xFF;
+        await File.WriteAllBytesAsync(
+            artifactPath,
+            encryptedContent);
 
-            await File.WriteAllBytesAsync(
-                filePath,
-                encryptedContent);
-
-            await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
-                () =>
-                    reader.OpenReadAsync(
-                        filePath));
-        }
-        finally
-        {
-            DeleteIfExists(
-                filePath);
-        }
+        // Act & Assert
+        await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
+            () =>
+                context.Reader.OpenReadAsync(
+                    documentId));
     }
 
     [Fact]
-    public async Task OpenReadAsync_WhenStoredFileDoesNotExist_ThrowsFileNotFoundException()
+    public async Task OpenReadAsync_WhenStoredArtifactDoesNotExist_ThrowsFileNotFoundException()
     {
-        EncryptedDocumentReader reader =
-            CreateReader();
+        // Arrange
+        using var context =
+            CreateTestContext();
 
-        string filePath =
-            CreateTempFilePath();
+        Guid documentId =
+            Guid.NewGuid();
 
+        // Act & Assert
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>
-                reader.OpenReadAsync(
-                    filePath));
+                context.Reader.OpenReadAsync(
+                    documentId));
     }
 
     [Fact]
     public async Task OpenReadAsync_WhenCancellationIsRequested_ThrowsOperationCanceledException()
     {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
         byte[] originalContent =
             Encoding.UTF8.GetBytes(
                 "DeskVault cancellation test.");
 
-        string filePath =
-            CreateTempFilePath();
+        Guid documentId =
+            Guid.NewGuid();
 
-        DocumentEncryptionService encryptionService =
-            CreateEncryptionService();
+        string artifactPath =
+            context.PathResolver.GetPath(
+                documentId);
 
-        EncryptedDocumentReader reader =
-            CreateReader(
-                encryptionService);
+        await CreateEncryptedFileAsync(
+            artifactPath,
+            originalContent,
+            context.EncryptionService);
 
-        try
-        {
-            await CreateEncryptedFileAsync(
-                filePath,
-                originalContent,
-                encryptionService);
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
 
-            using var cancellationTokenSource =
-                new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
 
-            cancellationTokenSource.Cancel();
-
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () =>
-                    reader.OpenReadAsync(
-                        filePath,
-                        cancellationTokenSource.Token));
-        }
-        finally
-        {
-            DeleteIfExists(
-                filePath);
-        }
+        // Act & Assert
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () =>
+                context.Reader.OpenReadAsync(
+                    documentId,
+                    cancellationTokenSource.Token));
     }
 
-    private static EncryptedDocumentReader CreateReader(
-        DocumentEncryptionService? encryptionService = null)
+    [Fact]
+    public async Task OpenReadAsync_UsesCanonicalArtifactForDocumentIdentity()
     {
-        encryptionService ??=
-            CreateEncryptionService();
+        // Arrange
+        using var context =
+            CreateTestContext();
 
-        return new EncryptedDocumentReader(
-            encryptionService,
-            NullLogger<EncryptedDocumentReader>.Instance);
+        Guid documentId =
+            Guid.NewGuid();
+
+        Guid unrelatedDocumentId =
+            Guid.NewGuid();
+
+        byte[] canonicalContent =
+            Encoding.UTF8.GetBytes(
+                "canonical-document-content");
+
+        byte[] unrelatedContent =
+            Encoding.UTF8.GetBytes(
+                "unrelated-document-content");
+
+        string canonicalArtifactPath =
+            context.PathResolver.GetPath(
+                documentId);
+
+        string unrelatedArtifactPath =
+            context.PathResolver.GetPath(
+                unrelatedDocumentId);
+
+        await CreateEncryptedFileAsync(
+            canonicalArtifactPath,
+            canonicalContent,
+            context.EncryptionService);
+
+        await CreateEncryptedFileAsync(
+            unrelatedArtifactPath,
+            unrelatedContent,
+            context.EncryptionService);
+
+        // Act
+        await using Stream result =
+            await context.Reader.OpenReadAsync(
+                documentId);
+
+        using var memory =
+            new MemoryStream();
+
+        await result.CopyToAsync(
+            memory);
+
+        // Assert
+        Assert.Equal(
+            canonicalContent,
+            memory.ToArray());
+
+        Assert.NotEqual(
+            unrelatedContent,
+            memory.ToArray());
     }
 
-    private static DocumentEncryptionService CreateEncryptionService()
+    private static TestContext CreateTestContext()
     {
-        byte[] key =
-            RandomNumberGenerator.GetBytes(32);
-
-        return new DocumentEncryptionService(
-            new TestEncryptionKeyService(key),
-            NullLogger<DocumentEncryptionService>.Instance);
+        return new TestContext();
     }
 
     private static async Task CreateEncryptedFileAsync(
@@ -238,8 +263,16 @@ public sealed class EncryptedDocumentReaderTests
         byte[] content,
         DocumentEncryptionService encryptionService)
     {
+        string directory =
+            Path.GetDirectoryName(
+                filePath)!;
+
+        Directory.CreateDirectory(
+            directory);
+
         await using var source =
-            new MemoryStream(content);
+            new MemoryStream(
+                content);
 
         await using var destination =
             new FileStream(
@@ -255,19 +288,65 @@ public sealed class EncryptedDocumentReaderTests
             destination);
     }
 
-    private static string CreateTempFilePath()
+    private sealed class TestContext : IDisposable
     {
-        return Path.Combine(
-            Path.GetTempPath(),
-            $"{Guid.NewGuid():N}.dvault");
-    }
+        public string RootDirectory { get; }
 
-    private static void DeleteIfExists(
-        string filePath)
-    {
-        if (File.Exists(filePath))
+        public DeskVaultDataPaths DataPaths { get; }
+
+        public DocumentArtifactPathResolver PathResolver { get; }
+
+        public DocumentEncryptionService EncryptionService { get; }
+
+        public EncryptedDocumentReader Reader { get; }
+
+        public TestContext()
         {
-            File.Delete(filePath);
+            RootDirectory =
+                Path.Combine(
+                    Path.GetTempPath(),
+                    "DeskVaultTests",
+                    Guid.NewGuid().ToString("N"));
+
+            Directory.CreateDirectory(
+                RootDirectory);
+
+            DataPaths =
+                new DeskVaultDataPaths(
+                    RootDirectory);
+
+            Directory.CreateDirectory(
+                DataPaths.DocumentsDirectory);
+
+            PathResolver =
+                new DocumentArtifactPathResolver(
+                    DataPaths);
+
+            byte[] key =
+                RandomNumberGenerator.GetBytes(32);
+
+            EncryptionService =
+                new DocumentEncryptionService(
+                    new TestEncryptionKeyService(
+                        key),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            Reader =
+                new EncryptedDocumentReader(
+                    EncryptionService,
+                    PathResolver,
+                    NullLogger<EncryptedDocumentReader>.Instance);
+        }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(
+                    RootDirectory))
+            {
+                Directory.Delete(
+                    RootDirectory,
+                    recursive: true);
+            }
         }
     }
 
@@ -288,7 +367,7 @@ public sealed class EncryptedDocumentReaderTests
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key);
+                _key.ToArray());
         }
     }
 }

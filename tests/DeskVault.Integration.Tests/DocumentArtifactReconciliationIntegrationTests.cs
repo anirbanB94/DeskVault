@@ -359,6 +359,94 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 finding.ArtifactPath));
     }
 
+    [Fact]
+    public async Task ReconcileAsync_WhenStoredPathUsesDifferentDirectoryWithSameDocumentIdentity_ReturnsPathMismatch()
+    {
+        // Arrange
+        await using var environment =
+            await TestEnvironment.CreateAsync();
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        string sourceFilePath =
+            Path.Combine(
+                environment.RootDirectory,
+                "outside-boundary-source.txt");
+
+        await File.WriteAllTextAsync(
+            sourceFilePath,
+            "Outside boundary reconciliation test.");
+
+        await environment.Harness.StoreArtifactAsync(
+            sourceFilePath,
+            documentId);
+
+        string canonicalArtifactPath =
+            Path.Combine(
+                environment.Harness.DataPaths.DocumentsDirectory,
+                $"{documentId}.dvault");
+
+        string outsideDirectory =
+            Path.Combine(
+                environment.RootDirectory,
+                "Outside");
+
+        Directory.CreateDirectory(
+            outsideDirectory);
+
+        string outsideArtifactPath =
+            Path.Combine(
+                outsideDirectory,
+                $"{documentId}.dvault");
+
+        File.Move(
+            canonicalArtifactPath,
+            outsideArtifactPath);
+
+        Document document =
+            Document.Create(
+                documentId,
+                "document.txt",
+                "Outside Boundary Test Document",
+                "sha256-outside-boundary-test-hash",
+                outsideArtifactPath);
+
+        await environment.Harness.PersistDocumentAsync(
+            document);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await environment.Harness.ReconciliationHandler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        DocumentArtifactReconciliationResult finding =
+            Assert.Single(
+                result.Findings);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.PathMismatch,
+            finding.Status);
+
+        Assert.Equal(
+            documentId,
+            finding.DocumentId);
+
+        Assert.Equal(
+            Path.GetFullPath(
+                outsideArtifactPath),
+            finding.ArtifactPath);
+
+        Assert.True(
+            File.Exists(
+                outsideArtifactPath));
+
+        Assert.False(
+            File.Exists(
+                canonicalArtifactPath));
+    }
+
     private sealed class TestEnvironment : IAsyncDisposable
     {
         private TestEnvironment(
@@ -412,7 +500,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
             await Harness.DisposeAsync();
 
             if (Directory.Exists(
-                    RootDirectory))
+                RootDirectory))
             {
                 Directory.Delete(
                     RootDirectory,

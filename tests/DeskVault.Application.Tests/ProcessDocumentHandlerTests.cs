@@ -201,6 +201,10 @@ public sealed class ProcessDocumentHandlerTests
             processingContext.Reader.WasOpened);
 
         Assert.Equal(
+            document.Id,
+            processingContext.Reader.OpenedDocumentId);
+
+        Assert.Equal(
             maxDecryptedDocumentBytes,
             processingContext.Reader.MaximumPlaintextBytes);
 
@@ -1051,18 +1055,22 @@ public sealed class ProcessDocumentHandlerTests
     {
         public bool WasOpened { get; private set; }
 
+        public Guid? OpenedDocumentId { get; private set; }
+
         public long? MaximumPlaintextBytes { get; private set; }
 
         public bool ThrowResourceLimitExceededOnOpen { get; set; }
 
         public Task<Stream> OpenReadAsync(
-            string storedFilePath,
+            Guid documentId,
             CancellationToken cancellationToken = default,
             long? maximumPlaintextBytes = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             WasOpened = true;
+
+            OpenedDocumentId = documentId;
 
             MaximumPlaintextBytes =
                 maximumPlaintextBytes;

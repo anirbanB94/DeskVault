@@ -11,15 +11,19 @@ public sealed class FileSystemStorageService : IStorageService
 
     private readonly DeskVaultDataPaths _dataPaths;
 
+    private readonly DocumentArtifactPathResolver _artifactPathResolver;
+
     private readonly ILogger<FileSystemStorageService> _logger;
 
     public FileSystemStorageService(
         DocumentEncryptionService encryptionService,
         DeskVaultDataPaths dataPaths,
+        DocumentArtifactPathResolver artifactPathResolver,
         ILogger<FileSystemStorageService> logger)
     {
         _encryptionService = encryptionService;
         _dataPaths = dataPaths;
+        _artifactPathResolver = artifactPathResolver;
         _logger = logger;
     }
 
@@ -35,9 +39,8 @@ public sealed class FileSystemStorageService : IStorageService
             LogMessages.DocumentStorageStarted);
 
         string destinationFilePath =
-            Path.Combine(
-                _dataPaths.DocumentsDirectory,
-                $"{documentId}.dvault");
+            _artifactPathResolver.GetPath(
+                documentId);
 
         bool destinationCreated = false;
 
@@ -131,18 +134,14 @@ public sealed class FileSystemStorageService : IStorageService
     }
 
     public Task DeleteAsync(
-        string storedFilePath,
+        Guid documentId,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (string.IsNullOrWhiteSpace(
-            storedFilePath))
-        {
-            throw new ArgumentException(
-                "Stored file path cannot be empty.",
-                nameof(storedFilePath));
-        }
+        string storedFilePath =
+            _artifactPathResolver.GetPath(
+                documentId);
 
         try
         {
@@ -154,6 +153,14 @@ public sealed class FileSystemStorageService : IStorageService
 
             return Task.CompletedTask;
         }
+        catch (FileNotFoundException)
+        {
+            return Task.CompletedTask;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return Task.CompletedTask;
+        }
         catch (Exception ex)
         {
             _logger.LogError(
@@ -162,6 +169,15 @@ public sealed class FileSystemStorageService : IStorageService
 
             throw;
         }
+    }
+
+    public bool IsOwnedArtifactPath(
+        Guid documentId,
+        string storedFilePath)
+    {
+        return _artifactPathResolver.IsOwnedArtifactPath(
+            documentId,
+            storedFilePath);
     }
 
     private void TryDeletePartialFile(

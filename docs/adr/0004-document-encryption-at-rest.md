@@ -48,13 +48,27 @@ The stored file will continue to use an application-generated identifier rather 
 
 The original file extension may be retained as metadata where useful, but the stored content itself will be encrypted and must not be treated as an ordinary user-openable file.
 
+### Document-Owned Artifact Identity
+
+Each persisted document has a canonical managed encrypted artifact identified by its document identifier.
+
+For a document with identifier `{DocumentId}`, the canonical managed artifact is:
+
+```text
+%LOCALAPPDATA%\DeskVault\Documents\{DocumentId}.dvault
+```
+
+This canonical path is resolved by Infrastructure from the document identifier and the application-managed documents directory. Document-owned lifecycle operations use the document identifier through the storage/reader abstractions rather than accepting an arbitrary physical artifact path.
+
+A persisted physical `StoredFilePath` remains document metadata and may be used as reconciliation evidence, but it is not authoritative for ordinary document-owned artifact access. A persisted path is considered owned by the document only when it resolves to the canonical managed artifact for that same document identifier. A matching `{DocumentId}.dvault` filename in another directory is not a document-owned artifact.
+
 ## Architectural Boundaries
 
 The responsibilities remain separated:
 
 - Application orchestrates document import and does not perform encryption directly.
 - Domain represents document metadata and business invariants.
-- Infrastructure performs encryption, key management, and physical storage.
+- Infrastructure performs encryption, key management, canonical artifact-path resolution, and physical storage.
 - UI displays import results and does not handle encryption keys or cryptographic operations.
 
 The intended dependency flow is:
@@ -63,11 +77,15 @@ UI
  ↓
 Application
  ↓
-IStorageService
+IStorageService / IDocumentReader
  ↓
-Encrypted Storage
+Infrastructure
+ ├── Canonical artifact-path resolution
+ ├── Encrypted Storage
  ├── Key Protection
  └── File System
+
+The Application layer must not construct or accept physical managed artifact paths for normal document lifecycle operations. Infrastructure owns the canonical document-to-artifact path rule.
 
 ## Consequences
 
@@ -79,6 +97,7 @@ Encrypted Storage
 - The storage implementation remains replaceable.
 - Authenticated encryption provides confidentiality and tamper detection.
 - The architecture leaves room for future key rotation and stronger key-management strategies.
+- Document-owned artifact operations have one canonical identity and cannot intentionally select another document's managed artifact by supplying an arbitrary path.
 
 ### Negative
 
@@ -103,6 +122,8 @@ Cryptographic operations must use cryptographically secure random values for non
 The implementation must authenticate encrypted content before returning decrypted data.
 
 Cryptographic failures must not expose sensitive document contents through error messages or logs.
+
+Document-owned lifecycle operations must not accept caller-controlled artifact paths that can escape the application-managed `Documents` directory. Canonical document-to-artifact resolution is therefore performed by Infrastructure from the document identifier.
 
 ## Current Implementation
 
@@ -131,6 +152,12 @@ The encrypted document artifacts are stored under:
 %LOCALAPPDATA%\DeskVault\Documents
 ```
 
+Each document's managed artifact uses the canonical identity:
+
+```text
+%LOCALAPPDATA%\DeskVault\Documents\{DocumentId}.dvault
+```
+
 The encryption implementation remains inside Infrastructure. The
 Application layer interacts with storage through its abstraction and does
 not perform cryptographic operations directly.
@@ -147,12 +174,19 @@ IDocumentReader / storage abstraction
     ↓
 Infrastructure
     ↓
+Canonical artifact resolution from DocumentId
+    ↓
 Protected key material
     ↓
 AES-GCM authentication and decryption
     ↓
 Readable document stream
 ```
+
+Ordinary document opening and lifecycle operations do not trust the persisted
+physical `StoredFilePath` as the authoritative artifact selector. Reconciliation
+may inspect that persisted value as evidence, but ownership is validated
+against the canonical document-owned path.
 
 Cryptographic failures are handled through the application's controlled
 error boundaries and must not expose document contents or encryption
@@ -173,14 +207,19 @@ SQLite / EF Core
 
 Document Content
     ↓
-Encrypted `.dvault` File
+Canonical managed encrypted `.dvault` File
     ↓
 Windows-protected Key Material
 ```
 
+The canonical document-to-artifact identity is enforced by Infrastructure,
+while Application interacts with the storage and reader abstractions by
+document identity. Persisted physical artifact references remain metadata and
+are not treated as authoritative for ordinary document lifecycle access.
+
 The encryption boundary remains replaceable through Infrastructure
-abstractions and does not couple cryptographic implementation details to
-the Domain, Application, or UI layers.
+abstractions and does not couple cryptographic implementation details to the
+Domain, Application, or UI layers.
 
 ## Future Considerations
 

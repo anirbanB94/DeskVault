@@ -3707,14 +3707,20 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey),
                     NullLogger<DocumentEncryptionService>.Instance);
 
+            var artifactPathResolver =
+                new DocumentArtifactPathResolver(
+                    new DeskVaultDataPaths(
+                        rootDirectory));
+
             var reader =
                 new EncryptedDocumentReader(
                     encryptionService,
+                    artifactPathResolver,
                     NullLogger<EncryptedDocumentReader>.Instance);
 
             await using Stream decryptedStream =
                 await reader.OpenReadAsync(
-                    document.StoredFilePath);
+                    document.Id);
 
             using var decryptedContent =
                 new MemoryStream();
@@ -3988,12 +3994,21 @@ public sealed class DocumentImportIntegrationTests
         }
 
         public Task DeleteAsync(
-            string storedFilePath,
+            Guid documentId,
             CancellationToken cancellationToken = default)
         {
             return _inner.DeleteAsync(
-                storedFilePath,
+                documentId,
                 cancellationToken);
+        }
+
+        public bool IsOwnedArtifactPath(
+            Guid documentId,
+            string storedFilePath)
+        {
+            return _inner.IsOwnedArtifactPath(
+                documentId,
+                storedFilePath);
         }
     }
 

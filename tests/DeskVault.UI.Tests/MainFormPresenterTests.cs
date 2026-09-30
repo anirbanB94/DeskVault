@@ -931,11 +931,11 @@ public sealed class MainFormPresenterTests
 
         documentReader
             .Setup(x => x.OpenReadAsync(
-                "document.dvault",
+                documentId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-                CreateContentStream(
-                    content));
+            CreateContentStream(
+                content));
 
         var workspaceView =
             new Mock<IDocumentWorkspaceView>();
@@ -1285,7 +1285,7 @@ public sealed class MainFormPresenterTests
 
         documentReader.Verify(
             x => x.OpenReadAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -1329,11 +1329,11 @@ public sealed class MainFormPresenterTests
 
         documentReader
             .Setup(x => x.OpenReadAsync(
-                "document.dvault",
+                documentId,
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
-                new InvalidOperationException(
-                    errorMessage));
+            new InvalidOperationException(
+                errorMessage));
 
         _ =
             CreatePresenter(

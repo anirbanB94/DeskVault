@@ -12,6 +12,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
     [Fact]
     public async Task HandleAsync_WhenArtifactMatchesDocument_ReturnsMatched()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
@@ -43,22 +44,28 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         reader
             .Setup(x => x.OpenReadAsync(
-                expectedArtifactPath,
+                document.Id,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new MemoryStream(
                     "decrypted-content"u8.ToArray()));
 
+        var storageService =
+            CreateStorageServiceMock();
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
-                reader);
+                reader,
+                storageService);
 
+        // Act
         ReconcileDocumentArtifactsResult result =
             await handler.HandleAsync(
                 new ReconcileDocumentArtifactsQuery());
 
+        // Assert
         var finding =
             Assert.Single(result.Findings);
 
@@ -74,9 +81,15 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             expectedArtifactPath,
             finding.ArtifactPath);
 
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                document.Id,
+                expectedArtifactPath),
+            Times.Once);
+
         reader.Verify(
             x => x.OpenReadAsync(
-                expectedArtifactPath,
+                document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -84,6 +97,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
     [Fact]
     public async Task HandleAsync_WhenArtifactIsMissing_ReturnsMissingArtifact()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
@@ -111,16 +125,22 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var reader =
             new Mock<IDocumentReader>();
 
+        var storageService =
+            CreateStorageServiceMock();
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
-                reader);
+                reader,
+                storageService);
 
+        // Act
         ReconcileDocumentArtifactsResult result =
             await handler.HandleAsync(
                 new ReconcileDocumentArtifactsQuery());
 
+        // Assert
         var finding =
             Assert.Single(result.Findings);
 
@@ -136,9 +156,15 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             expectedArtifactPath,
             finding.ArtifactPath);
 
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                document.Id,
+                expectedArtifactPath),
+            Times.Once);
+
         reader.Verify(
             x => x.OpenReadAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -146,6 +172,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
     [Fact]
     public async Task HandleAsync_WhenArtifactHasNoDocument_ReturnsOrphanedArtifact()
     {
+        // Arrange
         Guid orphanId =
             Guid.NewGuid();
 
@@ -180,16 +207,22 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var reader =
             new Mock<IDocumentReader>();
 
+        var storageService =
+            CreateStorageServiceMock();
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
-                reader);
+                reader,
+                storageService);
 
+        // Act
         ReconcileDocumentArtifactsResult result =
             await handler.HandleAsync(
                 new ReconcileDocumentArtifactsQuery());
 
+        // Assert
         var finding =
             Assert.Single(result.Findings);
 
@@ -207,14 +240,21 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         reader.Verify(
             x => x.OpenReadAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                It.IsAny<Guid>(),
+                It.IsAny<string>()),
             Times.Never);
     }
 
     [Fact]
     public async Task HandleAsync_WhenArtifactCannotBeRead_ReturnsUnreadableArtifact()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
@@ -246,22 +286,28 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         reader
             .Setup(x => x.OpenReadAsync(
-                expectedArtifactPath,
+                document.Id,
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new CryptographicException(
                     "Artifact authentication failed."));
 
+        var storageService =
+            CreateStorageServiceMock();
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
-                reader);
+                reader,
+                storageService);
 
+        // Act
         ReconcileDocumentArtifactsResult result =
             await handler.HandleAsync(
                 new ReconcileDocumentArtifactsQuery());
 
+        // Assert
         var finding =
             Assert.Single(result.Findings);
 
@@ -276,11 +322,18 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         Assert.Equal(
             expectedArtifactPath,
             finding.ArtifactPath);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                document.Id,
+                expectedArtifactPath),
+            Times.Once);
     }
 
     [Fact]
     public async Task HandleAsync_WhenStoredPathDoesNotMatchDocumentIdentity_ReturnsPathMismatch()
     {
+        // Arrange
         Guid documentId =
             Guid.NewGuid();
 
@@ -323,16 +376,28 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var reader =
             new Mock<IDocumentReader>();
 
+        var storageService =
+            CreateStorageServiceMock();
+
+        storageService
+            .Setup(x => x.IsOwnedArtifactPath(
+                document.Id,
+                storedArtifactPath))
+            .Returns(false);
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
-                reader);
+                reader,
+                storageService);
 
+        // Act
         ReconcileDocumentArtifactsResult result =
             await handler.HandleAsync(
                 new ReconcileDocumentArtifactsQuery());
 
+        // Assert
         var finding =
             Assert.Single(result.Findings);
 
@@ -348,9 +413,108 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             storedArtifactPath,
             finding.ArtifactPath);
 
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                document.Id,
+                storedArtifactPath),
+            Times.Once);
+
         reader.Verify(
             x => x.OpenReadAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenStoredPathUsesDifferentDirectoryWithSameDocumentIdentity_ReturnsPathMismatch()
+    {
+        // Arrange
+        Guid documentId =
+            Guid.NewGuid();
+
+        string storedArtifactPath =
+            Path.GetFullPath(
+                Path.Combine(
+                    "Outside",
+                    $"{documentId}.dvault"));
+
+        Document document =
+            Document.Create(
+                documentId,
+                "document.txt",
+                "Test Document",
+                "sha256-test-hash",
+                storedArtifactPath);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([document]);
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        artifactEnumerator
+            .Setup(x => x.EnumerateAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                storedArtifactPath
+            ]);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        storageService
+            .Setup(x => x.IsOwnedArtifactPath(
+                document.Id,
+                storedArtifactPath))
+            .Returns(false);
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        var finding =
+            Assert.Single(result.Findings);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.PathMismatch,
+            finding.Status);
+
+        Assert.Equal(
+            document.Id,
+            finding.DocumentId);
+
+        Assert.Equal(
+            storedArtifactPath,
+            finding.ArtifactPath);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                document.Id,
+                storedArtifactPath),
+            Times.Once);
+
+        reader.Verify(
+            x => x.OpenReadAsync(
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -358,6 +522,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
     [Fact]
     public async Task HandleAsync_WhenCancellationIsAlreadyRequested_ThrowsAndDoesNotAccessDependencies()
     {
+        // Arrange
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -367,23 +532,29 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var reader =
             new Mock<IDocumentReader>();
 
+        var storageService =
+            CreateStorageServiceMock();
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
-                reader);
+                reader,
+                storageService);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
 
         cancellationTokenSource.Cancel();
 
+        // Act
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
                 handler.HandleAsync(
                     new ReconcileDocumentArtifactsQuery(),
                     cancellationTokenSource.Token));
 
+        // Assert
         repository.Verify(
             x => x.GetAllAsync(
                 It.IsAny<CancellationToken>()),
@@ -394,9 +565,15 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                It.IsAny<Guid>(),
+                It.IsAny<string>()),
+            Times.Never);
+
         reader.Verify(
             x => x.OpenReadAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -404,6 +581,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
     [Fact]
     public async Task HandleAsync_WhenReconcilingDocuments_DoesNotMutateRepository()
     {
+        // Arrange
         Document document =
             CreateDocument();
 
@@ -427,15 +605,21 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var reader =
             new Mock<IDocumentReader>();
 
+        var storageService =
+            CreateStorageServiceMock();
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
-                reader);
+                reader,
+                storageService);
 
+        // Act
         await handler.HandleAsync(
             new ReconcileDocumentArtifactsQuery());
 
+        // Assert
         repository.Verify(
             x => x.AddAsync(
                 It.IsAny<Document>(),
@@ -453,18 +637,40 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                document.Id,
+                It.IsAny<string>()),
+            Times.Once);
     }
 
     private static ReconcileDocumentArtifactsHandler CreateHandler(
         Mock<IDocumentRepository> repository,
         Mock<IDocumentArtifactEnumerator> artifactEnumerator,
-        Mock<IDocumentReader> reader)
+        Mock<IDocumentReader> reader,
+        Mock<IStorageService> storageService)
     {
         return new ReconcileDocumentArtifactsHandler(
             repository.Object,
             artifactEnumerator.Object,
             reader.Object,
+            storageService.Object,
             NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
+    }
+
+    private static Mock<IStorageService> CreateStorageServiceMock()
+    {
+        var storageService =
+            new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.IsOwnedArtifactPath(
+                It.IsAny<Guid>(),
+                It.IsAny<string>()))
+            .Returns(true);
+
+        return storageService;
     }
 
     private static Document CreateDocument()

@@ -9,6 +9,10 @@ public interface IStorageService
         string? expectedSha256Hash = null);
 
     Task DeleteAsync(
-        string storedFilePath,
+        Guid documentId,
         CancellationToken cancellationToken = default);
+
+    bool IsOwnedArtifactPath(
+        Guid documentId,
+        string storedFilePath);
 }
