@@ -252,9 +252,9 @@ public sealed class RemoveDocumentHandlerTests
 
         workspaceRepository.Verify(
             x => x.RemoveDocumentFromAllWorkspacesAsync(
-                It.IsAny<Guid>(),
+                document.Id,
                 It.IsAny<CancellationToken>()),
-            Times.Never);
+            Times.Once);
     }
 
     [Fact]
@@ -382,9 +382,9 @@ public sealed class RemoveDocumentHandlerTests
 
         workspaceRepository.Verify(
             x => x.RemoveDocumentFromAllWorkspacesAsync(
-                It.IsAny<Guid>(),
+                document.Id,
                 It.IsAny<CancellationToken>()),
-            Times.Never);
+            Times.Once);
     }
 
     [Fact]
@@ -449,13 +449,157 @@ public sealed class RemoveDocumentHandlerTests
             x => x.DeleteAsync(
                 document.Id,
                 It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Never);
 
         workspaceRepository.Verify(
             x => x.RemoveDocumentFromAllWorkspacesAsync(
                 document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenWorkspaceCleanupFails_RetryCompletesRemoval()
+    {
+        // Arrange
+        Document document =
+            CreateDocument();
+
+        var repository =
+            CreateRepository(
+                document);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .SetupSequence(x => x.RemoveDocumentFromAllWorkspacesAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    "Workspace cleanup failed."))
+            .Returns(
+                Task.CompletedTask);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var handler =
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
+
+        // Act
+        RemoveDocumentResult firstResult =
+            await handler.HandleAsync(
+                new RemoveDocumentCommand(
+                    document.Id));
+
+        RemoveDocumentResult retryResult =
+            await handler.HandleAsync(
+                new RemoveDocumentCommand(
+                    document.Id));
+
+        // Assert
+        Assert.Equal(
+            RemoveDocumentResultStatus.WorkspaceMembershipCleanupFailed,
+            firstResult.Status);
+
+        Assert.Equal(
+            RemoveDocumentResultStatus.Success,
+            retryResult.Status);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        repository.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenMetadataDeletionFails_RetryCompletesRemoval()
+    {
+        // Arrange
+        Document document =
+            CreateDocument();
+
+        var repository =
+            CreateRepository(
+                document);
+
+        repository
+            .SetupSequence(x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    "Metadata deletion failed."))
+            .Returns(
+                Task.CompletedTask);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var handler =
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService);
+
+        // Act
+        RemoveDocumentResult firstResult =
+            await handler.HandleAsync(
+                new RemoveDocumentCommand(
+                    document.Id));
+
+        RemoveDocumentResult retryResult =
+            await handler.HandleAsync(
+                new RemoveDocumentCommand(
+                    document.Id));
+
+        // Assert
+        Assert.Equal(
+            RemoveDocumentResultStatus.MetadataDeletionFailed,
+            firstResult.Status);
+
+        Assert.Equal(
+            RemoveDocumentResultStatus.Success,
+            retryResult.Status);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        repository.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
     }
 
     private static Mock<IDocumentRepository> CreateRepository(

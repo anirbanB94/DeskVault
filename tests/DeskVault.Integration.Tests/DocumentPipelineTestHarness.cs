@@ -17,6 +17,7 @@ using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using DeskVault.Domain.Workspaces;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Infrastructure.Repositories;
@@ -59,7 +60,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         Func<IStorageService, IStorageService>? importStorageDecorator = null,
         Func<IDocumentRepository, IDocumentRepository>? importRepositoryDecorator = null,
         IDocumentTextChunker? chunker = null,
-        DocumentProcessingOptions? processingOptions = null)
+        DocumentProcessingOptions? processingOptions = null,
+        Func<IDocumentRepository, IDocumentRepository>? removeRepositoryDecorator = null)
     {
         ArgumentNullException.ThrowIfNull(encryptionKey);
 
@@ -163,9 +165,15 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         var workspaceRepository =
             CreateWorkspaceRepository();
 
+        IDocumentRepository removeRepository =
+            removeRepositoryDecorator is null
+                ? repository
+                : removeRepositoryDecorator(
+                    repository);
+
         RemoveHandler =
             new RemoveDocumentHandler(
-                repository,
+                removeRepository,
                 workspaceRepository,
                 _storageService,
                 NullLogger<RemoveDocumentHandler>.Instance);
@@ -206,6 +214,26 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
         await repository.AddAsync(
             document);
+    }
+
+    public async Task<Workspace?> GetWorkspaceAsync(
+        Guid workspaceId)
+    {
+        var repository =
+            CreateWorkspaceRepository();
+
+        return await repository.GetByIdAsync(
+            workspaceId);
+    }
+
+    public async Task PersistWorkspaceAsync(
+        Workspace workspace)
+    {
+        var repository =
+            CreateWorkspaceRepository();
+
+        await repository.AddAsync(
+            workspace);
     }
 
     public async Task<List<DocumentChunkEntity>> GetChunksAsync(

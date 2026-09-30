@@ -44,6 +44,9 @@ public static class LogMessages
     public const string DocumentMetadataDeletionFailed =
         "Application document metadata deletion failed.";
 
+    public const string DocumentWorkspaceMembershipCleanupFailed =
+        "Application document workspace membership cleanup failed.";
+
     public const string DocumentRemovalCompleted =
         "Application document removal completed.";
 
