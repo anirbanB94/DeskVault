@@ -73,6 +73,25 @@ public sealed class RemoveDocumentHandler
 
         try
         {
+            await _workspaceRepository.RemoveDocumentFromAllWorkspacesAsync(
+                command.DocumentId,
+                cancellationToken);
+        }
+        catch (Exception ex) when (
+            ex is IOException ||
+            ex is InvalidOperationException)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentWorkspaceMembershipCleanupFailed);
+
+            return new RemoveDocumentResult(
+                RemoveDocumentResultStatus.WorkspaceMembershipCleanupFailed,
+                ex.Message);
+        }
+
+        try
+        {
             await _repository.DeleteAsync(
                 command.DocumentId,
                 cancellationToken);
@@ -87,25 +106,6 @@ public sealed class RemoveDocumentHandler
 
             return new RemoveDocumentResult(
                 RemoveDocumentResultStatus.MetadataDeletionFailed,
-                ex.Message);
-        }
-
-        try
-        {
-            await _workspaceRepository.RemoveDocumentFromAllWorkspacesAsync(
-                command.DocumentId,
-                cancellationToken);
-        }
-        catch (Exception ex) when (
-            ex is IOException ||
-            ex is InvalidOperationException)
-        {
-            _logger.LogError(
-                ex,
-                "Workspace membership cleanup failed during document removal.");
-
-            return new RemoveDocumentResult(
-                RemoveDocumentResultStatus.WorkspaceMembershipCleanupFailed,
                 ex.Message);
         }
 
