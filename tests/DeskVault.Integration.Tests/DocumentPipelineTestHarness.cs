@@ -95,15 +95,21 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     _encryptionKey),
                 NullLogger<DocumentEncryptionService>.Instance);
 
+        var artifactPathResolver =
+            new DocumentArtifactPathResolver(
+                DataPaths);
+
         _storageService =
             new FileSystemStorageService(
                 encryptionService,
                 DataPaths,
+                artifactPathResolver,
                 NullLogger<FileSystemStorageService>.Instance);
 
         DocumentReader =
             new EncryptedDocumentReader(
                 encryptionService,
+                artifactPathResolver,
                 NullLogger<EncryptedDocumentReader>.Instance);
 
         var extractorResolver =
@@ -170,6 +176,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 new DocumentArtifactEnumerator(
                     DataPaths),
                 DocumentReader,
+                _storageService,
                 NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
     }
 

@@ -7,37 +7,48 @@ namespace DeskVault.Infrastructure.Services;
 public sealed class EncryptedDocumentReader : IDocumentReader
 {
     private readonly DocumentEncryptionService _encryptionService;
+
+    private readonly DocumentArtifactPathResolver _artifactPathResolver;
+
     private readonly ILogger<EncryptedDocumentReader> _logger;
 
     public EncryptedDocumentReader(
         DocumentEncryptionService encryptionService,
+        DocumentArtifactPathResolver artifactPathResolver,
         ILogger<EncryptedDocumentReader> logger)
     {
         _encryptionService = encryptionService;
+        _artifactPathResolver = artifactPathResolver;
         _logger = logger;
     }
 
     public async Task<Stream> OpenReadAsync(
-        string storedFilePath,
+        Guid documentId,
         CancellationToken cancellationToken = default,
         long? maximumPlaintextBytes = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        string storedFilePath =
+            _artifactPathResolver.GetPath(
+                documentId);
 
         _logger.LogInformation(
             LogMessages.DocumentReaderStarted);
 
         try
         {
-            await using var source = new FileStream(
-                storedFilePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                bufferSize: 81920,
-                useAsync: true);
+            await using var source =
+                new FileStream(
+                    storedFilePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 81920,
+                    useAsync: true);
 
-            var decryptedStream = new MemoryStream();
+            var decryptedStream =
+                new MemoryStream();
 
             await _encryptionService.DecryptAsync(
                 source,

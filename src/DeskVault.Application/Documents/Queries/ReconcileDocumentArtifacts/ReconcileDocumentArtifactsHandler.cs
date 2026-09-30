@@ -6,22 +6,23 @@ namespace DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 
 public sealed class ReconcileDocumentArtifactsHandler
 {
-    private const string ArtifactExtension = ".dvault";
-
     private readonly IDocumentRepository _repository;
     private readonly IDocumentArtifactEnumerator _artifactEnumerator;
     private readonly IDocumentReader _documentReader;
+    private readonly IStorageService _storageService;
     private readonly ILogger<ReconcileDocumentArtifactsHandler> _logger;
 
     public ReconcileDocumentArtifactsHandler(
         IDocumentRepository repository,
         IDocumentArtifactEnumerator artifactEnumerator,
         IDocumentReader documentReader,
+        IStorageService storageService,
         ILogger<ReconcileDocumentArtifactsHandler> logger)
     {
         _repository = repository;
         _artifactEnumerator = artifactEnumerator;
         _documentReader = documentReader;
+        _storageService = storageService;
         _logger = logger;
     }
 
@@ -61,28 +62,19 @@ public sealed class ReconcileDocumentArtifactsHandler
                 Path.GetFullPath(
                     document.StoredFilePath);
 
-            var canonicalArtifactPath =
-                Path.GetFullPath(
-                    Path.Combine(
-                        Path.GetDirectoryName(
-                            expectedArtifactPath)
-                        ?? string.Empty,
-                        $"{document.Id}{ArtifactExtension}"));
-
             expectedArtifactPaths.Add(
                 expectedArtifactPath);
 
-            if (!string.Equals(
-                    expectedArtifactPath,
-                    canonicalArtifactPath,
-                    StringComparison.OrdinalIgnoreCase))
+            if (!_storageService.IsOwnedArtifactPath(
+                    document.Id,
+                    expectedArtifactPath))
             {
                 findings.Add(
                     new DocumentArtifactReconciliationResult(
                         DocumentArtifactReconciliationStatus.PathMismatch,
                         document.Id,
                         expectedArtifactPath,
-                        "The persisted document record points to an artifact path that does not match the document identity."));
+                        "The persisted document record points to an artifact path that is not owned by the document."));
 
                 continue;
             }
@@ -104,7 +96,7 @@ public sealed class ReconcileDocumentArtifactsHandler
             {
                 await using var stream =
                     await _documentReader.OpenReadAsync(
-                        expectedArtifactPath,
+                        document.Id,
                         cancellationToken);
 
                 findings.Add(

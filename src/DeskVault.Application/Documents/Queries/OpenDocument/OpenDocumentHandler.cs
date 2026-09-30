@@ -7,7 +7,9 @@ namespace DeskVault.Application.Documents.Queries.OpenDocument;
 public sealed class OpenDocumentHandler
 {
     private readonly IDocumentRepository _repository;
+
     private readonly IDocumentReader _documentReader;
+
     private readonly ILogger<OpenDocumentHandler> _logger;
 
     public OpenDocumentHandler(
@@ -24,9 +26,10 @@ public sealed class OpenDocumentHandler
         OpenDocumentQuery query,
         CancellationToken cancellationToken = default)
     {
-        var document = await _repository.GetByIdAsync(
-            query.DocumentId,
-            cancellationToken);
+        var document =
+            await _repository.GetByIdAsync(
+                query.DocumentId,
+                cancellationToken);
 
         if (document is null)
         {
@@ -37,9 +40,10 @@ public sealed class OpenDocumentHandler
                 "The requested document could not be found.");
         }
 
-        Stream content = await _documentReader.OpenReadAsync(
-            document.StoredFilePath,
-            cancellationToken);
+        Stream content =
+            await _documentReader.OpenReadAsync(
+                document.Id,
+                cancellationToken);
 
         _logger.LogInformation(
             LogMessages.DocumentOpenCompleted);

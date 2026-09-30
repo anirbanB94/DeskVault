@@ -502,7 +502,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         storageService.Verify(
             x => x.DeleteAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -543,7 +543,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         storageService
             .Setup(x => x.DeleteAsync(
-                document.StoredFilePath,
+                document.Id,
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -593,7 +593,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         storageService.Verify(
             x => x.DeleteAsync(
-                document.StoredFilePath,
+                document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -614,6 +614,7 @@ public sealed class DocumentWorkspacePresenterTests
     [Fact]
     public async Task RemoveDocument_StorageDeletionFails_ShowsError()
     {
+        // Arrange
         Guid documentId =
             Guid.NewGuid();
 
@@ -631,7 +632,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         storageService
             .Setup(x => x.DeleteAsync(
-                document.StoredFilePath,
+                document.Id,
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new IOException(
@@ -663,16 +664,24 @@ public sealed class DocumentWorkspacePresenterTests
             stream,
             document.FileName);
 
+        // Act
         view.Raise(
             x => x.RemoveDocumentRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();
 
+        // Assert
         view.Verify(
             x => x.ShowError(
                 "Storage deletion failed.",
                 UiMessages.RemoveFailedTitle),
+            Times.Once);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
             Times.Once);
 
         repository.Verify(

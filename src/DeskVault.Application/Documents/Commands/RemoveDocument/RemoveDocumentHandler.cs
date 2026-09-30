@@ -47,7 +47,7 @@ public sealed class RemoveDocumentHandler
         try
         {
             await _storageService.DeleteAsync(
-                document.StoredFilePath,
+                document.Id,
                 cancellationToken);
         }
         catch (IOException ex)

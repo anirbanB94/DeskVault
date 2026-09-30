@@ -154,18 +154,18 @@ public sealed class ImportDocumentHandler
                 storedFilePath is not null)
             {
                 await TryCleanupStoredArtifactAsync(
-                    storedFilePath);
+                    documentId);
             }
         }
     }
 
     private async Task TryCleanupStoredArtifactAsync(
-        string storedFilePath)
+        Guid documentId)
     {
         try
         {
             await _storageService.DeleteAsync(
-                storedFilePath,
+                documentId,
                 CancellationToken.None);
         }
         catch (Exception cleanupException)

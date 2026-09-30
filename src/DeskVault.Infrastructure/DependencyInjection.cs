@@ -22,6 +22,8 @@ public static class DependencyInjection
 
         services.TryAddSingleton<DeskVaultDataPaths>();
 
+        services.AddSingleton<DocumentArtifactPathResolver>();
+
         services.AddSingleton<IDbContextFactory<DeskVaultDbContext>, EncryptedDeskVaultDbContextFactory>();
 
         services.AddSingleton<DatabaseInitializer>();

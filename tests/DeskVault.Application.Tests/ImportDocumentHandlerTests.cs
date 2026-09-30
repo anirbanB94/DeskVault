@@ -11,6 +11,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenValidationFails_ReturnsValidationResult()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -45,9 +46,11 @@ public sealed class ImportDocumentHandlerTests
                 string.Empty,
                 null);
 
-        var result =
+        // Act
+        ImportDocumentResult result =
             await handler.HandleAsync(command);
 
+        // Assert
         Assert.Equal(
             ImportDocumentResultStatus.ValidationFailed,
             result.Status);
@@ -73,7 +76,7 @@ public sealed class ImportDocumentHandlerTests
 
         storageService.Verify(
             x => x.DeleteAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -81,6 +84,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDuplicateDocumentExists_ReturnsDuplicate()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -125,14 +129,17 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\test.txt",
                 null);
 
-        var result =
+        // Act
+        ImportDocumentResult result =
             await handler.HandleAsync(command);
 
+        // Assert
         Assert.Equal(
             ImportDocumentResultStatus.Duplicate,
             result.Status);
 
-        Assert.Null(result.DocumentId);
+        Assert.Null(
+            result.DocumentId);
 
         storageService.Verify(
             x => x.StoreAsync(
@@ -143,7 +150,7 @@ public sealed class ImportDocumentHandlerTests
 
         storageService.Verify(
             x => x.DeleteAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -157,6 +164,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenImportSucceeds_PersistsDocumentWithCalculatedHash()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -222,16 +230,20 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\test.txt",
                 "Test Document");
 
-        var result =
+        // Act
+        ImportDocumentResult result =
             await handler.HandleAsync(command);
 
+        // Assert
         Assert.Equal(
             ImportDocumentResultStatus.Success,
             result.Status);
 
-        Assert.NotNull(result.DocumentId);
+        Assert.NotNull(
+            result.DocumentId);
 
-        Assert.NotNull(addedDocument);
+        Assert.NotNull(
+            addedDocument);
 
         Assert.Equal(
             result.DocumentId,
@@ -267,7 +279,7 @@ public sealed class ImportDocumentHandlerTests
 
         storageService.Verify(
             x => x.DeleteAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -281,6 +293,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentHashPersistenceConflicts_ReturnsDuplicate()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -313,19 +326,22 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
+        Guid storedDocumentId =
+            Guid.Empty;
+
         storageService
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>(),
                 "duplicate-hash"))
+            .Callback<string, Guid, CancellationToken, string?>(
+                (_, documentId, _, _) =>
+                {
+                    storedDocumentId =
+                        documentId;
+                })
             .ReturnsAsync("stored/test.dvault");
-
-        storageService
-            .Setup(x => x.DeleteAsync(
-                "stored/test.dvault",
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
 
         repository
             .Setup(x => x.AddAsync(
@@ -348,9 +364,11 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\test.txt",
                 "Test Document");
 
-        var result =
+        // Act
+        ImportDocumentResult result =
             await handler.HandleAsync(command);
 
+        // Assert
         Assert.Equal(
             ImportDocumentResultStatus.Duplicate,
             result.Status);
@@ -362,17 +380,21 @@ public sealed class ImportDocumentHandlerTests
             "The document has already been imported.",
             result.Description);
 
+        Assert.NotEqual(
+            Guid.Empty,
+            storedDocumentId);
+
         storageService.Verify(
             x => x.StoreAsync(
                 It.IsAny<string>(),
-                It.IsAny<Guid>(),
+                storedDocumentId,
                 It.IsAny<CancellationToken>(),
                 "duplicate-hash"),
             Times.Once);
 
         storageService.Verify(
             x => x.DeleteAsync(
-                "stored/test.dvault",
+                storedDocumentId,
                 CancellationToken.None),
             Times.Once);
 
@@ -386,6 +408,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDisplayNameIsNotProvided_DerivesDisplayNameFromFileName()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -451,14 +474,17 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\report.txt",
                 null);
 
-        var result =
+        // Act
+        ImportDocumentResult result =
             await handler.HandleAsync(command);
 
+        // Assert
         Assert.Equal(
             ImportDocumentResultStatus.Success,
             result.Status);
 
-        Assert.NotNull(addedDocument);
+        Assert.NotNull(
+            addedDocument);
 
         Assert.Equal(
             "report.txt",
@@ -474,7 +500,7 @@ public sealed class ImportDocumentHandlerTests
 
         storageService.Verify(
             x => x.DeleteAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -488,6 +514,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenMetadataPersistenceFailsAfterStorageSucceeds_PropagatesFailure()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -520,19 +547,22 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
+        Guid storedDocumentId =
+            Guid.Empty;
+
         storageService
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>(),
                 "test-hash"))
+            .Callback<string, Guid, CancellationToken, string?>(
+                (_, documentId, _, _) =>
+                {
+                    storedDocumentId =
+                        documentId;
+                })
             .ReturnsAsync("stored/test.txt");
-
-        storageService
-            .Setup(x => x.DeleteAsync(
-                "stored/test.txt",
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
 
         var persistenceException =
             new InvalidOperationException(
@@ -557,28 +587,32 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\test.txt",
                 "Test Document");
 
-        // Act & Assert
-
+        // Act
         var exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
                     handler.HandleAsync(command));
 
+        // Assert
         Assert.Same(
             persistenceException,
             exception);
 
+        Assert.NotEqual(
+            Guid.Empty,
+            storedDocumentId);
+
         storageService.Verify(
             x => x.StoreAsync(
                 It.IsAny<string>(),
-                It.IsAny<Guid>(),
+                storedDocumentId,
                 It.IsAny<CancellationToken>(),
                 "test-hash"),
             Times.Once);
 
         storageService.Verify(
             x => x.DeleteAsync(
-                "stored/test.txt",
+                storedDocumentId,
                 CancellationToken.None),
             Times.Once);
 
@@ -592,6 +626,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenImportIsCancelledAfterStorageSucceeds_CleansUpStoredArtifact()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -624,19 +659,22 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
+        Guid storedDocumentId =
+            Guid.Empty;
+
         storageService
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>(),
                 "test-hash"))
+            .Callback<string, Guid, CancellationToken, string?>(
+                (_, documentId, _, _) =>
+                {
+                    storedDocumentId =
+                        documentId;
+                })
             .ReturnsAsync("stored/test.txt");
-
-        storageService
-            .Setup(x => x.DeleteAsync(
-                "stored/test.txt",
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -666,15 +704,29 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\test.txt",
                 "Test Document");
 
+        // Act
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
                 handler.HandleAsync(
                     command,
                     cancellationTokenSource.Token));
 
+        // Assert
+        Assert.NotEqual(
+            Guid.Empty,
+            storedDocumentId);
+
+        storageService.Verify(
+            x => x.StoreAsync(
+                It.IsAny<string>(),
+                storedDocumentId,
+                It.IsAny<CancellationToken>(),
+                "test-hash"),
+            Times.Once);
+
         storageService.Verify(
             x => x.DeleteAsync(
-                "stored/test.txt",
+                storedDocumentId,
                 CancellationToken.None),
             Times.Once);
 
@@ -688,6 +740,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenCleanupFailsAfterMetadataPersistenceFailure_PropagatesOriginalFailure()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -720,12 +773,21 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
+        Guid storedDocumentId =
+            Guid.Empty;
+
         storageService
             .Setup(x => x.StoreAsync(
                 It.IsAny<string>(),
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>(),
                 "test-hash"))
+            .Callback<string, Guid, CancellationToken, string?>(
+                (_, documentId, _, _) =>
+                {
+                    storedDocumentId =
+                        documentId;
+                })
             .ReturnsAsync("stored/test.txt");
 
         var persistenceException =
@@ -741,7 +803,7 @@ public sealed class ImportDocumentHandlerTests
 
         storageService
             .Setup(x => x.DeleteAsync(
-                "stored/test.txt",
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new IOException(
@@ -759,18 +821,32 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\test.txt",
                 "Test Document");
 
+        // Act
         var exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
                     handler.HandleAsync(command));
 
+        // Assert
         Assert.Same(
             persistenceException,
             exception);
 
+        Assert.NotEqual(
+            Guid.Empty,
+            storedDocumentId);
+
+        storageService.Verify(
+            x => x.StoreAsync(
+                It.IsAny<string>(),
+                storedDocumentId,
+                It.IsAny<CancellationToken>(),
+                "test-hash"),
+            Times.Once);
+
         storageService.Verify(
             x => x.DeleteAsync(
-                "stored/test.txt",
+                storedDocumentId,
                 CancellationToken.None),
             Times.Once);
     }
@@ -778,6 +854,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenStorageFails_ReturnsStorageFailed()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -817,7 +894,8 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<CancellationToken>(),
                 It.IsAny<string?>()))
             .ThrowsAsync(
-                new IOException("Storage failed."));
+                new IOException(
+                    "Storage failed."));
 
         var handler =
             CreateHandler(
@@ -831,18 +909,21 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\test.txt",
                 null);
 
-        var result =
+        // Act
+        ImportDocumentResult result =
             await handler.HandleAsync(command);
 
+        // Assert
         Assert.Equal(
             ImportDocumentResultStatus.StorageFailed,
             result.Status);
 
-        Assert.Null(result.DocumentId);
+        Assert.Null(
+            result.DocumentId);
 
         storageService.Verify(
             x => x.DeleteAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -856,6 +937,7 @@ public sealed class ImportDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenStorageAccessIsDenied_ReturnsStorageFailed()
     {
+        // Arrange
         var validator =
             new Mock<IImportDocumentValidator>();
 
@@ -910,18 +992,21 @@ public sealed class ImportDocumentHandlerTests
                 "C:\\Documents\\test.txt",
                 null);
 
-        var result =
+        // Act
+        ImportDocumentResult result =
             await handler.HandleAsync(command);
 
+        // Assert
         Assert.Equal(
             ImportDocumentResultStatus.StorageFailed,
             result.Status);
 
-        Assert.Null(result.DocumentId);
+        Assert.Null(
+            result.DocumentId);
 
         storageService.Verify(
             x => x.DeleteAsync(
-                It.IsAny<string>(),
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
