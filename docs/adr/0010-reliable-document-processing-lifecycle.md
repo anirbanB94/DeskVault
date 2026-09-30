@@ -59,8 +59,8 @@ consistency. A persisted document record and its encrypted `.dvault` artifact
 cross a database/filesystem persistence boundary. An interrupted import or
 removal can therefore leave metadata and the corresponding encrypted
 artifact temporarily inconsistent. That consistency problem must be handled
-by document-artifact reconciliation rather than by changing the processing
-generation model.
+by document-artifact reconciliation and explicit recovery rather than by
+changing the processing generation model.
 
 ## Decision
 
@@ -344,45 +344,73 @@ path. Reconciliation may inspect `StoredFilePath` as evidence, but it must
 validate the reference against the canonical ownership boundary before it is
 classified as valid.
 
-Artifact reconciliation is therefore responsible for detecting and safely
-classifying inconsistencies such as:
+Artifact reconciliation is responsible for detecting and safely classifying
+pre-existing inconsistencies such as:
 
 - a persisted document record whose expected encrypted artifact is missing;
 - a persisted document record whose stored artifact reference is outside its
   canonical document-owned boundary;
 - an encrypted artifact with no corresponding persisted document record;
 - an encrypted artifact that exists but cannot be opened or validated;
+- an encrypted artifact that is readable but whose decrypted content does not
+  match the persisted document identity;
 - incomplete import or removal operations that leave metadata and artifacts
   inconsistent.
+
+Readability alone is not sufficient to establish a valid relationship.
+For a readable artifact associated with a persisted document, reconciliation
+must compare the SHA-256 identity of the decrypted content with the
+document's persisted `Sha256Hash`. A different content hash is an explicit
+content-mismatch outcome and must not be treated as a match.
 
 A persisted artifact-reference ownership mismatch must be surfaced as a path
 mismatch and must not be treated as a valid readable artifact merely because
 the file exists or the filename matches the document identifier.
 
-Artifact reconciliation must not alter the processing-generation authority
-defined by this ADR.
+Artifact reconciliation must remain detection-oriented. The reconciliation
+query reports findings but does not perform destructive repair.
 
-In particular:
+### Artifact Recovery
 
-- reconciliation must not treat a missing artifact as empty document content;
-- reconciliation must not silently recreate or overwrite encrypted content;
-- reconciliation must not silently activate an orphaned artifact as a
-  document;
-- reconciliation must not delete valid content without sufficient evidence
-  and an explicit safe recovery decision;
-- reconciliation must preserve the existing encrypted storage and
-  key-management boundaries;
-- reconciliation must not use a non-owned persisted path as the ordinary
-  document read target.
+Recovery is a separate Application-layer capability that consumes the
+reconciliation result and applies only explicitly safe recovery actions.
 
-Document-artifact reconciliation is an Application-level consistency
-capability implemented through application-defined storage abstractions.
-Filesystem inspection, canonical artifact-path resolution, and
-encrypted-artifact validation remain Infrastructure concerns.
+The safe automatic recovery rule for an orphaned artifact is:
 
-This reconciliation boundary is intentionally separate from database
-migration recovery. Database migration recovery remains owned by database
-initialization and migration behavior.
+```text
+Artifact is orphaned
+        ↓
+Document identity is known
+        ↓
+No persisted document with that identity exists
+        ↓
+Artifact path is the canonical managed path for that identity
+        ↓
+Cleanup may proceed
+```
+
+If the artifact has no usable document identity, if a persisted document with
+that identity still exists, or if canonical ownership validation fails, the
+artifact is preserved for further recovery.
+
+Missing expected artifacts are not silently recreated. Unreadable or invalid
+artifacts are not silently replaced. Path mismatches are not adopted. Content
+mismatches are not silently overwritten or repaired.
+
+Recovery therefore prefers preservation when evidence is insufficient rather
+than destructive normalization.
+
+Recovery must be retry-safe. If cleanup is interrupted or a repeated
+reconciliation finds the same orphan again, repeating the recovery operation
+must converge without modifying a valid document/artifact relationship.
+
+A successful orphan cleanup removes only the confirmed canonical artifact
+owned by the absent document identity. It must not select another document's
+artifact or use an arbitrary persisted physical path as the deletion target.
+
+Recovery must not change the processing generation, processing state, or
+derived chunks of any document. Processing-generation authority remains
+governed exclusively by this ADR's processing lifecycle rules.
 
 ### Chunk Identity and Provenance
 
@@ -399,6 +427,9 @@ separately by the document chunk identity and provenance work.
 The processing lifecycle must therefore expose sufficient generation
 information for that work without coupling the lifecycle implementation to
 search, embeddings, vectors, or AI-specific models.
+
+This separation also keeps artifact reconciliation and recovery independent
+from chunk identity and provenance.
 
 ## Alternatives Considered
 
@@ -464,6 +495,9 @@ Stable chunk identity and provenance are addressed separately.
 * Processing-specific lifecycle concerns remain separated from generic document
   CRUD.
 * Document-artifact consistency has a distinct reconciliation boundary.
+* Reconciliation can distinguish ownership, readability, and content identity.
+* Safe orphan cleanup can converge after interrupted import or removal
+  lifecycles.
 * Application and Domain remain independent of EF Core and SQLite.
 * The design remains compatible with the existing encrypted SQLite persistence
   boundary.
@@ -472,13 +506,13 @@ Stable chunk identity and provenance are addressed separately.
 
 * The document persistence model requires a new processing-generation field.
 * Processing persistence operations become conditional on the authoritative
-generation.
+  generation.
 * Additional lifecycle tests are required.
 * Existing repository and processing-store contracts may require
   processing-specific lifecycle operations.
 * Database schema evolution requires an EF Core migration.
-* Document-artifact reconciliation requires additional detection, validation,
-  and recovery-path tests.
+* Document-artifact reconciliation and recovery require additional detection,
+  validation, and recovery-path tests.
 
 These trade-offs are acceptable because stale-result protection is required
 for a reliable document-processing lifecycle and artifact consistency must be
@@ -505,10 +539,24 @@ The implementation must:
 * remain independent of search, embeddings, vectors, and AI processing;
 * keep document-artifact reconciliation separate from processing-generation
   authority;
-* never silently recreate, overwrite, or activate document artifacts during
-  reconciliation;
-* keep destructive artifact cleanup behind an explicit safe recovery decision
+* keep reconciliation detection-oriented and separate from destructive
+  recovery;
+* never silently recreate, overwrite, adopt, or activate document artifacts
+  during reconciliation;
+* keep destructive orphan cleanup behind an explicit safe recovery decision
   supported by sufficient evidence;
+* only clean an orphan when its document identity is known, no persisted
+  document with that identity exists, and canonical ownership validation
+  succeeds;
+* preserve missing, unreadable, invalid, path-mismatch, and content-mismatch
+  findings when evidence is insufficient for safe cleanup;
+* verify readable artifact content identity against the persisted document
+  SHA-256 before classifying the relationship as matched;
+* preserve valid document/artifact relationships during recovery;
+* make recovery safe to repeat after partial execution or repeated
+  reconciliation;
+* never use an arbitrary persisted physical path as the ordinary document
+  read or deletion target;
 * enforce the configured maximum plaintext size before allocating the next
   decrypted chunk;
 * distinguish resource-limit failures from cancellation and successful
@@ -527,7 +575,7 @@ The implementation must:
 The exact Application method signatures, EF Core implementation details,
 migration shape, and test structure are implementation concerns of the
 reliable processing work and the separate document-artifact reconciliation
-work.
+and recovery work.
 
 ## Related Decisions and Work
 
@@ -545,11 +593,13 @@ work.
   document artifacts.
 * The document-owned artifact boundary work establishes canonical
   `{DocumentId}.dvault` identity and managed-storage ownership enforcement.
+* The artifact-reconciliation recovery work establishes safe, explicit orphan
+  cleanup and preservation of ambiguous findings.
 * The bounded document-processing resource policy is part of this lifecycle
   decision.
 * Stable chunk identity and provenance are tracked separately.
-* Document-artifact reconciliation is tracked separately from database
-  migration recovery.
+* Document-artifact reconciliation and recovery are tracked separately from
+  database migration recovery.
 
 ## Result
 
@@ -568,7 +618,21 @@ the document identifier, while reconciliation treats persisted physical
 artifact references as evidence that must satisfy the canonical ownership
 rule before they are considered valid.
 
+Reconciliation additionally verifies decrypted content identity against the
+persisted document SHA-256 before classifying an artifact relationship as
+matched.
+
+Recovery remains separate from detection and may automatically clean only a
+confirmed canonical orphan whose identity is known, whose document is no
+longer persisted, and whose ownership validation succeeds. Missing,
+unreadable, path-mismatch, content-mismatch, or otherwise ambiguous findings
+are preserved for further recovery rather than normalized destructively.
+
+Recovery does not alter processing-generation authority, processing state, or
+derived chunks.
+
 This separation prevents obsolete processing attempts from overwriting newer
 document state or derived content while ensuring that database/filesystem
 artifact inconsistencies are detected and handled without weakening encrypted
-storage or key-management boundaries.
+storage, key-management, ownership, or document-processing lifecycle
+boundaries.
