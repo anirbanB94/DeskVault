@@ -2,6 +2,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.ProcessDocument;
+using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
@@ -49,6 +50,8 @@ public static class DependencyInjection
         services.AddSingleton<ListDocumentsHandler>();
 
         services.AddSingleton<RemoveDocumentHandler>();
+
+        services.AddSingleton<RecoverDocumentArtifactsHandler>();
 
         services.AddSingleton<ISearchDocumentsRanker, SearchDocumentsRanker>();
 

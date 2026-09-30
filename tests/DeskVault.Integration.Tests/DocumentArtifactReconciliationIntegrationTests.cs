@@ -60,6 +60,143 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
     }
 
     [Fact]
+    public async Task ReconcileAsync_WhenReconciliationIsRepeated_PreservesMatchedDocumentAndArtifact()
+    {
+        await using var environment =
+            await TestEnvironment.CreateAsync();
+
+        string sourceFilePath =
+            Path.Combine(
+                environment.RootDirectory,
+                "repeated-reconciliation.txt");
+
+        await File.WriteAllTextAsync(
+            sourceFilePath,
+            "DeskVault repeated reconciliation integration test.");
+
+        ImportDocumentResult importResult =
+            await environment.Harness.ImportHandler.HandleAsync(
+                new ImportDocumentCommand(
+                    sourceFilePath,
+                    "Repeated Reconciliation Test Document"));
+
+        Assert.Equal(
+            ImportDocumentResultStatus.Success,
+            importResult.Status);
+
+        Assert.NotNull(
+            importResult.DocumentId);
+
+        Guid documentId =
+            importResult.DocumentId.Value;
+
+        Document? documentBeforeReconciliation =
+            await environment.Harness.GetDocumentAsync(
+                documentId);
+
+        Assert.NotNull(
+            documentBeforeReconciliation);
+
+        string artifactPath =
+            Path.GetFullPath(
+                documentBeforeReconciliation.StoredFilePath);
+
+        byte[] artifactBeforeReconciliation =
+            await File.ReadAllBytesAsync(
+                artifactPath);
+
+        Assert.NotEmpty(
+            artifactBeforeReconciliation);
+
+        // Act
+        ReconcileDocumentArtifactsResult firstResult =
+            await environment.Harness.ReconciliationHandler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        ReconcileDocumentArtifactsResult secondResult =
+            await environment.Harness.ReconciliationHandler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        DocumentArtifactReconciliationResult firstFinding =
+            Assert.Single(
+                firstResult.Findings);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.Matched,
+            firstFinding.Status);
+
+        Assert.Equal(
+            documentId,
+            firstFinding.DocumentId);
+
+        Assert.Equal(
+            Path.GetFullPath(
+                artifactPath),
+            firstFinding.ArtifactPath);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.None,
+            firstFinding.RecoveryAction);
+
+        DocumentArtifactReconciliationResult secondFinding =
+            Assert.Single(
+                secondResult.Findings);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.Matched,
+            secondFinding.Status);
+
+        Assert.Equal(
+            documentId,
+            secondFinding.DocumentId);
+
+        Assert.Equal(
+            Path.GetFullPath(
+                artifactPath),
+            secondFinding.ArtifactPath);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.None,
+            secondFinding.RecoveryAction);
+
+        Assert.True(
+            File.Exists(
+                artifactPath));
+
+        byte[] artifactAfterReconciliation =
+            await File.ReadAllBytesAsync(
+                artifactPath);
+
+        Assert.Equal(
+            artifactBeforeReconciliation,
+            artifactAfterReconciliation);
+
+        Document? documentAfterReconciliation =
+            await environment.Harness.GetDocumentAsync(
+                documentId);
+
+        Assert.NotNull(
+            documentAfterReconciliation);
+
+        Assert.Equal(
+            documentBeforeReconciliation.Id,
+            documentAfterReconciliation.Id);
+
+        Assert.Equal(
+            documentBeforeReconciliation.Sha256Hash,
+            documentAfterReconciliation.Sha256Hash);
+
+        Assert.Equal(
+            documentBeforeReconciliation.StoredFilePath,
+            documentAfterReconciliation.StoredFilePath);
+
+        Assert.Equal(
+            documentBeforeReconciliation.DisplayName,
+            documentAfterReconciliation.DisplayName);
+    }
+
+    [Fact]
     public async Task ReconcileAsync_WhenArtifactIsMissing_ReturnsMissingArtifact()
     {
         await using var environment =
@@ -288,6 +425,309 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
         Assert.NotNull(
             await environment.Harness.GetDocumentAsync(
                 documentId));
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_WhenOneArtifactIsUnreadable_DoesNotModifyUnrelatedValidDocument()
+    {
+        await using var environment =
+            await TestEnvironment.CreateAsync();
+
+        string validSourceFilePath =
+            Path.Combine(
+                environment.RootDirectory,
+                "valid-document.txt");
+
+        await File.WriteAllTextAsync(
+            validSourceFilePath,
+            "Valid document content.");
+
+        ImportDocumentResult validImportResult =
+            await environment.Harness.ImportHandler.HandleAsync(
+                new ImportDocumentCommand(
+                    validSourceFilePath,
+                    "Valid Reconciliation Document"));
+
+        Assert.Equal(
+            ImportDocumentResultStatus.Success,
+            validImportResult.Status);
+
+        Assert.NotNull(
+            validImportResult.DocumentId);
+
+        Guid validDocumentId =
+            validImportResult.DocumentId.Value;
+
+        Document? validDocumentBeforeReconciliation =
+            await environment.Harness.GetDocumentAsync(
+                validDocumentId);
+
+        Assert.NotNull(
+            validDocumentBeforeReconciliation);
+
+        string validArtifactPath =
+            Path.GetFullPath(
+                validDocumentBeforeReconciliation.StoredFilePath);
+
+        Assert.True(
+            File.Exists(
+                validArtifactPath));
+
+        string unreadableSourceFilePath =
+            Path.Combine(
+                environment.RootDirectory,
+                "unreadable-document.txt");
+
+        await File.WriteAllTextAsync(
+            unreadableSourceFilePath,
+            "Unreadable document content.");
+
+        ImportDocumentResult unreadableImportResult =
+            await environment.Harness.ImportHandler.HandleAsync(
+                new ImportDocumentCommand(
+                    unreadableSourceFilePath,
+                    "Unreadable Reconciliation Document"));
+
+        Assert.Equal(
+            ImportDocumentResultStatus.Success,
+            unreadableImportResult.Status);
+
+        Assert.NotNull(
+            unreadableImportResult.DocumentId);
+
+        Guid unreadableDocumentId =
+            unreadableImportResult.DocumentId.Value;
+
+        Document? unreadableDocumentBeforeReconciliation =
+            await environment.Harness.GetDocumentAsync(
+                unreadableDocumentId);
+
+        Assert.NotNull(
+            unreadableDocumentBeforeReconciliation);
+
+        string unreadableArtifactPath =
+            Path.GetFullPath(
+                unreadableDocumentBeforeReconciliation.StoredFilePath);
+
+        byte[] unreadableArtifactBytes =
+            await File.ReadAllBytesAsync(
+                unreadableArtifactPath);
+
+        Assert.NotEmpty(
+            unreadableArtifactBytes);
+
+        unreadableArtifactBytes[^1] ^= 0xFF;
+
+        await File.WriteAllBytesAsync(
+            unreadableArtifactPath,
+            unreadableArtifactBytes);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await environment.Harness.ReconciliationHandler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        DocumentArtifactReconciliationResult unreadableFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    unreadableDocumentId);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.UnreadableArtifact,
+            unreadableFinding.Status);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.PreserveForRecovery,
+            unreadableFinding.RecoveryAction);
+
+        DocumentArtifactReconciliationResult validFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    validDocumentId);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.Matched,
+            validFinding.Status);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.None,
+            validFinding.RecoveryAction);
+
+        Assert.True(
+            File.Exists(
+                unreadableArtifactPath));
+
+        Assert.True(
+            File.Exists(
+                validArtifactPath));
+
+        Document? validDocumentAfterReconciliation =
+            await environment.Harness.GetDocumentAsync(
+                validDocumentId);
+
+        Assert.NotNull(
+            validDocumentAfterReconciliation);
+
+        Assert.Equal(
+            validDocumentBeforeReconciliation.Id,
+            validDocumentAfterReconciliation.Id);
+
+        Assert.Equal(
+            validDocumentBeforeReconciliation.Sha256Hash,
+            validDocumentAfterReconciliation.Sha256Hash);
+
+        Assert.Equal(
+            validDocumentBeforeReconciliation.StoredFilePath,
+            validDocumentAfterReconciliation.StoredFilePath);
+
+        Document? unreadableDocumentAfterReconciliation =
+            await environment.Harness.GetDocumentAsync(
+                unreadableDocumentId);
+
+        Assert.NotNull(
+            unreadableDocumentAfterReconciliation);
+
+        Assert.Equal(
+            unreadableDocumentBeforeReconciliation.Id,
+            unreadableDocumentAfterReconciliation.Id);
+
+        Assert.Equal(
+            unreadableDocumentBeforeReconciliation.Sha256Hash,
+            unreadableDocumentAfterReconciliation.Sha256Hash);
+
+        Assert.Equal(
+            unreadableDocumentBeforeReconciliation.StoredFilePath,
+            unreadableDocumentAfterReconciliation.StoredFilePath);
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_WhenArtifactIsReadableButContainsDifferentContent_ReturnsContentMismatchWithoutMutatingDocument()
+    {
+        await using var environment =
+            await TestEnvironment.CreateAsync();
+
+        string originalSourceFilePath =
+            Path.Combine(
+                environment.RootDirectory,
+                "original-content.txt");
+
+        await File.WriteAllTextAsync(
+            originalSourceFilePath,
+            "Original document content.");
+
+        ImportDocumentResult importResult =
+            await environment.Harness.ImportHandler.HandleAsync(
+                new ImportDocumentCommand(
+                    originalSourceFilePath,
+                    "Content Mismatch Integration Test Document"));
+
+        Assert.Equal(
+            ImportDocumentResultStatus.Success,
+            importResult.Status);
+
+        Assert.NotNull(
+            importResult.DocumentId);
+
+        Guid documentId =
+            importResult.DocumentId.Value;
+
+        Document? persistedDocumentBeforeReconciliation =
+            await environment.Harness.GetDocumentAsync(
+                documentId);
+
+        Assert.NotNull(
+            persistedDocumentBeforeReconciliation);
+
+        string persistedHash =
+            persistedDocumentBeforeReconciliation.Sha256Hash;
+
+        string replacementSourceFilePath =
+            Path.Combine(
+                environment.RootDirectory,
+                "replacement-content.txt");
+
+        await File.WriteAllTextAsync(
+            replacementSourceFilePath,
+            "Different readable document content.");
+
+        string artifactPath =
+            Path.Combine(
+                environment.Harness.DataPaths.DocumentsDirectory,
+                $"{documentId}.dvault");
+
+        Assert.True(
+            File.Exists(
+                artifactPath));
+
+        File.Delete(
+            artifactPath);
+
+        Assert.False(
+            File.Exists(
+                artifactPath));
+
+        await environment.Harness.StoreArtifactAsync(
+            replacementSourceFilePath,
+            documentId);
+
+        Assert.True(
+            File.Exists(
+                artifactPath));
+
+        Assert.True(
+            File.Exists(
+                artifactPath));
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await environment.Harness.ReconciliationHandler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        DocumentArtifactReconciliationResult finding =
+            Assert.Single(
+                result.Findings);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.ContentMismatch,
+            finding.Status);
+
+        Assert.Equal(
+            documentId,
+            finding.DocumentId);
+
+        Assert.Equal(
+            Path.GetFullPath(
+                artifactPath),
+            finding.ArtifactPath);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.PreserveForRecovery,
+            finding.RecoveryAction);
+
+        Assert.True(
+            File.Exists(
+                artifactPath));
+
+        Document? persistedDocumentAfterReconciliation =
+            await environment.Harness.GetDocumentAsync(
+                documentId);
+
+        Assert.NotNull(
+            persistedDocumentAfterReconciliation);
+
+        Assert.Equal(
+            persistedHash,
+            persistedDocumentAfterReconciliation.Sha256Hash);
+
+        Assert.Equal(
+            persistedDocumentBeforeReconciliation.DisplayName,
+            persistedDocumentAfterReconciliation.DisplayName);
     }
 
     [Fact]

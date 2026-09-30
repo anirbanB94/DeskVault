@@ -19,6 +19,8 @@ public sealed class Sha256HashService : IHashService
         string filePath,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(filePath);
+
         cancellationToken.ThrowIfCancellationRequested();
 
         _logger.LogInformation(
@@ -34,19 +36,9 @@ public sealed class Sha256HashService : IHashService
                 bufferSize: 81920,
                 useAsync: true);
 
-            var hash =
-                await SHA256.HashDataAsync(
-                    stream,
-                    cancellationToken);
-
-            string result =
-                Convert.ToHexString(hash)
-                    .ToLowerInvariant();
-
-            _logger.LogInformation(
-                LogMessages.DocumentHashCompleted);
-
-            return result;
+            return await ComputeSha256CoreAsync(
+                stream,
+                cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -60,5 +52,55 @@ public sealed class Sha256HashService : IHashService
 
             throw;
         }
+    }
+
+    public async Task<string> ComputeSha256Async(
+        Stream content,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _logger.LogInformation(
+            LogMessages.DocumentHashStarted);
+
+        try
+        {
+            return await ComputeSha256CoreAsync(
+                content,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                LogMessages.DocumentHashFailed);
+
+            throw;
+        }
+    }
+
+    private async Task<string> ComputeSha256CoreAsync(
+        Stream content,
+        CancellationToken cancellationToken)
+    {
+        byte[] hash =
+            await SHA256.HashDataAsync(
+                content,
+                cancellationToken);
+
+        string result =
+            Convert.ToHexString(hash)
+                .ToLowerInvariant();
+
+        _logger.LogInformation(
+            LogMessages.DocumentHashCompleted);
+
+        return result;
     }
 }

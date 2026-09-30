@@ -4376,6 +4376,24 @@ public sealed class DocumentImportIntegrationTests
 
             return originalHash;
         }
+
+        public async Task<string> ComputeSha256Async(
+            Stream content,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(content);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var hash =
+                await SHA256.HashDataAsync(
+                    content,
+                    cancellationToken);
+
+            return Convert.ToHexString(
+                    hash)
+                .ToLowerInvariant();
+        }
     }
 
     private sealed class TestEncryptionKeyService
