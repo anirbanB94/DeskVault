@@ -280,6 +280,45 @@ In-app document workspace
 
 The external viewer remains available as an explicit user-controlled action when an in-app renderer is unavailable.
 
+### External Viewing Temporary Artifact Lifecycle
+
+When external viewing requires a temporary plaintext artifact, the artifact is
+owned by the document-viewing lifecycle rather than by canonical document
+storage or workspace membership.
+
+The temporary artifact lifecycle is:
+
+```text
+Decrypted document stream
+        ↓
+Temporary plaintext artifact
+        ↓
+Fully written and closed
+        ↓
+External application launch
+        ↓
+Observable external lifecycle ──→ completion ──→ cleanup
+        │
+        └── lifecycle not observable ──→ retain until viewer disposal
+```
+
+A successful external application launch does not by itself establish that the
+application has finished consuming the temporary file. The temporary artifact
+must therefore not be deleted immediately after launch.
+
+When the external lifecycle is observable, DeskVault retains the temporary
+artifact until that lifecycle completes and then performs cleanup.
+
+When the external lifecycle cannot be observed, DeskVault retains the
+temporary artifact for the lifetime of the document viewer and performs
+best-effort cleanup when that viewer is disposed.
+
+If temporary-file materialization, copying, or external launch fails, the
+temporary artifact is cleaned up through the failure path.
+
+The canonical encrypted `.dvault` artifact is never replaced or modified by
+the external-viewing lifecycle.
+
 ## Document Workspace Model
 
 A workspace is a document context, while a document presentation is the UI
