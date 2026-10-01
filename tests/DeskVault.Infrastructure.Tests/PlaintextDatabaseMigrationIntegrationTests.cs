@@ -274,6 +274,18 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     0L,
                     secondChunk.ProcessingGeneration);
 
+                Assert.Null(
+                    firstChunk.SourceLocationStartLine);
+
+                Assert.Null(
+                    firstChunk.SourceLocationEndLine);
+
+                Assert.Null(
+                    secondChunk.SourceLocationStartLine);
+
+                Assert.Null(
+                    secondChunk.SourceLocationEndLine);
+
                 SearchDocumentsPage searchPage =
                     await searchHandler.HandleAsync(
                         new SearchDocumentsQuery(
