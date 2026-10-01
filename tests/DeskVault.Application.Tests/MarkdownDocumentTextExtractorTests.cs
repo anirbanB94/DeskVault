@@ -2,6 +2,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Documents.Provenance;
 using DeskVault.Application.Tests.TestInfrastructure;
 using System.Text;
 
@@ -205,5 +206,27 @@ public sealed class MarkdownDocumentTextExtractorTests
         Assert.Equal(
             expectedMarkdown,
             result.Text);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_RawMarkdown_ReturnsDirectSourceLocationMapping()
+    {
+        const string markdown =
+            "# DeskVault\n\n" +
+            "Second paragraph.";
+
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(
+                    markdown));
+
+        DocumentTextExtractionResult result =
+            await _extractor.ExtractAsync(
+                stream,
+                "README.md");
+
+        Assert.Equal(
+            DocumentSourceLocationMappingKind.DirectText,
+            result.SourceLocationMappingKind);
     }
 }
