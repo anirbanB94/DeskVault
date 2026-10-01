@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -73,6 +74,98 @@ public sealed class DatabaseEncryptionIntegrationTests
                     IDbContextFactory<DeskVaultDbContext>>();
 
             await using var dbContext =
+                await factory.CreateDbContextAsync();
+
+            Assert.True(
+                await dbContext.Database.CanConnectAsync());
+
+            await dbContext.Database.CloseConnectionAsync();
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DatabaseInitializer_WhenInitializationFails_CanRetrySuccessfully()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        string migrationPath =
+            databasePath +
+            ".migration";
+
+        try
+        {
+            File.WriteAllText(
+                migrationPath,
+                "invalid migration artifact");
+
+            var services =
+                new ServiceCollection();
+
+            services.AddLogging();
+
+            IConfiguration configuration =
+                new ConfigurationBuilder()
+                    .Build();
+
+            services.AddSingleton(
+                new DeskVaultDataPaths(
+                    rootDirectory));
+
+            services.AddInfrastructure(
+                configuration);
+
+            await using ServiceProvider serviceProvider =
+                services.BuildServiceProvider();
+
+            DatabaseInitializer initializer =
+                serviceProvider.GetRequiredService<DatabaseInitializer>();
+
+            // Act
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    initializer.InitializeAsync());
+
+            File.Delete(
+                migrationPath);
+
+            await initializer.InitializeAsync();
+
+            // Assert
+            Assert.True(
+                File.Exists(
+                    databasePath));
+
+            Assert.False(
+                File.Exists(
+                    migrationPath));
+
+            string databaseKeyPath =
+                Path.Combine(
+                    rootDirectory,
+                    "Security",
+                    "database.key");
+
+            Assert.True(
+                File.Exists(
+                    databaseKeyPath));
+
+            IDbContextFactory<DeskVaultDbContext> factory =
+                serviceProvider.GetRequiredService<
+                    IDbContextFactory<DeskVaultDbContext>>();
+
+            await using DeskVaultDbContext dbContext =
                 await factory.CreateDbContextAsync();
 
             Assert.True(

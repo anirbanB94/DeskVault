@@ -21,6 +21,7 @@ public sealed class DatabaseInitializer
     private readonly IDatabaseEncryptionKeyService _databaseEncryptionKeyService;
     private readonly IDatabaseEncryptionMigrator _databaseEncryptionMigrator;
     private readonly DocumentChunkIdentityBackfill _documentChunkIdentityBackfill;
+    private readonly VaultInitializationCoordinator _vaultInitializationCoordinator;
     private readonly ILogger<DatabaseInitializer> _logger;
 
     public DatabaseInitializer(
@@ -30,6 +31,7 @@ public sealed class DatabaseInitializer
         IDatabaseEncryptionKeyService databaseEncryptionKeyService,
         IDatabaseEncryptionMigrator databaseEncryptionMigrator,
         DocumentChunkIdentityBackfill documentChunkIdentityBackfill,
+        VaultInitializationCoordinator vaultInitializationCoordinator,
         ILogger<DatabaseInitializer> logger)
     {
         _dbContextFactory = dbContextFactory;
@@ -38,6 +40,7 @@ public sealed class DatabaseInitializer
         _databaseEncryptionKeyService = databaseEncryptionKeyService;
         _databaseEncryptionMigrator = databaseEncryptionMigrator;
         _documentChunkIdentityBackfill = documentChunkIdentityBackfill;
+        _vaultInitializationCoordinator = vaultInitializationCoordinator;
         _logger = logger;
     }
 
@@ -51,35 +54,9 @@ public sealed class DatabaseInitializer
 
         try
         {
-            bool migrationBackupExists =
-                await PrepareDatabaseMigrationAsync(
-                    cancellationToken);
-
-            if (!File.Exists(
-                    _dataPaths.DatabasePath))
-            {
-                byte[] databaseKey =
-                    await _databaseEncryptionKeyService.GetOrCreateKeyAsync(
-                        cancellationToken);
-
-                CryptographicOperations.ZeroMemory(
-                    databaseKey);
-            }
-
-            await using var dbContext =
-                await _dbContextFactory.CreateDbContextAsync(
-                    cancellationToken);
-
-            await dbContext.Database.MigrateAsync(
+            await _vaultInitializationCoordinator.ExecuteAsync(
+                InitializeCoreAsync,
                 cancellationToken);
-
-            await _documentChunkIdentityBackfill.BackfillAsync(
-                cancellationToken);
-
-            if (migrationBackupExists)
-            {
-                CleanupMigrationBackup();
-            }
 
             _logger.LogInformation(
                 LogMessages.DatabaseInitializationCompleted);
@@ -95,6 +72,40 @@ public sealed class DatabaseInitializer
                 LogMessages.DatabaseInitializationFailed);
 
             throw;
+        }
+    }
+
+    private async Task InitializeCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        bool migrationBackupExists =
+            await PrepareDatabaseMigrationAsync(
+                cancellationToken);
+
+        if (!File.Exists(
+                _dataPaths.DatabasePath))
+        {
+            byte[] databaseKey =
+                await _databaseEncryptionKeyService.GetOrCreateKeyAsync(
+                    cancellationToken);
+
+            CryptographicOperations.ZeroMemory(
+                databaseKey);
+        }
+
+        await using var dbContext =
+            await _dbContextFactory.CreateDbContextAsync(
+                cancellationToken);
+
+        await dbContext.Database.MigrateAsync(
+            cancellationToken);
+
+        await _documentChunkIdentityBackfill.BackfillAsync(
+            cancellationToken);
+
+        if (migrationBackupExists)
+        {
+            CleanupMigrationBackup();
         }
     }
 
