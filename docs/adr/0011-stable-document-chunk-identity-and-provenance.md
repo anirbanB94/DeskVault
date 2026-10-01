@@ -244,6 +244,43 @@ Source location is optional and pipeline-dependent. The provenance
 contract does not require language-aware source analysis, AST processing,
 compilation, or semantic code intelligence.
 
+
+### Persisted Source-Location Representation
+
+The Infrastructure persistence model stores source location on the same
+canonical `DocumentChunks` row as the chunk identity, document
+relationship, content identity, and processing generation.
+
+The persistence representation is:
+
+```text
+DocumentChunkEntity
+├── Id
+├── DocumentId
+├── Order
+├── Text
+├── ContentHash
+├── ProcessingGeneration
+├── SourceLocationStartLine?
+└── SourceLocationEndLine?
+```
+
+`SourceLocationStartLine` and `SourceLocationEndLine` are nullable
+database columns. Unknown provenance is represented by `NULL/NULL`.
+Known provenance is represented by a valid inclusive line range.
+
+Infrastructure enforces that either both values are `NULL` or both are
+present with `StartLine > 0` and `EndLine >= StartLine`.
+
+When processed knowledge is replaced, the persisted source location is
+taken from the current processing generation. If the current generation
+does not provide reliable source location, both values are cleared to
+`NULL` rather than retaining stale provenance from an earlier generation.
+
+Historical chunks that predate source-location persistence are migrated
+with the nullable columns left `NULL/NULL`; no historical source location
+is reconstructed or fabricated.
+
 ## Architectural Boundaries
 
 The document chunk contract is an Application-level semantic contract.
@@ -310,13 +347,41 @@ Infrastructure persistence boundary.
 
 Schema evolution uses the existing EF Core migration mechanism.
 
-The migration adds `ContentHash` and `ProcessingGeneration` to the
-existing `DocumentChunks` table. The application-level logical identity
-algorithm is implemented at the Application/persistence boundary rather
-than embedded in the database migration.
+The `DocumentChunks` schema persists `ContentHash`, `ProcessingGeneration`,
+and nullable source-location line values. The application-level logical
+identity algorithm is implemented at the Application/persistence boundary
+rather than embedded in the database migration.
 
 Existing persisted documents and their processed content are preserved
 through the transition.
+
+Source-location provenance is persisted on the same canonical chunk row as
+the chunk's `Id`, `DocumentId`, `Order`, `ContentHash`, and
+`ProcessingGeneration`. Infrastructure stores the optional line range as
+two nullable columns: `SourceLocationStartLine` and
+`SourceLocationEndLine`.
+
+The persisted source-location representation has two valid states:
+
+```text
+Unknown:
+    SourceLocationStartLine = NULL
+    SourceLocationEndLine   = NULL
+
+Known:
+    SourceLocationStartLine > 0
+    SourceLocationEndLine >= SourceLocationStartLine
+```
+
+Infrastructure enforces this representation with a SQLite check
+constraint. Partial ranges and invalid line ranges cannot be persisted.
+
+When processed knowledge is replaced by a later processing generation,
+the replacement persists the source location supplied by that generation.
+When the replacement has unknown or unavailable source location, both
+nullable line values are written as `NULL`. This prevents source-location
+provenance from an earlier processing generation from being retained on a
+later replacement.
 
 Legacy chunk rows are backfilled after EF Core migrations complete. The
 backfill:
@@ -327,6 +392,9 @@ backfill:
 - derives `ContentHash` from the existing chunk text;
 - assigns `ProcessingGeneration = 0` because the historical producing
   generation is not available;
+- leaves `SourceLocationStartLine` and `SourceLocationEndLine` as
+  `NULL` because historical source location cannot be reconstructed
+  reliably;
 - replaces the legacy rows inside a database transaction so the
   transition is atomic;
 - is idempotent when the rows already conform to the contract.
@@ -337,7 +405,8 @@ the persistence boundary and migration tests. Existing document IDs,
 chunk text, and chunk ordering are preserved.
 
 The migration/backfill therefore establishes the new identity and
-provenance contract without silently losing existing derived content.
+provenance contract without silently losing existing derived content or
+inventing historical source provenance.
 
 ## Alternatives Considered
 
@@ -413,6 +482,14 @@ implementation details.
   separately governed.
 - Legacy persisted chunks can be transitioned without losing their
   document, order, or text content.
+- Reliable source-location provenance can remain attached to the exact
+  persisted knowledge unit and processing generation that produced it.
+- Unknown source-location provenance can be represented explicitly as
+  `NULL/NULL` without fabrication.
+- Database constraints prevent invalid or partial persisted
+  source-location ranges.
+- Historical rows do not acquire fabricated source locations during
+  migration.
 - Reliable line-level source provenance can be carried through direct
   text processing without coupling the canonical chunk contract to a
   specific document format or AI implementation.
@@ -429,8 +506,12 @@ implementation details.
 - Source-location support may vary by extraction format.
 - The exact stable identity construction is now part of the canonical
   contract and must not be changed silently.
+- Source-location persistence requires an additional nullable database
+  representation and validation constraint.
 - Legacy rows retain `ProcessingGeneration = 0` because their
   historical producing generation cannot be reconstructed.
+- Legacy rows retain unknown source location because historical
+  source-location provenance cannot be reconstructed reliably.
 
 These trade-offs are acceptable because stable, traceable canonical
 derived content is a prerequisite for reliable future retrieval and
@@ -451,6 +532,12 @@ The implementation must:
 - preserve cancellation and stale-attempt protections established by
   ADR-0010;
 - preserve existing search-to-document traceability;
+- persist source-location provenance on the same canonical chunk row as
+  the knowledge unit it describes;
+- represent unknown source location as `NULL/NULL`;
+- reject invalid or partial persisted source-location ranges;
+- ensure replacement of processed knowledge cannot retain stale
+  source-location values from an earlier generation;
 - provide a safe EF Core migration/transition for existing persisted
   data;
 - avoid sensitive document content or security material in logs;
@@ -484,8 +571,19 @@ identifier and chunk order under the versioned
 `DeskVault.DocumentChunk.v1` construction, while content identity is
 independently derived from canonical chunk text.
 
+Persisted source location is represented on the canonical chunk row by
+nullable start/end line values with database-level validation. Known
+locations are stored as valid inclusive line ranges, while unknown
+locations remain `NULL/NULL`.
+
+Processed-content replacement writes provenance from the current
+processing generation and clears source-location values when that
+generation cannot provide reliable provenance, preventing stale
+locations from earlier generations from surviving replacement.
+
 Legacy persisted chunks are safely transitioned to the contract with
-historical provenance represented by generation `0`.
+historical processing provenance represented by generation `0` and
+historical source location represented as unknown.
 
 This establishes the stable derived-knowledge foundation required for
 current local search and future retrieval and source-grounded

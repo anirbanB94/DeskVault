@@ -426,7 +426,11 @@ public sealed class SqliteDocumentProcessingStore
                     Text = chunk.Text,
                     ContentHash = contentHash,
                     ProcessingGeneration =
-                        processingGeneration
+                        processingGeneration,
+                    SourceLocationStartLine =
+                        chunk.SourceLocation?.StartLine,
+                    SourceLocationEndLine =
+                        chunk.SourceLocation?.EndLine
                 },
                 cancellationToken);
         }

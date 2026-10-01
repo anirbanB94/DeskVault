@@ -47,6 +47,7 @@ for:
 - the relationship between a document and its derived chunks
 - persisted document chunks representing the current successful derived
   processing result
+- optional source-location provenance associated with processed knowledge
 
 Conceptually:
 
@@ -55,6 +56,12 @@ SQLite Persistence
 ├── Document metadata
 ├── Processing state
 └── Document chunks
+    ├── stable chunk identity
+    ├── document relationship
+    ├── ordering
+    ├── content identity
+    ├── processing provenance
+    └── optional source-location provenance
 ```
 
 The relationship is:
@@ -65,6 +72,7 @@ Document
    ├── processing state
    │
    └── derived chunks
+       └── optional source-location provenance
 ```
 
 Processing execution state and derived chunks are persistence concerns
@@ -80,6 +88,9 @@ by ADR-0008. The authoritative processing lifecycle, processing-generation
 fencing, cancellation and failure behavior, and retry/idempotency rules are
 defined by ADR-0010. This ADR establishes only the persistence responsibility
 and SQLite boundary for those processing results.
+
+The source-location semantics and canonical chunk provenance contract are
+defined by ADR-0011.
 
 The existing Application/Infrastructure separation remains unchanged:
 
@@ -109,15 +120,21 @@ Persistent metadata
 Processing state
     ↓
 Derived document chunks
+    └── optional source-location provenance
 ```
 
 Encrypted source document content remains stored separately as encrypted
 filesystem content and is not moved into SQLite.
 
+Source-location information is persistence metadata attached to the
+processed knowledge unit. It does not replace the encrypted source file
+or introduce a separate provenance store.
+
 This extension does not change the original decision to use SQLite with
 Entity Framework Core for local persistence. It extends the persistence
 model to support the document knowledge-processing pipeline established by
-ADR-0008.
+ADR-0008 and the canonical chunk provenance contract established by
+ADR-0011.
 
 ## Architectural Boundaries
 
@@ -143,6 +160,10 @@ SQLite
 
 EF Core and SQLite types remain inside Infrastructure and are not exposed through Domain or Application contracts.
 
+Source-location semantics remain application-owned while Infrastructure
+maps the optional source location to nullable persistence columns on the
+`DocumentChunkEntity`.
+
 ## Persistence Model
 
 The Domain `Document` is intentionally separate from the EF Core persistence entity.
@@ -152,12 +173,46 @@ Domain
 └── Document
 
 Infrastructure
-└── DocumentEntity
+├── DocumentEntity
+└── DocumentChunkEntity
 ```
 
 Infrastructure is responsible for mapping between the persistence and domain representations.
 
 This prevents database-specific concerns from leaking into the Domain model.
+
+The persisted document chunk representation includes:
+
+```text
+DocumentChunkEntity
+├── Id
+├── DocumentId
+├── Order
+├── Text
+├── ContentHash
+├── ProcessingGeneration
+├── SourceLocationStartLine?
+└── SourceLocationEndLine?
+```
+
+Source-location columns are nullable because not every extracted or
+transformed representation has a reliable direct source mapping.
+
+The valid persistence states are:
+
+```text
+Known source location
+    SourceLocationStartLine != NULL
+    SourceLocationEndLine   != NULL
+    SourceLocationStartLine > 0
+    SourceLocationEndLine >= SourceLocationStartLine
+
+Unknown source location
+    SourceLocationStartLine = NULL
+    SourceLocationEndLine   = NULL
+```
+
+Infrastructure enforces this invariant at the SQLite boundary.
 
 ## DbContext Lifetime
 
@@ -290,6 +345,14 @@ SQLite
 Using migrations provides explicit schema evolution as the document,
 processing, and derived-content persistence model grows.
 
+The source-location persistence change uses the same EF Core migration
+mechanism. It adds nullable source-location columns and a SQLite check
+constraint without introducing a separate persistence subsystem.
+
+Existing persisted data remains usable after the migration. Historical
+chunks receive `NULL/NULL` source-location values because their original
+source locations cannot be reconstructed reliably.
+
 Database initialization remains separate from application use-case logic
 and from the UI lifecycle.
 
@@ -305,6 +368,10 @@ The current persistence model includes:
 - processing attempt information
 - document-to-chunk relationships
 - persisted document chunks representing the current successful derived result
+- stable document-chunk identity
+- document-chunk content identity
+- document-chunk processing-generation provenance
+- optional source-location provenance
 
 Document metadata and processing-derived data are persisted through
 Infrastructure-owned EF Core persistence while encrypted source document
@@ -312,6 +379,10 @@ content remains stored separately as `.dvault` files.
 
 The current implementation uses EF Core migrations for schema evolution and
 SQLite for local persistence.
+
+Source-location provenance is stored on the same `DocumentChunks` row as
+the chunk identity, document relationship, content identity, ordering,
+and processing generation.
 
 The Application layer remains independent of EF Core and SQLite through
 application-defined abstractions.
@@ -347,6 +418,11 @@ A future server-backed implementation could be introduced behind the existing Ap
 * Encrypted document content remains separate from metadata.
 * Database-level uniqueness reinforces duplicate detection.
 * Persistence can evolve independently of the Domain model.
+* Persisted processed knowledge retains stable identity and processing provenance.
+* Reliable source-location provenance can be stored alongside the exact
+  processed knowledge unit that produced it.
+* Unknown source-location provenance can remain explicitly unknown.
+* SQLite prevents invalid or partial source-location state.
 
 ### Negative
 
@@ -354,13 +430,17 @@ A future server-backed implementation could be introduced behind the existing Ap
 * SQLite schema evolution requires migrations.
 * A separate persistence entity must be maintained alongside the Domain entity.
 * Database initialization adds startup work.
+* Source-location persistence adds nullable schema fields and a database
+  validation constraint.
+* Historical source-location provenance cannot be reconstructed for
+  legacy rows.
 
 These trade-offs are acceptable for the current MVP.
 
 ## Result
 
-DeskVault now has a persistent local document metadata layer while retaining
-encrypted filesystem storage for document content.
+DeskVault now has a persistent local document metadata and derived-knowledge
+layer while retaining encrypted filesystem storage for document content.
 
 The resulting workflow is:
 
@@ -379,9 +459,15 @@ Duplicate rejected at persistence boundary when required
     ↓
 Persist metadata
     ↓
+Process document
+    ↓
+Persist derived chunks
+    ↓
+Persist reliable source-location provenance when available
+    ↓
 Restart application
     ↓
-Restore metadata
+Restore metadata and derived state
     ↓
 Open and decrypt document
 ```
@@ -392,6 +478,11 @@ guarantee when concurrent imports reach persistence simultaneously.
 
 A SHA-256 uniqueness conflict is translated into the existing duplicate import
 outcome. Other persistence failures are not converted into duplicate results.
+
+Derived document chunks remain stored in SQLite as Infrastructure-owned
+persistence entities, with source-location provenance stored alongside the
+canonical chunk identity, document relationship, content identity,
+ordering, and processing generation.
 
 Encrypted document content remains stored separately as `.dvault` files, and
 the Application layer remains independent of EF Core and SQLite-specific

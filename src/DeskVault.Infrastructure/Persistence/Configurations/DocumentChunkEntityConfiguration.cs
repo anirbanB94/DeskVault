@@ -10,7 +10,20 @@ public sealed class DocumentChunkEntityConfiguration
     public void Configure(
         EntityTypeBuilder<DocumentChunkEntity> builder)
     {
-        builder.ToTable("DocumentChunks");
+        builder.ToTable(
+            "DocumentChunks",
+            tableBuilder =>
+                tableBuilder.HasCheckConstraint(
+                    "CK_DocumentChunks_SourceLocationRange",
+                    """
+                    ("SourceLocationStartLine" IS NULL
+                        AND "SourceLocationEndLine" IS NULL)
+                    OR
+                    ("SourceLocationStartLine" IS NOT NULL
+                        AND "SourceLocationEndLine" IS NOT NULL
+                        AND "SourceLocationStartLine" > 0
+                        AND "SourceLocationEndLine" >= "SourceLocationStartLine")
+                    """));
 
         builder.HasKey(
             chunk => chunk.Id);
@@ -39,6 +52,14 @@ public sealed class DocumentChunkEntityConfiguration
         builder.Property(
                 chunk => chunk.ProcessingGeneration)
             .IsRequired();
+
+        builder.Property(
+                chunk => chunk.SourceLocationStartLine)
+            .IsRequired(false);
+
+        builder.Property(
+                chunk => chunk.SourceLocationEndLine)
+            .IsRequired(false);
 
         builder.HasOne<DocumentEntity>()
             .WithMany()

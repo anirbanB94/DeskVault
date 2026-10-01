@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Documents.Provenance;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
@@ -75,6 +76,268 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
         Assert.Equal(
             document.ProcessingGeneration,
             chunk.ProcessingGeneration);
+
+        Assert.Null(
+            chunk.SourceLocationStartLine);
+
+        Assert.Null(
+            chunk.SourceLocationEndLine);
+    }
+
+    [Fact]
+    public async Task ReplaceChunksAsync_PersistsSourceLocationAlongsideChunkIdentityAndGeneration()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        var store =
+            CreateStore(connection);
+
+        const int order = 2;
+        const string text =
+            "Canonical chunk text.";
+
+        var sourceLocation =
+            new DocumentSourceLocation(
+                12,
+                15);
+
+        // Act
+        await store.ReplaceChunksAsync(
+            document.Id,
+            document.ProcessingGeneration,
+            [
+                new DocumentChunk(
+                    order,
+                    text,
+                    sourceLocation)
+            ]);
+
+        DocumentChunkEntity chunk =
+            await GetSingleChunkAsync(
+                connection);
+
+        // Assert
+        Assert.Equal(
+            DocumentChunkIdentity.CreateLogicalId(
+                document.Id,
+                order),
+            chunk.Id);
+
+        Assert.Equal(
+            document.Id,
+            chunk.DocumentId);
+
+        Assert.Equal(
+            order,
+            chunk.Order);
+
+        Assert.Equal(
+            text,
+            chunk.Text);
+
+        Assert.Equal(
+            DocumentChunkIdentity.ComputeContentHash(
+                text),
+            chunk.ContentHash);
+
+        Assert.Equal(
+            document.ProcessingGeneration,
+            chunk.ProcessingGeneration);
+
+        Assert.Equal(
+            sourceLocation.StartLine,
+            chunk.SourceLocationStartLine);
+
+        Assert.Equal(
+            sourceLocation.EndLine,
+            chunk.SourceLocationEndLine);
+    }
+
+    [Fact]
+    public async Task DocumentChunk_SourceLocation_WhenUnknown_AllowsNullRange()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        var chunk =
+            new DocumentChunkEntity
+            {
+                Id = Guid.NewGuid(),
+                DocumentId = document.Id,
+                Order = 0,
+                Text = "Chunk without source location.",
+                ContentHash =
+                    DocumentChunkIdentity.ComputeContentHash(
+                        "Chunk without source location."),
+                ProcessingGeneration =
+                    document.ProcessingGeneration,
+                SourceLocationStartLine = null,
+                SourceLocationEndLine = null
+            };
+
+        // Act
+        context.DocumentChunks.Add(
+            chunk);
+
+        await context.SaveChangesAsync();
+
+        // Assert
+        DocumentChunkEntity persistedChunk =
+            await GetSingleChunkAsync(
+                connection);
+
+        Assert.Null(
+            persistedChunk.SourceLocationStartLine);
+
+        Assert.Null(
+            persistedChunk.SourceLocationEndLine);
+    }
+
+    [Fact]
+    public async Task DocumentChunk_SourceLocation_WhenValid_AllowsInclusiveLineRange()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        var chunk =
+            new DocumentChunkEntity
+            {
+                Id = Guid.NewGuid(),
+                DocumentId = document.Id,
+                Order = 0,
+                Text = "Chunk with source location.",
+                ContentHash =
+                    DocumentChunkIdentity.ComputeContentHash(
+                        "Chunk with source location."),
+                ProcessingGeneration =
+                    document.ProcessingGeneration,
+                SourceLocationStartLine = 12,
+                SourceLocationEndLine = 15
+            };
+
+        // Act
+        context.DocumentChunks.Add(
+            chunk);
+
+        await context.SaveChangesAsync();
+
+        // Assert
+        DocumentChunkEntity persistedChunk =
+            await GetSingleChunkAsync(
+                connection);
+
+        Assert.Equal(
+            12,
+            persistedChunk.SourceLocationStartLine);
+
+        Assert.Equal(
+            15,
+            persistedChunk.SourceLocationEndLine);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-1, 1)]
+    [InlineData(3, 2)]
+    public async Task DocumentChunk_SourceLocation_WhenInvalidRange_RejectsPersistence(
+        int startLine,
+        int endLine)
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        var chunk =
+            new DocumentChunkEntity
+            {
+                Id = Guid.NewGuid(),
+                DocumentId = document.Id,
+                Order = 0,
+                Text = "Chunk with invalid source location.",
+                ContentHash =
+                    DocumentChunkIdentity.ComputeContentHash(
+                        "Chunk with invalid source location."),
+                ProcessingGeneration =
+                    document.ProcessingGeneration,
+                SourceLocationStartLine = startLine,
+                SourceLocationEndLine = endLine
+            };
+
+        // Act
+        context.DocumentChunks.Add(
+            chunk);
+
+        // Assert
+        await Assert.ThrowsAsync<DbUpdateException>(
+            () => context.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task DocumentChunk_SourceLocation_WhenOnlyOneLineIsPresent_RejectsPersistence()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        var chunk =
+            new DocumentChunkEntity
+            {
+                Id = Guid.NewGuid(),
+                DocumentId = document.Id,
+                Order = 0,
+                Text = "Chunk with partial source location.",
+                ContentHash =
+                    DocumentChunkIdentity.ComputeContentHash(
+                        "Chunk with partial source location."),
+                ProcessingGeneration =
+                    document.ProcessingGeneration,
+                SourceLocationStartLine = 3,
+                SourceLocationEndLine = null
+            };
+
+        // Act
+        context.DocumentChunks.Add(
+            chunk);
+
+        // Assert
+        await Assert.ThrowsAsync<DbUpdateException>(
+            () => context.SaveChangesAsync());
     }
 
     [Fact]
@@ -149,6 +412,194 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
         Assert.Equal(
             secondGeneration,
             secondChunk.ProcessingGeneration);
+    }
+
+    [Fact]
+    public async Task ReplaceChunksAsync_WhenReprocessedWithNewSourceLocation_ReplacesPreviousSourceLocation()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        var store =
+            CreateStore(connection);
+
+        const string text =
+            "Canonical chunk text.";
+
+        var firstSourceLocation =
+            new DocumentSourceLocation(
+                10,
+                12);
+
+        await store.ReplaceChunksAsync(
+            document.Id,
+            document.ProcessingGeneration,
+            [
+                new DocumentChunk(
+                    0,
+                    text,
+                    firstSourceLocation)
+            ]);
+
+        DocumentChunkEntity firstChunk =
+            await GetSingleChunkAsync(
+                connection);
+
+        long secondGeneration =
+            await store.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        var secondSourceLocation =
+            new DocumentSourceLocation(
+                20,
+                24);
+
+        // Act
+        await store.ReplaceChunksAsync(
+            document.Id,
+            secondGeneration,
+            [
+                new DocumentChunk(
+                    0,
+                    text,
+                    secondSourceLocation)
+            ]);
+
+        DocumentChunkEntity secondChunk =
+            await GetSingleChunkAsync(
+                connection);
+
+        // Assert
+        Assert.Equal(
+            firstChunk.Id,
+            secondChunk.Id);
+
+        Assert.Equal(
+            firstChunk.ContentHash,
+            secondChunk.ContentHash);
+
+        Assert.Equal(
+            document.Id,
+            secondChunk.DocumentId);
+
+        Assert.Equal(
+            0,
+            secondChunk.Order);
+
+        Assert.Equal(
+            text,
+            secondChunk.Text);
+
+        Assert.Equal(
+            secondGeneration,
+            secondChunk.ProcessingGeneration);
+
+        Assert.Equal(
+            secondSourceLocation.StartLine,
+            secondChunk.SourceLocationStartLine);
+
+        Assert.Equal(
+            secondSourceLocation.EndLine,
+            secondChunk.SourceLocationEndLine);
+
+        Assert.NotEqual(
+            firstSourceLocation.StartLine,
+            secondChunk.SourceLocationStartLine);
+
+        Assert.NotEqual(
+            firstSourceLocation.EndLine,
+            secondChunk.SourceLocationEndLine);
+    }
+
+    [Fact]
+    public async Task ReplaceChunksAsync_WhenReprocessedWithoutSourceLocation_ClearsPreviousSourceLocation()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        var store =
+            CreateStore(connection);
+
+        const string text =
+            "Canonical chunk text.";
+
+        var firstSourceLocation =
+            new DocumentSourceLocation(
+                10,
+                12);
+
+        await store.ReplaceChunksAsync(
+            document.Id,
+            document.ProcessingGeneration,
+            [
+                new DocumentChunk(
+                    0,
+                    text,
+                    firstSourceLocation)
+            ]);
+
+        DocumentChunkEntity firstChunk =
+            await GetSingleChunkAsync(
+                connection);
+
+        long secondGeneration =
+            await store.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        // Act
+        await store.ReplaceChunksAsync(
+            document.Id,
+            secondGeneration,
+            [
+                new DocumentChunk(
+                    0,
+                    text)
+            ]);
+
+        DocumentChunkEntity secondChunk =
+            await GetSingleChunkAsync(
+                connection);
+
+        // Assert
+        Assert.Equal(
+            firstChunk.Id,
+            secondChunk.Id);
+
+        Assert.Equal(
+            firstChunk.ContentHash,
+            secondChunk.ContentHash);
+
+        Assert.Equal(
+            document.Id,
+            secondChunk.DocumentId);
+
+        Assert.Equal(
+            0,
+            secondChunk.Order);
+
+        Assert.Equal(
+            text,
+            secondChunk.Text);
+
+        Assert.Equal(
+            secondGeneration,
+            secondChunk.ProcessingGeneration);
+
+        Assert.Null(
+            secondChunk.SourceLocationStartLine);
+
+        Assert.Null(
+            secondChunk.SourceLocationEndLine);
     }
 
     [Fact]
