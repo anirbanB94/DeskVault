@@ -85,6 +85,18 @@ The migration therefore requires a staging and promotion strategy that
 keeps the original plaintext database recoverable until the encrypted
 database has been verified.
 
+Existing-vault startup also performs schema evolution and any required
+persistence backfills. These operations can modify the canonical database
+or replace persisted rows and therefore form part of the same
+initialization critical section as migration staging, promotion, and
+recovery.
+
+Without explicit coordination, two DeskVault application instances that
+start against the same vault could concurrently inspect migration
+artifacts, modify schema state, execute required backfills, or attempt
+canonical-database replacement. These operations must therefore be
+serialized per vault.
+
 ## Decision
 
 DeskVault will use SQLite3MC as the SQLite database-encryption provider.
@@ -236,6 +248,78 @@ provider-level limitation from the canonical database.
 The migration implementation does not change the document-file
 encryption strategy.
 
+### Cross-Process Initialization Coordination
+
+Existing-vault and new-vault database initialization is coordinated per
+vault by `VaultInitializationCoordinator`.
+
+The coordinator derives a lock artifact from the canonical database path:
+
+```text
+DeskVault.db
+    ↓
+DeskVault.db.initialization.lock
+```
+
+The lock is acquired by opening the coordination file with exclusive file
+sharing (`FileShare.None`). A held file handle therefore provides the
+cross-process exclusion boundary.
+
+The coordinator acquires the lock before any initialization work begins
+and holds it for the complete initialization critical section:
+
+```text
+Acquire vault initialization lock
+        ↓
+Inspect migration/recovery artifacts
+        ↓
+Stage and rekey plaintext database when required
+        ↓
+Promote canonical database when required
+        ↓
+Create/open encrypted DbContext
+        ↓
+EF Core MigrateAsync
+        ↓
+Required existing-vault backfill
+        ↓
+Remove migration backup after successful initialization
+        ↓
+Release vault initialization lock
+```
+
+This critical section deliberately includes canonical-database
+replacement, schema migration, and required backfill work. The individual
+migration and backfill components therefore do not implement separate
+coordination mechanisms for the same-vault initialization race.
+
+Coordination is scoped to the canonical database path. Different vaults
+therefore use different lock files and do not unnecessarily block one
+another.
+
+The existence of the `.initialization.lock` file is not interpreted as
+proof that a process is still running. The authoritative coordination
+state is the operating-system file handle and its exclusive sharing mode.
+The lock file itself may remain after successful initialization.
+
+If the initializing process terminates or otherwise abandons the critical
+section, the operating system releases its file handle. A subsequent
+initialization can then acquire the same lock and retry the existing
+initialization/recovery workflow.
+
+If the coordination file cannot be created or opened for reasons other
+than the expected sharing violation, initialization fails rather than
+proceeding without the required same-vault exclusion.
+
+The coordinator ensures the vault root directory exists before creating
+the coordination file so that first-run initialization remains valid even
+when the vault has not yet created its application-data directories.
+
+Cross-process coordination does not replace or weaken the existing
+migration recovery protocol. It only serializes access to the lifecycle
+that owns migration staging, promotion, schema evolution, backfill, and
+cleanup.
+
 ### Startup Failure Handling
 
 Database initialization is a security-sensitive startup boundary.
@@ -290,10 +374,27 @@ The database encryption decision does not replace the document-content
 encryption strategy defined by ADR-0004. Document content and database
 metadata remain separate storage and encryption boundaries.
 
-The migration lifecycle introduces temporary plaintext recovery artifacts.
-These artifacts are deliberately retained only until successful
-encrypted database initialization and must not be treated as permanent
-database copies.
+Same-vault initialization now has an explicit cross-process exclusion
+boundary. Schema migration, required backfills, migration artifact
+management, and canonical-database replacement cannot be performed by
+multiple DeskVault initializers simultaneously for the same vault.
+
+The coordination state does not depend on application-managed stale
+timestamps or a separately persisted ownership record. Operating-system
+handle release makes an interrupted or terminated initializer eligible
+for retry without requiring manual lock cleanup.
+
+The coordination file introduces a small persistent filesystem artifact
+per vault. Its presence alone does not represent an active initialization
+and it is not part of the database's authoritative data.
+
+The initialization lock is scoped to the vault's canonical database path,
+so unrelated vaults can initialize concurrently.
+
+Plaintext-to-encrypted migration introduces temporary plaintext recovery
+artifacts. These artifacts are deliberately retained only until
+successful encrypted database initialization and must not be treated as
+permanent database copies.
 
 Database initialization failures are intentionally surfaced to users
 through a generic startup error message rather than raw exception
@@ -327,8 +428,8 @@ The provider-level migration spike established the following behavior:
   post-promotion recovery cleanup.
 - Database encryption key material is protected using Windows DPAPI with
   `DataProtectionScope.CurrentUser`.
-- Database encryption key material is kept separate from the document-file
-  encryption key.
+- Database encryption key material is kept separate from the
+  document-file encryption key.
 - Database initialization establishes the encrypted database access path
   before EF Core migrations.
 - SQLite runtime artifacts are checked to ensure persisted plaintext
@@ -341,3 +442,25 @@ The provider-level migration spike established the following behavior:
 - Database initialization failures are logged without intentionally
   logging database key material and are presented to users through a
   fixed generic startup failure message.
+- `VaultInitializationCoordinator` provides same-vault cross-process
+  exclusion using an exclusive filesystem handle on the vault-scoped
+  initialization lock.
+- Coordinator regression tests verify same-vault serialization,
+  release-after-failure, cancellation while waiting, unrelated-vault
+  concurrency, and first-run root-directory creation.
+- Production-path integration tests verify that concurrent
+  initialization of an existing plaintext vault converges on a single
+  encrypted canonical database with migration artifacts cleaned up and
+  existing document data preserved.
+
+## Related Decisions and Work
+
+- ADR-0002 defines the vertical-slice architecture and the
+  Domain/Application/Infrastructure boundaries.
+- ADR-0004 establishes document-content encryption.
+- ADR-0005 establishes SQLite with EF Core as the persistence boundary
+  for document metadata and derived processing results.
+- ADR-0010 establishes authoritative processing generation and
+  stale-result protection for the document-processing lifecycle.
+- ADR-0011 establishes stable document chunk identity and provenance,
+  including legacy chunk transition semantics.
