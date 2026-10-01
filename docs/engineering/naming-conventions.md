@@ -255,8 +255,8 @@ The meanings are:
 | ---------------- | -------------------------- |
 | `feature`        | Product Backlog Item (PBI) |
 | `technical-task` | Technical Task             |
-| `bugs`           | Bug                        |
-| `spike`          | Technical Spike            |
+| `bug`            | Bug                        |
+| `research`       | Technical Spike            |
 | `documentation`  | Documentation work         |
 
 The `feature` label identifies an issue as a **PBI**.
@@ -403,8 +403,8 @@ Across the repository:
 | PBI            | `feature`        | `Evolve document workspace into multi-document workspaces`   |
 | Technical Task | `technical-task` | `task(documentation): update naming conventions`             |
 | Technical Task | `technical-task` | `task(processing): persist processing execution state`       |
-| Bug            | `bugs`           | `fix(search): preserve result ordering`                      |
-| Spike          | `spike`          | `spike(database): evaluate encrypted SQLite providers`       |
+| Bug            | `bug`            | `fix(search): preserve result ordering`                      |
+| Spike          | `research`       | `spike(database): evaluate encrypted SQLite providers`       |
 | Documentation  | `documentation`  | `docs(architecture): clarify processing boundaries`          |
 | Commit         | —                | `feat(search): add document discovery filters`               |
 | Pull Request   | —                | `feat(search): evolve search into richer document discovery` |
