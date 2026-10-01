@@ -26,6 +26,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IDbContextFactory<DeskVaultDbContext>, EncryptedDeskVaultDbContextFactory>();
 
+        services.AddSingleton<VaultInitializationCoordinator>();
+
         services.AddSingleton<DatabaseInitializer>();
 
         services.AddSingleton<DocumentChunkIdentityBackfill>();

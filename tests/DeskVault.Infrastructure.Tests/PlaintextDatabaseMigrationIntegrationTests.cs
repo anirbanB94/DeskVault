@@ -461,6 +461,155 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task PlaintextDatabase_WhenInitializedConcurrentlyThroughProductionInfrastructurePath_PreservesConsistentFinalState()
+    {
+        // Arrange
+        SQLitePCL.Batteries_V2.Init();
+
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] databaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        Guid firstChunkId =
+            Guid.NewGuid();
+
+        Guid secondChunkId =
+            Guid.NewGuid();
+
+        DateTime importedAt =
+            new DateTime(
+                2026,
+                8,
+                3,
+                12,
+                15,
+                0,
+                DateTimeKind.Utc);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        string initializationLockPath =
+            databasePath +
+            ".initialization.lock";
+
+        try
+        {
+            CreatePlaintextDeskVaultDatabase(
+                databasePath,
+                documentId,
+                firstChunkId,
+                secondChunkId,
+                importedAt);
+
+            ServiceProvider firstServiceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey);
+
+            ServiceProvider secondServiceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey);
+
+            await using (firstServiceProvider)
+            await using (secondServiceProvider)
+            using (FileStream initializationLock =
+                new(
+                    initializationLockPath,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    bufferSize: 1,
+                    options: FileOptions.Asynchronous))
+            {
+                DatabaseInitializer firstInitializer =
+                    firstServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+                DatabaseInitializer secondInitializer =
+                    secondServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+                TaskCompletionSource<bool> startGate =
+                    new(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
+
+                Task firstInitialization =
+                    Task.Run(
+                        async () =>
+                        {
+                            await startGate.Task;
+
+                            await firstInitializer.InitializeAsync();
+                        });
+
+                Task secondInitialization =
+                    Task.Run(
+                        async () =>
+                        {
+                            await startGate.Task;
+
+                            await secondInitializer.InitializeAsync();
+                        });
+
+                // Act
+                startGate.SetResult(true);
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(500));
+
+                // Assert
+                Assert.False(
+                    firstInitialization.IsCompleted);
+
+                Assert.False(
+                    secondInitialization.IsCompleted);
+
+                initializationLock.Dispose();
+
+                await Task.WhenAll(
+                    firstInitialization,
+                    secondInitialization);
+
+                Assert.True(
+                    File.Exists(
+                        databasePath));
+
+                Assert.False(
+                    IsPlaintextSqliteDatabase(
+                        databasePath));
+
+                Assert.False(
+                    File.Exists(
+                        databasePath + ".migration"));
+
+                Assert.False(
+                    File.Exists(
+                        databasePath + ".migration-backup"));
+
+                AssertEncryptedDocumentExists(
+                    databasePath,
+                    documentId,
+                    databaseKey);
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                databaseKey);
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
     private static void CreatePlaintextDeskVaultDatabase(
         string databasePath,
         Guid documentId,
