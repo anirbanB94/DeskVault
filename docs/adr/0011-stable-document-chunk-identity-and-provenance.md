@@ -197,11 +197,52 @@ Source-location information may be persisted when the existing
 extraction or normalization pipeline can provide it without introducing
 format-specific semantic source-code analysis.
 
-DeskVault will not require language-aware source analysis, AST
-processing, compilation, or semantic code intelligence to establish this
-contract.
+DeskVault represents a source location as an inclusive line range:
 
-Source location is therefore optional and pipeline-dependent.
+```text
+DocumentSourceLocation
+├── StartLine
+└── EndLine
+```
+
+`StartLine` is the first source line associated with the resulting
+content and must be greater than zero.
+
+`EndLine` is the last source line associated with the resulting content
+and must be greater than or equal to `StartLine`.
+
+DeskVault also carries an explicit source-location mapping contract
+through the processing pipeline:
+
+```text
+DocumentSourceLocationMappingKind
+├── Unknown
+└── DirectText
+```
+
+`DirectText` means that the extracted or normalized representation
+remains directly mappable to the originating source text by source line.
+
+`Unknown` means that a reliable source-location relationship is not
+available or cannot be preserved through the applicable transformation.
+
+The extraction stage establishes the mapping contract. The normalization
+stage preserves that contract when the normalized representation remains
+reliably mappable. The chunking stage derives a `DocumentSourceLocation`
+for `DirectText` content and leaves `SourceLocation` unset when the
+mapping contract is `Unknown`.
+
+Normalization of line endings does not invalidate line-level provenance.
+For example, CRLF-to-LF normalization preserves source line numbering.
+
+Transforms that parse and render structured source content do not claim
+`DirectText` unless the pipeline provides an explicit reliable mapping.
+DeskVault must therefore leave source location unknown rather than infer
+or fabricate a location.
+
+Source location is optional and pipeline-dependent. The provenance
+contract does not require language-aware source analysis, AST processing,
+compilation, or semantic code intelligence.
 
 ## Architectural Boundaries
 
@@ -211,8 +252,10 @@ The processing workflow remains responsible for orchestration and for
 providing document and processing context to the persistence boundary.
 
 The chunking component remains responsible for producing deterministic
-chunk order and canonical chunk text. It does not become responsible for
-persistence, search, database concerns, or AI-specific metadata.
+chunk order and canonical chunk text, and for carrying reliable
+source-location provenance forward when the processing contract provides
+a direct source mapping. It does not become responsible for persistence,
+search, database concerns, or AI-specific metadata.
 
 Infrastructure remains responsible for EF Core persistence entities,
 mappings, database constraints and indexes, migrations, transactions,
@@ -370,6 +413,11 @@ implementation details.
   separately governed.
 - Legacy persisted chunks can be transitioned without losing their
   document, order, or text content.
+- Reliable line-level source provenance can be carried through direct
+  text processing without coupling the canonical chunk contract to a
+  specific document format or AI implementation.
+- Unmapped or transformed source content can explicitly remain unknown
+  rather than introducing false provenance.
 
 ### Negative
 

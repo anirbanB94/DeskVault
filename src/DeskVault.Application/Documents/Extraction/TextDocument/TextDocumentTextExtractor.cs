@@ -1,5 +1,6 @@
 using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Documents.Provenance;
 using System.Text;
 
 namespace DeskVault.Application.Documents.Extraction.TextDocument;
@@ -92,6 +93,7 @@ public sealed class TextDocumentTextExtractor
         cancellationToken.ThrowIfCancellationRequested();
 
         return new DocumentTextExtractionResult(
-            textBuffer.ToString());
+            textBuffer.ToString(),
+            DocumentSourceLocationMappingKind.DirectText);
     }
 }

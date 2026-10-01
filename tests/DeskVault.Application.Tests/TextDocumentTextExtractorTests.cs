@@ -2,6 +2,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Documents.Provenance;
 using DeskVault.Application.Tests.TestInfrastructure;
 using System.Text;
 
@@ -307,5 +308,26 @@ public sealed class TextDocumentTextExtractorTests
         Assert.Equal(
             expectedText,
             result.Text);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_RawText_ReturnsDirectSourceLocationMapping()
+    {
+        const string expectedText =
+            "First line.\nSecond line.";
+
+        await using var stream =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(
+                    expectedText));
+
+        DocumentTextExtractionResult result =
+            await _extractor.ExtractAsync(
+                stream,
+                "notes.txt");
+
+        Assert.Equal(
+            DocumentSourceLocationMappingKind.DirectText,
+            result.SourceLocationMappingKind);
     }
 }

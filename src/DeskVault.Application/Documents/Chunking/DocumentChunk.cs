@@ -1,5 +1,8 @@
+using DeskVault.Application.Documents.Provenance;
+
 namespace DeskVault.Application.Documents.Chunking;
 
 public sealed record DocumentChunk(
     int Order,
-    string Text);
+    string Text,
+    DocumentSourceLocation? SourceLocation = null);

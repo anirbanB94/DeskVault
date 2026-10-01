@@ -1,4 +1,8 @@
+using DeskVault.Application.Documents.Provenance;
+
 namespace DeskVault.Application.Documents.Extraction;
 
 public sealed record DocumentTextExtractionResult(
-    string Text);
+    string Text,
+    DocumentSourceLocationMappingKind SourceLocationMappingKind =
+        DocumentSourceLocationMappingKind.Unknown);

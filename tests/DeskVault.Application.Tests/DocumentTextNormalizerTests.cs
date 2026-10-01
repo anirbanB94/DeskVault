@@ -2,6 +2,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Documents.Provenance;
 
 namespace DeskVault.Application.Tests;
 
@@ -300,5 +301,45 @@ public sealed class DocumentTextNormalizerTests
             () =>
                 new DocumentTextNormalizer(
                     options));
+    }
+
+    [Fact]
+    public async Task NormalizeAsync_DirectTextMapping_PreservesSourceLocationMappingKind()
+    {
+        var extractionResult =
+            new DocumentTextExtractionResult(
+                "First line.\r\nSecond line.",
+                DocumentSourceLocationMappingKind.DirectText);
+
+        var normalizer =
+            new DocumentTextNormalizer();
+
+        DocumentTextNormalizationResult result =
+            await normalizer.NormalizeAsync(
+                extractionResult);
+
+        Assert.Equal(
+            DocumentSourceLocationMappingKind.DirectText,
+            result.SourceLocationMappingKind);
+    }
+
+    [Fact]
+    public async Task NormalizeAsync_UnknownMapping_RemainsUnknown()
+    {
+        var extractionResult =
+            new DocumentTextExtractionResult(
+                "Generated representation.",
+                DocumentSourceLocationMappingKind.Unknown);
+
+        var normalizer =
+            new DocumentTextNormalizer();
+
+        DocumentTextNormalizationResult result =
+            await normalizer.NormalizeAsync(
+                extractionResult);
+
+        Assert.Equal(
+            DocumentSourceLocationMappingKind.Unknown,
+            result.SourceLocationMappingKind);
     }
 }

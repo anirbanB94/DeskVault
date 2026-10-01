@@ -75,6 +75,7 @@ public sealed class DocumentTextNormalizer
 
         return Task.FromResult(
             new DocumentTextNormalizationResult(
-                output.ToString()));
+                output.ToString(),
+                extractionResult.SourceLocationMappingKind));
     }
 }

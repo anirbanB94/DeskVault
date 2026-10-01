@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Normalization;
+using DeskVault.Application.Documents.Provenance;
 
 namespace DeskVault.Application.Tests;
 
@@ -31,6 +32,166 @@ public sealed class DocumentTextChunkerTests
 
         Assert.Equal(0, chunk.Order);
         Assert.Equal(text, chunk.Text);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_DefaultSourceLocation_IsUnknown()
+    {
+        IReadOnlyList<DocumentChunk> chunks =
+            await ChunkAsync(
+                "DeskVault keeps documents searchable.");
+
+        DocumentChunk chunk =
+            Assert.Single(chunks);
+
+        Assert.Null(
+            chunk.SourceLocation);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_DirectTextMapping_AssignsSingleLineSourceLocation()
+    {
+        var normalizationResult =
+            new DocumentTextNormalizationResult(
+                "DeskVault searchable text.",
+                DocumentSourceLocationMappingKind.DirectText);
+
+        IReadOnlyList<DocumentChunk> chunks =
+            await CreateChunker().ChunkAsync(
+                normalizationResult);
+
+        DocumentChunk chunk =
+            Assert.Single(chunks);
+
+        Assert.Equal(
+            new DocumentSourceLocation(
+                1,
+                1),
+            chunk.SourceLocation);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_DirectTextMapping_TracksMultilineSourceLocation()
+    {
+        var normalizationResult =
+            new DocumentTextNormalizationResult(
+                "First line.\nSecond line.\nThird line.",
+                DocumentSourceLocationMappingKind.DirectText);
+
+        IReadOnlyList<DocumentChunk> chunks =
+            await CreateChunker().ChunkAsync(
+                normalizationResult);
+
+        DocumentChunk chunk =
+            Assert.Single(chunks);
+
+        Assert.Equal(
+            new DocumentSourceLocation(
+                1,
+                3),
+            chunk.SourceLocation);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_DirectTextMapping_TracksParagraphSourceLocations()
+    {
+        const string firstParagraph =
+            "First paragraph.";
+
+        const string secondParagraph =
+            "Second paragraph.";
+
+        string text =
+            $"{firstParagraph}\n\n{secondParagraph}";
+
+        var normalizationResult =
+            new DocumentTextNormalizationResult(
+                text,
+                DocumentSourceLocationMappingKind.DirectText);
+
+        IReadOnlyList<DocumentChunk> chunks =
+            await CreateChunker(
+                secondParagraph.Length)
+            .ChunkAsync(
+                normalizationResult);
+
+        Assert.Equal(
+            2,
+            chunks.Count);
+
+        Assert.Equal(
+            new DocumentSourceLocation(
+                1,
+                1),
+            chunks[0].SourceLocation);
+
+        Assert.Equal(
+            new DocumentSourceLocation(
+                3,
+                3),
+            chunks[1].SourceLocation);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_UnknownMapping_DoesNotAssignSourceLocation()
+    {
+        var normalizationResult =
+            new DocumentTextNormalizationResult(
+                "Generated representation.\nSecond line.",
+                DocumentSourceLocationMappingKind.Unknown);
+
+        IReadOnlyList<DocumentChunk> chunks =
+            await CreateChunker().ChunkAsync(
+                normalizationResult);
+
+        DocumentChunk chunk =
+            Assert.Single(chunks);
+
+        Assert.Null(
+            chunk.SourceLocation);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_DirectTextMapping_OversizedParagraph_PreservesSourceLineRange()
+    {
+        const string text =
+            "First line of a long paragraph.\n" +
+            "Second line of a long paragraph.";
+
+        var normalizationResult =
+            new DocumentTextNormalizationResult(
+                text,
+                DocumentSourceLocationMappingKind.DirectText);
+
+        IReadOnlyList<DocumentChunk> chunks =
+            await CreateChunker(
+                SmallMaxChunkSize)
+            .ChunkAsync(
+                normalizationResult);
+
+        Assert.True(
+            chunks.Count > 1);
+
+        Assert.All(
+            chunks,
+            chunk =>
+                Assert.NotNull(
+                    chunk.SourceLocation));
+
+        Assert.Equal(
+            1,
+            chunks[0].SourceLocation!.StartLine);
+
+        Assert.True(
+            chunks.All(
+                chunk =>
+                    chunk.SourceLocation!.StartLine >= 1 &&
+                    chunk.SourceLocation!.EndLine <= 2));
+
+        Assert.Contains(
+            chunks,
+            chunk =>
+                chunk.SourceLocation!.EndLine == 2);
     }
 
     [Fact]

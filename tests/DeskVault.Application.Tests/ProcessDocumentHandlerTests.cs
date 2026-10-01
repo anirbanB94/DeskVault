@@ -4,6 +4,7 @@ using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Documents.Provenance;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -685,6 +686,97 @@ public sealed class ProcessDocumentHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenDirectTextSourceMappingIsAvailable_PropagatesSourceLocationToProcessedChunks()
+    {
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingContext =
+            CreateProcessingContext(
+                repository,
+                maxChunkSize: 100);
+
+        processingContext.Extractor.ReturnText =
+            "First line.\nSecond line.\nThird line.";
+
+        processingContext.Extractor.SourceLocationMappingKind =
+            DocumentSourceLocationMappingKind.DirectText;
+
+        ProcessDocumentResult result =
+            await processingContext.Handler.HandleAsync(
+                new ProcessDocumentCommand(
+                    document.Id));
+
+        Assert.Equal(
+            ProcessDocumentResultStatus.Success,
+            result.Status);
+
+        DocumentChunk chunk =
+            Assert.Single(
+                processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            "First line.\nSecond line.\nThird line.",
+            chunk.Text);
+
+        Assert.Equal(
+            new DocumentSourceLocation(
+                1,
+                3),
+            chunk.SourceLocation);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenSourceLocationMappingIsUnknown_DoesNotAssignSourceLocation()
+    {
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingContext =
+            CreateProcessingContext(
+                repository,
+                maxChunkSize: 100);
+
+        processingContext.Extractor.ReturnText =
+            "Generated representation.\nSecond line.";
+
+        processingContext.Extractor.SourceLocationMappingKind =
+            DocumentSourceLocationMappingKind.Unknown;
+
+        ProcessDocumentResult result =
+            await processingContext.Handler.HandleAsync(
+                new ProcessDocumentCommand(
+                    document.Id));
+
+        Assert.Equal(
+            ProcessDocumentResultStatus.Success,
+            result.Status);
+
+        DocumentChunk chunk =
+            Assert.Single(
+                processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Null(
+            chunk.SourceLocation);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenCancellationIsRequestedBeforeProcessing_ThrowsOperationCanceledException()
     {
         var repository =
@@ -1108,6 +1200,9 @@ public sealed class ProcessDocumentHandlerTests
         public string ReturnText { get; set; } =
             "First paragraph.\n\nSecond paragraph.";
 
+        public DocumentSourceLocationMappingKind SourceLocationMappingKind { get; set; } =
+            DocumentSourceLocationMappingKind.Unknown;
+
         public bool CanExtract(
             string fileName)
         {
@@ -1142,7 +1237,8 @@ public sealed class ProcessDocumentHandlerTests
 
             return Task.FromResult(
                 new DocumentTextExtractionResult(
-                    ReturnText));
+                    ReturnText,
+                    SourceLocationMappingKind));
         }
     }
 
