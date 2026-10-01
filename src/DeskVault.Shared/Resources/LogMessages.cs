@@ -50,6 +50,24 @@ public static class LogMessages
     public const string DocumentRemovalCompleted =
         "Application document removal completed.";
 
+    public const string DocumentArtifactRecoveryStarted =
+        "Application document artifact recovery started.";
+
+    public const string DocumentArtifactRecoveryCompleted =
+        "Application document artifact recovery completed.";
+
+    public const string DocumentArtifactOrphanCleanupCompleted =
+        "Application orphaned document artifact cleanup completed.";
+
+    public const string DocumentArtifactRecoveryPreserved =
+        "Application document artifact recovery preserved an artifact for further recovery.";
+
+    public const string DocumentArtifactRecoveryOwnershipValidationFailed =
+        "Application document artifact recovery preserved an artifact because ownership validation failed.";
+
+    public const string DocumentArtifactValidationFailed =
+        "Application document artifact could not be validated for document {DocumentId}.";
+
     public const string DocumentSearchStarted =
         "Application document search started.";
 

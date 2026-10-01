@@ -1,0 +1,3 @@
+namespace DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
+
+public sealed record RecoverDocumentArtifactsCommand;

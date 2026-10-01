@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using DeskVault.Application.Interfaces;
+using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
@@ -10,6 +11,7 @@ public sealed class ReconcileDocumentArtifactsHandler
     private readonly IDocumentArtifactEnumerator _artifactEnumerator;
     private readonly IDocumentReader _documentReader;
     private readonly IStorageService _storageService;
+    private readonly IHashService _hashService;
     private readonly ILogger<ReconcileDocumentArtifactsHandler> _logger;
 
     public ReconcileDocumentArtifactsHandler(
@@ -17,12 +19,14 @@ public sealed class ReconcileDocumentArtifactsHandler
         IDocumentArtifactEnumerator artifactEnumerator,
         IDocumentReader documentReader,
         IStorageService storageService,
+        IHashService hashService,
         ILogger<ReconcileDocumentArtifactsHandler> logger)
     {
         _repository = repository;
         _artifactEnumerator = artifactEnumerator;
         _documentReader = documentReader;
         _storageService = storageService;
+        _hashService = hashService;
         _logger = logger;
     }
 
@@ -99,12 +103,32 @@ public sealed class ReconcileDocumentArtifactsHandler
                         document.Id,
                         cancellationToken);
 
+                string actualSha256Hash =
+                    await _hashService.ComputeSha256Async(
+                        stream,
+                        cancellationToken);
+
+                if (!string.Equals(
+                        actualSha256Hash,
+                        document.Sha256Hash,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    findings.Add(
+                        new DocumentArtifactReconciliationResult(
+                            DocumentArtifactReconciliationStatus.ContentMismatch,
+                            document.Id,
+                            expectedArtifactPath,
+                            "The encrypted artifact is readable but its decrypted content does not match the persisted document content identity."));
+
+                    continue;
+                }
+
                 findings.Add(
                     new DocumentArtifactReconciliationResult(
                         DocumentArtifactReconciliationStatus.Matched,
                         document.Id,
                         expectedArtifactPath,
-                        "The persisted document record has a readable encrypted artifact."));
+                        "The persisted document record has a readable encrypted artifact whose decrypted content matches the persisted document content identity."));
             }
             catch (OperationCanceledException)
             {
@@ -118,7 +142,7 @@ public sealed class ReconcileDocumentArtifactsHandler
             {
                 _logger.LogWarning(
                     exception,
-                    "Document artifact could not be validated for document {DocumentId}.",
+                    LogMessages.DocumentArtifactValidationFailed,
                     document.Id);
 
                 findings.Add(

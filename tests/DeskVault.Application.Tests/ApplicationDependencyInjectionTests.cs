@@ -1,5 +1,6 @@
 using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
+using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.IniDocument;
@@ -65,6 +66,16 @@ public sealed class ApplicationDependencyInjectionTests
 
         Assert.IsType<SearchDocumentsRanker>(
             serviceProvider.GetRequiredService<ISearchDocumentsRanker>());
+
+        Assert.Contains(
+            services,
+            descriptor =>
+                descriptor.ServiceType ==
+                    typeof(RecoverDocumentArtifactsHandler)
+                && descriptor.ImplementationType ==
+                    typeof(RecoverDocumentArtifactsHandler)
+                && descriptor.Lifetime ==
+                    ServiceLifetime.Singleton);
 
         var extractors =
             serviceProvider

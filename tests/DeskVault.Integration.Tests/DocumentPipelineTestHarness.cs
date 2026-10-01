@@ -2,6 +2,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.ProcessDocument;
+using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
@@ -47,6 +48,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
     public RemoveDocumentHandler RemoveHandler { get; }
 
+    public RecoverDocumentArtifactsHandler RecoveryHandler { get; }
+
     public ReconcileDocumentArtifactsHandler ReconciliationHandler { get; }
 
     public EncryptedDocumentReader DocumentReader { get; }
@@ -70,7 +73,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 rootDirectory);
 
         _encryptionKey =
-            encryptionKey.ToArray();
+            [.. encryptionKey];
 
         _connection =
             CreateConnection(
@@ -146,12 +149,15 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 : importStorageDecorator(
                     _storageService);
 
+        IHashService importHashService =
+            hashService ??
+            new Sha256HashService(
+                NullLogger<Sha256HashService>.Instance);
+
         ImportHandler =
             new ImportDocumentHandler(
                 new ImportDocumentValidator(),
-                hashService ??
-                    new Sha256HashService(
-                        NullLogger<Sha256HashService>.Instance),
+                importHashService,
                 importStorageService,
                 importRepository,
                 NullLogger<ImportDocumentHandler>.Instance);
@@ -185,7 +191,16 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     DataPaths),
                 DocumentReader,
                 _storageService,
+                new Sha256HashService(
+                    NullLogger<Sha256HashService>.Instance),
                 NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
+
+        RecoveryHandler =
+            new RecoverDocumentArtifactsHandler(
+                repository,
+                ReconciliationHandler,
+                _storageService,
+                NullLogger<RecoverDocumentArtifactsHandler>.Instance);
     }
 
     public async Task<Document?> GetDocumentAsync(
@@ -263,7 +278,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             cancellationToken);
     }
 
-    private ProcessDocumentHandler CreateProcessHandler(
+    private static ProcessDocumentHandler CreateProcessHandler(
         SqliteDocumentRepository repository,
         SqliteDocumentProcessingStore processingStore,
         EncryptedDocumentReader reader,
@@ -316,7 +331,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             NullLogger<SqliteDocumentSearchStore>.Instance);
     }
 
-    private IDbContextFactory<DeskVaultDbContext> CreateFactory(
+    private static IDbContextFactory<DeskVaultDbContext> CreateFactory(
         SqliteConnection connection)
     {
         return new TestDbContextFactory(

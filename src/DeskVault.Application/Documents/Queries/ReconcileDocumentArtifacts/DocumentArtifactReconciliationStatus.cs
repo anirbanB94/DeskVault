@@ -10,5 +10,7 @@ public enum DocumentArtifactReconciliationStatus
 
     UnreadableArtifact = 3,
 
-    PathMismatch = 4
+    PathMismatch = 4,
+
+    ContentMismatch = 5
 }

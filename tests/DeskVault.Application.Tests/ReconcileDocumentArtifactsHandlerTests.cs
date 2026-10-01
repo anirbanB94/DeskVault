@@ -645,17 +645,212 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task HandleAsync_WhenReadableArtifactContentMatchesDocumentHash_ReturnsMatched()
+    {
+        // Arrange
+        Document document =
+            CreateDocument();
+
+        string expectedArtifactPath =
+            Path.GetFullPath(
+                document.StoredFilePath);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([document]);
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        artifactEnumerator
+            .Setup(x => x.EnumerateAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                document.StoredFilePath
+            ]);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        reader
+            .Setup(x => x.OpenReadAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new MemoryStream(
+                    "decrypted-content"u8.ToArray()));
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                document.Sha256Hash);
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService,
+                hashService);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        var finding =
+            Assert.Single(result.Findings);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.Matched,
+            finding.Status);
+
+        hashService.Verify(
+            x => x.ComputeSha256Async(
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        Assert.Equal(
+            expectedArtifactPath,
+            finding.ArtifactPath);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenReadableArtifactContentDoesNotMatchDocumentHash_ReturnsContentMismatch()
+    {
+        // Arrange
+        Document document =
+            CreateDocument();
+
+        string expectedArtifactPath =
+            Path.GetFullPath(
+                document.StoredFilePath);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([document]);
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        artifactEnumerator
+            .Setup(x => x.EnumerateAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                document.StoredFilePath
+            ]);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        reader
+            .Setup(x => x.OpenReadAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new MemoryStream(
+                    "wrong-content"u8.ToArray()));
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<Stream>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                "different-sha256-hash");
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService,
+                hashService);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        var finding =
+            Assert.Single(result.Findings);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.ContentMismatch,
+            finding.Status);
+
+        Assert.Equal(
+            document.Id,
+            finding.DocumentId);
+
+        Assert.Equal(
+            expectedArtifactPath,
+            finding.ArtifactPath);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.PreserveForRecovery,
+            finding.RecoveryAction);
+
+        repository.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static ReconcileDocumentArtifactsHandler CreateHandler(
         Mock<IDocumentRepository> repository,
         Mock<IDocumentArtifactEnumerator> artifactEnumerator,
         Mock<IDocumentReader> reader,
-        Mock<IStorageService> storageService)
+        Mock<IStorageService> storageService,
+        Mock<IHashService>? hashService = null)
     {
+        if (hashService is null)
+        {
+            hashService =
+                new Mock<IHashService>();
+
+            hashService
+                .Setup(x => x.ComputeSha256Async(
+                    It.IsAny<Stream>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(
+                    "sha256-test-hash");
+        }
+
         return new ReconcileDocumentArtifactsHandler(
             repository.Object,
             artifactEnumerator.Object,
             reader.Object,
             storageService.Object,
+            hashService.Object,
             NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
     }
 
