@@ -22,8 +22,23 @@ namespace DeskVault.Infrastructure.Persistence.Migrations
                 name: "LastUpdated",
                 table: "Workspaces",
                 type: "TEXT",
+                nullable: true);
+
+            migrationBuilder.Sql(
+                """
+                UPDATE "Workspaces"
+                SET "LastUpdated" = CURRENT_TIMESTAMP
+                WHERE "LastUpdated" IS NULL;
+                """);
+
+            migrationBuilder.AlterColumn<DateTimeOffset>(
+                name: "LastUpdated",
+                table: "Workspaces",
+                type: "TEXT",
                 nullable: false,
-                defaultValueSql: "CURRENT_TIMESTAMP");
+                oldClrType: typeof(DateTimeOffset),
+                oldType: "TEXT",
+                oldNullable: true);
         }
 
         /// <inheritdoc />
