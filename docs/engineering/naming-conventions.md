@@ -244,8 +244,8 @@ The primary issue-type labels are:
 ```text
 feature
 technical-task
-bugs
-spike
+bug
+research
 documentation
 ```
 
