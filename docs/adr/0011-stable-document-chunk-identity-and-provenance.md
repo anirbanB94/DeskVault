@@ -383,6 +383,18 @@ nullable line values are written as `NULL`. This prevents source-location
 provenance from an earlier processing generation from being retained on a
 later replacement.
 
+The legacy backfill applies only to persisted rows whose historical processing
+generation is unknown (`ProcessingGeneration = 0`) and whose chunk identity or
+content identity does not yet conform to this contract.
+
+Persisted chunks with a nonzero `ProcessingGeneration` are treated as current
+processed knowledge and must not be rewritten by the legacy identity backfill.
+Their logical identity, content identity, processing provenance, and source
+location remain authoritative for the processing result that produced them.
+
+This boundary prevents migration-time normalization from overwriting
+processing provenance established by the current processing lifecycle.
+
 Legacy chunk rows are backfilled after EF Core migrations complete. The
 backfill:
 

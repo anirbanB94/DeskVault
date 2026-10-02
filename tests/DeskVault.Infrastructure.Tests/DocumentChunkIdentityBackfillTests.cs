@@ -324,6 +324,227 @@ public sealed class DocumentChunkIdentityBackfillTests
             act);
     }
 
+    [Fact]
+    public async Task BackfillAsync_WhenCurrentProcessedChunkExists_PreservesItsIdentityGenerationAndProvenance()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        Guid chunkId =
+            DocumentChunkIdentity.CreateLogicalId(
+                document.Id,
+                0);
+
+        const string text =
+            "Current processed chunk.";
+
+        const long processingGeneration =
+            7L;
+
+        await InsertChunkAsync(
+            connection,
+            new DocumentChunkEntity
+            {
+                Id = chunkId,
+                DocumentId = document.Id,
+                Order = 0,
+                Text = text,
+                ContentHash =
+                    DocumentChunkIdentity.ComputeContentHash(
+                        text),
+                ProcessingGeneration = processingGeneration,
+                SourceLocationStartLine = 4,
+                SourceLocationEndLine = 6
+            });
+
+        var backfill =
+            CreateBackfill(connection);
+
+        // Act
+        await backfill.BackfillAsync();
+
+        DocumentChunkEntity chunk =
+            await GetSingleChunkAsync(
+                connection);
+
+        // Assert
+        Assert.Equal(
+            chunkId,
+            chunk.Id);
+
+        Assert.Equal(
+            document.Id,
+            chunk.DocumentId);
+
+        Assert.Equal(
+            0,
+            chunk.Order);
+
+        Assert.Equal(
+            text,
+            chunk.Text);
+
+        Assert.Equal(
+            DocumentChunkIdentity.ComputeContentHash(
+                text),
+            chunk.ContentHash);
+
+        Assert.Equal(
+            processingGeneration,
+            chunk.ProcessingGeneration);
+
+        Assert.Equal(
+            4,
+            chunk.SourceLocationStartLine);
+
+        Assert.Equal(
+            6,
+            chunk.SourceLocationEndLine);
+    }
+
+    [Fact]
+    public async Task BackfillAsync_WhenInterruptedMidBackfill_RollsBackAndCanRetry()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection);
+
+        Guid firstLegacyId =
+            Guid.Parse(
+                "11111111-1111-1111-1111-111111111111");
+
+        Guid secondLegacyId =
+            Guid.Parse(
+                "22222222-2222-2222-2222-222222222222");
+
+        const string firstText =
+            "First legacy chunk.";
+
+        const string secondText =
+            "Second legacy chunk.";
+
+        await InsertChunkAsync(
+            connection,
+            new DocumentChunkEntity
+            {
+                Id = firstLegacyId,
+                DocumentId = document.Id,
+                Order = 0,
+                Text = firstText,
+                ContentHash = string.Empty,
+                ProcessingGeneration = 0L
+            });
+
+        await InsertChunkAsync(
+            connection,
+            new DocumentChunkEntity
+            {
+                Id = secondLegacyId,
+                DocumentId = document.Id,
+                Order = 1,
+                Text = secondText,
+                ContentHash = string.Empty,
+                ProcessingGeneration = 0L
+            });
+
+        await CreateBackfillInterruptionTriggerAsync(
+            connection);
+
+        var backfill =
+            CreateBackfill(connection);
+
+        // Act
+        DbUpdateException exception =
+            await Assert.ThrowsAsync<DbUpdateException>(
+                () =>
+                    backfill.BackfillAsync());
+
+        // Assert
+        Assert.IsType<SqliteException>(
+            exception.InnerException);
+
+        Assert.Contains(
+            "Simulated backfill interruption",
+            exception.InnerException!.Message,
+            StringComparison.Ordinal);
+
+        List<DocumentChunkEntity> afterFailure =
+            await GetChunksAsync(
+                connection);
+
+        Assert.Equal(
+            2,
+            afterFailure.Count);
+
+        Assert.Equal(
+            firstLegacyId,
+            afterFailure[0].Id);
+
+        Assert.Equal(
+            string.Empty,
+            afterFailure[0].ContentHash);
+
+        Assert.Equal(
+            secondLegacyId,
+            afterFailure[1].Id);
+
+        Assert.Equal(
+            string.Empty,
+            afterFailure[1].ContentHash);
+
+        await DropBackfillInterruptionTriggerAsync(
+            connection);
+
+        // Retry.
+        await backfill.BackfillAsync();
+
+        List<DocumentChunkEntity> afterRetry =
+            await GetChunksAsync(
+                connection);
+
+        Assert.Equal(
+            2,
+            afterRetry.Count);
+
+        Assert.Equal(
+            DocumentChunkIdentity.CreateLogicalId(
+                document.Id,
+                0),
+            afterRetry[0].Id);
+
+        Assert.Equal(
+            DocumentChunkIdentity.ComputeContentHash(
+                firstText),
+            afterRetry[0].ContentHash);
+
+        Assert.Equal(
+            DocumentChunkIdentity.CreateLogicalId(
+                document.Id,
+                1),
+            afterRetry[1].Id);
+
+        Assert.Equal(
+            DocumentChunkIdentity.ComputeContentHash(
+                secondText),
+            afterRetry[1].ContentHash);
+
+        Assert.All(
+            afterRetry,
+            chunk =>
+                Assert.Equal(
+                    0L,
+                    chunk.ProcessingGeneration));
+    }
+
     private static DocumentChunkIdentityBackfill CreateBackfill(
         SqliteConnection connection)
     {
@@ -463,5 +684,34 @@ public sealed class DocumentChunkIdentityBackfillTests
                 .CreateContext(
                     _connection);
         }
+    }
+
+    private static async Task CreateBackfillInterruptionTriggerAsync(
+        SqliteConnection connection)
+    {
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        await context.Database.ExecuteSqlRawAsync(
+            """
+        CREATE TRIGGER Test_Backfill_Interrupt
+        AFTER INSERT ON DocumentChunks
+        WHEN NEW."Order" = 1
+        BEGIN
+            SELECT RAISE(ABORT, 'Simulated backfill interruption');
+        END;
+        """);
+    }
+
+    private static async Task DropBackfillInterruptionTriggerAsync(
+        SqliteConnection connection)
+    {
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        await context.Database.ExecuteSqlRawAsync(
+            """
+        DROP TRIGGER Test_Backfill_Interrupt;
+        """);
     }
 }
