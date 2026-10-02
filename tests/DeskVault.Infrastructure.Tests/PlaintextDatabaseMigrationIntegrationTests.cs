@@ -628,10 +628,8 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
         Guid documentId =
             Guid.NewGuid();
 
-        Guid chunkId =
-            DocumentChunkIdentity.CreateLogicalId(
-                documentId,
-                0);
+        Guid legacyChunkId =
+            Guid.NewGuid();
 
         Guid workspaceId =
             Guid.NewGuid();
@@ -762,7 +760,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
 
                 command.Parameters.AddWithValue(
                     "$chunkId",
-                    chunkId.ToString().ToUpperInvariant());
+                    legacyChunkId.ToString().ToUpperInvariant());
 
                 command.Parameters.AddWithValue(
                     "$chunkText",
@@ -907,12 +905,18 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                             .AsNoTracking()
                             .Where(
                                 chunk =>
-                                    chunk.Id ==
-                                    chunkId)
+                                    chunk.DocumentId ==
+                                    documentId)
                             .ToListAsync());
 
+                Assert.NotEqual(
+                    legacyChunkId,
+                    chunk.Id);
+
                 Assert.Equal(
-                    chunkId,
+                    DocumentChunkIdentity.CreateLogicalId(
+                        documentId,
+                        0),
                     chunk.Id);
 
                 Assert.Equal(
