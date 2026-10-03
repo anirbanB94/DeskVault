@@ -2,7 +2,7 @@
 name: Technical Task
 about: Engineering work required to deliver a Product Backlog Item
 title: "task(<area>): "
-labels: task
+labels: technical-task
 assignees:
 ---
 
