@@ -372,6 +372,543 @@ public sealed class DocumentImportIntegrationTests
     }
 
     [Fact]
+    public async Task ImportDocument_WhenProcessingRuleVersionChanges_PersistsNewVersionWithoutChangingChunkingVersion()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(
+            rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "processing-version-change-test.txt");
+
+            string sourceText =
+                """
+            DeskVault processing version evolution must preserve the successful knowledge lineage.
+
+            This content remains searchable after the processing rule version changes.
+            """;
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            Guid documentId;
+
+            var firstExtractor =
+                new ImmediateDocumentTextExtractor(
+                    sourceText,
+                    "test-extractor-v1");
+
+            var firstChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        "DeskVault processing version evolution must preserve the successful knowledge lineage.")
+                    ],
+                    "test-chunker-v1");
+
+            DocumentTextNormalizer normalizer =
+                new();
+
+            DocumentProcessingRuleVersion expectedProcessingRuleVersionV1 =
+                DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                    firstExtractor.RuleVersion,
+                    normalizer.RuleVersion);
+
+            DocumentChunkingRuleVersion expectedChunkingRuleVersion =
+                firstChunker.RuleVersion;
+
+            await using (
+                var firstHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey,
+                        extractors:
+                        [
+                            firstExtractor
+                        ],
+                        chunker:
+                            firstChunker))
+            {
+                ImportDocumentResult importResult =
+                    await firstHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Processing Version Change Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
+                await firstHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? firstDocument =
+                    await firstHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(
+                    firstDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    firstDocument.Status);
+
+                Assert.Equal(
+                    1L,
+                    firstDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    1L,
+                    firstDocument.LastSuccessfulProcessingGeneration);
+
+                Assert.Equal(
+                    expectedProcessingRuleVersionV1.Value,
+                    firstDocument.LastSuccessfulProcessingRuleVersion);
+
+                List<DocumentChunkEntity> firstChunks =
+                    await firstHarness.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(
+                    firstChunks);
+
+                Assert.All(
+                    firstChunks,
+                    chunk =>
+                    {
+                        Assert.Equal(
+                            1L,
+                            chunk.ProcessingGeneration);
+
+                        Assert.Equal(
+                            expectedChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion);
+                    });
+            }
+
+            var secondExtractor =
+                new ImmediateDocumentTextExtractor(
+                    sourceText,
+                    "test-extractor-v2");
+
+            DocumentProcessingRuleVersion expectedProcessingRuleVersionV2 =
+                DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                    secondExtractor.RuleVersion,
+                    normalizer.RuleVersion);
+
+            Assert.NotEqual(
+                expectedProcessingRuleVersionV1.Value,
+                expectedProcessingRuleVersionV2.Value);
+
+            var secondChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        "DeskVault processing version evolution must preserve the successful knowledge lineage.")
+                    ],
+                    "test-chunker-v1");
+
+            await using (
+                var secondHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey,
+                        extractors:
+                        [
+                            secondExtractor
+                        ],
+                        chunker:
+                            secondChunker))
+            {
+                await secondHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? secondDocument =
+                    await secondHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(
+                    secondDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    secondDocument.Status);
+
+                Assert.Equal(
+                    2L,
+                    secondDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    2L,
+                    secondDocument.LastSuccessfulProcessingGeneration);
+
+                Assert.Equal(
+                    expectedProcessingRuleVersionV2.Value,
+                    secondDocument.LastSuccessfulProcessingRuleVersion);
+
+                Assert.NotEqual(
+                    expectedProcessingRuleVersionV1.Value,
+                    secondDocument.LastSuccessfulProcessingRuleVersion);
+
+                List<DocumentChunkEntity> secondChunks =
+                    await secondHarness.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(
+                    secondChunks);
+
+                Assert.All(
+                    secondChunks,
+                    chunk =>
+                    {
+                        Assert.Equal(
+                            2L,
+                            chunk.ProcessingGeneration);
+
+                        Assert.Equal(
+                            expectedChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion);
+                    });
+
+                SearchDocumentsPage searchPage =
+                    await secondHarness.SearchHandler.HandleAsync(
+                        new SearchDocumentsQuery(
+                            "PROCESSING VERSION EVOLUTION"));
+
+                SearchDocumentsResult matchingResult =
+                    Assert.Single(
+                        searchPage.Results,
+                        result =>
+                            result.DocumentId == documentId);
+
+                Assert.Equal(
+                    "processing-version-change-test.txt",
+                    matchingResult.FileName);
+
+                Assert.Contains(
+                    matchingResult.Matches,
+                    match =>
+                        match.Source == SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "processing version evolution",
+                            StringComparison.OrdinalIgnoreCase));
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ImportDocument_WhenChunkingRuleVersionChanges_PersistsNewVersionWithoutChangingChunkIdentity()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(
+            rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "chunking-version-change-test.txt");
+
+            string sourceText =
+                """
+            DeskVault chunking version evolution must preserve stable chunk identity.
+
+            The chunk content remains identical while the chunking rule version changes.
+            """;
+
+            const string chunkText =
+                "DeskVault chunking version evolution must preserve stable chunk identity.";
+
+            const string processingRuleVersion =
+                "test-extractor-v1";
+
+            const string firstChunkingRuleVersion =
+                "test-chunker-v1";
+
+            const string secondChunkingRuleVersion =
+                "test-chunker-v2";
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            Guid documentId;
+
+            var firstExtractor =
+                new ImmediateDocumentTextExtractor(
+                    sourceText,
+                    processingRuleVersion);
+
+            var firstChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        chunkText)
+                    ],
+                    firstChunkingRuleVersion);
+
+            Guid expectedChunkId = Guid.Empty;
+
+            string expectedChunkContentHash = string.Empty;
+
+            await using (
+                var firstHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey,
+                        extractors:
+                        [
+                            firstExtractor
+                        ],
+                        chunker:
+                            firstChunker))
+            {
+                ImportDocumentResult importResult =
+                    await firstHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Chunking Version Change Test Document"));
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(
+                    importResult.DocumentId);
+
+                documentId =
+                    importResult.DocumentId.Value;
+
+                expectedChunkId =
+                    DocumentChunkIdentity.CreateLogicalId(
+                        documentId,
+                        0);
+
+                expectedChunkContentHash =
+                    DocumentChunkIdentity.ComputeContentHash(
+                        chunkText);
+
+                await firstHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? firstDocument =
+                    await firstHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(
+                    firstDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    firstDocument.Status);
+
+                Assert.Equal(
+                    1L,
+                    firstDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    1L,
+                    firstDocument.LastSuccessfulProcessingGeneration);
+
+                List<DocumentChunkEntity> firstChunks =
+                    await firstHarness.GetChunksAsync(
+                        documentId);
+
+                DocumentChunkEntity firstChunk =
+                    Assert.Single(
+                        firstChunks);
+
+                Assert.Equal(
+                    1L,
+                    firstChunk.ProcessingGeneration);
+
+                Assert.Equal(
+                    firstChunkingRuleVersion,
+                    firstChunk.ChunkingRuleVersion);
+
+                Assert.Equal(
+                    expectedChunkId,
+                    firstChunk.Id);
+
+                Assert.Equal(
+                    expectedChunkContentHash,
+                    firstChunk.ContentHash);
+
+                Assert.Equal(
+                    0,
+                    firstChunk.Order);
+
+                Assert.Equal(
+                    chunkText,
+                    firstChunk.Text);
+            }
+
+            var secondExtractor =
+                new ImmediateDocumentTextExtractor(
+                    sourceText,
+                    processingRuleVersion);
+
+            var secondChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        chunkText)
+                    ],
+                    secondChunkingRuleVersion);
+
+            await using (
+                var secondHarness =
+                    new DocumentPipelineTestHarness(
+                        rootDirectory,
+                        databasePath,
+                        encryptionKey,
+                        extractors:
+                        [
+                            secondExtractor
+                        ],
+                        chunker:
+                            secondChunker))
+            {
+                await secondHarness.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? secondDocument =
+                    await secondHarness.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(
+                    secondDocument);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    secondDocument.Status);
+
+                Assert.Equal(
+                    2L,
+                    secondDocument.ProcessingGeneration);
+
+                Assert.Equal(
+                    2L,
+                    secondDocument.LastSuccessfulProcessingGeneration);
+
+                List<DocumentChunkEntity> secondChunks =
+                    await secondHarness.GetChunksAsync(
+                        documentId);
+
+                DocumentChunkEntity secondChunk =
+                    Assert.Single(
+                        secondChunks);
+
+                Assert.Equal(
+                    2L,
+                    secondChunk.ProcessingGeneration);
+
+                Assert.Equal(
+                    secondChunkingRuleVersion,
+                    secondChunk.ChunkingRuleVersion);
+
+                Assert.NotEqual(
+                    firstChunkingRuleVersion,
+                    secondChunk.ChunkingRuleVersion);
+
+                Assert.Equal(
+                    expectedChunkId,
+                    secondChunk.Id);
+
+                Assert.Equal(
+                    expectedChunkContentHash,
+                    secondChunk.ContentHash);
+
+                Assert.Equal(
+                    0,
+                    secondChunk.Order);
+
+                Assert.Equal(
+                    chunkText,
+                    secondChunk.Text);
+
+                Assert.Equal(
+                    DocumentChunkIdentity.CreateLogicalId(
+                        documentId,
+                        secondChunk.Order),
+                    secondChunk.Id);
+
+                Assert.Equal(
+                    DocumentChunkIdentity.ComputeContentHash(
+                        secondChunk.Text),
+                    secondChunk.ContentHash);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(
+                rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ImportDocument_WhenProcessingExceedsResourceLimit_MarksFailedAndCanBeRetried()
     {
         string rootDirectory =
@@ -938,6 +1475,8 @@ public sealed class DocumentImportIntegrationTests
 
             Guid documentId;
             string storedFilePath;
+            string? successfulProcessingRuleVersion;
+            string?[] successfulChunkingRuleVersions;
 
             await using (
                 var initialHarness =
@@ -971,6 +1510,9 @@ public sealed class DocumentImportIntegrationTests
 
                 Assert.NotNull(successfulDocument);
 
+                successfulProcessingRuleVersion =
+                    successfulDocument.LastSuccessfulProcessingRuleVersion;
+
                 Assert.Equal(
                     DocumentStatus.Available,
                     successfulDocument.Status);
@@ -996,6 +1538,12 @@ public sealed class DocumentImportIntegrationTests
 
                 Assert.NotEmpty(successfulChunks);
 
+                successfulChunkingRuleVersions =
+                    successfulChunks
+                        .Select(
+                            chunk => chunk.ChunkingRuleVersion)
+                        .ToArray();
+
                 string successfulIndexedText =
                     string.Join(
                         "\n",
@@ -1012,7 +1560,8 @@ public sealed class DocumentImportIntegrationTests
             }
 
             var cancellingExtractor =
-                new CancellingDocumentTextExtractor();
+                new CancellingDocumentTextExtractor(
+                    "test-extractor-v2");
 
             await using var reprocessingHarness =
                     new DocumentPipelineTestHarness(
@@ -1058,6 +1607,14 @@ public sealed class DocumentImportIntegrationTests
                 storedFilePath,
                 recoveredDocument.StoredFilePath);
 
+            Assert.Equal(
+                successfulProcessingRuleVersion,
+                recoveredDocument.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                "test-extractor-v2",
+                successfulProcessingRuleVersion);
+
             Assert.True(
                 File.Exists(
                     recoveredDocument.StoredFilePath));
@@ -1067,6 +1624,13 @@ public sealed class DocumentImportIntegrationTests
                     documentId);
 
             Assert.NotEmpty(recoveredChunks);
+
+            Assert.Equal(
+                successfulChunkingRuleVersions,
+                recoveredChunks
+                    .Select(
+                        chunk => chunk.ChunkingRuleVersion)
+                    .ToArray());
 
             string recoveredIndexedText =
                 string.Join(
@@ -1138,6 +1702,8 @@ public sealed class DocumentImportIntegrationTests
             Guid documentId;
             string storedFilePath;
             string successfulIndexedText;
+            string? successfulProcessingRuleVersion;
+            string?[] successfulChunkingRuleVersions;
 
             await using (
                 var initialHarness =
@@ -1171,6 +1737,9 @@ public sealed class DocumentImportIntegrationTests
 
                 Assert.NotNull(successfulDocument);
 
+                successfulProcessingRuleVersion =
+                    successfulDocument.LastSuccessfulProcessingRuleVersion;
+
                 Assert.Equal(
                     DocumentStatus.Available,
                     successfulDocument.Status);
@@ -1196,6 +1765,12 @@ public sealed class DocumentImportIntegrationTests
 
                 Assert.NotEmpty(successfulChunks);
 
+                successfulChunkingRuleVersions =
+                    successfulChunks
+                        .Select(
+                            chunk => chunk.ChunkingRuleVersion)
+                        .ToArray();
+
                 successfulIndexedText =
                     string.Join(
                         "\n",
@@ -1207,7 +1782,8 @@ public sealed class DocumentImportIntegrationTests
             }
 
             var failingExtractor =
-                new FailingDocumentTextExtractor();
+                new FailingDocumentTextExtractor(
+                    "test-extractor-v2");
 
             await using var reprocessingHarness =
                     new DocumentPipelineTestHarness(
@@ -1243,6 +1819,14 @@ public sealed class DocumentImportIntegrationTests
                 storedFilePath,
                 failedDocument.StoredFilePath);
 
+            Assert.Equal(
+                successfulProcessingRuleVersion,
+                failedDocument.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                "test-extractor-v2",
+                successfulProcessingRuleVersion);
+
             Assert.True(
                 File.Exists(
                     failedDocument.StoredFilePath));
@@ -1252,6 +1836,13 @@ public sealed class DocumentImportIntegrationTests
                     documentId);
 
             Assert.NotEmpty(preservedChunks);
+
+            Assert.Equal(
+                successfulChunkingRuleVersions,
+                preservedChunks
+                    .Select(
+                        chunk => chunk.ChunkingRuleVersion)
+                    .ToArray());
 
             string preservedIndexedText =
                 string.Join(
@@ -1498,6 +2089,30 @@ public sealed class DocumentImportIntegrationTests
         byte[] encryptionKey =
             RandomNumberGenerator.GetBytes(32);
 
+        DocumentTextNormalizer normalizer =
+            new();
+
+        DocumentProcessingRuleVersion expectedStaleProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                new BlockingDocumentTextExtractor(
+                    "Stale generation one content.")
+                    .RuleVersion,
+                normalizer.RuleVersion);
+
+        DocumentProcessingRuleVersion expectedAuthoritativeProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                new ImmediateDocumentTextExtractor(
+                    "Authoritative generation two content.",
+                    "test-extractor-v2")
+                    .RuleVersion,
+                normalizer.RuleVersion);
+
+        const string staleChunkingRuleVersion =
+            "test-chunker-v1";
+
+        const string authoritativeChunkingRuleVersion =
+            "test-chunker-v2";
+
         try
         {
             string sourceFilePath =
@@ -1540,23 +2155,50 @@ public sealed class DocumentImportIntegrationTests
                 new BlockingDocumentTextExtractor(
                     "Stale generation one content.");
 
+            var firstChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        "Stale generation one content.")
+                    ],
+                    staleChunkingRuleVersion);
+
             var secondExtractor =
                 new ImmediateDocumentTextExtractor(
-                    "Authoritative generation two content.");
+                    "Authoritative generation two content.",
+                    "test-extractor-v2");
+
+            var secondChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        "Authoritative generation two content.")
+                    ],
+                    authoritativeChunkingRuleVersion);
 
             await using var firstHarness =
                 new DocumentPipelineTestHarness(
                     rootDirectory,
                     databasePath,
                     encryptionKey,
-                    [firstExtractor]);
+                    [
+                        firstExtractor
+                    ],
+                    chunker:
+                        firstChunker);
 
             await using var secondHarness =
                 new DocumentPipelineTestHarness(
                     rootDirectory,
                     databasePath,
                     encryptionKey,
-                    [secondExtractor]);
+                    [
+                        secondExtractor
+                    ],
+                    chunker:
+                        secondChunker);
 
             Task firstProcessingTask =
                 firstHarness.ProcessingService.ProcessAsync(
@@ -1587,6 +2229,34 @@ public sealed class DocumentImportIntegrationTests
             Assert.Equal(
                 2L,
                 afterSecondProcessing.LastSuccessfulProcessingGeneration);
+
+            Assert.Equal(
+                expectedAuthoritativeProcessingRuleVersion.Value,
+                afterSecondProcessing.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                expectedStaleProcessingRuleVersion.Value,
+                afterSecondProcessing.LastSuccessfulProcessingRuleVersion);
+
+            List<DocumentChunkEntity> authoritativeChunks =
+                await secondHarness.GetChunksAsync(
+                    documentId);
+
+            Assert.NotEmpty(
+                authoritativeChunks);
+
+            Assert.All(
+                authoritativeChunks,
+                chunk =>
+                {
+                    Assert.Equal(
+                        2L,
+                        chunk.ProcessingGeneration);
+
+                    Assert.Equal(
+                        authoritativeChunkingRuleVersion,
+                        chunk.ChunkingRuleVersion);
+                });
 
             firstExtractor.ReleaseExtraction();
 
@@ -1624,11 +2294,33 @@ public sealed class DocumentImportIntegrationTests
                 2L,
                 finalDocument.LastSuccessfulProcessingGeneration);
 
+            Assert.Equal(
+                expectedAuthoritativeProcessingRuleVersion.Value,
+                finalDocument.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                expectedStaleProcessingRuleVersion.Value,
+                finalDocument.LastSuccessfulProcessingRuleVersion);
+
             List<DocumentChunkEntity> finalChunks =
                 await secondHarness.GetChunksAsync(
                     documentId);
 
-            Assert.NotEmpty(finalChunks);
+            Assert.NotEmpty(
+                finalChunks);
+
+            Assert.All(
+                finalChunks,
+                chunk =>
+                {
+                    Assert.Equal(
+                        2L,
+                        chunk.ProcessingGeneration);
+
+                    Assert.Equal(
+                        authoritativeChunkingRuleVersion,
+                        chunk.ChunkingRuleVersion);
+                });
 
             string finalIndexedText =
                 string.Join(
@@ -1702,6 +2394,25 @@ public sealed class DocumentImportIntegrationTests
         byte[] encryptionKey =
             RandomNumberGenerator.GetBytes(32);
 
+        DocumentTextNormalizer normalizer =
+            new();
+
+        DocumentProcessingRuleVersion expectedStaleProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                "test-extractor-v1",
+                normalizer.RuleVersion);
+
+        DocumentProcessingRuleVersion expectedAuthoritativeProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                "test-extractor-v2",
+                normalizer.RuleVersion);
+
+        const string staleChunkingRuleVersion =
+            "test-chunker-v1";
+
+        const string authoritativeChunkingRuleVersion =
+            "test-chunker-v2";
+
         try
         {
             string sourceFilePath =
@@ -1744,23 +2455,50 @@ public sealed class DocumentImportIntegrationTests
                 new BlockingDocumentTextExtractor(
                     "Stale generation one content.");
 
+            var firstChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        "Stale generation one content.")
+                    ],
+                    staleChunkingRuleVersion);
+
             var secondExtractor =
                 new ImmediateDocumentTextExtractor(
-                    "Authoritative generation two content.");
+                    "Authoritative generation two content.",
+                    "test-extractor-v2");
+
+            var secondChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        "Authoritative generation two content.")
+                    ],
+                    authoritativeChunkingRuleVersion);
 
             await using var firstHarness =
                 new DocumentPipelineTestHarness(
                     rootDirectory,
                     databasePath,
                     encryptionKey,
-                    [firstExtractor]);
+                    [
+                        firstExtractor
+                    ],
+                    chunker:
+                        firstChunker);
 
             await using var secondHarness =
                 new DocumentPipelineTestHarness(
                     rootDirectory,
                     databasePath,
                     encryptionKey,
-                    [secondExtractor]);
+                    [
+                        secondExtractor
+                    ],
+                    chunker:
+                        secondChunker);
 
             using var firstCancellation =
                 new CancellationTokenSource();
@@ -1795,6 +2533,34 @@ public sealed class DocumentImportIntegrationTests
             Assert.Equal(
                 2L,
                 afterSecondProcessing.LastSuccessfulProcessingGeneration);
+
+            Assert.Equal(
+                expectedAuthoritativeProcessingRuleVersion.Value,
+                afterSecondProcessing.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                expectedStaleProcessingRuleVersion.Value,
+                afterSecondProcessing.LastSuccessfulProcessingRuleVersion);
+
+            List<DocumentChunkEntity> authoritativeChunks =
+                await secondHarness.GetChunksAsync(
+                    documentId);
+
+            Assert.NotEmpty(
+                authoritativeChunks);
+
+            Assert.All(
+                authoritativeChunks,
+                chunk =>
+                {
+                    Assert.Equal(
+                        2L,
+                        chunk.ProcessingGeneration);
+
+                    Assert.Equal(
+                        authoritativeChunkingRuleVersion,
+                        chunk.ChunkingRuleVersion);
+                });
 
             firstCancellation.Cancel();
 
@@ -1832,9 +2598,33 @@ public sealed class DocumentImportIntegrationTests
                 2L,
                 finalDocument.LastSuccessfulProcessingGeneration);
 
+            Assert.Equal(
+                expectedAuthoritativeProcessingRuleVersion.Value,
+                finalDocument.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                expectedStaleProcessingRuleVersion.Value,
+                finalDocument.LastSuccessfulProcessingRuleVersion);
+
             List<DocumentChunkEntity> finalChunks =
                 await secondHarness.GetChunksAsync(
                     documentId);
+
+            Assert.NotEmpty(
+                finalChunks);
+
+            Assert.All(
+                finalChunks,
+                chunk =>
+                {
+                    Assert.Equal(
+                        2L,
+                        chunk.ProcessingGeneration);
+
+                    Assert.Equal(
+                        authoritativeChunkingRuleVersion,
+                        chunk.ChunkingRuleVersion);
+                });
 
             string finalIndexedText =
                 string.Join(
@@ -1854,6 +2644,12 @@ public sealed class DocumentImportIntegrationTests
                 "Stale generation one content.",
                 finalIndexedText,
                 StringComparison.Ordinal);
+
+            Assert.True(
+                firstExtractor.WasCalled);
+
+            Assert.True(
+                secondExtractor.WasCalled);
         }
         finally
         {
@@ -1886,6 +2682,25 @@ public sealed class DocumentImportIntegrationTests
 
         byte[] encryptionKey =
             RandomNumberGenerator.GetBytes(32);
+
+        DocumentTextNormalizer normalizer =
+            new();
+
+        DocumentProcessingRuleVersion expectedStaleProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                "test-extractor-v1",
+                normalizer.RuleVersion);
+
+        DocumentProcessingRuleVersion expectedAuthoritativeProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                "test-extractor-v2",
+                normalizer.RuleVersion);
+
+        const string staleChunkingRuleVersion =
+            "test-chunker-v1";
+
+        const string authoritativeChunkingRuleVersion =
+            "test-chunker-v2";
 
         try
         {
@@ -1927,25 +2742,53 @@ public sealed class DocumentImportIntegrationTests
 
             var firstExtractor =
                 new BlockingFailingDocumentTextExtractor(
-                    "Stale generation one processing failure.");
+                    "Stale generation one processing failure.",
+                    "test-extractor-v1");
+
+            var firstChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        "Stale generation one candidate content.")
+                    ],
+                    staleChunkingRuleVersion);
 
             var secondExtractor =
                 new ImmediateDocumentTextExtractor(
-                    "Authoritative generation two content.");
+                    "Authoritative generation two content.",
+                    "test-extractor-v2");
+
+            var secondChunker =
+                new FixedDocumentTextChunker(
+                    [
+                        new DocumentChunk(
+                        0,
+                        "Authoritative generation two content.")
+                    ],
+                    authoritativeChunkingRuleVersion);
 
             await using var firstHarness =
                 new DocumentPipelineTestHarness(
                     rootDirectory,
                     databasePath,
                     encryptionKey,
-                    [firstExtractor]);
+                    [
+                        firstExtractor
+                    ],
+                    chunker:
+                        firstChunker);
 
             await using var secondHarness =
                 new DocumentPipelineTestHarness(
                     rootDirectory,
                     databasePath,
                     encryptionKey,
-                    [secondExtractor]);
+                    [
+                        secondExtractor
+                    ],
+                    chunker:
+                        secondChunker);
 
             Task firstProcessingTask =
                 firstHarness.ProcessingService.ProcessAsync(
@@ -1976,6 +2819,34 @@ public sealed class DocumentImportIntegrationTests
             Assert.Equal(
                 2L,
                 afterSecondProcessing.LastSuccessfulProcessingGeneration);
+
+            Assert.Equal(
+                expectedAuthoritativeProcessingRuleVersion.Value,
+                afterSecondProcessing.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                expectedStaleProcessingRuleVersion.Value,
+                afterSecondProcessing.LastSuccessfulProcessingRuleVersion);
+
+            List<DocumentChunkEntity> authoritativeChunks =
+                await secondHarness.GetChunksAsync(
+                    documentId);
+
+            Assert.NotEmpty(
+                authoritativeChunks);
+
+            Assert.All(
+                authoritativeChunks,
+                chunk =>
+                {
+                    Assert.Equal(
+                        2L,
+                        chunk.ProcessingGeneration);
+
+                    Assert.Equal(
+                        authoritativeChunkingRuleVersion,
+                        chunk.ChunkingRuleVersion);
+                });
 
             firstExtractor.ReleaseFailure();
 
@@ -2013,9 +2884,33 @@ public sealed class DocumentImportIntegrationTests
                 2L,
                 finalDocument.LastSuccessfulProcessingGeneration);
 
+            Assert.Equal(
+                expectedAuthoritativeProcessingRuleVersion.Value,
+                finalDocument.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                expectedStaleProcessingRuleVersion.Value,
+                finalDocument.LastSuccessfulProcessingRuleVersion);
+
             List<DocumentChunkEntity> finalChunks =
                 await secondHarness.GetChunksAsync(
                     documentId);
+
+            Assert.NotEmpty(
+                finalChunks);
+
+            Assert.All(
+                finalChunks,
+                chunk =>
+                {
+                    Assert.Equal(
+                        2L,
+                        chunk.ProcessingGeneration);
+
+                    Assert.Equal(
+                        authoritativeChunkingRuleVersion,
+                        chunk.ChunkingRuleVersion);
+                });
 
             string finalIndexedText =
                 string.Join(
@@ -2032,9 +2927,15 @@ public sealed class DocumentImportIntegrationTests
                 StringComparison.Ordinal);
 
             Assert.DoesNotContain(
-                "Stale generation one processing failure.",
+                "Stale generation one candidate content.",
                 finalIndexedText,
                 StringComparison.Ordinal);
+
+            Assert.True(
+                firstExtractor.WasCalled);
+
+            Assert.True(
+                secondExtractor.WasCalled);
         }
         finally
         {
@@ -2823,6 +3724,16 @@ public sealed class DocumentImportIntegrationTests
         byte[] encryptionKey =
             RandomNumberGenerator.GetBytes(32);
 
+        DocumentProcessingRuleVersion expectedProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                new TextDocumentTextExtractor().RuleVersion,
+                new DocumentTextNormalizer().RuleVersion);
+
+        DocumentChunkingRuleVersion expectedChunkingRuleVersion =
+            new DocumentTextChunker(
+                maxChunkSize: 4000)
+            .RuleVersion;
+
         try
         {
             string sourceFilePath =
@@ -2830,13 +3741,16 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "candidate-failure-test.txt");
 
+            string sourceText =
+                """
+                Previous successful processing result.
+
+                This result must remain searchable after candidate publication fails.
+                """;
+
             await File.WriteAllTextAsync(
                 sourceFilePath,
-                """
-            Previous successful processing result.
-
-            This result must remain searchable after candidate publication fails.
-            """,
+                sourceText,
                 Encoding.UTF8);
 
             Guid documentId;
@@ -2886,11 +3800,23 @@ public sealed class DocumentImportIntegrationTests
                     1L,
                     successfulDocument.LastSuccessfulProcessingGeneration);
 
+                Assert.Equal(
+                    expectedProcessingRuleVersion.Value,
+                    successfulDocument.LastSuccessfulProcessingRuleVersion);
+
                 List<DocumentChunkEntity> successfulChunks =
                     await initialHarness.GetChunksAsync(
                         documentId);
 
-                Assert.NotEmpty(successfulChunks);
+                Assert.NotEmpty(
+                    successfulChunks);
+
+                Assert.All(
+                    successfulChunks,
+                    chunk =>
+                        Assert.Equal(
+                            expectedChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion));
 
                 successfulIndexedText =
                     string.Join(
@@ -2904,15 +3830,20 @@ public sealed class DocumentImportIntegrationTests
 
             var failingChunker =
                 new FixedDocumentTextChunker(
-                [
-                    new DocumentChunk(
-                    0,
-                    "Candidate chunk one."),
+                    [
+                        new DocumentChunk(
+                            0,
+                            "Candidate chunk one."),
 
-                new DocumentChunk(
-                    0,
-                    "Candidate chunk with duplicate order.")
-                ]);
+                        new DocumentChunk(
+                            0,
+                            "Candidate chunk with duplicate order.")
+                    ],
+                    "test-chunker-v2");
+
+            Assert.NotEqual(
+                expectedChunkingRuleVersion.Value,
+                failingChunker.RuleVersion.Value);
 
             await using var failingHarness =
                 new DocumentPipelineTestHarness(
@@ -2950,12 +3881,23 @@ public sealed class DocumentImportIntegrationTests
                 1L,
                 failedDocument.LastSuccessfulProcessingGeneration);
 
+            Assert.Equal(
+                expectedProcessingRuleVersion.Value,
+                failedDocument.LastSuccessfulProcessingRuleVersion);
+
             List<DocumentChunkEntity> preservedChunks =
                 await failingHarness.GetChunksAsync(
                     documentId);
 
             Assert.NotEmpty(
                 preservedChunks);
+
+            Assert.All(
+                preservedChunks,
+                chunk =>
+                    Assert.Equal(
+                        expectedChunkingRuleVersion.Value,
+                        chunk.ChunkingRuleVersion));
 
             string preservedIndexedText =
                 string.Join(
@@ -2969,6 +3911,16 @@ public sealed class DocumentImportIntegrationTests
             Assert.Equal(
                 successfulIndexedText,
                 preservedIndexedText);
+
+            Assert.DoesNotContain(
+                "Candidate chunk one.",
+                preservedIndexedText,
+                StringComparison.Ordinal);
+
+            Assert.DoesNotContain(
+                "Candidate chunk with duplicate order.",
+                preservedIndexedText,
+                StringComparison.Ordinal);
         }
         finally
         {
@@ -2999,6 +3951,16 @@ public sealed class DocumentImportIntegrationTests
 
         byte[] encryptionKey =
             RandomNumberGenerator.GetBytes(32);
+
+        DocumentProcessingRuleVersion expectedProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                new TextDocumentTextExtractor().RuleVersion,
+                new DocumentTextNormalizer().RuleVersion);
+
+        DocumentChunkingRuleVersion expectedChunkingRuleVersion =
+            new DocumentTextChunker(
+                maxChunkSize: 4000)
+            .RuleVersion;
 
         try
         {
@@ -3066,11 +4028,23 @@ public sealed class DocumentImportIntegrationTests
                     1L,
                     successfulDocument.LastSuccessfulProcessingGeneration);
 
+                Assert.Equal(
+                    expectedProcessingRuleVersion.Value,
+                    successfulDocument.LastSuccessfulProcessingRuleVersion);
+
                 List<DocumentChunkEntity> successfulChunks =
                     await initialHarness.GetChunksAsync(
                         documentId);
 
-                Assert.NotEmpty(successfulChunks);
+                Assert.NotEmpty(
+                    successfulChunks);
+
+                Assert.All(
+                    successfulChunks,
+                    chunk =>
+                        Assert.Equal(
+                            expectedChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion));
 
                 successfulIndexedText =
                     string.Join(
@@ -3089,21 +4063,23 @@ public sealed class DocumentImportIntegrationTests
                 new CancellingCandidateDocumentTextChunker(
                     [
                         new DocumentChunk(
-                            0,
-                            "Cancelled candidate chunk one."),
+                        0,
+                        "Cancelled candidate chunk one."),
 
-                        new DocumentChunk(
-                            1,
-                            "Cancelled candidate chunk two.")
+                    new DocumentChunk(
+                        1,
+                        "Cancelled candidate chunk two.")
                     ],
-                    cancellationTokenSource);
+                    cancellationTokenSource,
+                    "test-chunker-v2");
 
             await using var reprocessingHarness =
                 new DocumentPipelineTestHarness(
                     rootDirectory,
                     databasePath,
                     encryptionKey,
-                    chunker: cancellingChunker);
+                    chunker:
+                        cancellingChunker);
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () =>
@@ -3135,12 +4111,23 @@ public sealed class DocumentImportIntegrationTests
                 1L,
                 recoveredDocument.LastSuccessfulProcessingGeneration);
 
+            Assert.Equal(
+                expectedProcessingRuleVersion.Value,
+                recoveredDocument.LastSuccessfulProcessingRuleVersion);
+
             List<DocumentChunkEntity> preservedChunks =
                 await reprocessingHarness.GetChunksAsync(
                     documentId);
 
             Assert.NotEmpty(
                 preservedChunks);
+
+            Assert.All(
+                preservedChunks,
+                chunk =>
+                    Assert.Equal(
+                        expectedChunkingRuleVersion.Value,
+                        chunk.ChunkingRuleVersion));
 
             string preservedIndexedText =
                 string.Join(
@@ -3195,6 +4182,22 @@ public sealed class DocumentImportIntegrationTests
 
         byte[] encryptionKey =
             RandomNumberGenerator.GetBytes(32);
+
+        DocumentProcessingRuleVersion expectedInitialProcessingRuleVersion =
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                new TextDocumentTextExtractor().RuleVersion,
+                new DocumentTextNormalizer().RuleVersion);
+
+        DocumentChunkingRuleVersion expectedInitialChunkingRuleVersion =
+            new DocumentTextChunker(
+                maxChunkSize: 4000)
+            .RuleVersion;
+
+        const string retryProcessingRuleVersion =
+            "test-extractor-v2";
+
+        const string retryChunkingRuleVersion =
+            "test-chunker-v2";
 
         try
         {
@@ -3257,19 +4260,38 @@ public sealed class DocumentImportIntegrationTests
                 Assert.Equal(
                     1L,
                     successfulDocument.LastSuccessfulProcessingGeneration);
+
+                Assert.Equal(
+                    expectedInitialProcessingRuleVersion.Value,
+                    successfulDocument.LastSuccessfulProcessingRuleVersion);
+
+                List<DocumentChunkEntity> successfulChunks =
+                    await initialHarness.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(
+                    successfulChunks);
+
+                Assert.All(
+                    successfulChunks,
+                    chunk =>
+                        Assert.Equal(
+                            expectedInitialChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion));
             }
 
             var failingChunker =
                 new FixedDocumentTextChunker(
                     [
                         new DocumentChunk(
-                            0,
-                            "Failed candidate chunk."),
+                        0,
+                        "Failed candidate chunk."),
 
-                        new DocumentChunk(
-                            0,
-                            "Failed candidate duplicate order.")
-                    ]);
+                    new DocumentChunk(
+                        0,
+                        "Failed candidate duplicate order.")
+                    ],
+                    retryChunkingRuleVersion);
 
             await using (
                 var failingHarness =
@@ -3277,7 +4299,8 @@ public sealed class DocumentImportIntegrationTests
                         rootDirectory,
                         databasePath,
                         encryptionKey,
-                        chunker: failingChunker))
+                        chunker:
+                            failingChunker))
             {
                 await Assert.ThrowsAnyAsync<Exception>(
                     () =>
@@ -3302,6 +4325,24 @@ public sealed class DocumentImportIntegrationTests
                     1L,
                     failedDocument.LastSuccessfulProcessingGeneration);
 
+                Assert.Equal(
+                    expectedInitialProcessingRuleVersion.Value,
+                    failedDocument.LastSuccessfulProcessingRuleVersion);
+
+                List<DocumentChunkEntity> preservedChunks =
+                    await failingHarness.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(
+                    preservedChunks);
+
+                Assert.All(
+                    preservedChunks,
+                    chunk =>
+                        Assert.Equal(
+                            expectedInitialChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion));
+
                 Assert.True(
                     failingChunker.WasCalled);
 
@@ -3309,24 +4350,48 @@ public sealed class DocumentImportIntegrationTests
                     failingChunker.CandidateOutputProduced);
             }
 
+            var successfulRetryExtractor =
+                new ImmediateDocumentTextExtractor(
+                    "Successful retry processing result.",
+                    retryProcessingRuleVersion);
+
             var successfulRetryChunker =
                 new FixedDocumentTextChunker(
                     [
                         new DocumentChunk(
-                            0,
-                            "NEW SUCCESSFUL RESULT."),
+                        0,
+                        "NEW SUCCESSFUL RESULT."),
 
-                        new DocumentChunk(
-                            1,
-                            "SECOND NEW SUCCESSFUL CHUNK.")
-                    ]);
+                    new DocumentChunk(
+                        1,
+                        "SECOND NEW SUCCESSFUL CHUNK.")
+                    ],
+                    retryChunkingRuleVersion);
+
+            DocumentProcessingRuleVersion expectedRetryProcessingRuleVersion =
+                DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                    successfulRetryExtractor.RuleVersion,
+                    new DocumentTextNormalizer().RuleVersion);
+
+            Assert.NotEqual(
+                expectedInitialProcessingRuleVersion.Value,
+                expectedRetryProcessingRuleVersion.Value);
+
+            Assert.NotEqual(
+                expectedInitialChunkingRuleVersion.Value,
+                successfulRetryChunker.RuleVersion.Value);
 
             await using var retryHarness =
                 new DocumentPipelineTestHarness(
                     rootDirectory,
                     databasePath,
                     encryptionKey,
-                    chunker: successfulRetryChunker);
+                    extractors:
+                    [
+                        successfulRetryExtractor
+                    ],
+                    chunker:
+                        successfulRetryChunker);
 
             await retryHarness.ProcessingService.ProcessAsync(
                 documentId);
@@ -3349,6 +4414,14 @@ public sealed class DocumentImportIntegrationTests
                 3L,
                 retriedDocument.LastSuccessfulProcessingGeneration);
 
+            Assert.Equal(
+                expectedRetryProcessingRuleVersion.Value,
+                retriedDocument.LastSuccessfulProcessingRuleVersion);
+
+            Assert.NotEqual(
+                expectedInitialProcessingRuleVersion.Value,
+                retriedDocument.LastSuccessfulProcessingRuleVersion);
+
             List<DocumentChunkEntity> retryChunks =
                 await retryHarness.GetChunksAsync(
                     documentId);
@@ -3360,9 +4433,15 @@ public sealed class DocumentImportIntegrationTests
             Assert.All(
                 retryChunks,
                 chunk =>
+                {
                     Assert.Equal(
                         3L,
-                        chunk.ProcessingGeneration));
+                        chunk.ProcessingGeneration);
+
+                    Assert.Equal(
+                        retryChunkingRuleVersion,
+                        chunk.ChunkingRuleVersion);
+                });
 
             string retriedIndexedText =
                 string.Join(
@@ -3392,6 +4471,15 @@ public sealed class DocumentImportIntegrationTests
                 "Failed candidate chunk.",
                 retriedIndexedText,
                 StringComparison.Ordinal);
+
+            Assert.True(
+                successfulRetryExtractor.WasCalled);
+
+            Assert.True(
+                successfulRetryChunker.WasCalled);
+
+            Assert.True(
+                successfulRetryChunker.CandidateOutputProduced);
         }
         finally
         {
@@ -4108,16 +5196,34 @@ public sealed class DocumentImportIntegrationTests
         private readonly IReadOnlyList<DocumentChunk> _chunks;
 
         public FixedDocumentTextChunker(
-            IReadOnlyList<DocumentChunk> chunks)
+            IReadOnlyList<DocumentChunk> chunks,
+            string ruleVersion = "test-chunker-v1")
         {
-            _chunks = chunks;
+            ArgumentNullException.ThrowIfNull(chunks);
+            ArgumentException.ThrowIfNullOrWhiteSpace(ruleVersion);
+
+            _chunks =
+                chunks
+                    .Select(
+                        chunk =>
+                            chunk with
+                            {
+                                ChunkingRuleVersion =
+                                    new DocumentChunkingRuleVersion(
+                                        ruleVersion)
+                            })
+                    .ToArray();
+
+            RuleVersion =
+                new DocumentChunkingRuleVersion(
+                    ruleVersion);
         }
 
         public bool WasCalled { get; private set; }
 
         public bool CandidateOutputProduced { get; private set; }
 
-        public DocumentChunkingRuleVersion RuleVersion => new("test-chunker-v1");
+        public DocumentChunkingRuleVersion RuleVersion { get; }
 
         public Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
             DocumentTextNormalizationResult normalizationResult,
@@ -4141,17 +5247,38 @@ public sealed class DocumentImportIntegrationTests
 
         public CancellingCandidateDocumentTextChunker(
             IReadOnlyList<DocumentChunk> chunks,
-            CancellationTokenSource cancellationTokenSource)
+            CancellationTokenSource cancellationTokenSource,
+            string ruleVersion = "test-chunker-v1")
         {
-            _chunks = chunks;
-            _cancellationTokenSource = cancellationTokenSource;
+            ArgumentNullException.ThrowIfNull(chunks);
+            ArgumentNullException.ThrowIfNull(cancellationTokenSource);
+            ArgumentException.ThrowIfNullOrWhiteSpace(ruleVersion);
+
+            _cancellationTokenSource =
+                cancellationTokenSource;
+
+            _chunks =
+                chunks
+                    .Select(
+                        chunk =>
+                            chunk with
+                            {
+                                ChunkingRuleVersion =
+                                    new DocumentChunkingRuleVersion(
+                                        ruleVersion)
+                            })
+                    .ToArray();
+
+            RuleVersion =
+                new DocumentChunkingRuleVersion(
+                    ruleVersion);
         }
 
         public bool WasCalled { get; private set; }
 
         public bool CandidateOutputProduced { get; private set; }
 
-        public DocumentChunkingRuleVersion RuleVersion => new("test-chunker-v1");
+        public DocumentChunkingRuleVersion RuleVersion { get; }
 
         public Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
             DocumentTextNormalizationResult normalizationResult,
@@ -4168,7 +5295,6 @@ public sealed class DocumentImportIntegrationTests
                     _cancellationTokenSource));
         }
     }
-
     private sealed class CancellingDocumentChunkList
         : IReadOnlyList<DocumentChunk>
     {
@@ -4214,9 +5340,18 @@ public sealed class DocumentImportIntegrationTests
     private sealed class FailingDocumentTextExtractor
         : IDocumentTextExtractor
     {
+        public FailingDocumentTextExtractor(
+            string ruleVersion = "test-extractor-v1")
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(
+                ruleVersion);
+
+            RuleVersion = ruleVersion;
+        }
+
         public bool WasCalled { get; private set; }
 
-        public string RuleVersion => "test-extractor-v1";
+        public string RuleVersion { get; }
 
         public bool CanExtract(
             string fileName)
@@ -4247,9 +5382,18 @@ public sealed class DocumentImportIntegrationTests
             new(
                 TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public CancellingDocumentTextExtractor(
+            string ruleVersion = "test-extractor-v1")
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(
+                ruleVersion);
+
+            RuleVersion = ruleVersion;
+        }
+
         public bool WasCalled { get; private set; }
 
-        public string RuleVersion => "test-extractor-v1";
+        public string RuleVersion { get; }
 
         public bool CanExtract(
             string fileName)
@@ -4287,25 +5431,32 @@ public sealed class DocumentImportIntegrationTests
     {
         private readonly string _message;
 
-        private readonly TaskCompletionSource<bool>
-            _extractionStarted =
-                new(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _extractionStarted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        private readonly TaskCompletionSource<bool>
-            _releaseFailure =
-                new(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _releaseFailure =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public BlockingFailingDocumentTextExtractor(
-            string message)
+            string message,
+            string ruleVersion = "test-extractor-v1")
         {
-            _message = message;
+            ArgumentException.ThrowIfNullOrWhiteSpace(
+                message);
+
+            ArgumentException.ThrowIfNullOrWhiteSpace(
+                ruleVersion);
+
+            _message =
+                message;
+
+            RuleVersion =
+                ruleVersion;
         }
 
         public bool WasCalled { get; private set; }
 
-        public string RuleVersion => "test-extractor-v1";
+        public string RuleVersion { get; }
 
         public bool CanExtract(
             string fileName)
@@ -4412,14 +5563,22 @@ public sealed class DocumentImportIntegrationTests
         private readonly string _text;
 
         public ImmediateDocumentTextExtractor(
-            string text)
+            string text,
+            string ruleVersion = "test-extractor-v1")
         {
+            ArgumentException.ThrowIfNullOrWhiteSpace(
+                text);
+
+            ArgumentException.ThrowIfNullOrWhiteSpace(
+                ruleVersion);
+
             _text = text;
+            RuleVersion = ruleVersion;
         }
 
         public bool WasCalled { get; private set; }
 
-        public string RuleVersion => "test-extractor-v1";
+        public string RuleVersion { get; }
 
         public bool CanExtract(
             string fileName)

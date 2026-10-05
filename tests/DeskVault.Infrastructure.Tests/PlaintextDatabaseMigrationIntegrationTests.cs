@@ -187,6 +187,9 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     DocumentStatus.Available,
                     document.Status);
 
+                Assert.Null(
+                    document.LastSuccessfulProcessingRuleVersion);
+
                 Assert.Equal(
                     Path.Combine(
                         rootDirectory,
@@ -274,6 +277,12 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 Assert.Equal(
                     0L,
                     secondChunk.ProcessingGeneration);
+
+                Assert.Null(
+                    firstChunk.ChunkingRuleVersion);
+
+                Assert.Null(
+                    secondChunk.ChunkingRuleVersion);
 
                 Assert.Null(
                     firstChunk.SourceLocationStartLine);
