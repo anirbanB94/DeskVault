@@ -64,6 +64,7 @@ DocumentChunk
 ├── Text
 ├── ContentHash
 ├── ProcessingGeneration
+├── ChunkingRuleVersion
 └── SourceLocation?
 ```
 
@@ -171,6 +172,38 @@ representation.
 The existing document-level file SHA-256 hash and its file-oriented
 `IHashService` contract remain separate concerns and are not repurposed
 as the chunk content identity mechanism.
+
+### Chunking Rule Version
+
+`ChunkingRuleVersion` identifies the chunking behavior used to produce
+the derived chunk, including the algorithm revision and other
+behavior-affecting chunking inputs that form the chunking contract.
+
+It is distinct from:
+
+```text
+DocumentChunk.Id
+ContentHash
+ProcessingGeneration
+SourceLocation
+```
+
+`DocumentChunk.Id` identifies the logical chunk occurrence.
+
+`ContentHash` identifies the canonical chunk content.
+
+`ProcessingGeneration` identifies the processing attempt that produced
+the persisted representation.
+
+`ChunkingRuleVersion` identifies the chunking rules that produced the
+chunk boundaries and ordering.
+
+Equivalent chunking behavior must resolve to the same chunking-rule
+version, while behaviorally relevant chunking-rule changes must be
+capable of producing a different version.
+
+Chunking-rule versioning must not change the existing logical identity
+construction or processing-generation semantics.
 
 ### Processing Provenance
 
@@ -289,10 +322,11 @@ The processing workflow remains responsible for orchestration and for
 providing document and processing context to the persistence boundary.
 
 The chunking component remains responsible for producing deterministic
-chunk order and canonical chunk text, and for carrying reliable
-source-location provenance forward when the processing contract provides
-a direct source mapping. It does not become responsible for persistence,
-search, database concerns, or AI-specific metadata.
+chunk order and canonical chunk text, for identifying the chunking rules
+that produced those results, and for carrying reliable source-location
+provenance forward when the processing contract provides a direct source
+mapping. It does not become responsible for persistence, search, database
+concerns, or AI-specific metadata.
 
 Infrastructure remains responsible for EF Core persistence entities,
 mappings, database constraints and indexes, migrations, transactions,
@@ -331,6 +365,7 @@ DocumentId
 Order
 ContentHash
 ProcessingGeneration
+ChunkingRuleVersion
 SourceLocation?
 ```
 
