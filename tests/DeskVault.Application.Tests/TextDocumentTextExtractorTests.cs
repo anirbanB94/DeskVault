@@ -13,6 +13,23 @@ public sealed class TextDocumentTextExtractorTests
     private readonly TextDocumentTextExtractor _extractor = new();
 
     [Fact]
+    public void RuleVersion_ReturnsStableTextExtractorVersion()
+    {
+        // Arrange
+        string expectedVersion =
+            "text-extractor-v1";
+
+        // Act
+        string actualVersion =
+            _extractor.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
+    [Fact]
     public void CanExtract_TxtFile_ReturnsTrue()
     {
         bool result =

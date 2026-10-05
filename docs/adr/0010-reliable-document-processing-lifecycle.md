@@ -202,6 +202,34 @@ incomplete or belongs to an obsolete attempt.
 Cancellation and failure handling must respect the same authoritative
 generation used for successful publication.
 
+### Processing Rule Version
+
+`ProcessingGeneration` identifies a processing attempt and establishes
+which attempt is authoritative.
+
+`DocumentProcessingRuleVersion` identifies the processing behavior used
+by that attempt, including the applicable extraction and normalization
+rules.
+
+These concepts are intentionally independent:
+
+```text
+ProcessingGeneration
+    ↓
+Which processing attempt?
+
+DocumentProcessingRuleVersion
+    ↓
+Which processing rules produced the result?
+```
+
+Equivalent processing behavior must resolve to the same processing-rule
+version, while behaviorally relevant rule changes must be capable of
+producing a different version.
+
+The processing-rule version does not replace, derive from, or participate
+in authoritative generation fencing.
+
 ### Last Successful Processing Generation
 
 The document persistence boundary also records the last processing generation

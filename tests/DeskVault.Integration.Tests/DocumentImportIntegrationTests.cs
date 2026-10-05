@@ -4027,6 +4027,8 @@ public sealed class DocumentImportIntegrationTests
 
         public bool CandidateOutputProduced { get; private set; }
 
+        public DocumentChunkingRuleVersion RuleVersion => new("test-chunker-v1");
+
         public Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
             DocumentTextNormalizationResult normalizationResult,
             CancellationToken cancellationToken = default)
@@ -4058,6 +4060,8 @@ public sealed class DocumentImportIntegrationTests
         public bool WasCalled { get; private set; }
 
         public bool CandidateOutputProduced { get; private set; }
+
+        public DocumentChunkingRuleVersion RuleVersion => new("test-chunker-v1");
 
         public Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
             DocumentTextNormalizationResult normalizationResult,
@@ -4122,6 +4126,8 @@ public sealed class DocumentImportIntegrationTests
     {
         public bool WasCalled { get; private set; }
 
+        public string RuleVersion => "test-extractor-v1";
+
         public bool CanExtract(
             string fileName)
         {
@@ -4152,6 +4158,8 @@ public sealed class DocumentImportIntegrationTests
                 TaskCreationOptions.RunContinuationsAsynchronously);
 
         public bool WasCalled { get; private set; }
+
+        public string RuleVersion => "test-extractor-v1";
 
         public bool CanExtract(
             string fileName)
@@ -4206,6 +4214,8 @@ public sealed class DocumentImportIntegrationTests
         }
 
         public bool WasCalled { get; private set; }
+
+        public string RuleVersion => "test-extractor-v1";
 
         public bool CanExtract(
             string fileName)
@@ -4267,6 +4277,8 @@ public sealed class DocumentImportIntegrationTests
 
         public bool WasCalled { get; private set; }
 
+        public string RuleVersion => "test-extractor-v1";
+
         public bool CanExtract(
             string fileName)
         {
@@ -4316,6 +4328,8 @@ public sealed class DocumentImportIntegrationTests
         }
 
         public bool WasCalled { get; private set; }
+
+        public string RuleVersion => "test-extractor-v1";
 
         public bool CanExtract(
             string fileName)

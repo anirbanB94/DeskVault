@@ -8,6 +8,27 @@ namespace DeskVault.Application.Tests;
 
 public sealed class DocumentTextNormalizerTests
 {
+
+    [Fact]
+    public void RuleVersion_ReturnsStableNormalizerVersion()
+    {
+        // Arrange
+        const string expectedVersion =
+            "unicode-nfc-lf-v1";
+
+        DocumentTextNormalizer normalizer =
+            new();
+
+        // Act
+        string actualVersion =
+            normalizer.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
     [Fact]
     public async Task NormalizeAsync_NfcEquivalentText_ReturnsNfcRepresentation()
     {

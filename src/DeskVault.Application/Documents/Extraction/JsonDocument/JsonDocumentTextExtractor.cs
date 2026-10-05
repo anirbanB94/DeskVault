@@ -8,6 +8,9 @@ namespace DeskVault.Application.Documents.Extraction.JsonDocument;
 public sealed class JsonDocumentTextExtractor
     : IDocumentTextExtractor
 {
+    private const string RuleVersionValue =
+        "json-extractor-v1";
+
     private const string SupportedExtension = ".json";
 
     private readonly long _maxProcessedTextBytes;
@@ -25,6 +28,8 @@ public sealed class JsonDocumentTextExtractor
         _maxProcessedTextBytes =
             options.MaxProcessedTextBytes;
     }
+
+    public string RuleVersion => RuleVersionValue;
 
     public bool CanExtract(
         string fileName)

@@ -11,6 +11,8 @@ public sealed class YamlDocumentTextExtractor
 {
     private const string SupportedYamlExtension = ".yaml";
     private const string SupportedYmlExtension = ".yml";
+    private const string RuleVersionValue =
+        "yaml-extractor-v1";
 
     private readonly long _maxProcessedTextBytes;
 
@@ -27,6 +29,8 @@ public sealed class YamlDocumentTextExtractor
         _maxProcessedTextBytes =
             options.MaxProcessedTextBytes;
     }
+
+    public string RuleVersion => RuleVersionValue;
 
     public bool CanExtract(
         string fileName)

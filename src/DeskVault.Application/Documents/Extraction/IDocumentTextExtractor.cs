@@ -2,6 +2,8 @@ namespace DeskVault.Application.Documents.Extraction;
 
 public interface IDocumentTextExtractor
 {
+    string RuleVersion { get; }
+
     bool CanExtract(string fileName);
 
     Task<DocumentTextExtractionResult> ExtractAsync(

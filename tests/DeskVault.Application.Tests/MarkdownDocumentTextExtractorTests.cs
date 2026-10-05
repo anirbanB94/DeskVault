@@ -13,6 +13,26 @@ public sealed class MarkdownDocumentTextExtractorTests
     private readonly MarkdownDocumentTextExtractor _extractor = new();
 
     [Fact]
+    public void RuleVersion_ReturnsStableMarkdownExtractorVersion()
+    {
+        // Arrange
+        const string expectedVersion =
+            "markdown-extractor-v1";
+
+        MarkdownDocumentTextExtractor extractor =
+            new();
+
+        // Act
+        string actualVersion =
+            extractor.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
+    [Fact]
     public void CanExtract_MarkdownFile_ReturnsTrue()
     {
         Assert.True(

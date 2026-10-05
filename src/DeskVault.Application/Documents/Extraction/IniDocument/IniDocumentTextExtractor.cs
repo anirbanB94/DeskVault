@@ -9,6 +9,10 @@ namespace DeskVault.Application.Documents.Extraction.IniDocument;
 public sealed class IniDocumentTextExtractor
     : IDocumentTextExtractor
 {
+
+    private const string RuleVersionValue =
+        "ini-extractor-v1";
+
     private readonly long _maxProcessedTextBytes;
 
     public IniDocumentTextExtractor()
@@ -24,6 +28,8 @@ public sealed class IniDocumentTextExtractor
         _maxProcessedTextBytes =
             options.MaxProcessedTextBytes;
     }
+
+    public string RuleVersion => RuleVersionValue;
 
     public bool CanExtract(
         string fileName)

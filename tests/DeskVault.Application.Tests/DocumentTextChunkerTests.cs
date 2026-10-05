@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Normalization;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Provenance;
 
 namespace DeskVault.Application.Tests;
@@ -8,6 +9,106 @@ public sealed class DocumentTextChunkerTests
 {
     private const int DefaultMaxChunkSize = 1000;
     private const int SmallMaxChunkSize = 20;
+    private const string ExpectedRuleVersion = "paragraph-chunker-v1";
+    private const int AlternateMaxChunkSize = 500;
+
+    [Fact]
+    public void RuleVersion_SameChunkingRules_ReturnsSameVersion()
+    {
+        // Arrange
+        DocumentTextChunker firstChunker =
+            CreateChunker();
+
+        DocumentTextChunker secondChunker =
+            CreateChunker();
+
+        // Act
+        DocumentChunkingRuleVersion firstVersion =
+            firstChunker.RuleVersion;
+
+        DocumentChunkingRuleVersion secondVersion =
+            secondChunker.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            firstVersion,
+            secondVersion);
+
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                firstVersion.Value));
+    }
+
+    [Fact]
+    public void RuleVersion_DifferentMaxChunkSize_ReturnsDifferentVersion()
+    {
+        // Arrange
+        DocumentTextChunker firstChunker =
+            CreateChunker();
+
+        DocumentTextChunker secondChunker =
+            CreateChunker(
+                AlternateMaxChunkSize);
+
+        // Act
+        DocumentChunkingRuleVersion firstVersion =
+            firstChunker.RuleVersion;
+
+        DocumentChunkingRuleVersion secondVersion =
+            secondChunker.RuleVersion;
+
+        // Assert
+        Assert.NotEqual(
+            firstVersion,
+            secondVersion);
+    }
+
+    [Fact]
+    public void RuleVersion_UsesChunkingAlgorithmDefinition()
+    {
+        // Arrange
+        DocumentTextChunker chunker =
+            CreateChunker();
+
+        DocumentChunkingRuleVersion expectedVersion =
+            DocumentRuleVersionFactory.CreateChunkingRuleVersion(
+                ExpectedRuleVersion,
+                DefaultMaxChunkSize);
+
+        // Act
+        DocumentChunkingRuleVersion actualVersion =
+            chunker.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_ChunksCarryChunkingRuleVersion()
+    {
+        // Arrange
+        DocumentTextChunker chunker =
+            CreateChunker();
+
+        var normalizationResult =
+            CreateNormalizationResult(
+                "First paragraph.");
+
+        // Act
+        IReadOnlyList<DocumentChunk> chunks =
+            await chunker.ChunkAsync(
+                normalizationResult);
+
+        // Assert
+        DocumentChunk chunk =
+            Assert.Single(chunks);
+
+        Assert.Equal(
+            chunker.RuleVersion,
+            chunk.ChunkingRuleVersion);
+    }
 
     [Fact]
     public async Task ChunkAsync_EmptyText_ReturnsNoChunks()

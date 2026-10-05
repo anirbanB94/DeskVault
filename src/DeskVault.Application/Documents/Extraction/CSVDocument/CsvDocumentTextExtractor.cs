@@ -7,6 +7,9 @@ namespace DeskVault.Application.Documents.Extraction.CSVDocument;
 public sealed class CsvDocumentTextExtractor
     : IDocumentTextExtractor
 {
+    private const string RuleVersionValue =
+        "csv-extractor-v1";
+
     private readonly long _maxProcessedTextBytes;
 
     public CsvDocumentTextExtractor()
@@ -22,6 +25,8 @@ public sealed class CsvDocumentTextExtractor
         _maxProcessedTextBytes =
             options.MaxProcessedTextBytes;
     }
+
+    public string RuleVersion => RuleVersionValue;
 
     public bool CanExtract(
         string fileName)
