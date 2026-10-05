@@ -157,6 +157,25 @@ public sealed class ProcessDocumentHandlerTests
             document.Id,
             result.DocumentId);
 
+        DocumentProcessingRuleVersion expectedProcessingRuleVersion =
+        DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+            processingContext.Extractor.RuleVersion,
+            processingContext.Normalizer.RuleVersion);
+
+        Assert.Equal(
+            expectedProcessingRuleVersion,
+            result.ProcessingRuleVersion);
+
+        Assert.Equal(
+            processingContext.Chunker.RuleVersion,
+            result.ChunkingRuleVersion);
+
+        Assert.Equal(
+            processingContext.Chunker.RuleVersion,
+            processingContext.ProcessingStore
+                .SuccessfulProcessingChunks[0]
+                .ChunkingRuleVersion);
+
         Assert.Equal(
             1L,
             processingContext.ProcessingStore.AcquiredGeneration);
@@ -1133,6 +1152,8 @@ public sealed class ProcessDocumentHandlerTests
             handler,
             reader,
             extractor,
+            normalizer,
+            chunker,
             processingStore);
     }
 
@@ -1140,6 +1161,8 @@ public sealed class ProcessDocumentHandlerTests
         ProcessDocumentHandler Handler,
         TestDocumentReader Reader,
         TestDocumentTextExtractor Extractor,
+        DocumentTextNormalizer Normalizer,
+        DocumentTextChunker Chunker,
         TestDocumentProcessingStore ProcessingStore);
 
     private sealed class TestDocumentReader
@@ -1202,6 +1225,8 @@ public sealed class ProcessDocumentHandlerTests
 
         public DocumentSourceLocationMappingKind SourceLocationMappingKind { get; set; } =
             DocumentSourceLocationMappingKind.Unknown;
+
+        public string RuleVersion => "test-extractor-v1";
 
         public bool CanExtract(
             string fileName)

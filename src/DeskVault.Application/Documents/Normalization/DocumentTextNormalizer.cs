@@ -7,6 +7,9 @@ namespace DeskVault.Application.Documents.Normalization;
 public sealed class DocumentTextNormalizer
     : IDocumentTextNormalizer
 {
+
+    private const string RuleVersionValue = "unicode-nfc-lf-v1";
+
     private readonly long _maxProcessedTextBytes;
 
     public DocumentTextNormalizer()
@@ -29,6 +32,8 @@ public sealed class DocumentTextNormalizer
         _maxProcessedTextBytes =
             options.MaxProcessedTextBytes;
     }
+
+    public string RuleVersion => RuleVersionValue;
 
     public Task<DocumentTextNormalizationResult> NormalizeAsync(
         DocumentTextExtractionResult extractionResult,

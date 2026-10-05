@@ -8,6 +8,9 @@ namespace DeskVault.Application.Documents.Extraction.MarkdownDocument;
 public sealed class MarkdownDocumentTextExtractor
     : IDocumentTextExtractor
 {
+    private const string RuleVersionValue =
+        "markdown-extractor-v1";
+
     private readonly long _maxProcessedTextBytes;
 
     public MarkdownDocumentTextExtractor()
@@ -23,6 +26,8 @@ public sealed class MarkdownDocumentTextExtractor
         _maxProcessedTextBytes =
             options.MaxProcessedTextBytes;
     }
+
+    public string RuleVersion => RuleVersionValue;
 
     public bool CanExtract(string fileName)
     {

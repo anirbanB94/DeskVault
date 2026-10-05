@@ -1782,6 +1782,8 @@ public sealed class ExpandedDocumentFormatIntegrationTests
 
         public bool WasCalled { get; private set; }
 
+        public string RuleVersion => "test-extractor-v1";
+
         public bool CanExtract(
             string fileName)
         {

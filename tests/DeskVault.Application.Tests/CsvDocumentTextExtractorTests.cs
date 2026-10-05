@@ -11,6 +11,26 @@ public sealed class CsvDocumentTextExtractorTests
     private const string DocumentFileName = "document.csv";
 
     [Fact]
+    public void RuleVersion_ReturnsStableCsvExtractorVersion()
+    {
+        // Arrange
+        const string expectedVersion =
+            "csv-extractor-v1";
+
+        CsvDocumentTextExtractor extractor =
+            new();
+
+        // Act
+        string actualVersion =
+            extractor.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
+    [Fact]
     public async Task ExtractAsync_NormalCsv_ReturnsHeaderAwareText()
     {
         const string csv =

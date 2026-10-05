@@ -8,6 +8,27 @@ namespace DeskVault.Application.Tests;
 
 public sealed class XmlDocumentTextExtractorTests
 {
+
+    [Fact]
+    public void RuleVersion_ReturnsStableXmlExtractorVersion()
+    {
+        // Arrange
+        const string expectedVersion =
+            "xml-extractor-v1";
+
+        XmlDocumentTextExtractor extractor =
+            new();
+
+        // Act
+        string actualVersion =
+            extractor.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
     [Theory]
     [InlineData("document.xml")]
     [InlineData("document.XML")]

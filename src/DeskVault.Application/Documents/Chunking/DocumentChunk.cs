@@ -5,4 +5,5 @@ namespace DeskVault.Application.Documents.Chunking;
 public sealed record DocumentChunk(
     int Order,
     string Text,
-    DocumentSourceLocation? SourceLocation = null);
+    DocumentSourceLocation? SourceLocation = null,
+    DocumentChunkingRuleVersion? ChunkingRuleVersion = null);

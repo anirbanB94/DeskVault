@@ -2,6 +2,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Shared.Resources;
@@ -39,14 +40,29 @@ public sealed class ProcessDocumentHandler
                 "Maximum decrypted document bytes must be greater than zero.");
         }
 
-        _documentRepository = documentRepository;
-        _documentReader = documentReader;
-        _extractorResolver = extractorResolver;
-        _normalizer = normalizer;
-        _chunker = chunker;
-        _processingStore = processingStore;
-        _maxDecryptedDocumentBytes = processingOptions.MaxDecryptedDocumentBytes;
-        _logger = logger;
+        _documentRepository =
+            documentRepository;
+
+        _documentReader =
+            documentReader;
+
+        _extractorResolver =
+            extractorResolver;
+
+        _normalizer =
+            normalizer;
+
+        _chunker =
+            chunker;
+
+        _processingStore =
+            processingStore;
+
+        _maxDecryptedDocumentBytes =
+            processingOptions.MaxDecryptedDocumentBytes;
+
+        _logger =
+            logger;
     }
 
     public async Task<ProcessDocumentResult> HandleAsync(
@@ -93,6 +109,11 @@ public sealed class ProcessDocumentHandler
                 _extractorResolver.Resolve(
                     document.FileName);
 
+            DocumentProcessingRuleVersion processingRuleVersion =
+                DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                    extractor.RuleVersion,
+                    _normalizer.RuleVersion);
+
             await using var documentStream =
                 await _documentReader.OpenReadAsync(
                     document.Id,
@@ -115,6 +136,9 @@ public sealed class ProcessDocumentHandler
                     normalizationResult,
                     cancellationToken);
 
+            DocumentChunkingRuleVersion chunkingRuleVersion =
+                _chunker.RuleVersion;
+
             await _processingStore.PublishSuccessfulProcessingAsync(
                 document.Id,
                 processingGeneration,
@@ -127,7 +151,9 @@ public sealed class ProcessDocumentHandler
             return new ProcessDocumentResult(
                 ProcessDocumentResultStatus.Success,
                 document.Id,
-                "Document processed successfully.");
+                "Document processed successfully.",
+                processingRuleVersion,
+                chunkingRuleVersion);
         }
         catch (OperationCanceledException)
         {

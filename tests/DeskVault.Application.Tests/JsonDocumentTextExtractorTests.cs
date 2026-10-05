@@ -8,6 +8,27 @@ namespace DeskVault.Application.Tests;
 
 public sealed class JsonDocumentTextExtractorTests
 {
+
+    [Fact]
+    public void RuleVersion_ReturnsStableJsonExtractorVersion()
+    {
+        // Arrange
+        const string expectedVersion =
+            "json-extractor-v1";
+
+        JsonDocumentTextExtractor extractor =
+            new();
+
+        // Act
+        string actualVersion =
+            extractor.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
     [Theory]
     [InlineData("document.json")]
     [InlineData("document.JSON")]

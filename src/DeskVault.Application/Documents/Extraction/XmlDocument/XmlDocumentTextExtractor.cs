@@ -9,6 +9,9 @@ public sealed class XmlDocumentTextExtractor
 {
     private const string SupportedExtension = ".xml";
 
+    private const string RuleVersionValue =
+        "xml-extractor-v1";
+
     private readonly long _maxProcessedTextBytes;
 
     public XmlDocumentTextExtractor()
@@ -24,6 +27,8 @@ public sealed class XmlDocumentTextExtractor
         _maxProcessedTextBytes =
             options.MaxProcessedTextBytes;
     }
+
+    public string RuleVersion => RuleVersionValue;
 
     public bool CanExtract(
         string fileName)

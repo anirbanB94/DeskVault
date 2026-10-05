@@ -8,6 +8,27 @@ namespace DeskVault.Application.Tests;
 
 public sealed class YamlDocumentTextExtractorTests
 {
+
+    [Fact]
+    public void RuleVersion_ReturnsStableYamlExtractorVersion()
+    {
+        // Arrange
+        const string expectedVersion =
+            "yaml-extractor-v1";
+
+        YamlDocumentTextExtractor extractor =
+            new();
+
+        // Act
+        string actualVersion =
+            extractor.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
     [Theory]
     [InlineData("document.yaml")]
     [InlineData("document.YAML")]

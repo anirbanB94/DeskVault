@@ -8,6 +8,9 @@ namespace DeskVault.Application.Documents.Extraction.TextDocument;
 public sealed class TextDocumentTextExtractor
     : IDocumentTextExtractor
 {
+    private const string RuleVersionValue =
+        "text-extractor-v1";
+
     private static readonly HashSet<string> SupportedExtensions =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -42,6 +45,8 @@ public sealed class TextDocumentTextExtractor
         _maxProcessedTextBytes =
             options.MaxProcessedTextBytes;
     }
+
+    public string RuleVersion => RuleVersionValue;
 
     public bool CanExtract(string fileName)
     {

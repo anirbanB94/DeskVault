@@ -9,6 +9,27 @@ namespace DeskVault.Application.Tests;
 
 public sealed class IniDocumentTextExtractorTests
 {
+
+    [Fact]
+    public void RuleVersion_ReturnsStableIniExtractorVersion()
+    {
+        // Arrange
+        const string expectedVersion =
+            "ini-extractor-v1";
+
+        IniDocumentTextExtractor extractor =
+            new();
+
+        // Act
+        string actualVersion =
+            extractor.RuleVersion;
+
+        // Assert
+        Assert.Equal(
+            expectedVersion,
+            actualVersion);
+    }
+
     [Theory]
     [InlineData("document.ini")]
     [InlineData("document.INI")]

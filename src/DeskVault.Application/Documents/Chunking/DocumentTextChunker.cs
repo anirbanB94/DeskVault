@@ -1,4 +1,5 @@
 using DeskVault.Application.Documents.Normalization;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Provenance;
 
 namespace DeskVault.Application.Documents.Chunking;
@@ -8,7 +9,11 @@ public sealed class DocumentTextChunker
 {
     private const string ParagraphSeparator = "\n\n";
 
+    private const string AlgorithmVersion = "paragraph-chunker-v1";
+
     private readonly int _maxChunkSize;
+
+    private readonly DocumentChunkingRuleVersion _ruleVersion;
 
     public DocumentTextChunker(
         int maxChunkSize)
@@ -20,8 +25,17 @@ public sealed class DocumentTextChunker
                 "Maximum chunk size must be greater than zero.");
         }
 
-        _maxChunkSize = maxChunkSize;
+        _maxChunkSize =
+            maxChunkSize;
+
+        _ruleVersion =
+            DocumentRuleVersionFactory.CreateChunkingRuleVersion(
+                AlgorithmVersion,
+                _maxChunkSize);
     }
+
+    public DocumentChunkingRuleVersion RuleVersion =>
+        _ruleVersion;
 
     public Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
         DocumentTextNormalizationResult normalizationResult,
@@ -245,7 +259,8 @@ public sealed class DocumentTextChunker
                 new DocumentChunk(
                     chunks.Count,
                     chunkText,
-                    sourceLocation));
+                    sourceLocation,
+                    _ruleVersion));
 
             int chunkEndLine =
                 GetEndLine(
@@ -257,7 +272,8 @@ public sealed class DocumentTextChunker
                     ? chunkEndLine + 1
                     : chunkEndLine;
 
-            start = candidateEnd;
+            start =
+                candidateEnd;
         }
     }
 
@@ -335,7 +351,7 @@ public sealed class DocumentTextChunker
         return -1;
     }
 
-    private static void FlushCurrentChunk(
+    private void FlushCurrentChunk(
         List<DocumentChunk> chunks,
         List<string> currentParagraphs,
         ref int currentLength,
@@ -361,7 +377,8 @@ public sealed class DocumentTextChunker
                 string.Join(
                     ParagraphSeparator,
                     currentParagraphs),
-                sourceLocation));
+                sourceLocation,
+                _ruleVersion));
 
         currentParagraphs.Clear();
         currentLength = 0;
