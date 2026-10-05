@@ -60,7 +60,9 @@ public sealed class SqliteDocumentRepository
             StoredFilePath = document.StoredFilePath,
             ProcessingGeneration = document.ProcessingGeneration,
             LastSuccessfulProcessingGeneration =
-                document.LastSuccessfulProcessingGeneration
+                document.LastSuccessfulProcessingGeneration,
+            LastSuccessfulProcessingRuleVersion =
+                document.LastSuccessfulProcessingRuleVersion
         };
 
         await dbContext.Documents.AddAsync(
@@ -209,6 +211,7 @@ public sealed class SqliteDocumentRepository
             entity.ImportedAt,
             (DocumentStatus)entity.Status,
             entity.ProcessingGeneration,
-            entity.LastSuccessfulProcessingGeneration);
+            entity.LastSuccessfulProcessingGeneration,
+            entity.LastSuccessfulProcessingRuleVersion);
     }
 }

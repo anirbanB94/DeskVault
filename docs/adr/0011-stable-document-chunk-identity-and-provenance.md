@@ -294,6 +294,7 @@ DocumentChunkEntity
 ├── Text
 ├── ContentHash
 ├── ProcessingGeneration
+├── ChunkingRuleVersion?
 ├── SourceLocationStartLine?
 └── SourceLocationEndLine?
 ```
@@ -313,6 +314,31 @@ does not provide reliable source location, both values are cleared to
 Historical chunks that predate source-location persistence are migrated
 with the nullable columns left `NULL/NULL`; no historical source location
 is reconstructed or fabricated.
+
+### Persisted Chunking Version
+
+`ChunkingRuleVersion` is persisted on the same canonical `DocumentChunks`
+row as `Id`, `DocumentId`, `Order`, `ContentHash`, and
+`ProcessingGeneration`.
+
+The value identifies the chunking behavior that produced the persisted
+chunk. It is lineage metadata and does not participate in logical chunk
+identity or content identity.
+
+The persisted field is nullable because historical chunks may predate
+chunking-rule version persistence. When the historical chunking rules cannot
+be recovered reliably, the persisted version remains `NULL`; migration must
+not fabricate a historical version.
+
+When a successful processing generation replaces the current derived chunk
+set, each replacement chunk receives the chunking-rule version supplied by
+that processing generation. The version therefore remains bound to the same
+canonical chunk representation and processing generation as the chunk text,
+identity, ordering, content identity, and source provenance.
+
+Chunking-rule version is not independently promoted to current state and does
+not alter the existing stable identity, content hash, processing-generation,
+or source-location contracts.
 
 ## Architectural Boundaries
 
@@ -557,6 +583,8 @@ implementation details.
   representation and validation constraint.
 - Legacy rows retain `ProcessingGeneration = 0` because their
   historical producing generation cannot be reconstructed.
+- Legacy rows retain unknown chunking-rule version when historical
+  chunking behavior cannot be reconstructed reliably.
 - Legacy rows retain unknown source location because historical
   source-location provenance cannot be reconstructed reliably.
 
@@ -574,6 +602,8 @@ The implementation must:
 - keep logical identity separate from content identity;
 - preserve document provenance;
 - preserve processing-generation provenance;
+- persist the chunking-rule version with the same canonical chunk row and
+  processing generation that produced it;
 - preserve deterministic ordering;
 - preserve existing transactional chunk replacement;
 - preserve cancellation and stale-attempt protections established by
@@ -631,6 +661,9 @@ locations from earlier generations from surviving replacement.
 Legacy persisted chunks are safely transitioned to the contract with
 historical processing provenance represented by generation `0` and
 historical source location represented as unknown.
+
+Historical chunking-rule version remains unknown when the rules that produced
+legacy knowledge cannot be recovered reliably.
 
 This establishes the stable derived-knowledge foundation required for
 current local search and future retrieval and source-grounded

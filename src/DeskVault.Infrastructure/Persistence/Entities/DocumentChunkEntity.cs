@@ -14,6 +14,8 @@ public sealed class DocumentChunkEntity
 
     public long ProcessingGeneration { get; set; }
 
+    public string? ChunkingRuleVersion { get; set; }
+
     public int? SourceLocationStartLine { get; set; }
 
     public int? SourceLocationEndLine { get; set; }

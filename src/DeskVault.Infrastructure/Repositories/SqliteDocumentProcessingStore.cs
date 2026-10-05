@@ -130,6 +130,7 @@ public sealed class SqliteDocumentProcessingStore
     public async Task PublishSuccessfulProcessingAsync(
         Guid documentId,
         long processingGeneration,
+        DocumentProcessingRuleVersion processingRuleVersion,
         IReadOnlyList<DocumentChunk> chunks,
         CancellationToken cancellationToken = default)
     {
@@ -195,7 +196,11 @@ public sealed class SqliteDocumentProcessingStore
                                 .SetProperty(
                                     entity =>
                                         entity.LastSuccessfulProcessingGeneration,
-                                    processingGeneration),
+                                    processingGeneration)
+                                .SetProperty(
+                                    entity =>
+                                        entity.LastSuccessfulProcessingRuleVersion,
+                                    processingRuleVersion.Value),
                         cancellationToken);
 
             if (rowsAffected == 0)
@@ -427,6 +432,8 @@ public sealed class SqliteDocumentProcessingStore
                     ContentHash = contentHash,
                     ProcessingGeneration =
                         processingGeneration,
+                    ChunkingRuleVersion =
+                        chunk.ChunkingRuleVersion?.Value,
                     SourceLocationStartLine =
                         chunk.SourceLocation?.StartLine,
                     SourceLocationEndLine =

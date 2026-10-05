@@ -1,4 +1,5 @@
 using DeskVault.Application.Documents.Chunking;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
@@ -234,10 +235,13 @@ public sealed class SqliteDocumentSearchStoreTests
         await processingStore.PublishSuccessfulProcessingAsync(
             document.Id,
             firstGeneration,
+            new DocumentProcessingRuleVersion("processing-v1"),
             [
                 new DocumentChunk(
-                    0,
-                    "The authoritative-search-term is current content.")
+            0,
+            "The authoritative-search-term is current content.",
+            ChunkingRuleVersion:
+                new DocumentChunkingRuleVersion("chunking-v1"))
             ]);
 
         long secondGeneration =
@@ -251,6 +255,7 @@ public sealed class SqliteDocumentSearchStoreTests
         await processingStore.PublishSuccessfulProcessingAsync(
             document.Id,
             secondGeneration,
+            new DocumentProcessingRuleVersion("processing-v1"),
             []);
 
         var searchStore =

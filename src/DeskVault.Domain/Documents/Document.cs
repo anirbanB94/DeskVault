@@ -20,6 +20,8 @@ public sealed class Document
 
     public long LastSuccessfulProcessingGeneration { get; }
 
+    public string? LastSuccessfulProcessingRuleVersion { get; }
+
     private Document(
         Guid id,
         string fileName,
@@ -29,7 +31,8 @@ public sealed class Document
         DateTime importedAt,
         DocumentStatus status,
         long processingGeneration,
-        long lastSuccessfulProcessingGeneration)
+        long lastSuccessfulProcessingGeneration,
+        string? lastSuccessfulProcessingRuleVersion)
     {
         Id = id;
         FileName = fileName;
@@ -41,6 +44,8 @@ public sealed class Document
         ProcessingGeneration = processingGeneration;
         LastSuccessfulProcessingGeneration =
             lastSuccessfulProcessingGeneration;
+        LastSuccessfulProcessingRuleVersion =
+            lastSuccessfulProcessingRuleVersion;
     }
 
     public static Document Create(
@@ -66,7 +71,8 @@ public sealed class Document
             DateTime.UtcNow,
             DocumentStatus.Imported,
             0,
-            0);
+            0,
+            null);
     }
 
     public static Document Restore(
@@ -78,7 +84,8 @@ public sealed class Document
         DateTime importedAt,
         DocumentStatus status,
         long processingGeneration = 0,
-        long lastSuccessfulProcessingGeneration = 0)
+        long lastSuccessfulProcessingGeneration = 0,
+        string? lastSuccessfulProcessingRuleVersion = null)
     {
         Validate(
             id,
@@ -115,6 +122,14 @@ public sealed class Document
                 nameof(lastSuccessfulProcessingGeneration));
         }
 
+        if (lastSuccessfulProcessingRuleVersion is not null &&
+            string.IsNullOrWhiteSpace(lastSuccessfulProcessingRuleVersion))
+        {
+            throw new ArgumentException(
+                "Last successful processing-rule version cannot be empty when provided.",
+                nameof(lastSuccessfulProcessingRuleVersion));
+        }
+
         return new Document(
             id,
             fileName,
@@ -124,7 +139,8 @@ public sealed class Document
             importedAt,
             status,
             processingGeneration,
-            lastSuccessfulProcessingGeneration);
+            lastSuccessfulProcessingGeneration,
+            lastSuccessfulProcessingRuleVersion);
     }
 
     public void MarkProcessing()

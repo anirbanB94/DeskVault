@@ -1,4 +1,5 @@
 using DeskVault.Application.Documents.Chunking;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Domain.Documents;
 
 namespace DeskVault.Application.Interfaces;
@@ -18,6 +19,7 @@ public interface IDocumentProcessingStore
     Task PublishSuccessfulProcessingAsync(
         Guid documentId,
         long processingGeneration,
+        DocumentProcessingRuleVersion processingRuleVersion,
         IReadOnlyList<DocumentChunk> chunks,
         CancellationToken cancellationToken = default);
 
