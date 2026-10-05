@@ -207,6 +207,70 @@ Content exists but could not be interpreted reliably
 
 This distinction is especially important for large documents and imperfect source files.
 
+## Application-Level Structured Processing Representation
+
+For supported extraction paths that can reliably preserve useful structure,
+DeskVault may carry that structure through the application document-processing
+pipeline using an application-level document-content representation.
+
+The MVP2 representation is intentionally smaller than a full format-specific
+document model:
+
+```text
+DocumentContent
+├── Ordered logical units
+├── Structured fields where applicable
+└── Structural warnings
+```
+
+Each logical unit has a deterministic order and an explicit unit kind.
+
+For example, tabular content may be represented as:
+
+```text
+DocumentContent
+└── TableRow
+    ├── Field: Id
+    ├── Field: Name
+    └── Field: Department
+```
+
+The representation is an intermediate application concern. It is not a
+replacement for the original source representation and is not the persisted
+document-chunk model.
+
+When structured content is available, the processing pipeline derives a
+deterministic searchable text projection from that representation:
+
+```text
+Structured Document Content
+        ↓
+Deterministic Searchable Text Projection
+        ↓
+Normalization
+        ↓
+Chunking
+        ↓
+Persisted Derived Representation
+```
+
+This projection preserves compatibility with the existing text-oriented
+normalization, chunking, persistence, and keyword-search pipeline.
+
+Structural warnings remain associated with the structured representation but
+are not automatically included in the searchable text projection because
+warnings describe extraction conditions rather than document content.
+
+Formats that do not provide additional reliable structure continue to use the
+existing text-only processing path.
+
+The representation must not invent structural information that the extraction
+path cannot reliably establish.
+
+This boundary allows useful source structure to survive knowledge processing
+without requiring every supported format to adopt a single comprehensive
+document model.
+
 ## Source-Preserving Presentation
 
 For textual formats where the semantic extraction representation differs materially from the source syntax, the renderer may consume the original source content for presentation.
