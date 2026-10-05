@@ -3,6 +3,7 @@ using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
@@ -57,6 +58,16 @@ public sealed class DocumentImportIntegrationTests
                 Encoding.UTF8);
 
             Guid documentId;
+
+            DocumentProcessingRuleVersion expectedProcessingRuleVersion =
+                DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                    new TextDocumentTextExtractor().RuleVersion,
+                    new DocumentTextNormalizer().RuleVersion);
+
+            DocumentChunkingRuleVersion expectedChunkingRuleVersion =
+                new DocumentTextChunker(
+                    maxChunkSize: 4000)
+                    .RuleVersion;
 
             await using (
                 var firstInstance =
@@ -128,6 +139,10 @@ public sealed class DocumentImportIntegrationTests
                     1L,
                     document.LastSuccessfulProcessingGeneration);
 
+                Assert.Equal(
+                    expectedProcessingRuleVersion.Value,
+                    document.LastSuccessfulProcessingRuleVersion);
+
                 Assert.True(
                     File.Exists(
                         document.StoredFilePath));
@@ -142,6 +157,19 @@ public sealed class DocumentImportIntegrationTests
                         documentId);
 
                 Assert.NotEmpty(chunks);
+
+                Assert.All(
+                    chunks,
+                    chunk =>
+                    {
+                        Assert.Equal(
+                            1L,
+                            chunk.ProcessingGeneration);
+
+                        Assert.Equal(
+                            expectedChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion);
+                    });
 
                 SearchDocumentsPage searchPage =
                     await firstInstance.SearchHandler.HandleAsync(
@@ -172,6 +200,51 @@ public sealed class DocumentImportIntegrationTests
                         match.Context.Contains(
                             "enterprise architecture",
                             StringComparison.OrdinalIgnoreCase));
+
+                await firstInstance.ProcessingService.ProcessAsync(
+                    documentId);
+
+                Document? afterSecondProcessing =
+                    await firstInstance.GetDocumentAsync(
+                        documentId);
+
+                Assert.NotNull(afterSecondProcessing);
+
+                Assert.Equal(
+                    DocumentStatus.Available,
+                    afterSecondProcessing.Status);
+
+                Assert.Equal(
+                    2L,
+                    afterSecondProcessing.ProcessingGeneration);
+
+                Assert.Equal(
+                    2L,
+                    afterSecondProcessing.LastSuccessfulProcessingGeneration);
+
+                Assert.Equal(
+                    expectedProcessingRuleVersion.Value,
+                    afterSecondProcessing.LastSuccessfulProcessingRuleVersion);
+
+                List<DocumentChunkEntity> afterSecondProcessingChunks =
+                    await firstInstance.GetChunksAsync(
+                        documentId);
+
+                Assert.NotEmpty(
+                    afterSecondProcessingChunks);
+
+                Assert.All(
+                    afterSecondProcessingChunks,
+                    chunk =>
+                    {
+                        Assert.Equal(
+                            2L,
+                            chunk.ProcessingGeneration);
+
+                        Assert.Equal(
+                            expectedChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion);
+                    });
             }
 
             await using (
@@ -204,12 +277,16 @@ public sealed class DocumentImportIntegrationTests
                     restoredDocument.Status);
 
                 Assert.Equal(
-                    1L,
+                    2L,
                     restoredDocument.ProcessingGeneration);
 
                 Assert.Equal(
-                    1L,
+                    2L,
                     restoredDocument.LastSuccessfulProcessingGeneration);
+
+                Assert.Equal(
+                    expectedProcessingRuleVersion.Value,
+                    restoredDocument.LastSuccessfulProcessingRuleVersion);
 
                 Assert.True(
                     File.Exists(
@@ -221,6 +298,19 @@ public sealed class DocumentImportIntegrationTests
 
                 Assert.NotEmpty(
                     restoredChunks);
+
+                Assert.All(
+                    restoredChunks,
+                    chunk =>
+                    {
+                        Assert.Equal(
+                            2L,
+                            chunk.ProcessingGeneration);
+
+                        Assert.Equal(
+                            expectedChunkingRuleVersion.Value,
+                            chunk.ChunkingRuleVersion);
+                    });
 
                 string indexedText =
                     string.Join(

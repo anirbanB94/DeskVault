@@ -377,16 +377,24 @@ public sealed class SqliteDocumentProcessingStoreTests
             await store.AcquireProcessingGenerationAsync(
                 document.Id);
 
+        DocumentProcessingRuleVersion processingRuleVersion =
+            new("processing-v1");
+
+        DocumentChunkingRuleVersion chunkingRuleVersion =
+            new("chunking-v1");
+
         IReadOnlyList<DocumentChunk> chunks =
         [
             new DocumentChunk(
                 0,
-                "Successful processing result.")
+                "Successful processing result.",
+                ChunkingRuleVersion: chunkingRuleVersion)
         ];
 
         await store.PublishSuccessfulProcessingAsync(
             document.Id,
             generation,
+            processingRuleVersion,
             chunks);
 
         DocumentStatus persistedStatus =
@@ -396,6 +404,11 @@ public sealed class SqliteDocumentProcessingStoreTests
 
         long persistedSuccessfulGeneration =
             await GetLastSuccessfulProcessingGenerationAsync(
+                connection,
+                document.Id);
+
+        string? persistedProcessingRuleVersion =
+            await GetLastSuccessfulProcessingRuleVersionAsync(
                 connection,
                 document.Id);
 
@@ -415,6 +428,10 @@ public sealed class SqliteDocumentProcessingStoreTests
             persistedSuccessfulGeneration);
 
         Assert.Equal(
+            processingRuleVersion.Value,
+            persistedProcessingRuleVersion);
+
+        Assert.Equal(
             document.Id,
             chunk.DocumentId);
 
@@ -429,6 +446,10 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             generation,
             chunk.ProcessingGeneration);
+
+        Assert.Equal(
+            chunkingRuleVersion.Value,
+            chunk.ChunkingRuleVersion);
     }
 
     [Fact]
@@ -443,6 +464,12 @@ public sealed class SqliteDocumentProcessingStoreTests
         var store =
             CreateStore(connection);
 
+        DocumentProcessingRuleVersion processingRuleVersion =
+            new("processing-v1");
+
+        DocumentChunkingRuleVersion chunkingRuleVersion =
+            new("chunking-v1");
+
         long firstGeneration =
             await store.AcquireProcessingGenerationAsync(
                 document.Id);
@@ -450,10 +477,12 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishSuccessfulProcessingAsync(
             document.Id,
             firstGeneration,
+            processingRuleVersion,
             [
                 new DocumentChunk(
                     0,
-                    "FIRST SUCCESSFUL RESULT.")
+                    "FIRST SUCCESSFUL RESULT.",
+                    ChunkingRuleVersion: chunkingRuleVersion)
             ]);
 
         long secondGeneration =
@@ -470,10 +499,12 @@ public sealed class SqliteDocumentProcessingStoreTests
                     store.PublishSuccessfulProcessingAsync(
                         document.Id,
                         firstGeneration,
+                        processingRuleVersion,
                         [
                             new DocumentChunk(
                                 0,
-                                "STALE RESULT.")
+                                "STALE RESULT.",
+                                ChunkingRuleVersion: chunkingRuleVersion)
                         ]));
 
         Assert.Equal(
@@ -498,6 +529,11 @@ public sealed class SqliteDocumentProcessingStoreTests
                 connection,
                 document.Id);
 
+        string? persistedProcessingRuleVersion =
+            await GetLastSuccessfulProcessingRuleVersionAsync(
+                connection,
+                document.Id);
+
         List<DocumentChunkEntity> persistedChunks =
             await GetChunksAsync(connection);
 
@@ -514,12 +550,20 @@ public sealed class SqliteDocumentProcessingStoreTests
             persistedSuccessfulGeneration);
 
         Assert.Equal(
+            processingRuleVersion.Value,
+            persistedProcessingRuleVersion);
+
+        Assert.Equal(
             "FIRST SUCCESSFUL RESULT.",
             chunk.Text);
 
         Assert.Equal(
             firstGeneration,
             chunk.ProcessingGeneration);
+
+        Assert.Equal(
+            chunkingRuleVersion.Value,
+            chunk.ChunkingRuleVersion);
     }
 
     [Fact]
@@ -538,6 +582,12 @@ public sealed class SqliteDocumentProcessingStoreTests
             await store.AcquireProcessingGenerationAsync(
                 document.Id);
 
+        DocumentProcessingRuleVersion processingRuleVersion =
+            new("processing-v1");
+
+        DocumentChunkingRuleVersion chunkingRuleVersion =
+            new("chunking-v1");
+
         using var cancellationTokenSource =
             new CancellationTokenSource();
 
@@ -548,10 +598,12 @@ public sealed class SqliteDocumentProcessingStoreTests
                 store.PublishSuccessfulProcessingAsync(
                     document.Id,
                     generation,
+                    processingRuleVersion,
                     [
                         new DocumentChunk(
                             0,
-                            "Cancelled candidate.")
+                            "Cancelled candidate.",
+                            ChunkingRuleVersion: chunkingRuleVersion)
                     ],
                     cancellationTokenSource.Token));
 
@@ -565,6 +617,11 @@ public sealed class SqliteDocumentProcessingStoreTests
                 connection,
                 document.Id);
 
+        string? persistedProcessingRuleVersion =
+            await GetLastSuccessfulProcessingRuleVersionAsync(
+                connection,
+                document.Id);
+
         List<DocumentChunkEntity> persistedChunks =
             await GetChunksAsync(connection);
 
@@ -575,6 +632,9 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             0L,
             persistedSuccessfulGeneration);
+
+        Assert.Null(
+            persistedProcessingRuleVersion);
 
         Assert.Empty(
             persistedChunks);
@@ -637,6 +697,12 @@ public sealed class SqliteDocumentProcessingStoreTests
         var store =
             CreateStore(connection);
 
+        DocumentProcessingRuleVersion processingRuleVersion =
+            new("processing-v1");
+
+        DocumentChunkingRuleVersion chunkingRuleVersion =
+            new("chunking-v1");
+
         long firstGeneration =
             await store.AcquireProcessingGenerationAsync(
                 document.Id);
@@ -644,10 +710,12 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishSuccessfulProcessingAsync(
             document.Id,
             firstGeneration,
+            processingRuleVersion,
             [
                 new DocumentChunk(
                     0,
-                    "PREVIOUS SUCCESSFUL RESULT.")
+                    "PREVIOUS SUCCESSFUL RESULT.",
+                    ChunkingRuleVersion: chunkingRuleVersion)
             ]);
 
         long secondGeneration =
@@ -679,6 +747,11 @@ public sealed class SqliteDocumentProcessingStoreTests
                 connection,
                 document.Id);
 
+        string? persistedProcessingRuleVersion =
+            await GetLastSuccessfulProcessingRuleVersionAsync(
+                connection,
+                document.Id);
+
         List<DocumentChunkEntity> persistedChunks =
             await GetChunksAsync(connection);
 
@@ -699,12 +772,20 @@ public sealed class SqliteDocumentProcessingStoreTests
             persistedSuccessfulGeneration);
 
         Assert.Equal(
+            processingRuleVersion.Value,
+            persistedProcessingRuleVersion);
+
+        Assert.Equal(
             "PREVIOUS SUCCESSFUL RESULT.",
             chunk.Text);
 
         Assert.Equal(
             firstGeneration,
             chunk.ProcessingGeneration);
+
+        Assert.Equal(
+            chunkingRuleVersion.Value,
+            chunk.ChunkingRuleVersion);
     }
 
     [Fact]
@@ -905,8 +986,8 @@ public sealed class SqliteDocumentProcessingStoreTests
             1L,
             [
                 new DocumentChunk(
-                0,
-                "CURRENT RESULT")
+                    0,
+                    "CURRENT RESULT")
             ]);
 
         long newerGeneration =
@@ -924,8 +1005,8 @@ public sealed class SqliteDocumentProcessingStoreTests
                     1L,
                     [
                         new DocumentChunk(
-                        0,
-                        "STALE RESULT")
+                            0,
+                            "STALE RESULT")
                     ]));
 
         List<DocumentChunkEntity> chunks =
@@ -1323,6 +1404,21 @@ public sealed class SqliteDocumentProcessingStoreTests
                 document => document.Id == documentId)
             .Select(
                 document => document.LastSuccessfulProcessingGeneration)
+            .SingleAsync();
+    }
+
+    private static async Task<string?> GetLastSuccessfulProcessingRuleVersionAsync(
+        SqliteConnection connection,
+        Guid documentId)
+    {
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        return await context.Documents
+            .Where(
+                document => document.Id == documentId)
+            .Select(
+                document => document.LastSuccessfulProcessingRuleVersion)
             .SingleAsync();
     }
 

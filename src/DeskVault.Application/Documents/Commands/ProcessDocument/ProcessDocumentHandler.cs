@@ -142,6 +142,7 @@ public sealed class ProcessDocumentHandler
             await _processingStore.PublishSuccessfulProcessingAsync(
                 document.Id,
                 processingGeneration,
+                processingRuleVersion,
                 chunks,
                 cancellationToken);
 

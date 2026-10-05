@@ -55,6 +55,11 @@ public sealed class DocumentEntityConfiguration
                 document => document.LastSuccessfulProcessingGeneration)
             .IsRequired();
 
+        builder.Property(
+            document => document.LastSuccessfulProcessingRuleVersion)
+            .IsRequired(false)
+            .HasMaxLength(64);
+
         builder.HasIndex(
                 document => document.Sha256Hash)
             .IsUnique();

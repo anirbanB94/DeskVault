@@ -134,6 +134,53 @@ public sealed class SqliteDocumentRepositoryTests
     }
 
     [Fact]
+    public async Task AddAsync_WhenDocumentHasLastSuccessfulProcessingRuleVersion_PersistsAndRestoresVersion()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        const string expectedVersion =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        Document document =
+            Document.Restore(
+                Guid.NewGuid(),
+                "document.txt",
+                "Test Document",
+                $"sha256-test-hash-{Guid.NewGuid():N}",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available,
+                7,
+                5,
+                expectedVersion);
+
+        await repository.AddAsync(
+            document);
+
+        Document? result =
+            await repository.GetByIdAsync(
+                document.Id);
+
+        Assert.NotNull(result);
+
+        Assert.Equal(
+            7L,
+            result.ProcessingGeneration);
+
+        Assert.Equal(
+            5L,
+            result.LastSuccessfulProcessingGeneration);
+
+        Assert.Equal(
+            expectedVersion,
+            result.LastSuccessfulProcessingRuleVersion);
+    }
+
+    [Fact]
     public async Task AddAsync_WhenDocumentHashAlreadyExists_ThrowsDocumentHashConflictException()
     {
         await using SqliteConnection connection =

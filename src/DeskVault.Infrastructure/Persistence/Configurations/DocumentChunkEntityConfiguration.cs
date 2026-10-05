@@ -54,6 +54,11 @@ public sealed class DocumentChunkEntityConfiguration
             .IsRequired();
 
         builder.Property(
+            chunk => chunk.ChunkingRuleVersion)
+            .IsRequired(false)
+            .HasMaxLength(64);
+
+        builder.Property(
                 chunk => chunk.SourceLocationStartLine)
             .IsRequired(false);
 

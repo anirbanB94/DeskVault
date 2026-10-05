@@ -158,13 +158,17 @@ public sealed class ProcessDocumentHandlerTests
             result.DocumentId);
 
         DocumentProcessingRuleVersion expectedProcessingRuleVersion =
-        DocumentRuleVersionFactory.CreateProcessingRuleVersion(
-            processingContext.Extractor.RuleVersion,
-            processingContext.Normalizer.RuleVersion);
+            DocumentRuleVersionFactory.CreateProcessingRuleVersion(
+                processingContext.Extractor.RuleVersion,
+                processingContext.Normalizer.RuleVersion);
 
         Assert.Equal(
             expectedProcessingRuleVersion,
             result.ProcessingRuleVersion);
+
+        Assert.Equal(
+            expectedProcessingRuleVersion,
+            processingContext.ProcessingStore.SuccessfulProcessingRuleVersion);
 
         Assert.Equal(
             processingContext.Chunker.RuleVersion,
@@ -1292,6 +1296,8 @@ public sealed class ProcessDocumentHandlerTests
 
         public long CancellationRecoveryGeneration { get; private set; }
 
+        public DocumentProcessingRuleVersion SuccessfulProcessingRuleVersion { get; private set; }
+
         public Task<long> AcquireProcessingGenerationAsync(
             Guid documentId,
             CancellationToken cancellationToken = default)
@@ -1332,6 +1338,7 @@ public sealed class ProcessDocumentHandlerTests
         public Task PublishSuccessfulProcessingAsync(
             Guid documentId,
             long processingGeneration,
+            DocumentProcessingRuleVersion processingRuleVersion,
             IReadOnlyList<DocumentChunk> chunks,
             CancellationToken cancellationToken = default)
         {
@@ -1341,6 +1348,9 @@ public sealed class ProcessDocumentHandlerTests
 
             SuccessfulProcessingGeneration =
                 processingGeneration;
+
+            SuccessfulProcessingRuleVersion =
+                processingRuleVersion;
 
             SuccessfulProcessingChunks =
                 chunks.ToList();

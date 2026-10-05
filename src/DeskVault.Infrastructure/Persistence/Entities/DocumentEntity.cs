@@ -19,4 +19,6 @@ public sealed class DocumentEntity
     public long ProcessingGeneration { get; set; }
 
     public long LastSuccessfulProcessingGeneration { get; set; }
+
+    public string? LastSuccessfulProcessingRuleVersion { get; set; }
 }
