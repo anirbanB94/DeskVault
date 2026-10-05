@@ -1,6 +1,7 @@
 using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ProcessDocument;
+using DeskVault.Application.Documents.Content;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
@@ -238,6 +239,60 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Equal(
             document.FileName,
             processingContext.Extractor.FileName);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenExtractorProvidesStructuredContent_ChunksSearchableProjection()
+    {
+        // Arrange
+        Document document =
+            CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        DocumentContent content =
+            CreateStructuredContent();
+
+        var processingContext =
+            CreateProcessingContext(
+                repository,
+                maxChunkSize: 500);
+
+        processingContext.Extractor.ReturnText =
+            "legacy text that should not be used";
+
+        processingContext.Extractor.ReturnContent =
+            content;
+
+        // Act
+        ProcessDocumentResult result =
+            await processingContext.Handler.HandleAsync(
+                new ProcessDocumentCommand(
+                    document.Id));
+
+        // Assert
+        Assert.Equal(
+            ProcessDocumentResultStatus.Success,
+            result.Status);
+
+        DocumentChunk chunk =
+            Assert.Single(
+                processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            0,
+            chunk.Order);
+
+        Assert.Equal(
+            content.SearchableText,
+            chunk.Text);
     }
 
     [Fact]
@@ -1107,6 +1162,22 @@ public sealed class ProcessDocumentHandlerTests
             "document.dvault");
     }
 
+    private static DocumentContent CreateStructuredContent()
+    {
+        return new DocumentContent(
+        [
+            new DocumentContentUnit(
+            order: 0,
+            kind: DocumentContentUnitKind.TableRow,
+            fields:
+            [
+                new DocumentContentField("Id", "1001"),
+                new DocumentContentField("Name", "Alice Johnson"),
+                new DocumentContentField("Department", "Engineering")
+            ])
+        ]);
+    }
+
     private static ProcessingContext CreateProcessingContext(
         Mock<IDocumentRepository> repository,
         int maxChunkSize = 100,
@@ -1227,6 +1298,8 @@ public sealed class ProcessDocumentHandlerTests
         public string ReturnText { get; set; } =
             "First paragraph.\n\nSecond paragraph.";
 
+        public DocumentContent? ReturnContent { get; set; }
+
         public DocumentSourceLocationMappingKind SourceLocationMappingKind { get; set; } =
             DocumentSourceLocationMappingKind.Unknown;
 
@@ -1267,7 +1340,8 @@ public sealed class ProcessDocumentHandlerTests
             return Task.FromResult(
                 new DocumentTextExtractionResult(
                     ReturnText,
-                    SourceLocationMappingKind));
+                    SourceLocationMappingKind,
+                    ReturnContent));
         }
     }
 

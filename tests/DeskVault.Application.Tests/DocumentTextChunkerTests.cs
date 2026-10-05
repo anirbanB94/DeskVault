@@ -1,4 +1,5 @@
 using DeskVault.Application.Documents.Chunking;
+using DeskVault.Application.Documents.Content;
 using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Provenance;
@@ -108,6 +109,68 @@ public sealed class DocumentTextChunkerTests
         Assert.Equal(
             chunker.RuleVersion,
             chunk.ChunkingRuleVersion);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_StructuredContent_UsesDeterministicSearchableProjection()
+    {
+        // Arrange
+        DocumentContent content =
+            new(
+            [
+                new DocumentContentUnit(
+                order: 0,
+                kind: DocumentContentUnitKind.TableRow,
+                fields:
+                [
+                    new DocumentContentField("Id", "1001"),
+                    new DocumentContentField("Name", "Alice Johnson"),
+                    new DocumentContentField("Department", "Engineering")
+                ]),
+
+            new DocumentContentUnit(
+                order: 1,
+                kind: DocumentContentUnitKind.TableRow,
+                fields:
+                [
+                    new DocumentContentField("Id", "1002"),
+                    new DocumentContentField("Name", "Bob Smith"),
+                    new DocumentContentField("Department", "Design")
+                ])
+            ]);
+
+        DocumentTextNormalizationResult normalizationResult =
+            new(
+                content.SearchableText,
+                Content: content);
+
+        DocumentTextChunker chunker =
+            CreateChunker();
+
+        // Act
+        IReadOnlyList<DocumentChunk> firstChunks =
+            await chunker.ChunkAsync(
+                normalizationResult);
+
+        IReadOnlyList<DocumentChunk> secondChunks =
+            await chunker.ChunkAsync(
+                normalizationResult);
+
+        // Assert
+        Assert.Equal(
+            firstChunks,
+            secondChunks);
+
+        DocumentChunk chunk =
+            Assert.Single(firstChunks);
+
+        Assert.Equal(
+            0,
+            chunk.Order);
+
+        Assert.Equal(
+            content.SearchableText,
+            chunk.Text);
     }
 
     [Fact]
