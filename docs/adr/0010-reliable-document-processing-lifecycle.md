@@ -139,6 +139,10 @@ The successful publication operation must:
 4. set `LastSuccessfulProcessingGeneration` to the same processing generation;
 5. commit all of those changes as one transaction.
 
+The same successful publication must also persist
+`LastSuccessfulProcessingRuleVersion` for the processing-rule version that
+produced the candidate result.
+
 Conceptually:
 
 ```text
@@ -151,7 +155,8 @@ Chunk
 ONE TRANSACTION
     ├── Replace derived chunks
     ├── Status = Available
-    └── LastSuccessfulProcessingGeneration = current generation
+    ├── LastSuccessfulProcessingGeneration = current generation
+    └── LastSuccessfulProcessingRuleVersion = current processing-rule version
     ↓
 Commit
 ```
@@ -264,6 +269,43 @@ When a processing attempt is cancelled:
 
 All updates to `LastSuccessfulProcessingGeneration` and cancellation recovery
 remain conditional on the processing generation being authoritative.
+
+### Last Successful Processing Rule Version
+
+The document persistence boundary also records the processing-rule version
+associated with the last successfully published derived representation.
+
+`DocumentProcessingRuleVersion` identifies the processing behavior used by
+the processing attempt. `LastSuccessfulProcessingRuleVersion` identifies
+the processing-rule version of the derived result represented by
+`LastSuccessfulProcessingGeneration`.
+
+These values are intentionally paired:
+
+```text
+LastSuccessfulProcessingGeneration
+            +
+LastSuccessfulProcessingRuleVersion
+            ↓
+The same successfully published derived representation
+```
+
+A successful processing attempt updates `LastSuccessfulProcessingRuleVersion`
+in the same atomic transaction that replaces its derived chunks, publishes
+`Available`, and updates `LastSuccessfulProcessingGeneration`.
+
+The processing-rule version must never become current independently of the
+successful derived representation. Starting a new processing attempt advances
+`ProcessingGeneration` but does not change the last successful processing-rule
+version.
+
+When a processing attempt is cancelled, fails, or becomes stale, the prior
+successful processing-rule version remains intact together with the prior
+successful derived result. If no successful processing result exists, the
+processing-rule version remains unknown (`NULL`).
+
+The processing-rule version is lineage metadata, not a replacement for
+processing generation and not part of authoritative generation fencing.
 
 ### Concurrency
 
@@ -664,3 +706,7 @@ document state or derived content while ensuring that database/filesystem
 artifact inconsistencies are detected and handled without weakening encrypted
 storage, key-management, ownership, or document-processing lifecycle
 boundaries.
+
+Successful processing-rule lineage remains bound to that same successful
+derived result and processing generation rather than becoming independently
+authoritative.

@@ -47,6 +47,9 @@ for:
 - the relationship between a document and its derived chunks
 - persisted document chunks representing the current successful derived
   processing result
+- the processing-rule version that produced the current successful derived
+  document result
+- the chunking-rule version that produced each persisted derived chunk
 - optional source-location provenance associated with processed knowledge
 
 Conceptually:
@@ -54,6 +57,7 @@ Conceptually:
 ```text
 SQLite Persistence
 ├── Document metadata
+│   └── LastSuccessfulProcessingRuleVersion?
 ├── Processing state
 └── Document chunks
     ├── stable chunk identity
@@ -61,6 +65,7 @@ SQLite Persistence
     ├── ordering
     ├── content identity
     ├── processing provenance
+    ├── chunking-rule version
     └── optional source-location provenance
 ```
 
@@ -71,7 +76,13 @@ Document
    │
    ├── processing state
    │
+   ├── last successful processing generation
+   │
+   ├── last successful processing-rule version
+   │
    └── derived chunks
+       ├── processing generation
+       ├── chunking-rule version
        └── optional source-location provenance
 ```
 
@@ -82,6 +93,11 @@ document's general lifecycle status and from presentation state.
 The processing workflow is responsible for publishing a coherent derived
 result. Derived chunks must be replaceable so that retries or repeated
 processing do not accumulate duplicate content.
+
+Processing-rule version and chunking-rule version are descriptive lineage
+metadata for the same successful derived representation. They must become
+current only as part of the same successful publication that makes the
+corresponding derived representation authoritative.
 
 The processing orchestration and semantic-processing boundary are described
 by ADR-0008. The authoritative processing lifecycle, processing-generation
@@ -119,7 +135,13 @@ Persistent metadata
     ↓
 Processing state
     ↓
+Successful processing lineage
+    ├── processing generation
+    └── processing-rule version?
+    ↓
 Derived document chunks
+    ├── processing generation
+    ├── chunking-rule version?
     └── optional source-location provenance
 ```
 
@@ -130,11 +152,50 @@ Source-location information is persistence metadata attached to the
 processed knowledge unit. It does not replace the encrypted source file
 or introduce a separate provenance store.
 
+### Version Lineage Persistence
+
+The persistence model stores `LastSuccessfulProcessingRuleVersion` on the
+document and `ChunkingRuleVersion` on each persisted document chunk.
+
+These values describe the rules that produced the same successful derived
+representation identified by `LastSuccessfulProcessingGeneration` and the
+persisted chunk `ProcessingGeneration` values.
+
+Successful publication therefore persists the following lineage together:
+
+```text
+ONE SUCCESSFUL PUBLICATION
+    ├── derived chunks
+    ├── chunk processing generation
+    ├── chunking-rule version
+    ├── Document.Status = Available
+    ├── LastSuccessfulProcessingGeneration
+    └── LastSuccessfulProcessingRuleVersion
+```
+
+The version fields do not become authoritative independently. A lower-level
+chunk replacement operation must not publish or advance the document's
+current processing-rule version by itself.
+
+When a later successful processing attempt replaces the current derived
+representation, the new processing-rule version and chunking-rule version
+values are persisted with that same successful result. Failed, cancelled,
+or stale processing attempts do not replace the previously successful
+version lineage.
+
+Historical persisted knowledge for which rule-version information is not
+available is represented as unknown (`NULL`). Persistence must not fabricate
+a historical processing-rule or chunking-rule version.
+
 This extension does not change the original decision to use SQLite with
 Entity Framework Core for local persistence. It extends the persistence
 model to support the document knowledge-processing pipeline established by
 ADR-0008 and the canonical chunk provenance contract established by
 ADR-0011.
+
+Version-lineage persistence further extends this model for the successful
+derived document knowledge represented by the processing lifecycle in
+ADR-0010.
 
 ## Architectural Boundaries
 
@@ -164,6 +225,11 @@ Source-location semantics remain application-owned while Infrastructure
 maps the optional source location to nullable persistence columns on the
 `DocumentChunkEntity`.
 
+Processing-rule version is supplied by the Application processing flow and
+persisted by Infrastructure as document-level successful-result lineage.
+Chunking-rule version is supplied with the derived chunk and persisted on
+the same canonical `DocumentChunkEntity` row as its other chunk metadata.
+
 ## Persistence Model
 
 The Domain `Document` is intentionally separate from the EF Core persistence entity.
@@ -191,9 +257,23 @@ DocumentChunkEntity
 ├── Text
 ├── ContentHash
 ├── ProcessingGeneration
+├── ChunkingRuleVersion?
 ├── SourceLocationStartLine?
 └── SourceLocationEndLine?
 ```
+
+The persisted document metadata additionally includes:
+
+```text
+DocumentEntity
+├── ProcessingGeneration
+├── LastSuccessfulProcessingGeneration
+└── LastSuccessfulProcessingRuleVersion?
+```
+
+Processing-rule and chunking-rule version fields are nullable because
+existing persisted knowledge may predate version persistence and therefore
+cannot have a reliable historical version assigned.
 
 Source-location columns are nullable because not every extracted or
 transformed representation has a reliable direct source mapping.
@@ -349,9 +429,17 @@ The source-location persistence change uses the same EF Core migration
 mechanism. It adds nullable source-location columns and a SQLite check
 constraint without introducing a separate persistence subsystem.
 
+Version-lineage persistence uses the same mechanism. The new document-level
+processing-rule version and chunk-level chunking-rule version columns are
+nullable so existing persisted data remains readable without a fabricated
+historical version.
+
 Existing persisted data remains usable after the migration. Historical
 chunks receive `NULL/NULL` source-location values because their original
 source locations cannot be reconstructed reliably.
+
+Version-lineage fields remain `NULL` when the rules that produced historical
+knowledge cannot be recovered reliably.
 
 Database initialization remains separate from application use-case logic
 and from the UI lifecycle.
@@ -371,6 +459,8 @@ The current persistence model includes:
 - stable document-chunk identity
 - document-chunk content identity
 - document-chunk processing-generation provenance
+- document-level successful processing-rule version lineage
+- chunk-level chunking-rule version lineage
 - optional source-location provenance
 
 Document metadata and processing-derived data are persisted through
@@ -383,6 +473,14 @@ SQLite for local persistence.
 Source-location provenance is stored on the same `DocumentChunks` row as
 the chunk identity, document relationship, content identity, ordering,
 and processing generation.
+
+Chunking-rule version is stored on that same canonical `DocumentChunks` row.
+
+The successful document-level processing-rule version is stored on the
+`Documents` row together with the last successful processing generation.
+The processing-rule version and chunking-rule versions are published only
+through the successful-processing persistence boundary so they cannot become
+current independently of the corresponding successful derived result.
 
 The Application layer remains independent of EF Core and SQLite through
 application-defined abstractions.
@@ -419,6 +517,9 @@ A future server-backed implementation could be introduced behind the existing Ap
 * Database-level uniqueness reinforces duplicate detection.
 * Persistence can evolve independently of the Domain model.
 * Persisted processed knowledge retains stable identity and processing provenance.
+* Successful persisted knowledge also retains the processing-rule and chunking-rule versions that produced it.
+* Version metadata remains bound to the same successful derived representation as the associated processing generation.
+* Historical knowledge with unavailable rule-version information can remain explicitly unknown.
 * Reliable source-location provenance can be stored alongside the exact
   processed knowledge unit that produced it.
 * Unknown source-location provenance can remain explicitly unknown.
@@ -434,6 +535,8 @@ A future server-backed implementation could be introduced behind the existing Ap
   validation constraint.
 * Historical source-location provenance cannot be reconstructed for
   legacy rows.
+* Historical processing-rule and chunking-rule versions cannot be reconstructed
+  when the rules that produced legacy knowledge are unavailable.
 
 These trade-offs are acceptable for the current MVP.
 
@@ -465,6 +568,8 @@ Persist derived chunks
     ↓
 Persist reliable source-location provenance when available
     ↓
+Persist successful version lineage
+    ↓
 Restart application
     ↓
 Restore metadata and derived state
@@ -483,6 +588,16 @@ Derived document chunks remain stored in SQLite as Infrastructure-owned
 persistence entities, with source-location provenance stored alongside the
 canonical chunk identity, document relationship, content identity,
 ordering, and processing generation.
+
+Chunking-rule version is stored on the same canonical `DocumentChunks` row.
+
+The document record retains the processing-rule version corresponding to
+its `LastSuccessfulProcessingGeneration`. These version values are advanced
+only when the same transaction successfully publishes the corresponding
+derived representation.
+
+Historical persisted knowledge without recoverable rule-version information
+retains `NULL` version values rather than receiving fabricated versions.
 
 Encrypted document content remains stored separately as `.dvault` files, and
 the Application layer remains independent of EF Core and SQLite-specific
