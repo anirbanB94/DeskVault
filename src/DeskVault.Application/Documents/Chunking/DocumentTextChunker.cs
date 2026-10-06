@@ -13,10 +13,13 @@ public sealed class DocumentTextChunker
 
     private readonly int _maxChunkSize;
 
+    private readonly int _chunkOverlap;
+
     private readonly DocumentChunkingRuleVersion _ruleVersion;
 
     public DocumentTextChunker(
-        int maxChunkSize)
+        int maxChunkSize,
+        int chunkOverlap = 0)
     {
         if (maxChunkSize <= 0)
         {
@@ -25,13 +28,31 @@ public sealed class DocumentTextChunker
                 "Maximum chunk size must be greater than zero.");
         }
 
+        if (chunkOverlap < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(chunkOverlap),
+                "Chunk overlap cannot be negative.");
+        }
+
+        if (chunkOverlap >= maxChunkSize)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(chunkOverlap),
+                "Chunk overlap must be smaller than the maximum chunk size.");
+        }
+
         _maxChunkSize =
             maxChunkSize;
+
+        _chunkOverlap =
+            chunkOverlap;
 
         _ruleVersion =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 AlgorithmVersion,
-                _maxChunkSize);
+                _maxChunkSize,
+                _chunkOverlap);
     }
 
     public DocumentChunkingRuleVersion RuleVersion =>
@@ -211,9 +232,17 @@ public sealed class DocumentTextChunker
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            int overlapLength =
+                GetEffectiveOverlapLength(
+                    chunks);
+
+            int availableNewContentLength =
+                _maxChunkSize -
+                overlapLength;
+
             int candidateEnd =
                 Math.Min(
-                    start + _maxChunkSize,
+                    start + availableNewContentLength,
                     paragraph.Length);
 
             if (candidateEnd < paragraph.Length)
@@ -235,37 +264,24 @@ public sealed class DocumentTextChunker
             {
                 candidateEnd =
                     Math.Min(
-                        start + _maxChunkSize,
+                        start + availableNewContentLength,
                         paragraph.Length);
             }
 
             string chunkText =
                 paragraph[start..candidateEnd];
 
-            DocumentSourceLocation? sourceLocation =
-                null;
-
-            if (hasSourceLocation)
-            {
-                sourceLocation =
-                    new DocumentSourceLocation(
-                        chunkStartLine,
-                        GetEndLine(
-                            chunkStartLine,
-                            chunkText));
-            }
-
-            chunks.Add(
-                new DocumentChunk(
-                    chunks.Count,
-                    chunkText,
-                    sourceLocation,
-                    _ruleVersion));
-
             int chunkEndLine =
                 GetEndLine(
                     chunkStartLine,
                     chunkText);
+
+            AddChunkWithOverlap(
+                chunks,
+                chunkText,
+                chunkStartLine,
+                chunkEndLine,
+                hasSourceLocation);
 
             chunkStartLine =
                 chunkText[^1] == '\n'
@@ -275,6 +291,101 @@ public sealed class DocumentTextChunker
             start =
                 candidateEnd;
         }
+    }
+
+    private int GetEffectiveOverlapLength(
+        List<DocumentChunk> chunks)
+    {
+        if (_chunkOverlap == 0 ||
+            chunks.Count == 0)
+        {
+            return 0;
+        }
+
+        return Math.Min(
+            _chunkOverlap,
+            chunks[^1].Text.Length);
+    }
+
+    private void AddChunkWithOverlap(
+        List<DocumentChunk> chunks,
+        string chunkText,
+        int sourceStartLine,
+        int sourceEndLine,
+        bool hasSourceLocation)
+    {
+        int overlapLength =
+            Math.Min(
+                GetEffectiveOverlapLength(chunks),
+                _maxChunkSize - chunkText.Length);
+
+        string overlapText =
+            overlapLength == 0
+                ? string.Empty
+                : chunks[^1]
+                    .Text[^overlapLength..];
+
+        string emittedText =
+            overlapText +
+            chunkText;
+
+        DocumentSourceLocation? sourceLocation =
+            null;
+
+        if (hasSourceLocation)
+        {
+            int emittedStartLine =
+                sourceStartLine;
+
+            int emittedEndLine =
+                sourceEndLine;
+
+            if (overlapLength > 0 &&
+                chunks[^1].SourceLocation is not null)
+            {
+                DocumentChunk previousChunk =
+                    chunks[^1];
+
+                int previousChunkPrefixLength =
+                    previousChunk.Text.Length -
+                    overlapLength;
+
+                string previousChunkPrefix =
+                    previousChunk.Text[..previousChunkPrefixLength];
+
+                int overlapStartLine =
+                    previousChunk.SourceLocation!.StartLine +
+                    CountLineBreaks(
+                        previousChunkPrefix);
+
+                int overlapEndLine =
+                    GetEndLine(
+                        overlapStartLine,
+                        overlapText);
+
+                emittedStartLine =
+                    Math.Min(
+                        emittedStartLine,
+                        overlapStartLine);
+
+                emittedEndLine =
+                    Math.Max(
+                        emittedEndLine,
+                        overlapEndLine);
+            }
+
+            sourceLocation =
+                new DocumentSourceLocation(
+                    emittedStartLine,
+                    emittedEndLine);
+        }
+
+        chunks.Add(
+            new DocumentChunk(
+                chunks.Count,
+                emittedText,
+                sourceLocation,
+                _ruleVersion));
     }
 
     private static int AdvanceSourceLine(
@@ -363,22 +474,41 @@ public sealed class DocumentTextChunker
             return;
         }
 
-        DocumentSourceLocation? sourceLocation =
-            sourceStartLine.HasValue &&
-            sourceEndLine.HasValue
-                ? new DocumentSourceLocation(
-                    sourceStartLine.Value,
-                    sourceEndLine.Value)
-                : null;
+        string chunkText =
+            string.Join(
+                ParagraphSeparator,
+                currentParagraphs);
 
-        chunks.Add(
-            new DocumentChunk(
-                chunks.Count,
-                string.Join(
-                    ParagraphSeparator,
-                    currentParagraphs),
-                sourceLocation,
-                _ruleVersion));
+        if (sourceStartLine.HasValue &&
+            sourceEndLine.HasValue)
+        {
+            AddChunkWithOverlap(
+                chunks,
+                chunkText,
+                sourceStartLine.Value,
+                sourceEndLine.Value,
+                hasSourceLocation: true);
+        }
+        else
+        {
+            int overlapLength =
+                Math.Min(
+                    GetEffectiveOverlapLength(chunks),
+                    _maxChunkSize - chunkText.Length);
+
+            string overlapText =
+                overlapLength == 0
+                    ? string.Empty
+                    : chunks[^1]
+                        .Text[^overlapLength..];
+
+            chunks.Add(
+                new DocumentChunk(
+                    chunks.Count,
+                    overlapText + chunkText,
+                    null,
+                    _ruleVersion));
+        }
 
         currentParagraphs.Clear();
         currentLength = 0;

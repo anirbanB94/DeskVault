@@ -17,6 +17,9 @@ public sealed class DocumentRuleVersionTests
     private const int MaxChunkSize =
         4000;
 
+    private const int ChunkOverlap =
+        0;
+
     [Fact]
     public void CreateProcessingRuleVersion_SameRules_ProducesSameVersion()
     {
@@ -116,12 +119,14 @@ public sealed class DocumentRuleVersionTests
         DocumentChunkingRuleVersion first =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 chunkingAlgorithmVersion,
-                maxChunkSize);
+                maxChunkSize,
+                ChunkOverlap);
 
         DocumentChunkingRuleVersion second =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 chunkingAlgorithmVersion,
-                maxChunkSize);
+                maxChunkSize,
+                ChunkOverlap);
 
         // Assert
         Assert.Equal(
@@ -147,12 +152,14 @@ public sealed class DocumentRuleVersionTests
         DocumentChunkingRuleVersion first =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 firstChunkingAlgorithmVersion,
-                MaxChunkSize);
+                MaxChunkSize,
+                ChunkOverlap);
 
         DocumentChunkingRuleVersion second =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 secondChunkingAlgorithmVersion,
-                MaxChunkSize);
+                MaxChunkSize,
+                ChunkOverlap);
 
         // Assert
         Assert.NotEqual(
@@ -174,12 +181,43 @@ public sealed class DocumentRuleVersionTests
         DocumentChunkingRuleVersion first =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 ChunkingAlgorithmVersion,
-                firstMaxChunkSize);
+                firstMaxChunkSize,
+                ChunkOverlap);
 
         DocumentChunkingRuleVersion second =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 ChunkingAlgorithmVersion,
-                secondMaxChunkSize);
+                secondMaxChunkSize,
+                ChunkOverlap);
+
+        // Assert
+        Assert.NotEqual(
+            first,
+            second);
+    }
+
+    [Fact]
+    public void CreateChunkingRuleVersion_DifferentChunkOverlap_ProducesDifferentVersion()
+    {
+        // Arrange
+        const int firstChunkOverlap =
+            0;
+
+        const int secondChunkOverlap =
+            100;
+
+        // Act
+        DocumentChunkingRuleVersion first =
+            DocumentRuleVersionFactory.CreateChunkingRuleVersion(
+                ChunkingAlgorithmVersion,
+                MaxChunkSize,
+                firstChunkOverlap);
+
+        DocumentChunkingRuleVersion second =
+            DocumentRuleVersionFactory.CreateChunkingRuleVersion(
+                ChunkingAlgorithmVersion,
+                MaxChunkSize,
+                secondChunkOverlap);
 
         // Assert
         Assert.NotEqual(
@@ -199,7 +237,8 @@ public sealed class DocumentRuleVersionTests
         DocumentChunkingRuleVersion chunkingVersion =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 ChunkingAlgorithmVersion,
-                MaxChunkSize);
+                MaxChunkSize,
+                ChunkOverlap);
 
         // Act
         string processingValue =
@@ -302,7 +341,8 @@ public sealed class DocumentRuleVersionTests
         Action act =
             () => DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 algorithmVersion,
-                MaxChunkSize);
+                MaxChunkSize,
+                ChunkOverlap);
 
         // Assert
         Assert.Throws<ArgumentException>(
@@ -323,7 +363,31 @@ public sealed class DocumentRuleVersionTests
         Action act =
             () => DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 ChunkingAlgorithmVersion,
-                invalidChunkSize);
+                invalidChunkSize,
+                ChunkOverlap);
+
+        // Assert
+        Assert.Throws<ArgumentOutOfRangeException>(
+            act);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(4000)]
+    [InlineData(4001)]
+    public void CreateChunkingRuleVersion_InvalidChunkOverlap_IsRejected(
+        int chunkOverlap)
+    {
+        // Arrange
+        int invalidChunkOverlap =
+            chunkOverlap;
+
+        // Act
+        Action act =
+            () => DocumentRuleVersionFactory.CreateChunkingRuleVersion(
+                ChunkingAlgorithmVersion,
+                MaxChunkSize,
+                invalidChunkOverlap);
 
         // Assert
         Assert.Throws<ArgumentOutOfRangeException>(
