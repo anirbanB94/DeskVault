@@ -817,40 +817,38 @@ successful-result publication, are governed by ADR-0010.
 
 Document lifecycle and processing lifecycle are separate concepts.
 
-The existing document lifecycle remains represented by `DocumentStatus`:
+Document lifecycle is represented independently through `DocumentLifecycleState`:
 
 ```text
-Imported
-Processing
-Indexed
-Available
+Active
 Archived
 Deleted
 ```
 
-Processing execution state must not be inferred solely from the document lifecycle status.
-
-A separate processing state is used to describe the state of a particular processing attempt:
+Processing execution state must not be inferred solely from the document lifecycle status. It is represented independently through `DocumentProcessingState`:
 
 ```text
-Pending
-    ↓
+NeverProcessed
 Processing
-    ├──────────────→ Completed
-    │
-    └──────────────→ Failed
-                         │
-                         │ retry
-                         ▼
-                     Processing
+Succeeded
+Failed
+Cancelled
 ```
 
-The intended meanings are:
+Derived knowledge availability is represented independently per representation through `DocumentKnowledgeAvailability`:
 
-- `Pending` — processing is scheduled or requested but has not successfully started.
-- `Processing` — a processing attempt is currently executing.
-- `Completed` — extraction, normalization, and chunking completed successfully for the current processing result.
-- `Failed` — the processing attempt stopped before successful completion and retained failure information for diagnosis and retry.
+```text
+Unavailable
+Available
+Stale
+Failed
+```
+
+The concrete MVP2 representation is `KeywordSearch`. These states are not
+collapsed into one combined `DocumentStatus`. The legacy `DocumentStatus` may
+remain temporarily as a compatibility projection while persistence is migrated,
+but it is not the source of truth for processing execution or knowledge
+availability.
 
 This separation prevents the document's overall lifecycle from becoming overloaded with execution-specific concerns.
 
@@ -903,30 +901,29 @@ For MVP 1, processing may be invoked synchronously by the application workflow e
 
 ## Processing State Ownership
 
-Processing execution state belongs to the processing workflow, not to the document renderer and not to the document's general lifecycle status.
+Processing execution state belongs to the processing workflow, not to the document renderer and not to the document's general lifecycle or knowledge-availability state.
 
-The application-level processing boundary owns the transition:
+The application-level processing boundary owns the explicit execution states:
 
 ```text
-Pending
-   ↓
+NeverProcessed
 Processing
-   ├──────────────→ Completed
-   │
-   └──────────────→ Failed
+Succeeded
+Failed
+Cancelled
 ```
 
-Only the processing workflow should make these transitions.
+Only the processing workflow should make processing-state transitions.
 
 A renderer may observe processing information for presentation, but it must not change processing state as a side effect of rendering.
 
-`DocumentStatus` remains responsible for the document's broader lifecycle. Processing state remains responsible for the execution state of document processing.
+`DocumentStatus` is a legacy compatibility projection during the transition to the separated state model. It does not define processing execution or knowledge availability.
 
 This separation allows later background execution, retries, and observability without overloading the document lifecycle model.
 
 ## Processing Completion and Derived-Result Publication
 
-A document must not become visibly `Completed` while its derived processing result is known to be incomplete or invalid.
+A document must not become `Succeeded` in its processing execution state while its derived processing result is known to be incomplete or invalid.
 
 Conceptually:
 
@@ -941,14 +938,20 @@ Chunk
     ↓
 Persist derived result successfully
     ↓
-Completed
+ProcessingState = Succeeded
 ```
+
+Processing success and knowledge availability are separate outcomes. For
+example, keyword-search knowledge may remain `Unavailable` or `Stale` even
+though processing execution is `Succeeded`.
 
 If a processing attempt fails before the derived result is successfully published, the attempt remains `Failed` and the application must not present the partial attempt as the current successful processing result.
 
 The exact transactional or replacement mechanism is a persistence implementation concern. The observable application-level rule is:
 
 > A successful processing result is published as a coherent derived result, and a failed attempt must not masquerade as a successful one.
+
+Knowledge availability is established independently for each derived representation and must not be inferred from rendering state or used to redefine the processing outcome.
 
 This rule supports idempotent retries and prevents partially written chunks from becoming authoritative search or AI input.
 
@@ -1082,7 +1085,7 @@ The processing record owns execution-specific information such as state, attempt
 
 Chunk records own derived content and ordering information required by downstream search and AI workflows.
 
-The existing `DocumentStatus` remains the document lifecycle status and is not expanded to contain retry counters, exception details, or chunk-processing metadata.
+The legacy `DocumentStatus` may remain as a compatibility projection while lifecycle persistence is migrated. It is not the source of truth for processing execution or knowledge availability and is not expanded to contain retry counters, exception details, or chunk-processing metadata.
 
 The exact persistence schema may evolve as processing capabilities grow, provided these semantic boundaries remain intact.
 
@@ -1192,6 +1195,7 @@ The current implementation establishes:
 - deterministic chunking
 - processing orchestration
 - processing execution state
+- knowledge availability
 - cancellation propagation
 - retry/idempotent derived-result replacement
 - document-to-chunk persistence
@@ -1213,7 +1217,7 @@ The following are future extensions of this boundary and are not required for MV
 - RAG
 - local AI assistant orchestration
 
-The processing lifecycle remains separate from `DocumentStatus`, and processing state is not derived from renderer state or UI presentation.
+The processing lifecycle remains separate from `DocumentStatus`, and processing state is not derived from renderer state or UI presentation. Knowledge availability is likewise not inferred from processing success or renderer state.
 
 ## Alternatives Considered
 
@@ -1293,6 +1297,8 @@ Syntax highlighting, language-aware navigation, code intelligence, AST analysis,
 - Rendering remains a presentation concern.
 - Native textual formats can visually resemble their source format.
 - Semantic extraction remains independently optimized for search and AI.
+- Processing execution is distinct from knowledge availability.
+- Individual knowledge representations can have independent availability outcomes.
 - Search and AI can reuse document-processing results.
 - Format-specific information can be preserved.
 - Large-document previewing can remain bounded without falsely implying completeness.
@@ -1314,12 +1320,22 @@ Syntax highlighting, language-aware navigation, code intelligence, AST analysis,
 - More explicit boundaries increase implementation complexity compared with direct rendering.
 - Future shared document abstractions may require careful design to avoid either duplication or semantic loss.
 - Native source presentation may require format-aware renderer implementations even when semantic extraction already exists.
+- The transitional compatibility projection of legacy `DocumentStatus` will coexist with the separated state model until persistence migration is complete.
 
-These trade-offs are accepted because DeskVault's long-term value depends on using documents for more than visual display.
+These trade-offs are accepted because DeskVault's long-term value depends on using documents for more than visual display and because processing success cannot safely be equated with availability of every derived representation.
 
 ## Result
 
-DeskVault will treat document parsing/extraction and document rendering as separate architectural responsibilities.
+DeskVault will treat document parsing/extraction and document rendering as separate architectural responsibilities, with document lifecycle, processing execution, and derived-knowledge availability represented independently.
+
+The lifecycle model is:
+
+```text
+Document
+├── LifecycleState
+├── ProcessingState
+└── KnowledgeAvailability[]
+```
 
 The canonical direction is:
 

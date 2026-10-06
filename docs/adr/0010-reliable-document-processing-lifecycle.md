@@ -54,6 +54,17 @@ can identify which processing attempt is current and prevent obsolete
 attempts
 from publishing state or derived content.
 
+The lifecycle also needs to distinguish three concerns that were previously
+represented through a combined `DocumentStatus`:
+
+```text
+Document lifecycle
+Processing execution
+Derived knowledge availability
+```
+
+These concerns must remain independent.
+
 Document processing lifecycle consistency is distinct from document-artifact
 consistency. A persisted document record and its encrypted `.dvault` artifact
 cross a database/filesystem persistence boundary. An interrupted import or
@@ -111,17 +122,29 @@ observe the same previous generation.
 The authoritative persistence operation must establish a unique, ordered
 generation for each processing attempt.
 
-### State Publication
+### Processing Execution State Publication
+
+Processing execution state is represented independently through:
+
+```text
+NeverProcessed
+Processing
+Succeeded
+Failed
+Cancelled
+```
+
+`ProcessingState` is the source of truth for processing execution. The legacy
+`DocumentStatus` may remain temporarily as a compatibility projection while
+persistence migration is performed, but it is not the processing execution
+source of truth.
 
 Processing state transitions must be protected by the same processing
-generation.
+generation. An obsolete processing attempt must not be able to overwrite a
+newer processing state.
 
-An obsolete processing attempt must not be able to overwrite a newer
-processing state.
-
-The lifecycle must preserve the intended processing states and their existing
-meaning while ensuring that stale attempts cannot publish state after they
-cease to be authoritative.
+A renderer may observe processing information for presentation, but it must not
+change processing state as a side effect of rendering.
 
 ### Derived Content Publication
 
@@ -135,9 +158,13 @@ The successful publication operation must:
 
 1. verify that the supplied processing generation is still authoritative;
 2. replace the document's derived chunks with the candidate derived result;
-3. mark the document `Available`;
-4. set `LastSuccessfulProcessingGeneration` to the same processing generation;
-5. commit all of those changes as one transaction.
+3. set `LastSuccessfulProcessingGeneration` to the same processing generation;
+4. commit the successful derived result and its lineage as one transaction.
+
+The processing execution outcome is `Succeeded`. The legacy `DocumentStatus`
+may still receive a compatibility projection during persistence migration.
+Derived knowledge availability is a separate state and must not be inferred
+solely from the processing execution outcome.
 
 The same successful publication must also persist
 `LastSuccessfulProcessingRuleVersion` for the processing-rule version that
@@ -154,7 +181,6 @@ Chunk
     ↓
 ONE TRANSACTION
     ├── Replace derived chunks
-    ├── Status = Available
     ├── LastSuccessfulProcessingGeneration = current generation
     └── LastSuccessfulProcessingRuleVersion = current processing-rule version
     ↓
@@ -188,11 +214,10 @@ When a processing attempt is cancelled:
 
 - The cancelled processing generation remains obsolete and must not publish
   further state or derived content.
-- If the document already has a previously successful derived result, the
-  document returns to `Available` and the existing derived content remains
-  intact.
-- If the document has no previously successful derived result, the document
-  returns to `Imported`.
+- A previously successful derived result remains identified by
+  `LastSuccessfulProcessingGeneration` and is not removed or replaced.
+- Processing outcome is represented as `Cancelled`; knowledge availability
+  remains a separate concern and is not implicitly changed by cancellation.
 - Cancellation must not remove or replace previously successful chunks.
 - The cancellation recovery state transition must itself be conditional on
   the processing generation remaining authoritative, so an obsolete attempt
@@ -249,7 +274,9 @@ These values serve different purposes and must not be treated as interchangeable
 
 A successful processing attempt updates
 `LastSuccessfulProcessingGeneration` in the same atomic transaction that
-replaces its derived content and publishes `Available`.
+replaces its derived content and records the successful processing lineage.
+Knowledge availability is associated with the corresponding derived
+representation separately.
 
 The generation therefore becomes the last-successful generation only when the
 corresponding derived representation and successful document state have been
@@ -306,6 +333,47 @@ processing-rule version remains unknown (`NULL`).
 
 The processing-rule version is lineage metadata, not a replacement for
 processing generation and not part of authoritative generation fencing.
+
+### Knowledge Availability and Generation Association
+
+Knowledge availability answers a different question from processing execution.
+
+Processing state answers:
+
+```text
+Did the processing attempt succeed?
+```
+
+Knowledge availability answers:
+
+```text
+Is this particular derived representation currently usable?
+```
+
+Each derived representation has an independent availability state:
+
+```text
+Unavailable
+Available
+Stale
+Failed
+```
+
+The current concrete MVP2 representation is `KeywordSearch`.
+
+A processing attempt may therefore finish with:
+
+```text
+ProcessingState = Succeeded
+KeywordSearch = Unavailable
+```
+
+without treating the processing attempt as failed. A representation may likewise
+be `Failed` without changing unrelated processing or lifecycle state.
+
+When a representation is `Available` or `Stale`, its
+`LastAvailableProcessingGeneration` identifies the successful processing
+generation whose derived knowledge it represents.
 
 ### Concurrency
 
@@ -552,6 +620,20 @@ guarantee.
 
 Stable chunk identity and provenance are addressed separately.
 
+### Treat processing success as knowledge availability
+
+Rejected.
+
+Successful processing establishes a coherent processing result, but individual
+derived representations may still be unavailable, stale, or failed.
+
+### Treat knowledge-stage failure as processing failure
+
+Rejected.
+
+A representation-specific failure must remain scoped to that representation and
+must not implicitly change unrelated processing or document lifecycle state.
+
 ## Consequences
 
 ### Positive
@@ -562,6 +644,7 @@ Stable chunk identity and provenance are addressed separately.
 * Same-document concurrent processing has deterministic persistence semantics.
 * Sequential repeated processing remains deterministic and idempotent.
 * Existing transactional chunk replacement remains useful.
+* Processing execution remains separated from derived knowledge availability.
 * Processing-specific lifecycle concerns remain separated from generic document
   CRUD.
 * Document-artifact consistency has a distinct reconciliation boundary.
@@ -580,7 +663,10 @@ Stable chunk identity and provenance are addressed separately.
 * Additional lifecycle tests are required.
 * Existing repository and processing-store contracts may require
   processing-specific lifecycle operations.
+* Individual knowledge representations require explicit availability semantics.
 * Database schema evolution requires an EF Core migration.
+* The transitional compatibility projection of legacy `DocumentStatus` will
+  coexist until lifecycle persistence migration is complete.
 * Document-artifact reconciliation and recovery require additional detection,
   validation, and recovery-path tests.
 
@@ -596,8 +682,10 @@ The implementation must:
 * prevent obsolete attempts from publishing document state;
 * prevent obsolete attempts from publishing derived chunks;
 * preserve transactional chunk replacement;
-* make successful derived-content replacement, `Available` publication, and
+* make successful derived-content replacement, processing lineage, and
   `LastSuccessfulProcessingGeneration` update one atomic commit boundary;
+* keep processing execution state independent from knowledge availability;
+* associate `Available` and `Stale` knowledge with a processing generation;
 * preserve deterministic repeated processing;
 * provide consistent cancellation behavior;
 * provide consistent failure behavior;
@@ -658,6 +746,8 @@ and recovery work.
 * The reliable document processing lifecycle investigation established the
   need for authoritative processing-attempt identity and stale-result
   protection.
+* PBI #106 Technical Task #125 owns durable lifecycle persistence and migration.
+* PBI #106 Technical Task #126 owns current keyword-search availability integration.
 * The document-artifact reconciliation work establishes a separate
   consistency boundary between persisted document metadata and encrypted
   document artifacts.
@@ -675,6 +765,16 @@ and recovery work.
 
 DeskVault will treat processing generation as the authoritative ordered
 identity of a document-processing attempt.
+
+Processing execution state and derived-knowledge availability are independent:
+
+```text
+ProcessingState
+└── NeverProcessed / Processing / Succeeded / Failed / Cancelled
+
+KnowledgeAvailability[]
+└── Unavailable / Available / Stale / Failed
+```
 
 Processing state and derived content may be published only while the
 processing attempt remains authoritative.
@@ -699,7 +799,8 @@ unreadable, path-mismatch, content-mismatch, or otherwise ambiguous findings
 are preserved for further recovery rather than normalized destructively.
 
 Recovery does not alter processing-generation authority, processing state, or
-derived chunks.
+derived chunks. Knowledge availability remains independently governed by its
+representation lifecycle.
 
 This separation prevents obsolete processing attempts from overwriting newer
 document state or derived content while ensuring that database/filesystem
