@@ -11,6 +11,7 @@ public sealed class GetDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentExists_ReturnsDocumentResult()
     {
+        // Arrange
         Guid documentId = Guid.NewGuid();
 
         DateTime importedAt =
@@ -29,10 +30,12 @@ public sealed class GetDocumentHandlerTests
         var handler =
             CreateHandler(repository);
 
+        // Act
         GetDocumentResult result =
             await handler.HandleAsync(
                 new GetDocumentQuery(documentId));
 
+        // Assert
         Assert.Equal(
             document.Id,
             result.Id);
@@ -54,8 +57,16 @@ public sealed class GetDocumentHandlerTests
             result.ImportedAt);
 
         Assert.Equal(
-            document.Status,
-            result.Status);
+            document.LifecycleState,
+            result.LifecycleState);
+
+        Assert.Equal(
+            document.ProcessingState,
+            result.ProcessingState);
+
+        Assert.Equal(
+            document.KnowledgeAvailability,
+            result.KnowledgeAvailability);
 
         repository.Verify(
             x => x.GetByIdAsync(
@@ -67,6 +78,7 @@ public sealed class GetDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenDocumentDoesNotExist_ThrowsFileNotFoundException()
     {
+        // Arrange
         var repository =
             new Mock<IDocumentRepository>();
 
@@ -79,12 +91,14 @@ public sealed class GetDocumentHandlerTests
         var handler =
             CreateHandler(repository);
 
+        // Act
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>
                 handler.HandleAsync(
                     new GetDocumentQuery(
                         Guid.NewGuid())));
 
+        // Assert
         repository.Verify(
             x => x.GetByIdAsync(
                 It.IsAny<Guid>(),
@@ -103,7 +117,19 @@ public sealed class GetDocumentHandlerTests
             "sha256-test-hash",
             "document.dvault",
             importedAt,
-            DocumentStatus.Imported);
+            DocumentStatus.Imported,
+            processingGeneration: 7,
+            lastSuccessfulProcessingGeneration: 7,
+            lastSuccessfulProcessingRuleVersion: "test-rule-version",
+            lifecycleState: DocumentLifecycleState.Archived,
+            processingState: DocumentProcessingState.Succeeded,
+            knowledgeAvailability:
+            [
+                new DocumentKnowledgeAvailability(
+                    DocumentKnowledgeRepresentationKind.KeywordSearch,
+                    DocumentKnowledgeAvailabilityState.Available,
+                    7)
+            ]);
     }
 
     private static Mock<IDocumentRepository> CreateRepository(

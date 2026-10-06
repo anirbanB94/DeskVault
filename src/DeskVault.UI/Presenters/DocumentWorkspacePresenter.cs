@@ -178,7 +178,7 @@ public sealed class DocumentWorkspacePresenter :
             _currentDocument.FileName,
             fileType,
             _currentDocument.ImportedAt,
-            _currentDocument.Status.ToString(),
+            _currentDocument.ProcessingState.ToString(),
             _currentDocument.Sha256Hash);
     }
 

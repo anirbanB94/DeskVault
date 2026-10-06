@@ -102,7 +102,7 @@ public partial class WorkspaceDocumentRemovalDialog : Form
                     .ToUpperInvariant());
 
             item.SubItems.Add(
-                document.Status.ToString());
+                document.ProcessingState.ToString());
 
             item.Tag = document.Id;
 

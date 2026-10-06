@@ -8,4 +8,6 @@ public sealed record GetDocumentResult(
     string DisplayName,
     string Sha256Hash,
     DateTime ImportedAt,
-    DocumentStatus Status);
+    DocumentLifecycleState LifecycleState,
+    DocumentProcessingState ProcessingState,
+    IReadOnlyList<DocumentKnowledgeAvailability> KnowledgeAvailability);

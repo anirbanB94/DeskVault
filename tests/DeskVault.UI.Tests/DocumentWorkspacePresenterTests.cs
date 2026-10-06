@@ -744,7 +744,7 @@ public sealed class DocumentWorkspacePresenterTests
                 document.FileName,
                 "CSV",
                 document.ImportedAt,
-                document.Status.ToString(),
+                document.ProcessingState.ToString(),
                 document.Sha256Hash),
             Times.Once);
     }

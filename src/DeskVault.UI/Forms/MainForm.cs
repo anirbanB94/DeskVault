@@ -579,9 +579,9 @@ public partial class MainForm : Form, IMainFormView
             documentGridView.Columns.Add(
                 new DataGridViewTextBoxColumn
                 {
-                    Name = "documentStatusColumn",
+                    Name = "documentProcessingStateColumn",
                     HeaderText = UiMessages.StatusColumnHeader,
-                    DataPropertyName = nameof(DocumentListItem.Status),
+                    DataPropertyName = nameof(DocumentListItem.ProcessingState),
                     AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
                     FillWeight = 20
                 });

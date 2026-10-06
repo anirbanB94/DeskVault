@@ -40,6 +40,8 @@ public sealed class GetDocumentHandler
             document.DisplayName,
             document.Sha256Hash,
             document.ImportedAt,
-            document.Status);
+            document.LifecycleState,
+            document.ProcessingState,
+            document.KnowledgeAvailability);
     }
 }
