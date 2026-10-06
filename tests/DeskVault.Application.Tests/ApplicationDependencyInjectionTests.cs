@@ -116,6 +116,51 @@ public sealed class ApplicationDependencyInjectionTests
     }
 
     [Fact]
+    public void AddApplication_UsesConfiguredChunkingOptions()
+    {
+        // Arrange
+        const int configuredMaxChunkSize =
+            120;
+
+        const int configuredChunkOverlap =
+            20;
+
+        var services =
+            new ServiceCollection();
+
+        services.AddSingleton(
+            new DocumentProcessingOptions
+            {
+                MaxChunkSize =
+                    configuredMaxChunkSize,
+
+                ChunkOverlap =
+                    configuredChunkOverlap
+            });
+
+        services.AddApplication();
+
+        using ServiceProvider serviceProvider =
+            services.BuildServiceProvider();
+
+        // Act
+        DocumentTextChunker chunker =
+            Assert.IsType<DocumentTextChunker>(
+                serviceProvider.GetRequiredService<IDocumentTextChunker>());
+
+        DocumentChunkingRuleVersion expectedRuleVersion =
+            DocumentRuleVersionFactory.CreateChunkingRuleVersion(
+                "paragraph-chunker-v1",
+                configuredMaxChunkSize,
+                configuredChunkOverlap);
+
+        // Assert
+        Assert.Equal(
+            expectedRuleVersion,
+            chunker.RuleVersion);
+    }
+
+    [Fact]
     public async Task AddApplication_PropagatesConfiguredProcessedTextLimitToAllExtractors()
     {
         const long configuredLimit = 1;

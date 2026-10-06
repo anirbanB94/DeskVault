@@ -30,7 +30,8 @@ public static class DocumentRuleVersionFactory
 
     public static DocumentChunkingRuleVersion CreateChunkingRuleVersion(
         string chunkingAlgorithmVersion,
-        int maxChunkSize)
+        int maxChunkSize,
+        int chunkOverlap)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(
             chunkingAlgorithmVersion);
@@ -42,12 +43,28 @@ public static class DocumentRuleVersionFactory
                 "Maximum chunk size must be greater than zero.");
         }
 
+        if (chunkOverlap < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(chunkOverlap),
+                "Chunk overlap cannot be negative.");
+        }
+
+        if (chunkOverlap >= maxChunkSize)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(chunkOverlap),
+                "Chunk overlap must be smaller than the maximum chunk size.");
+        }
+
         string canonicalDefinition =
             string.Join(
                 '\n',
                 "chunking-rule",
                 $"algorithm={chunkingAlgorithmVersion}",
                 $"maxChunkSize={maxChunkSize.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture)}",
+                $"chunkOverlap={chunkOverlap.ToString(
                     System.Globalization.CultureInfo.InvariantCulture)}");
 
         return new DocumentChunkingRuleVersion(

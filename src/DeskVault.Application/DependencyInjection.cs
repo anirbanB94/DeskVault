@@ -105,7 +105,16 @@ public static class DependencyInjection
                 new DocumentTextNormalizer(
                     serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
-        services.AddSingleton<IDocumentTextChunker>(_ => new DocumentTextChunker(maxChunkSize: 4000));
+        services.AddSingleton<IDocumentTextChunker>(
+            serviceProvider =>
+            {
+                DocumentProcessingOptions options =
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>();
+
+                return new DocumentTextChunker(
+                    options.MaxChunkSize,
+                    options.ChunkOverlap);
+            });
 
         services.AddSingleton<IActiveWorkspaceRegistry, ActiveWorkspaceRegistry>();
 

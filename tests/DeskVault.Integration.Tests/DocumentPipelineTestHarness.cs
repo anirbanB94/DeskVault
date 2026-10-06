@@ -286,6 +286,10 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         IDocumentTextChunker? chunker,
         DocumentProcessingOptions? processingOptions)
     {
+        DocumentProcessingOptions effectiveProcessingOptions =
+            processingOptions ??
+            new DocumentProcessingOptions();
+
         return new ProcessDocumentHandler(
             repository,
             reader,
@@ -293,10 +297,10 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             new DocumentTextNormalizer(),
             chunker ??
                 new DocumentTextChunker(
-                    maxChunkSize: 4000),
+                    effectiveProcessingOptions.MaxChunkSize,
+                    effectiveProcessingOptions.ChunkOverlap),
             processingStore,
-            processingOptions ??
-                new DocumentProcessingOptions(),
+            effectiveProcessingOptions,
             NullLogger<ProcessDocumentHandler>.Instance);
     }
 

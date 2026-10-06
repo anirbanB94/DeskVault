@@ -12,6 +12,7 @@ public sealed class DocumentTextChunkerTests
     private const int SmallMaxChunkSize = 20;
     private const string ExpectedRuleVersion = "paragraph-chunker-v1";
     private const int AlternateMaxChunkSize = 500;
+    private const int DefaultChunkOverlap = 0;
 
     [Fact]
     public void RuleVersion_SameChunkingRules_ReturnsSameVersion()
@@ -65,6 +66,33 @@ public sealed class DocumentTextChunkerTests
     }
 
     [Fact]
+    public void RuleVersion_DifferentChunkOverlap_ReturnsDifferentVersion()
+    {
+        // Arrange
+        DocumentTextChunker firstChunker =
+            CreateChunker(
+                DefaultMaxChunkSize,
+                chunkOverlap: 0);
+
+        DocumentTextChunker secondChunker =
+            CreateChunker(
+                DefaultMaxChunkSize,
+                chunkOverlap: 100);
+
+        // Act
+        DocumentChunkingRuleVersion firstVersion =
+            firstChunker.RuleVersion;
+
+        DocumentChunkingRuleVersion secondVersion =
+            secondChunker.RuleVersion;
+
+        // Assert
+        Assert.NotEqual(
+            firstVersion,
+            secondVersion);
+    }
+
+    [Fact]
     public void RuleVersion_UsesChunkingAlgorithmDefinition()
     {
         // Arrange
@@ -74,7 +102,8 @@ public sealed class DocumentTextChunkerTests
         DocumentChunkingRuleVersion expectedVersion =
             DocumentRuleVersionFactory.CreateChunkingRuleVersion(
                 ExpectedRuleVersion,
-                DefaultMaxChunkSize);
+                DefaultMaxChunkSize,
+                DefaultChunkOverlap);
 
         // Act
         DocumentChunkingRuleVersion actualVersion =
@@ -297,6 +326,58 @@ public sealed class DocumentTextChunkerTests
     }
 
     [Fact]
+    public async Task ChunkAsync_DirectTextMapping_WithOverlap_TracksSourceLocation()
+    {
+        // Arrange
+        const string firstParagraph =
+            "ABCDEFGH";
+
+        const string secondParagraph =
+            "12345";
+
+        string text =
+            $"{firstParagraph}\n\n{secondParagraph}";
+
+        var normalizationResult =
+            new DocumentTextNormalizationResult(
+                text,
+                DocumentSourceLocationMappingKind.DirectText);
+
+        // Act
+        IReadOnlyList<DocumentChunk> chunks =
+            await CreateChunker(
+                maxChunkSize: 10,
+                chunkOverlap: 2)
+            .ChunkAsync(
+                normalizationResult);
+
+        // Assert
+        Assert.Equal(
+            2,
+            chunks.Count);
+
+        Assert.Equal(
+            "ABCDEFGH",
+            chunks[0].Text);
+
+        Assert.Equal(
+            "GH12345",
+            chunks[1].Text);
+
+        Assert.Equal(
+            new DocumentSourceLocation(
+                1,
+                1),
+            chunks[0].SourceLocation);
+
+        Assert.Equal(
+            new DocumentSourceLocation(
+                1,
+                3),
+            chunks[1].SourceLocation);
+    }
+
+    [Fact]
     public async Task ChunkAsync_UnknownMapping_DoesNotAssignSourceLocation()
     {
         var normalizationResult =
@@ -408,6 +489,97 @@ public sealed class DocumentTextChunkerTests
     }
 
     [Fact]
+    public async Task ChunkAsync_ChunkOverlap_ReusesSuffixOfPreviousChunk()
+    {
+        // Arrange
+        const string firstParagraph =
+            "ABCDEFGH";
+
+        const string secondParagraph =
+            "12345";
+
+        string text =
+            $"{firstParagraph}\n\n{secondParagraph}";
+
+        IReadOnlyList<DocumentChunk> chunks =
+            await ChunkAsync(
+                text,
+                maxChunkSize: 10,
+                chunkOverlap: 2);
+
+        // Assert
+        Assert.Equal(
+            2,
+            chunks.Count);
+
+        Assert.Equal(
+            firstParagraph,
+            chunks[0].Text);
+
+        Assert.Equal(
+            "GH" + secondParagraph,
+            chunks[1].Text);
+
+        Assert.Equal(
+            "GH",
+            chunks[1].Text[..2]);
+
+        Assert.All(
+            chunks,
+            chunk =>
+                Assert.True(
+                    chunk.Text.Length <= 10));
+    }
+
+    [Fact]
+    public async Task ChunkAsync_ChangingChunkConfiguration_ChangesChunkBoundaries()
+    {
+        // Arrange
+        const string text =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        IReadOnlyList<DocumentChunk> baselineChunks =
+            await ChunkAsync(
+                text,
+                maxChunkSize: 10,
+                chunkOverlap: 0);
+
+        IReadOnlyList<DocumentChunk> overlapChunks =
+            await ChunkAsync(
+                text,
+                maxChunkSize: 10,
+                chunkOverlap: 3);
+
+        // Act
+        string[] baselineTexts =
+            baselineChunks
+                .Select(chunk => chunk.Text)
+                .ToArray();
+
+        string[] overlapTexts =
+            overlapChunks
+                .Select(chunk => chunk.Text)
+                .ToArray();
+
+        // Assert
+        Assert.NotEqual(
+            baselineTexts,
+            overlapTexts);
+
+        Assert.All(
+            baselineChunks,
+            chunk =>
+                Assert.True(
+                    chunk.Text.Length <= 10));
+
+        Assert.All(
+            overlapChunks,
+            chunk =>
+                Assert.True(
+                    chunk.Text.Length <= 10));
+    }
+
+    [Fact]
     public async Task ChunkAsync_OversizedParagraph_SplitsIntoBoundedChunks()
     {
         IReadOnlyList<DocumentChunk> chunks =
@@ -422,6 +594,39 @@ public sealed class DocumentTextChunkerTests
             chunk =>
                 Assert.True(
                     chunk.Text.Length <= SmallMaxChunkSize));
+    }
+
+    [Fact]
+    public async Task ChunkAsync_ChunkOverlap_UsesConfiguredCharacterCount()
+    {
+        // Arrange
+        const string text =
+            "ABCDEFGHIJKLMNOPQRSTUVWX";
+
+        IReadOnlyList<DocumentChunk> chunks =
+            await ChunkAsync(
+                text,
+                maxChunkSize: 10,
+                chunkOverlap: 3);
+
+        // Assert
+        Assert.True(
+            chunks.Count > 1);
+
+        for (int index = 1;
+             index < chunks.Count;
+             index++)
+        {
+            string previousChunk =
+                chunks[index - 1].Text;
+
+            string currentChunk =
+                chunks[index].Text;
+
+            Assert.Equal(
+                previousChunk[^3..],
+                currentChunk[..3]);
+        }
     }
 
     [Fact]
@@ -462,6 +667,89 @@ public sealed class DocumentTextChunkerTests
         Assert.Equal(
             Enumerable.Range(0, chunks.Count),
             chunks.Select(chunk => chunk.Order));
+    }
+
+    [Fact]
+    public async Task ChunkAsync_OversizedParagraph_ChunkOverlap_ReusesPreviousSuffix()
+    {
+        // Arrange
+        IReadOnlyList<DocumentChunk> chunks =
+            await ChunkAsync(
+                OversizedText,
+                maxChunkSize: SmallMaxChunkSize,
+                chunkOverlap: 4);
+
+        // Assert
+        Assert.True(
+            chunks.Count > 1);
+
+        Assert.All(
+            chunks,
+            chunk =>
+                Assert.True(
+                    chunk.Text.Length <= SmallMaxChunkSize));
+
+        for (int index = 1;
+             index < chunks.Count;
+             index++)
+        {
+            Assert.Equal(
+                chunks[index - 1].Text[^4..],
+                chunks[index].Text[..4]);
+        }
+    }
+
+    [Fact]
+    public async Task ChunkAsync_ChunkOverlap_MaximumAllowedOverlap_ContinuesForwardProgress()
+    {
+        // Arrange
+        const string text =
+            "ABCDEFGHIJ";
+
+        const int maxChunkSize =
+            5;
+
+        const int chunkOverlap =
+            4;
+
+        IReadOnlyList<DocumentChunk> chunks =
+            await ChunkAsync(
+                text,
+                maxChunkSize,
+                chunkOverlap);
+
+        // Assert
+        Assert.True(
+            chunks.Count > 1);
+
+        Assert.All(
+            chunks,
+            chunk =>
+            {
+                Assert.False(
+                    string.IsNullOrEmpty(
+                        chunk.Text));
+
+                Assert.True(
+                    chunk.Text.Length <=
+                    maxChunkSize);
+            });
+
+        for (int index = 1;
+             index < chunks.Count;
+             index++)
+        {
+            Assert.Equal(
+                chunks[index - 1].Text[^chunkOverlap..],
+                chunks[index].Text[..chunkOverlap]);
+        }
+
+        Assert.Contains(
+            chunks,
+            chunk =>
+                chunk.Text.EndsWith(
+                    "J",
+                    StringComparison.Ordinal));
     }
 
     [Fact]
@@ -512,6 +800,38 @@ public sealed class DocumentTextChunkerTests
             await chunker.ChunkAsync(normalizationResult);
 
         Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_WithOverlap_IsDeterministic()
+    {
+        // Arrange
+        const string text =
+            "First paragraph with enough content.\n\n" +
+            "Second paragraph with enough content.\n\n" +
+            "Third paragraph with enough content.";
+
+        var normalizationResult =
+            CreateNormalizationResult(text);
+
+        var chunker =
+            CreateChunker(
+                SmallMaxChunkSize,
+                chunkOverlap: 4);
+
+        // Act
+        IReadOnlyList<DocumentChunk> first =
+            await chunker.ChunkAsync(
+                normalizationResult);
+
+        IReadOnlyList<DocumentChunk> second =
+            await chunker.ChunkAsync(
+                normalizationResult);
+
+        // Assert
+        Assert.Equal(
+            first,
+            second);
     }
 
     [Fact]
@@ -576,13 +896,46 @@ public sealed class DocumentTextChunkerTests
             exception.ParamName);
     }
 
+    [Fact]
+    public void Constructor_NegativeChunkOverlap_ThrowsArgumentOutOfRangeException()
+    {
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () =>
+                    CreateChunker(
+                        DefaultMaxChunkSize,
+                        chunkOverlap: -1));
+
+        Assert.Equal(
+            "chunkOverlap",
+            exception.ParamName);
+    }
+
+    [Fact]
+    public void Constructor_ChunkOverlapEqualToMaxChunkSize_ThrowsArgumentOutOfRangeException()
+    {
+        ArgumentOutOfRangeException exception =
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () =>
+                    CreateChunker(
+                        SmallMaxChunkSize,
+                        chunkOverlap: SmallMaxChunkSize));
+
+        Assert.Equal(
+            "chunkOverlap",
+            exception.ParamName);
+    }
+
     private static readonly string OversizedText =
         "One two three four five six seven eight nine ten.";
 
     private static DocumentTextChunker CreateChunker(
-        int maxChunkSize = DefaultMaxChunkSize)
+        int maxChunkSize = DefaultMaxChunkSize,
+        int chunkOverlap = DefaultChunkOverlap)
     {
-        return new DocumentTextChunker(maxChunkSize);
+        return new DocumentTextChunker(
+            maxChunkSize,
+            chunkOverlap);
     }
 
     private static DocumentTextNormalizationResult CreateNormalizationResult(
@@ -594,10 +947,14 @@ public sealed class DocumentTextChunkerTests
     private static async Task<IReadOnlyList<DocumentChunk>> ChunkAsync(
         string text,
         int maxChunkSize = DefaultMaxChunkSize,
+        int chunkOverlap = DefaultChunkOverlap,
         CancellationToken cancellationToken = default)
     {
-        return await CreateChunker(maxChunkSize).ChunkAsync(
-            CreateNormalizationResult(text),
-            cancellationToken);
+        return await CreateChunker(
+                maxChunkSize,
+                chunkOverlap)
+            .ChunkAsync(
+                CreateNormalizationResult(text),
+                cancellationToken);
     }
 }

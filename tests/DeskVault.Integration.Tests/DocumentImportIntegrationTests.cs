@@ -372,6 +372,138 @@ public sealed class DocumentImportIntegrationTests
     }
 
     [Fact]
+    public async Task ProcessDocument_UsesConfiguredChunkingOptions()
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(
+            rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            const int configuredMaxChunkSize =
+                10;
+
+            const int configuredChunkOverlap =
+                3;
+
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "configured-chunking-test.txt");
+
+            const string sourceText =
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    processingOptions:
+                        new DocumentProcessingOptions
+                        {
+                            MaxChunkSize =
+                                configuredMaxChunkSize,
+
+                            ChunkOverlap =
+                                configuredChunkOverlap
+                        });
+
+            ImportDocumentResult importResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Configured Chunking Test Document"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Guid documentId =
+                importResult.DocumentId.Value;
+
+            await harness.ProcessingService.ProcessAsync(
+                documentId);
+
+            List<DocumentChunkEntity> chunks =
+                await harness.GetChunksAsync(
+                    documentId);
+
+            Assert.True(
+                chunks.Count > 1);
+
+            Assert.All(
+                chunks,
+                chunk =>
+                {
+                    Assert.True(
+                        chunk.Text.Length <=
+                        configuredMaxChunkSize);
+
+                    Assert.Equal(
+                        1L,
+                        chunk.ProcessingGeneration);
+                });
+
+            DocumentChunkingRuleVersion expectedRuleVersion =
+                DocumentRuleVersionFactory.CreateChunkingRuleVersion(
+                    "paragraph-chunker-v1",
+                    configuredMaxChunkSize,
+                    configuredChunkOverlap);
+
+            Assert.All(
+                chunks,
+                chunk =>
+                    Assert.Equal(
+                        expectedRuleVersion.Value,
+                        chunk.ChunkingRuleVersion));
+
+            for (int index = 1;
+                 index < chunks.Count;
+                 index++)
+            {
+                Assert.Equal(
+                    chunks[index - 1].Text[^configuredChunkOverlap..],
+                    chunks[index].Text[..configuredChunkOverlap]);
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                encryptionKey);
+
+            if (Directory.Exists(
+                rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ImportDocument_WhenProcessingRuleVersionChanges_PersistsNewVersionWithoutChangingChunkingVersion()
     {
         string rootDirectory =
