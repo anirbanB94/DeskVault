@@ -1389,7 +1389,7 @@ public sealed class MainFormPresenter
                     DateTime.SpecifyKind(
                         document.ImportedAt,
                         DateTimeKind.Utc)),
-                document.Status.ToString()))
+                document.ProcessingState.ToString()))
             .ToList();
 
         _view.ShowDocuments(items);

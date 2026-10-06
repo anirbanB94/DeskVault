@@ -2,6 +2,8 @@ namespace DeskVault.Domain.Documents;
 
 public sealed class Document
 {
+    private readonly List<DocumentKnowledgeAvailability> _knowledgeAvailability;
+
     public Guid Id { get; }
 
     public string FileName { get; }
@@ -12,7 +14,17 @@ public sealed class Document
 
     public DateTime ImportedAt { get; }
 
+    // Legacy compatibility state retained while lifecycle persistence
+    // is migrated to the separated state model.
     public DocumentStatus Status { get; private set; }
+
+    public DocumentLifecycleState LifecycleState { get; private set; }
+
+    public DocumentProcessingState ProcessingState { get; private set; }
+
+    public IReadOnlyList<DocumentKnowledgeAvailability>
+        KnowledgeAvailability =>
+        _knowledgeAvailability;
 
     public string StoredFilePath { get; }
 
@@ -30,6 +42,9 @@ public sealed class Document
         string storedFilePath,
         DateTime importedAt,
         DocumentStatus status,
+        DocumentLifecycleState lifecycleState,
+        DocumentProcessingState processingState,
+        IReadOnlyList<DocumentKnowledgeAvailability> knowledgeAvailability,
         long processingGeneration,
         long lastSuccessfulProcessingGeneration,
         string? lastSuccessfulProcessingRuleVersion)
@@ -40,10 +55,21 @@ public sealed class Document
         Sha256Hash = sha256Hash;
         StoredFilePath = storedFilePath;
         ImportedAt = importedAt;
+
         Status = status;
-        ProcessingGeneration = processingGeneration;
+        LifecycleState = lifecycleState;
+        ProcessingState = processingState;
+
+        _knowledgeAvailability =
+            new List<DocumentKnowledgeAvailability>(
+                knowledgeAvailability);
+
+        ProcessingGeneration =
+            processingGeneration;
+
         LastSuccessfulProcessingGeneration =
             lastSuccessfulProcessingGeneration;
+
         LastSuccessfulProcessingRuleVersion =
             lastSuccessfulProcessingRuleVersion;
     }
@@ -70,8 +96,16 @@ public sealed class Document
             storedFilePath,
             DateTime.UtcNow,
             DocumentStatus.Imported,
-            0,
-            0,
+            DocumentLifecycleState.Active,
+            DocumentProcessingState.NeverProcessed,
+            [
+                new DocumentKnowledgeAvailability(
+                    DocumentKnowledgeRepresentationKind.KeywordSearch,
+                    DocumentKnowledgeAvailabilityState.Unavailable,
+                    null)
+            ],
+            0L,
+            0L,
             null);
     }
 
@@ -83,9 +117,50 @@ public sealed class Document
         string storedFilePath,
         DateTime importedAt,
         DocumentStatus status,
-        long processingGeneration = 0,
-        long lastSuccessfulProcessingGeneration = 0,
+        long processingGeneration = 0L,
+        long lastSuccessfulProcessingGeneration = 0L,
         string? lastSuccessfulProcessingRuleVersion = null)
+    {
+        (
+            DocumentLifecycleState lifecycleState,
+            DocumentProcessingState processingState,
+            IReadOnlyList<DocumentKnowledgeAvailability>
+                knowledgeAvailability) =
+            ResolveLegacyState(
+                status,
+                lastSuccessfulProcessingGeneration);
+
+        return Restore(
+            id,
+            fileName,
+            displayName,
+            sha256Hash,
+            storedFilePath,
+            importedAt,
+            status,
+            processingGeneration,
+            lastSuccessfulProcessingGeneration,
+            lastSuccessfulProcessingRuleVersion,
+            lifecycleState,
+            processingState,
+            knowledgeAvailability);
+    }
+
+    public static Document Restore(
+        Guid id,
+        string fileName,
+        string displayName,
+        string sha256Hash,
+        string storedFilePath,
+        DateTime importedAt,
+        DocumentStatus status,
+        long processingGeneration,
+        long lastSuccessfulProcessingGeneration,
+        string? lastSuccessfulProcessingRuleVersion,
+        DocumentLifecycleState lifecycleState,
+        DocumentProcessingState processingState,
+        IReadOnlyList<DocumentKnowledgeAvailability>?
+            knowledgeAvailability = null)
     {
         Validate(
             id,
@@ -101,21 +176,36 @@ public sealed class Document
                 nameof(importedAt));
         }
 
-        if (processingGeneration < 0)
+        if (!Enum.IsDefined(lifecycleState))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(lifecycleState),
+                "Document lifecycle state is invalid.");
+        }
+
+        if (!Enum.IsDefined(processingState))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(processingState),
+                "Document processing state is invalid.");
+        }
+
+        if (processingGeneration < 0L)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(processingGeneration),
                 "Processing generation cannot be negative.");
         }
 
-        if (lastSuccessfulProcessingGeneration < 0)
+        if (lastSuccessfulProcessingGeneration < 0L)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(lastSuccessfulProcessingGeneration),
                 "Last successful processing generation cannot be negative.");
         }
 
-        if (lastSuccessfulProcessingGeneration > processingGeneration)
+        if (lastSuccessfulProcessingGeneration >
+            processingGeneration)
         {
             throw new ArgumentException(
                 "Last successful processing generation cannot be greater than the current processing generation.",
@@ -123,12 +213,26 @@ public sealed class Document
         }
 
         if (lastSuccessfulProcessingRuleVersion is not null &&
-            string.IsNullOrWhiteSpace(lastSuccessfulProcessingRuleVersion))
+            string.IsNullOrWhiteSpace(
+                lastSuccessfulProcessingRuleVersion))
         {
             throw new ArgumentException(
                 "Last successful processing-rule version cannot be empty when provided.",
                 nameof(lastSuccessfulProcessingRuleVersion));
         }
+
+        IReadOnlyList<DocumentKnowledgeAvailability>
+            restoredKnowledgeAvailability =
+                knowledgeAvailability ??
+                [
+                    new DocumentKnowledgeAvailability(
+                        DocumentKnowledgeRepresentationKind.KeywordSearch,
+                        DocumentKnowledgeAvailabilityState.Unavailable,
+                        null)
+                ];
+
+        ValidateKnowledgeAvailability(
+            restoredKnowledgeAvailability);
 
         return new Document(
             id,
@@ -138,29 +242,271 @@ public sealed class Document
             storedFilePath,
             importedAt,
             status,
+            lifecycleState,
+            processingState,
+            restoredKnowledgeAvailability,
             processingGeneration,
             lastSuccessfulProcessingGeneration,
             lastSuccessfulProcessingRuleVersion);
     }
 
+    public void Archive()
+    {
+        EnsureLifecycleTransition(
+            DocumentLifecycleState.Active,
+            DocumentLifecycleState.Archived);
+
+        LifecycleState =
+            DocumentLifecycleState.Archived;
+    }
+
+    public void RestoreFromArchive()
+    {
+        EnsureLifecycleTransition(
+            DocumentLifecycleState.Archived,
+            DocumentLifecycleState.Active);
+
+        LifecycleState =
+            DocumentLifecycleState.Active;
+    }
+
+    public void Delete()
+    {
+        if (LifecycleState ==
+            DocumentLifecycleState.Deleted)
+        {
+            throw new InvalidOperationException(
+                "A deleted document cannot be deleted again.");
+        }
+
+        LifecycleState =
+            DocumentLifecycleState.Deleted;
+    }
+
+    public void BeginProcessing()
+    {
+        EnsureDocumentIsProcessable();
+
+        ProcessingState =
+            DocumentProcessingState.Processing;
+    }
+
+    public void MarkProcessingSucceeded()
+    {
+        EnsureProcessingInProgress();
+
+        ProcessingState =
+            DocumentProcessingState.Succeeded;
+    }
+
+    public void MarkProcessingFailed()
+    {
+        EnsureProcessingInProgress();
+
+        ProcessingState =
+            DocumentProcessingState.Failed;
+    }
+
+    public void MarkProcessingCancelled()
+    {
+        EnsureProcessingInProgress();
+
+        ProcessingState =
+            DocumentProcessingState.Cancelled;
+    }
+
+    public void SetKnowledgeAvailability(
+        DocumentKnowledgeRepresentationKind representation,
+        DocumentKnowledgeAvailabilityState state,
+        long? lastAvailableProcessingGeneration)
+    {
+        DocumentKnowledgeAvailability availability =
+            new(
+                representation,
+                state,
+                lastAvailableProcessingGeneration);
+
+        int existingIndex =
+            _knowledgeAvailability.FindIndex(
+                item =>
+                    item.Representation ==
+                    representation);
+
+        if (existingIndex >= 0)
+        {
+            _knowledgeAvailability[existingIndex] =
+                availability;
+
+            return;
+        }
+
+        _knowledgeAvailability.Add(
+            availability);
+    }
+
+    public DocumentKnowledgeAvailability
+        GetKnowledgeAvailability(
+            DocumentKnowledgeRepresentationKind representation)
+    {
+        DocumentKnowledgeAvailability? availability =
+            _knowledgeAvailability.FirstOrDefault(
+                item =>
+                    item.Representation ==
+                    representation);
+
+        if (availability is null)
+        {
+            throw new InvalidOperationException(
+                $"Knowledge availability for representation '{representation}' is not defined.");
+        }
+
+        return availability;
+    }
+
+    // Legacy status mutators retained for compatibility with
+    // existing callers until lifecycle migration is completed.
     public void MarkProcessing()
     {
-        Status = DocumentStatus.Processing;
+        Status =
+            DocumentStatus.Processing;
     }
 
     public void MarkIndexed()
     {
-        Status = DocumentStatus.Indexed;
+        Status =
+            DocumentStatus.Indexed;
     }
 
     public void MarkAvailable()
     {
-        Status = DocumentStatus.Available;
+        Status =
+            DocumentStatus.Available;
     }
 
     public void MarkFailed()
     {
-        Status = DocumentStatus.Failed;
+        Status =
+            DocumentStatus.Failed;
+    }
+
+    private void EnsureDocumentIsProcessable()
+    {
+        if (LifecycleState ==
+            DocumentLifecycleState.Deleted)
+        {
+            throw new InvalidOperationException(
+                "A deleted document cannot be processed.");
+        }
+    }
+
+    private void EnsureProcessingInProgress()
+    {
+        if (ProcessingState !=
+            DocumentProcessingState.Processing)
+        {
+            throw new InvalidOperationException(
+                "Document processing must be in progress before its processing outcome can be changed.");
+        }
+    }
+
+    private void EnsureLifecycleTransition(
+        DocumentLifecycleState expectedCurrentState,
+        DocumentLifecycleState targetState)
+    {
+        if (LifecycleState !=
+            expectedCurrentState)
+        {
+            throw new InvalidOperationException(
+                $"Document lifecycle cannot transition from '{LifecycleState}' to '{targetState}'.");
+        }
+    }
+
+    private static (
+        DocumentLifecycleState LifecycleState,
+        DocumentProcessingState ProcessingState,
+        IReadOnlyList<DocumentKnowledgeAvailability>
+            KnowledgeAvailability)
+        ResolveLegacyState(
+            DocumentStatus status,
+            long lastSuccessfulProcessingGeneration)
+    {
+        DocumentLifecycleState lifecycleState =
+            status switch
+            {
+                DocumentStatus.Archived =>
+                    DocumentLifecycleState.Archived,
+
+                DocumentStatus.Deleted =>
+                    DocumentLifecycleState.Deleted,
+
+                _ =>
+                    DocumentLifecycleState.Active
+            };
+
+        DocumentProcessingState processingState =
+            status switch
+            {
+                DocumentStatus.Processing =>
+                    DocumentProcessingState.Processing,
+
+                DocumentStatus.Failed =>
+                    DocumentProcessingState.Failed,
+
+                DocumentStatus.Indexed or
+                DocumentStatus.Available or
+                DocumentStatus.Archived or
+                DocumentStatus.Deleted
+                    when lastSuccessfulProcessingGeneration > 0L =>
+                    DocumentProcessingState.Succeeded,
+
+                _ =>
+                    DocumentProcessingState.NeverProcessed
+            };
+
+        IReadOnlyList<DocumentKnowledgeAvailability>
+            knowledgeAvailability =
+                status != DocumentStatus.Deleted &&
+                lastSuccessfulProcessingGeneration > 0L
+                    ?
+                    [
+                        new DocumentKnowledgeAvailability(
+                            DocumentKnowledgeRepresentationKind.KeywordSearch,
+                            DocumentKnowledgeAvailabilityState.Available,
+                            lastSuccessfulProcessingGeneration)
+                    ]
+                    :
+                    [
+                        new DocumentKnowledgeAvailability(
+                            DocumentKnowledgeRepresentationKind.KeywordSearch,
+                            DocumentKnowledgeAvailabilityState.Unavailable,
+                            null)
+                    ];
+
+        return (
+            lifecycleState,
+            processingState,
+            knowledgeAvailability);
+    }
+
+    private static void ValidateKnowledgeAvailability(
+        IReadOnlyList<DocumentKnowledgeAvailability>
+            knowledgeAvailability)
+    {
+        HashSet<DocumentKnowledgeRepresentationKind>
+            representations = [];
+
+        foreach (
+            DocumentKnowledgeAvailability availability
+            in knowledgeAvailability)
+        {
+            if (!representations.Add(
+                    availability.Representation))
+            {
+                throw new ArgumentException(
+                    $"Knowledge availability for representation '{availability.Representation}' is duplicated.",
+                    nameof(knowledgeAvailability));
+            }
+        }
     }
 
     private static void Validate(

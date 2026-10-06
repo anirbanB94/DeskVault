@@ -80,7 +80,7 @@ public sealed class SqliteDocumentProcessingStore
     public async Task PublishProcessingStateAsync(
         Guid documentId,
         long processingGeneration,
-        DocumentStatus status,
+        DocumentProcessingState state,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -100,7 +100,8 @@ public sealed class SqliteDocumentProcessingStore
                     setters =>
                         setters.SetProperty(
                             document => document.Status,
-                            (int)status),
+                            (int)MapProcessingStateToLegacyStatus(
+                                state)),
                     cancellationToken);
 
         if (rowsAffected != 0)
@@ -394,6 +395,25 @@ public sealed class SqliteDocumentProcessingStore
 
             throw;
         }
+    }
+
+    private static DocumentStatus MapProcessingStateToLegacyStatus(
+        DocumentProcessingState state)
+    {
+        return state switch
+        {
+            DocumentProcessingState.Processing =>
+                DocumentStatus.Processing,
+
+            DocumentProcessingState.Failed =>
+                DocumentStatus.Failed,
+
+            _ =>
+                throw new ArgumentOutOfRangeException(
+                    nameof(state),
+                    state,
+                    "Only processing and failed execution states can be published through the processing-state publication contract.")
+        };
     }
 
     private static async Task ReplaceChunksWithinTransactionAsync(

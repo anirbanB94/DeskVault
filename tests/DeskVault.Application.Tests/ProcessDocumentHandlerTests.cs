@@ -124,8 +124,9 @@ public sealed class ProcessDocumentHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_WhenDocumentExists_ProcessesAndUpdatesStatusLifecycle()
+    public async Task HandleAsync_WhenDocumentExists_ProcessesAndPublishesProcessingState()
     {
+        // Arrange
         Document document = CreateDocument();
 
         var repository =
@@ -145,11 +146,13 @@ public sealed class ProcessDocumentHandlerTests
                 maxChunkSize: 100,
                 maxDecryptedDocumentBytes);
 
+        // Act
         ProcessDocumentResult result =
             await processingContext.Handler.HandleAsync(
                 new ProcessDocumentCommand(
                     document.Id));
 
+        // Assert
         Assert.Equal(
             ProcessDocumentResultStatus.Success,
             result.Status);
@@ -193,8 +196,8 @@ public sealed class ProcessDocumentHandlerTests
             processingContext.ProcessingStore.PublishedStates);
 
         Assert.Equal(
-            DocumentStatus.Processing,
-            processingContext.ProcessingStore.PublishedStates[0].Status);
+            DocumentProcessingState.Processing,
+            processingContext.ProcessingStore.PublishedStates[0].State);
 
         Assert.Equal(
             1L,
@@ -239,6 +242,22 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Equal(
             document.FileName,
             processingContext.Extractor.FileName);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
+
+        DocumentKnowledgeAvailability keywordSearchAvailability =
+            document.GetKnowledgeAvailability(
+                DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Unavailable,
+            keywordSearchAvailability.State);
     }
 
     [Fact]
@@ -296,8 +315,9 @@ public sealed class ProcessDocumentHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_WhenProcessingFails_MarksDocumentAsFailedAndRethrows()
+    public async Task HandleAsync_WhenProcessingFails_PublishesFailureStateAndRethrows()
     {
+        // Arrange
         Document document = CreateDocument();
 
         var repository =
@@ -314,12 +334,14 @@ public sealed class ProcessDocumentHandlerTests
 
         processingContext.Extractor.ThrowOnExtract = true;
 
+        // Act
         await Assert.ThrowsAsync<InvalidOperationException>(
             () =>
                 processingContext.Handler.HandleAsync(
                     new ProcessDocumentCommand(
                         document.Id)));
 
+        // Assert
         Assert.True(
             processingContext.Reader.WasOpened);
 
@@ -332,11 +354,11 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             [
-                DocumentStatus.Processing,
-                DocumentStatus.Failed
+                DocumentProcessingState.Processing,
+                DocumentProcessingState.Failed
             ],
             processingContext.ProcessingStore.PublishedStates
-                .Select(x => x.Status)
+                .Select(x => x.State)
                 .ToArray());
 
         Assert.All(
@@ -358,11 +380,20 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Empty(
             processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Failed,
+            document.ProcessingState);
     }
 
     [Fact]
-    public async Task HandleAsync_WhenResourceLimitIsExceeded_MarksDocumentAsFailedAndRethrows()
+    public async Task HandleAsync_WhenResourceLimitIsExceeded_PublishesFailureStateAndRethrows()
     {
+        // Arrange
         Document document = CreateDocument();
 
         var repository =
@@ -381,6 +412,7 @@ public sealed class ProcessDocumentHandlerTests
 
         processingContext.Reader.ThrowResourceLimitExceededOnOpen = true;
 
+        // Act
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
@@ -388,6 +420,7 @@ public sealed class ProcessDocumentHandlerTests
                         new ProcessDocumentCommand(
                             document.Id)));
 
+        // Assert
         Assert.Equal(
             100L,
             processingContext.Reader.MaximumPlaintextBytes);
@@ -402,11 +435,11 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             [
-                DocumentStatus.Processing,
-                DocumentStatus.Failed
+                DocumentProcessingState.Processing,
+                DocumentProcessingState.Failed
             ],
             processingContext.ProcessingStore.PublishedStates
-                .Select(x => x.Status)
+                .Select(x => x.State)
                 .ToArray());
 
         Assert.All(
@@ -434,11 +467,20 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Empty(
             processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Failed,
+            document.ProcessingState);
     }
 
     [Fact]
-    public async Task HandleAsync_WhenNormalizedTextExceedsResourceLimit_MarksDocumentAsFailedAndRethrows()
+    public async Task HandleAsync_WhenNormalizedTextExceedsResourceLimit_PublishesFailureStateAndRethrows()
     {
+        // Arrange
         Document document = CreateDocument();
 
         var repository =
@@ -467,6 +509,7 @@ public sealed class ProcessDocumentHandlerTests
         processingContext.Extractor.ReturnText =
             "First paragraph.";
 
+        // Act
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
@@ -474,6 +517,7 @@ public sealed class ProcessDocumentHandlerTests
                         new ProcessDocumentCommand(
                             document.Id)));
 
+        // Assert
         Assert.Equal(
             5L,
             exception.LimitBytes);
@@ -489,11 +533,11 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             [
-                DocumentStatus.Processing,
-                DocumentStatus.Failed
+                DocumentProcessingState.Processing,
+                DocumentProcessingState.Failed
             ],
             processingContext.ProcessingStore.PublishedStates
-                .Select(x => x.Status)
+                .Select(x => x.State)
                 .ToArray());
 
         Assert.All(
@@ -515,6 +559,14 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Empty(
             processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Failed,
+            document.ProcessingState);
     }
 
     [Fact]
@@ -570,11 +622,28 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Single(
             processingContext.ProcessingStore
                 .SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
+
+        DocumentKnowledgeAvailability keywordSearchAvailability =
+            document.GetKnowledgeAvailability(
+                DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Unavailable,
+            keywordSearchAvailability.State);
     }
 
     [Fact]
-    public async Task HandleAsync_WhenCallerIsCancelledBeforeFailurePublication_PublishesFailureAndRethrowsOriginalException()
+    public async Task HandleAsync_WhenCallerIsCancelledBeforeFailurePublication_PublishesFailureStateAndRethrowsOriginalException()
     {
+        // Arrange
         Document document = CreateDocument();
 
         var repository =
@@ -597,6 +666,7 @@ public sealed class ProcessDocumentHandlerTests
 
         processingContext.Extractor.ThrowOnExtract = true;
 
+        // Act
         InvalidOperationException exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
@@ -604,17 +674,18 @@ public sealed class ProcessDocumentHandlerTests
                         new ProcessDocumentCommand(document.Id),
                         cancellationTokenSource.Token));
 
+        // Assert
         Assert.Equal(
             "Test extraction failure.",
             exception.Message);
 
         Assert.Equal(
             [
-                DocumentStatus.Processing,
-                DocumentStatus.Failed
+                DocumentProcessingState.Processing,
+                DocumentProcessingState.Failed
             ],
             processingContext.ProcessingStore.PublishedStates
-                .Select(x => x.Status)
+                .Select(x => x.State)
                 .ToArray());
 
         Assert.True(
@@ -631,11 +702,20 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Empty(
             processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Failed,
+            document.ProcessingState);
     }
 
     [Fact]
-    public async Task HandleAsync_WhenNoExtractorSupportsDocument_MarksDocumentAsFailedAndRethrows()
+    public async Task HandleAsync_WhenNoExtractorSupportsDocument_PublishesFailureStateAndRethrows()
     {
+        // Arrange
         Document document =
             Document.Create(
                 Guid.NewGuid(),
@@ -656,12 +736,14 @@ public sealed class ProcessDocumentHandlerTests
         var processingContext =
             CreateProcessingContext(repository);
 
+        // Act
         await Assert.ThrowsAsync<NotSupportedException>(
             () =>
                 processingContext.Handler.HandleAsync(
                     new ProcessDocumentCommand(
                         document.Id)));
 
+        // Assert
         Assert.False(
             processingContext.Reader.WasOpened);
 
@@ -674,11 +756,11 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Equal(
             [
-                DocumentStatus.Processing,
-                DocumentStatus.Failed
+                DocumentProcessingState.Processing,
+                DocumentProcessingState.Failed
             ],
             processingContext.ProcessingStore.PublishedStates
-                .Select(x => x.Status)
+                .Select(x => x.State)
                 .ToArray());
 
         Assert.All(
@@ -700,6 +782,14 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Empty(
             processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Failed,
+            document.ProcessingState);
     }
 
     [Fact]
@@ -761,6 +851,14 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Equal(
             "Second paragraph.",
             processingContext.ProcessingStore.SuccessfulProcessingChunks[1].Text);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
     }
 
     [Fact]
@@ -810,6 +908,10 @@ public sealed class ProcessDocumentHandlerTests
                 1,
                 3),
             chunk.SourceLocation);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
     }
 
     [Fact]
@@ -852,6 +954,10 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Null(
             chunk.SourceLocation);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
     }
 
     [Fact]
@@ -911,6 +1017,7 @@ public sealed class ProcessDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_WhenCancellationOccursDuringExtraction_RethrowsAndRecoversProcessingState()
     {
+        // Arrange
         Document document = CreateDocument();
 
         var repository =
@@ -930,6 +1037,7 @@ public sealed class ProcessDocumentHandlerTests
         using var cancellationTokenSource =
             new CancellationTokenSource();
 
+        // Act
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
                 processingContext.Handler.HandleAsync(
@@ -937,6 +1045,7 @@ public sealed class ProcessDocumentHandlerTests
                         document.Id),
                     cancellationTokenSource.Token));
 
+        // Assert
         Assert.True(
             processingContext.Reader.WasOpened);
 
@@ -951,8 +1060,8 @@ public sealed class ProcessDocumentHandlerTests
             processingContext.ProcessingStore.PublishedStates);
 
         Assert.Equal(
-            DocumentStatus.Processing,
-            processingContext.ProcessingStore.PublishedStates[0].Status);
+            DocumentProcessingState.Processing,
+            processingContext.ProcessingStore.PublishedStates[0].State);
 
         Assert.Equal(
             1L,
@@ -975,6 +1084,14 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.Empty(
             processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Cancelled,
+            document.ProcessingState);
     }
 
     [Fact]
@@ -1055,6 +1172,14 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Equal(
             "First paragraph.\n\nSecond paragraph.",
             processingContext.ProcessingStore.SuccessfulProcessingChunks[0].Text);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
     }
 
     [Fact]
@@ -1102,6 +1227,14 @@ public sealed class ProcessDocumentHandlerTests
 
         Assert.True(
             processingContext.ProcessingStore.WasSuccessfulProcessingPublished);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
     }
 
     [Fact]
@@ -1388,10 +1521,10 @@ public sealed class ProcessDocumentHandlerTests
         public Task PublishProcessingStateAsync(
             Guid documentId,
             long processingGeneration,
-            DocumentStatus status,
+            DocumentProcessingState state,
             CancellationToken cancellationToken = default)
         {
-            if (status == DocumentStatus.Failed &&
+            if (state == DocumentProcessingState.Failed &&
                 !cancellationToken.IsCancellationRequested)
             {
                 FailurePublicationReceivedNonCancelledToken = true;
@@ -1404,7 +1537,7 @@ public sealed class ProcessDocumentHandlerTests
             PublishedStates.Add(
                 new StatePublication(
                     processingGeneration,
-                    status));
+                    state));
 
             return Task.CompletedTask;
         }
@@ -1464,6 +1597,6 @@ public sealed class ProcessDocumentHandlerTests
 
         public sealed record StatePublication(
             long ProcessingGeneration,
-            DocumentStatus Status);
+            DocumentProcessingState State);
     }
 }

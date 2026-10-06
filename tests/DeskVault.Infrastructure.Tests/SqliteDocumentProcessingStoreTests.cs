@@ -221,7 +221,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishProcessingStateAsync(
             document.Id,
             generation,
-            DocumentStatus.Available);
+            DocumentProcessingState.Processing);
 
         DocumentStatus persistedStatus =
             await GetDocumentStatusAsync(
@@ -229,7 +229,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 document.Id);
 
         Assert.Equal(
-            DocumentStatus.Available,
+            DocumentStatus.Processing,
             persistedStatus);
     }
 
@@ -252,7 +252,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishProcessingStateAsync(
             document.Id,
             firstGeneration,
-            DocumentStatus.Processing);
+            DocumentProcessingState.Processing);
 
         long secondGeneration =
             await store.AcquireProcessingGenerationAsync(
@@ -265,7 +265,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishProcessingStateAsync(
             document.Id,
             secondGeneration,
-            DocumentStatus.Available);
+            DocumentProcessingState.Processing);
 
         StaleProcessingGenerationException exception =
             await Assert.ThrowsAsync<StaleProcessingGenerationException>(
@@ -273,7 +273,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                     store.PublishProcessingStateAsync(
                         document.Id,
                         firstGeneration,
-                        DocumentStatus.Failed));
+                        DocumentProcessingState.Failed));
 
         Assert.Equal(
             document.Id,
@@ -293,7 +293,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 document.Id);
 
         Assert.Equal(
-            DocumentStatus.Available,
+            DocumentStatus.Processing,
             persistedStatus);
     }
 
@@ -315,7 +315,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                     store.PublishProcessingStateAsync(
                         documentId,
                         1L,
-                        DocumentStatus.Processing));
+                        DocumentProcessingState.Processing));
 
         Assert.Contains(
             documentId.ToString(),
@@ -348,7 +348,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 store.PublishProcessingStateAsync(
                     document.Id,
                     generation,
-                    DocumentStatus.Available,
+                    DocumentProcessingState.Processing,
                     cancellationTokenSource.Token));
 
         DocumentStatus persistedStatus =
@@ -659,7 +659,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishProcessingStateAsync(
             document.Id,
             generation,
-            DocumentStatus.Processing);
+            DocumentProcessingState.Processing);
 
         await store.RecoverCancelledProcessingAsync(
             document.Id,
@@ -725,7 +725,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishProcessingStateAsync(
             document.Id,
             secondGeneration,
-            DocumentStatus.Processing);
+            DocumentProcessingState.Processing);
 
         await store.RecoverCancelledProcessingAsync(
             document.Id,
@@ -807,7 +807,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishProcessingStateAsync(
             document.Id,
             firstGeneration,
-            DocumentStatus.Processing);
+            DocumentProcessingState.Processing);
 
         long secondGeneration =
             await store.AcquireProcessingGenerationAsync(
@@ -816,7 +816,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishProcessingStateAsync(
             document.Id,
             secondGeneration,
-            DocumentStatus.Processing);
+            DocumentProcessingState.Processing);
 
         StaleProcessingGenerationException exception =
             await Assert.ThrowsAsync<StaleProcessingGenerationException>(
@@ -876,7 +876,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         await store.PublishProcessingStateAsync(
             document.Id,
             generation,
-            DocumentStatus.Processing);
+            DocumentProcessingState.Processing);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();

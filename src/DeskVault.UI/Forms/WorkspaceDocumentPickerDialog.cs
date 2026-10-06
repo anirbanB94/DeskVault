@@ -106,7 +106,7 @@ public partial class WorkspaceDocumentPickerDialog : Form
                     .ToUpperInvariant());
 
             item.SubItems.Add(
-                document.Status.ToString());
+                document.ProcessingState.ToString());
 
             item.Tag = document.Id;
 

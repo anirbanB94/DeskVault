@@ -5,4 +5,4 @@ public sealed record DocumentListItem(
     string FileName,
     string Type,
     DateTimeOffset Imported,
-    string Status);
+    string ProcessingState);

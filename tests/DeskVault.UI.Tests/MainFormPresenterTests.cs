@@ -1614,7 +1614,8 @@ public sealed class MainFormPresenterTests
                     documents =>
                         documents.Count == 1 &&
                         documents[0].Id == importedDocumentId &&
-                        documents[0].FileName == "security-policy.md")),
+                        documents[0].FileName == "security-policy.md" &&
+                        documents[0].ProcessingState == DocumentProcessingState.NeverProcessed.ToString())),
             Times.Once);
 
         view.Verify(

@@ -13,7 +13,7 @@ public interface IDocumentProcessingStore
     Task PublishProcessingStateAsync(
         Guid documentId,
         long processingGeneration,
-        DocumentStatus status,
+        DocumentProcessingState state,
         CancellationToken cancellationToken = default);
 
     Task PublishSuccessfulProcessingAsync(

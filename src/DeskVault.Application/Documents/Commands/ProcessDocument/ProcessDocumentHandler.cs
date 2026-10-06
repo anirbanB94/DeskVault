@@ -94,6 +94,8 @@ public sealed class ProcessDocumentHandler
 
         try
         {
+            document.BeginProcessing();
+
             processingGeneration =
                 await _processingStore.AcquireProcessingGenerationAsync(
                     document.Id,
@@ -102,7 +104,7 @@ public sealed class ProcessDocumentHandler
             await _processingStore.PublishProcessingStateAsync(
                 document.Id,
                 processingGeneration,
-                DocumentStatus.Processing,
+                DocumentProcessingState.Processing,
                 cancellationToken);
 
             var extractor =
@@ -146,6 +148,8 @@ public sealed class ProcessDocumentHandler
                 chunks,
                 cancellationToken);
 
+            document.MarkProcessingSucceeded();
+
             _logger.LogInformation(
                 LogMessages.DocumentProcessingCompleted);
 
@@ -164,6 +168,8 @@ public sealed class ProcessDocumentHandler
                     document.Id,
                     processingGeneration,
                     CancellationToken.None);
+
+                document.MarkProcessingCancelled();
             }
 
             throw;
@@ -175,8 +181,10 @@ public sealed class ProcessDocumentHandler
                 await _processingStore.PublishProcessingStateAsync(
                     document.Id,
                     processingGeneration,
-                    DocumentStatus.Failed,
+                    DocumentProcessingState.Failed,
                     CancellationToken.None);
+
+                document.MarkProcessingFailed();
             }
 
             _logger.LogError(
