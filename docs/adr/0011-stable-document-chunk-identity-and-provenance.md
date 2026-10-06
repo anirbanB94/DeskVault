@@ -198,6 +198,20 @@ the persisted representation.
 `ChunkingRuleVersion` identifies the chunking rules that produced the
 chunk boundaries and ordering.
 
+The canonical chunking-rule definition includes all behavior-affecting
+chunking inputs, including `MaxChunkSize` and `ChunkOverlap`.
+
+`MaxChunkSize` is the maximum emitted chunk size in characters.
+
+`ChunkOverlap` is a non-negative character count defining the suffix of
+the preceding emitted chunk that may be reused as the prefix of the
+following chunk. It must be strictly smaller than `MaxChunkSize`, and
+zero overlap represents the existing non-overlapping baseline.
+
+Changing either `MaxChunkSize` or `ChunkOverlap` is therefore a
+behavior-affecting chunking-rule change and must be capable of producing
+a different `ChunkingRuleVersion`.
+
 Equivalent chunking behavior must resolve to the same chunking-rule
 version, while behaviorally relevant chunking-rule changes must be
 capable of producing a different version.
@@ -605,6 +619,12 @@ The implementation must:
 - persist the chunking-rule version with the same canonical chunk row and
   processing generation that produced it;
 - preserve deterministic ordering;
+- include `MaxChunkSize` and `ChunkOverlap` in the deterministic
+  chunking-rule contract;
+- preserve zero-overlap behavior as the existing non-overlapping
+  baseline;
+- ensure configured overlap never causes emitted chunks to exceed the
+  configured maximum size or prevents forward progress;
 - preserve existing transactional chunk replacement;
 - preserve cancellation and stale-attempt protections established by
   ADR-0010;
