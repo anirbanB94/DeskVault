@@ -232,7 +232,8 @@ public sealed class Document
                 ];
 
         ValidateKnowledgeAvailability(
-            restoredKnowledgeAvailability);
+            restoredKnowledgeAvailability,
+            lastSuccessfulProcessingGeneration);
 
         return new Document(
             id,
@@ -325,6 +326,10 @@ public sealed class Document
                 representation,
                 state,
                 lastAvailableProcessingGeneration);
+
+        ValidateKnowledgeAvailability(
+            [availability],
+            LastSuccessfulProcessingGeneration);
 
         int existingIndex =
             _knowledgeAvailability.FindIndex(
@@ -453,7 +458,9 @@ public sealed class Document
                     DocumentProcessingState.Failed,
 
                 DocumentStatus.Indexed or
-                DocumentStatus.Available or
+                DocumentStatus.Available =>
+                    DocumentProcessingState.Succeeded,
+
                 DocumentStatus.Archived or
                 DocumentStatus.Deleted
                     when lastSuccessfulProcessingGeneration > 0L =>
@@ -463,10 +470,18 @@ public sealed class Document
                     DocumentProcessingState.NeverProcessed
             };
 
+        bool legacyKeywordSearchIsAvailable =
+            status != DocumentStatus.Deleted &&
+            (
+                lastSuccessfulProcessingGeneration > 0L ||
+                status is
+                    DocumentStatus.Indexed or
+                    DocumentStatus.Available
+            );
+
         IReadOnlyList<DocumentKnowledgeAvailability>
             knowledgeAvailability =
-                status != DocumentStatus.Deleted &&
-                lastSuccessfulProcessingGeneration > 0L
+                legacyKeywordSearchIsAvailable
                     ?
                     [
                         new DocumentKnowledgeAvailability(
@@ -490,7 +505,8 @@ public sealed class Document
 
     private static void ValidateKnowledgeAvailability(
         IReadOnlyList<DocumentKnowledgeAvailability>
-            knowledgeAvailability)
+            knowledgeAvailability,
+        long lastSuccessfulProcessingGeneration)
     {
         HashSet<DocumentKnowledgeRepresentationKind>
             representations = [];
@@ -504,6 +520,15 @@ public sealed class Document
             {
                 throw new ArgumentException(
                     $"Knowledge availability for representation '{availability.Representation}' is duplicated.",
+                    nameof(knowledgeAvailability));
+            }
+
+            if (availability.LastAvailableProcessingGeneration
+                is long generation &&
+                generation > lastSuccessfulProcessingGeneration)
+            {
+                throw new ArgumentException(
+                    $"Knowledge availability generation '{generation}' cannot be greater than last successful processing generation '{lastSuccessfulProcessingGeneration}'.",
                     nameof(knowledgeAvailability));
             }
         }

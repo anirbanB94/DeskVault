@@ -43,11 +43,11 @@ public sealed record DocumentKnowledgeAvailability
         }
 
         if (lastAvailableProcessingGeneration is not null &&
-            lastAvailableProcessingGeneration <= 0)
+            lastAvailableProcessingGeneration < 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(lastAvailableProcessingGeneration),
-                "Last available processing generation must be greater than zero when provided.");
+                "Last available processing generation cannot be negative.");
         }
 
         if (state is

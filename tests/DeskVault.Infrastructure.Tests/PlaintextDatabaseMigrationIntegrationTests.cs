@@ -187,6 +187,34 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     DocumentStatus.Available,
                     document.Status);
 
+                Assert.Equal(
+                    DocumentLifecycleState.Active,
+                    document.LifecycleState);
+
+                Assert.Equal(
+                    DocumentProcessingState.Succeeded,
+                    document.ProcessingState);
+
+                Assert.Equal(
+                    0L,
+                    document.ProcessingGeneration);
+
+                Assert.Equal(
+                    0L,
+                    document.LastSuccessfulProcessingGeneration);
+
+                DocumentKnowledgeAvailability keywordSearchAvailability =
+                    document.GetKnowledgeAvailability(
+                        DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+                Assert.Equal(
+                    DocumentKnowledgeAvailabilityState.Available,
+                    keywordSearchAvailability.State);
+
+                Assert.Equal(
+                    0L,
+                    keywordSearchAvailability.LastAvailableProcessingGeneration);
+
                 Assert.Null(
                     document.LastSuccessfulProcessingRuleVersion);
 
@@ -199,6 +227,35 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
 
                 await using DeskVaultDbContext dbContext =
                     await dbContextFactory.CreateDbContextAsync();
+
+                List<DocumentKnowledgeAvailabilityEntity>
+                    knowledgeAvailabilities =
+                        await dbContext.DocumentKnowledgeAvailabilities
+                            .AsNoTracking()
+                            .Where(
+                                availability =>
+                                    availability.DocumentId ==
+                                    documentId)
+                            .ToListAsync();
+
+                DocumentKnowledgeAvailabilityEntity
+                    persistedKeywordSearchAvailability =
+                        Assert.Single(
+                            knowledgeAvailabilities,
+                            availability =>
+                                availability.Representation ==
+                                (int)
+                                    DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+                Assert.Equal(
+                    DocumentKnowledgeAvailabilityState.Available,
+                    (DocumentKnowledgeAvailabilityState)
+                        persistedKeywordSearchAvailability.State);
+
+                Assert.Equal(
+                    0L,
+                    persistedKeywordSearchAvailability
+                        .LastAvailableProcessingGeneration);
 
                 List<DocumentChunkEntity> chunks =
                     await dbContext.DocumentChunks
@@ -1365,6 +1422,22 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     0L,
                     Convert.ToInt64(result));
 
+                migrationHistoryCommand.CommandText =
+                    """
+                    SELECT COUNT(*)
+                    FROM "__EFMigrationsHistory"
+                    WHERE "MigrationId" =
+                        '20261007051818_PersistIndependentKnowledgeAvailability';
+                    """;
+
+                object? knowledgeMigrationResult =
+                    await migrationHistoryCommand.ExecuteScalarAsync();
+
+                Assert.Equal(
+                    0L,
+                    Convert.ToInt64(
+                        knowledgeMigrationResult));
+
                 await using SqliteCommand documentCountCommand =
                     failedConnection.CreateCommand();
 
@@ -1463,6 +1536,46 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 Assert.Equal(
                     0L,
                     document.LastSuccessfulProcessingGeneration);
+
+                Assert.Equal(
+                    DocumentLifecycleState.Active,
+                    (DocumentLifecycleState)
+                        document.LifecycleState);
+
+                Assert.Equal(
+                    DocumentProcessingState.Succeeded,
+                    (DocumentProcessingState)
+                        document.ProcessingState);
+
+                List<DocumentKnowledgeAvailabilityEntity>
+                    knowledgeAvailabilities =
+                        await dbContext.DocumentKnowledgeAvailabilities
+                            .AsNoTracking()
+                            .Where(
+                                availability =>
+                                    availability.DocumentId ==
+                                    documentId)
+                            .ToListAsync();
+
+                DocumentKnowledgeAvailabilityEntity
+                    keywordSearchAvailability =
+                        Assert.Single(
+                            knowledgeAvailabilities,
+                            availability =>
+                                availability.Representation ==
+                                (int)
+                                    DocumentKnowledgeRepresentationKind
+                                        .KeywordSearch);
+
+                Assert.Equal(
+                    DocumentKnowledgeAvailabilityState.Available,
+                    (DocumentKnowledgeAvailabilityState)
+                        keywordSearchAvailability.State);
+
+                Assert.Equal(
+                    0L,
+                    keywordSearchAvailability
+                        .LastAvailableProcessingGeneration);
 
                 List<DocumentChunkEntity> chunks =
                     await dbContext.DocumentChunks
@@ -1591,6 +1704,22 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 Assert.Equal(
                     1L,
                     Convert.ToInt64(finalResult));
+
+                finalMigrationHistoryCommand.CommandText =
+                    """
+                    SELECT COUNT(*)
+                    FROM "__EFMigrationsHistory"
+                    WHERE "MigrationId" =
+                        '20261007051818_PersistIndependentKnowledgeAvailability';
+                    """;
+
+                object? finalKnowledgeMigrationResult =
+                    await finalMigrationHistoryCommand.ExecuteScalarAsync();
+
+                Assert.Equal(
+                    1L,
+                    Convert.ToInt64(
+                        finalKnowledgeMigrationResult));
             }
         }
         finally

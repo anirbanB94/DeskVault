@@ -14,6 +14,10 @@ public sealed class DeskVaultDbContext : DbContext
     public DbSet<DocumentEntity> Documents =>
         Set<DocumentEntity>();
 
+    public DbSet<DocumentKnowledgeAvailabilityEntity>
+        DocumentKnowledgeAvailabilities =>
+        Set<DocumentKnowledgeAvailabilityEntity>();
+
     public DbSet<DocumentChunkEntity> DocumentChunks =>
         Set<DocumentChunkEntity>();
 

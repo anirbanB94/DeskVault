@@ -42,8 +42,12 @@ Document metadata remains persisted through the existing document
 repository boundary. In addition, document processing requires persistence
 for:
 
-- processing execution state
+- document lifecycle state independent of processing execution
+- processing execution state independent of lifecycle state
 - processing attempt information required by the processing workflow
+- independent availability state for each derived knowledge representation
+- the processing generation associated with each available or stale knowledge
+  representation
 - the relationship between a document and its derived chunks
 - persisted document chunks representing the current successful derived
   processing result
@@ -57,8 +61,10 @@ Conceptually:
 ```text
 SQLite Persistence
 ├── Document metadata
-│   └── LastSuccessfulProcessingRuleVersion?
-├── Processing state
+├── Document lifecycle state
+├── Processing execution state
+├── Knowledge availability
+│   └── representation + state + last available processing generation?
 └── Document chunks
     ├── stable chunk identity
     ├── document relationship
@@ -74,12 +80,15 @@ The relationship is:
 ```text
 Document
    │
+   ├── lifecycle state
    ├── processing state
-   │
+   ├── processing generation
    ├── last successful processing generation
-   │
    ├── last successful processing-rule version
-   │
+   ├── knowledge availability[]
+   │   ├── representation
+   │   ├── state
+   │   └── last available processing generation?
    └── derived chunks
        ├── processing generation
        ├── chunking-rule version
@@ -126,23 +135,23 @@ EF Core and SQLite-specific types remain inside Infrastructure.
 
 ## Current Persistence Scope
 
-The current MVP 1 persistence foundation therefore supports:
+The current persistence foundation therefore supports:
 
 ```text
 Document
-    ↓
-Persistent metadata
-    ↓
-Processing state
-    ↓
-Successful processing lineage
+    ├── lifecycle state
+    ├── processing state
     ├── processing generation
-    └── processing-rule version?
-    ↓
-Derived document chunks
-    ├── processing generation
-    ├── chunking-rule version?
-    └── optional source-location provenance
+    ├── last successful processing generation
+    ├── last successful processing-rule version?
+    ├── knowledge availability[]
+    │   ├── representation
+    │   ├── state
+    │   └── last available processing generation?
+    └── derived document chunks
+        ├── processing generation
+        ├── chunking-rule version?
+        └── optional source-location provenance
 ```
 
 Encrypted source document content remains stored separately as encrypted
@@ -190,12 +199,73 @@ a historical processing-rule or chunking-rule version.
 This extension does not change the original decision to use SQLite with
 Entity Framework Core for local persistence. It extends the persistence
 model to support the document knowledge-processing pipeline established by
-ADR-0008 and the canonical chunk provenance contract established by
-ADR-0011.
+ADR-0008, the reliable processing lifecycle established by ADR-0010, and
+the canonical chunk provenance contract established by ADR-0011.
 
-Version-lineage persistence further extends this model for the successful
-derived document knowledge represented by the processing lifecycle in
-ADR-0010.
+## Independent Lifecycle and Knowledge Availability Persistence
+
+The persistence model stores three independent concerns that must survive
+application restart without being inferred from one another:
+
+```text
+Document
+├── LifecycleState
+├── ProcessingState
+├── ProcessingGeneration
+├── LastSuccessfulProcessingGeneration
+├── LastSuccessfulProcessingRuleVersion?
+└── KnowledgeAvailability[]
+      ├── Representation
+      ├── State
+      └── LastAvailableProcessingGeneration?
+```
+
+`DocumentLifecycleState` represents the lifecycle of the document itself.
+`DocumentProcessingState` represents processing execution. Knowledge
+availability represents whether a specific derived representation is usable.
+
+The legacy `DocumentStatus` remains persisted as a compatibility projection
+during the transition, but it is not the authoritative source for these
+independent concerns.
+
+The current MVP2 representation is `KeywordSearch`.
+
+`Available` and `Stale` knowledge stores the processing generation represented
+by that derived knowledge. The generation must be non-negative and must not
+exceed `LastSuccessfulProcessingGeneration`.
+
+Generation `0` has explicit historical semantics. It means that the producing
+processing generation is unknown because the legacy persisted data predates
+reliable processing-generation provenance. Migration may therefore preserve
+usable legacy `Available` or `Indexed` knowledge as `Available @ generation 0`,
+but must never invent a positive historical generation.
+
+A successful processing publication does not implicitly create or modify a
+knowledge-availability record. Knowledge representation state is persisted
+through its own lifecycle so that a future representation can independently
+become `Unavailable`, `Available`, `Stale`, or `Failed` without changing the
+unrelated processing outcome.
+
+## Lossless Document Repository Persistence
+
+`SqliteDocumentRepository` is responsible for lossless restoration of the
+persisted document lifecycle state.
+
+`UpdateAsync` must preserve the complete processing lineage already persisted
+for the document, including:
+
+- `ProcessingGeneration`
+- `LastSuccessfulProcessingGeneration`
+- `LastSuccessfulProcessingRuleVersion`
+
+Knowledge availability is persisted as separate child rows and must be
+updated independently of processing outcome. Updating a knowledge record must
+not silently reset lifecycle or processing state, and updating processing state
+must not silently remove unrelated knowledge availability.
+
+This repository-level preservation prevents a generic document update from
+accidentally discarding processing lineage established by the processing
+store.
 
 ## Architectural Boundaries
 
@@ -262,14 +332,30 @@ DocumentChunkEntity
 └── SourceLocationEndLine?
 ```
 
-The persisted document metadata additionally includes:
+The persisted document metadata includes:
 
 ```text
 DocumentEntity
+├── Status                      (legacy compatibility projection)
+├── LifecycleState
+├── ProcessingState
 ├── ProcessingGeneration
 ├── LastSuccessfulProcessingGeneration
 └── LastSuccessfulProcessingRuleVersion?
 ```
+
+Independent knowledge availability is persisted through a separate entity:
+
+```text
+DocumentKnowledgeAvailabilityEntity
+├── DocumentId
+├── Representation
+├── State
+└── LastAvailableProcessingGeneration?
+```
+
+The composite key `(DocumentId, Representation)` ensures one persisted
+availability record per representation for a document.
 
 Processing-rule and chunking-rule version fields are nullable because
 existing persisted knowledge may predate version persistence and therefore
@@ -319,8 +405,17 @@ The document metadata table currently enforces:
 * unique SHA-256 hash
 * required import timestamp
 * required document status
+* required lifecycle state
+* required processing state
 * required stored-file path
 * an index on `ImportedAt`
+* `(DocumentId, Representation)` as the primary key for knowledge-availability records
+* a foreign key from knowledge availability to `Documents(Id)` with cascade delete
+* a non-negative constraint for `LastAvailableProcessingGeneration` when present
+
+The generation relationship between knowledge availability and
+`LastSuccessfulProcessingGeneration` is enforced at the Domain and
+migration/backfill boundaries because it spans two persisted tables.
 
 The unique SHA-256 constraint provides the persistence-level concurrency
 safeguard for document deduplication in addition to the application-level
@@ -436,23 +531,49 @@ historical version.
 
 Existing persisted data remains usable after the migration. Historical
 chunks receive `NULL/NULL` source-location values because their original
-source locations cannot be reconstructed reliably.
+source locations cannot be reconstructed reliably, and historical version
+fields remain `NULL` when their producing rules cannot be recovered.
 
-Version-lineage fields remain `NULL` when the rules that produced historical
-knowledge cannot be recovered reliably.
+Existing-vault initialization performs schema evolution first and then runs
+required persistence backfills inside the vault initialization critical
+section:
+
+```text
+EF Core MigrateAsync
+        ↓
+DocumentChunkIdentityBackfill
+        ↓
+DocumentLifecycleStateBackfill
+```
+
+`DocumentLifecycleStateBackfill` establishes compatible independent lifecycle
+and knowledge state for legacy documents. It is retry-safe and idempotent:
+existing knowledge availability is not silently overwritten, and an
+interrupted backfill can be retried after rollback.
+
+The backfill validates persisted `Available` and `Stale` generation lineage
+before accepting already-existing knowledge records. A knowledge generation
+greater than the document's `LastSuccessfulProcessingGeneration` is treated as
+an inconsistent persisted state rather than being normalized silently.
+
+The EF Core migration itself establishes only the durable schema. Historical
+lifecycle and knowledge interpretation remains in the explicit backfill so
+schema evolution does not fabricate historical knowledge provenance.
 
 Database initialization remains separate from application use-case logic
 and from the UI lifecycle.
 
 ## Current Implementation
 
-The SQLite persistence decision is implemented in the current MVP 1
+The SQLite persistence decision is implemented in the current
 persistence foundation.
 
 The current persistence model includes:
 
 - document metadata
-- processing execution state
+- independent document lifecycle state
+- independent processing execution state
+- independent derived knowledge availability
 - processing attempt information
 - document-to-chunk relationships
 - persisted document chunks representing the current successful derived result
@@ -481,6 +602,18 @@ The successful document-level processing-rule version is stored on the
 The processing-rule version and chunking-rule versions are published only
 through the successful-processing persistence boundary so they cannot become
 current independently of the corresponding successful derived result.
+
+`DocumentLifecycleStateBackfill` and the corresponding EF Core migration
+establish durable independent lifecycle and knowledge state for existing
+vaults. Legacy `Available` and `Indexed` documents with generation `0` are
+restored as successfully processed with `KeywordSearch = Available @ 0`,
+explicitly preserving historical uncertainty rather than inventing a
+producing generation.
+
+`SqliteDocumentRepository` restores and updates lifecycle state, processing
+state, knowledge availability, and processing lineage as one lossless
+persistence model. Generic document updates do not discard generation or rule
+version lineage.
 
 The Application layer remains independent of EF Core and SQLite through
 application-defined abstractions.
@@ -516,6 +649,8 @@ A future server-backed implementation could be introduced behind the existing Ap
 * Encrypted document content remains separate from metadata.
 * Database-level uniqueness reinforces duplicate detection.
 * Persistence can evolve independently of the Domain model.
+* Document lifecycle state, processing execution, and knowledge availability
+  can survive restart independently.
 * Persisted processed knowledge retains stable identity and processing provenance.
 * Successful persisted knowledge also retains the processing-rule and chunking-rule versions that produced it.
 * Version metadata remains bound to the same successful derived representation as the associated processing generation.
@@ -531,6 +666,8 @@ A future server-backed implementation could be introduced behind the existing Ap
 * SQLite schema evolution requires migrations.
 * A separate persistence entity must be maintained alongside the Domain entity.
 * Database initialization adds startup work.
+* Existing-vault initialization requires explicit lifecycle/knowledge backfill
+  logic in addition to EF Core schema migration.
 * Source-location persistence adds nullable schema fields and a database
   validation constraint.
 * Historical source-location provenance cannot be reconstructed for
@@ -560,19 +697,17 @@ SQLite unique SHA-256 constraint
     ↓
 Duplicate rejected at persistence boundary when required
     ↓
-Persist metadata
+Persist document metadata
     ↓
 Process document
     ↓
-Persist derived chunks
+Persist processing outcome + successful version lineage
     ↓
-Persist reliable source-location provenance when available
-    ↓
-Persist successful version lineage
+Persist knowledge availability independently
     ↓
 Restart application
     ↓
-Restore metadata and derived state
+Restore lifecycle + processing + knowledge state
     ↓
 Open and decrypt document
 ```
@@ -585,11 +720,9 @@ A SHA-256 uniqueness conflict is translated into the existing duplicate import
 outcome. Other persistence failures are not converted into duplicate results.
 
 Derived document chunks remain stored in SQLite as Infrastructure-owned
-persistence entities, with source-location provenance stored alongside the
-canonical chunk identity, document relationship, content identity,
-ordering, and processing generation.
-
-Chunking-rule version is stored on the same canonical `DocumentChunks` row.
+persistence entities, with chunking-rule version stored alongside the
+canonical chunk identity, document relationship, content identity, ordering,
+and processing generation.
 
 The document record retains the processing-rule version corresponding to
 its `LastSuccessfulProcessingGeneration`. These version values are advanced

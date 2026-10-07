@@ -57,16 +57,28 @@ public sealed class SqliteDocumentRepository
             Sha256Hash = document.Sha256Hash,
             ImportedAt = document.ImportedAt,
             Status = (int)document.Status,
+            LifecycleState = (int)document.LifecycleState,
+            ProcessingState = (int)document.ProcessingState,
             StoredFilePath = document.StoredFilePath,
             ProcessingGeneration = document.ProcessingGeneration,
-            LastSuccessfulProcessingGeneration =
-                document.LastSuccessfulProcessingGeneration,
-            LastSuccessfulProcessingRuleVersion =
-                document.LastSuccessfulProcessingRuleVersion
+            LastSuccessfulProcessingGeneration = document.LastSuccessfulProcessingGeneration,
+            LastSuccessfulProcessingRuleVersion = document.LastSuccessfulProcessingRuleVersion
         };
 
         await dbContext.Documents.AddAsync(
             entity,
+            cancellationToken);
+
+        await dbContext.DocumentKnowledgeAvailabilities.AddRangeAsync(
+            document.KnowledgeAvailability.Select(
+                availability =>
+                    new DocumentKnowledgeAvailabilityEntity
+                    {
+                        DocumentId = document.Id,
+                        Representation = (int)availability.Representation,
+                        State = (int)availability.State,
+                        LastAvailableProcessingGeneration = availability.LastAvailableProcessingGeneration
+                    }),
             cancellationToken);
 
         try
@@ -99,9 +111,28 @@ public sealed class SqliteDocumentRepository
                 document => document.Id == documentId,
                 cancellationToken);
 
-        return entity is null
-            ? null
-            : ToDomain(entity);
+        if (entity is null)
+        {
+            return null;
+        }
+
+        List<DocumentKnowledgeAvailabilityEntity>
+            knowledgeAvailability =
+                await dbContext.DocumentKnowledgeAvailabilities
+                    .AsNoTracking()
+                    .Where(
+                        availability =>
+                            availability.DocumentId ==
+                            documentId)
+                    .OrderBy(
+                        availability =>
+                            availability.Representation)
+                    .ToListAsync(
+                        cancellationToken);
+
+        return ToDomain(
+            entity,
+            knowledgeAvailability);
     }
 
     public async Task<IReadOnlyList<Document>> GetAllAsync(
@@ -115,10 +146,61 @@ public sealed class SqliteDocumentRepository
             .AsNoTracking()
             .OrderByDescending(
                 document => document.ImportedAt)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(
+                cancellationToken);
+
+        if (entities.Count == 0)
+        {
+            return [];
+        }
+
+        Guid[] documentIds =
+            entities
+                .Select(
+                    document =>
+                        document.Id)
+                .ToArray();
+
+        List<DocumentKnowledgeAvailabilityEntity>
+            knowledgeAvailability =
+                await dbContext.DocumentKnowledgeAvailabilities
+                    .AsNoTracking()
+                    .Where(
+                        availability =>
+                            documentIds.Contains(
+                                availability.DocumentId))
+                    .OrderBy(
+                        availability =>
+                            availability.DocumentId)
+                    .ThenBy(
+                        availability =>
+                            availability.Representation)
+                    .ToListAsync(
+                        cancellationToken);
+
+        Dictionary<Guid, IReadOnlyList<DocumentKnowledgeAvailabilityEntity>>
+            knowledgeByDocument =
+                knowledgeAvailability
+                    .GroupBy(
+                        availability =>
+                            availability.DocumentId)
+                    .ToDictionary(
+                        group =>
+                            group.Key,
+                        group =>
+                            (IReadOnlyList<DocumentKnowledgeAvailabilityEntity>)
+                            group.ToList());
 
         return entities
-            .Select(ToDomain)
+            .Select(
+                entity =>
+                    ToDomain(
+                        entity,
+                        knowledgeByDocument.TryGetValue(
+                            entity.Id,
+                            out IReadOnlyList<DocumentKnowledgeAvailabilityEntity>? availability)
+                                ? availability
+                                : []))
             .ToList();
     }
 
@@ -159,7 +241,8 @@ public sealed class SqliteDocumentRepository
 
         var entity = await dbContext.Documents
             .FirstOrDefaultAsync(
-                existing => existing.Id == document.Id,
+                existing =>
+                    existing.Id == document.Id,
                 cancellationToken);
 
         if (entity is null)
@@ -171,12 +254,95 @@ public sealed class SqliteDocumentRepository
                 $"Document '{document.Id}' was not found.");
         }
 
+        List<DocumentKnowledgeAvailabilityEntity>
+            existingKnowledgeAvailability =
+                await dbContext.DocumentKnowledgeAvailabilities
+                    .Where(
+                        availability =>
+                            availability.DocumentId ==
+                            document.Id)
+                    .ToListAsync(
+                        cancellationToken);
+
         entity.FileName = document.FileName;
         entity.DisplayName = document.DisplayName;
         entity.Sha256Hash = document.Sha256Hash;
         entity.ImportedAt = document.ImportedAt;
         entity.Status = (int)document.Status;
+        entity.LifecycleState = (int)document.LifecycleState;
+        entity.ProcessingState = (int)document.ProcessingState;
         entity.StoredFilePath = document.StoredFilePath;
+        entity.ProcessingGeneration = document.ProcessingGeneration;
+        entity.LastSuccessfulProcessingGeneration = document.LastSuccessfulProcessingGeneration;
+        entity.LastSuccessfulProcessingRuleVersion = document.LastSuccessfulProcessingRuleVersion;
+
+        Dictionary<
+                DocumentKnowledgeRepresentationKind,
+                DocumentKnowledgeAvailability>
+            desiredKnowledgeAvailability =
+                document.KnowledgeAvailability
+                    .ToDictionary(
+                        availability =>
+                            availability.Representation);
+
+        foreach (
+            DocumentKnowledgeAvailabilityEntity existingAvailability
+            in existingKnowledgeAvailability)
+        {
+            DocumentKnowledgeRepresentationKind representation =
+                (DocumentKnowledgeRepresentationKind)
+                    existingAvailability.Representation;
+
+            if (!desiredKnowledgeAvailability.TryGetValue(
+                    representation,
+                    out DocumentKnowledgeAvailability? desired))
+            {
+                dbContext.DocumentKnowledgeAvailabilities.Remove(
+                    existingAvailability);
+
+                continue;
+            }
+
+            existingAvailability.State =
+                (int)desired.State;
+
+            existingAvailability.LastAvailableProcessingGeneration =
+                desired.LastAvailableProcessingGeneration;
+        }
+
+        HashSet<DocumentKnowledgeRepresentationKind>
+            existingRepresentations =
+                existingKnowledgeAvailability
+                    .Select(
+                        availability =>
+                            (DocumentKnowledgeRepresentationKind)
+                                availability.Representation)
+                    .ToHashSet();
+
+        foreach (
+            DocumentKnowledgeAvailability desired
+            in document.KnowledgeAvailability)
+        {
+            if (existingRepresentations.Contains(
+                    desired.Representation))
+            {
+                continue;
+            }
+
+            await dbContext.DocumentKnowledgeAvailabilities.AddAsync(
+                new DocumentKnowledgeAvailabilityEntity
+                {
+                    DocumentId =
+                        document.Id,
+                    Representation =
+                        (int)desired.Representation,
+                    State =
+                        (int)desired.State,
+                    LastAvailableProcessingGeneration =
+                        desired.LastAvailableProcessingGeneration
+                },
+                cancellationToken);
+        }
 
         await dbContext.SaveChangesAsync(
             cancellationToken);
@@ -200,8 +366,23 @@ public sealed class SqliteDocumentRepository
     }
 
     private static Document ToDomain(
-        DocumentEntity entity)
+        DocumentEntity entity,
+        IReadOnlyList<DocumentKnowledgeAvailabilityEntity>
+            knowledgeAvailability)
     {
+        IReadOnlyList<DocumentKnowledgeAvailability>
+            domainKnowledgeAvailability =
+                knowledgeAvailability
+                    .Select(
+                        availability =>
+                            new DocumentKnowledgeAvailability(
+                                (DocumentKnowledgeRepresentationKind)
+                                    availability.Representation,
+                                (DocumentKnowledgeAvailabilityState)
+                                    availability.State,
+                                availability.LastAvailableProcessingGeneration))
+                    .ToList();
+
         return Document.Restore(
             entity.Id,
             entity.FileName,
@@ -212,6 +393,9 @@ public sealed class SqliteDocumentRepository
             (DocumentStatus)entity.Status,
             entity.ProcessingGeneration,
             entity.LastSuccessfulProcessingGeneration,
-            entity.LastSuccessfulProcessingRuleVersion);
+            entity.LastSuccessfulProcessingRuleVersion,
+            (DocumentLifecycleState)entity.LifecycleState,
+            (DocumentProcessingState)entity.ProcessingState,
+            domainKnowledgeAvailability);
     }
 }
