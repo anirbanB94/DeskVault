@@ -36,6 +36,12 @@ implementation and relevance strategy to evolve without replacing the
 document-oriented result contract, while preserving deterministic
 keyword-search ordering and continuation semantics.
 
+The Application retrieval boundary must also prevent consumers from
+becoming coupled to the way search candidates are obtained, stored, or
+paged. Consumers should request a bounded page of application-level
+results and should not need to perform full-result ranking, storage-level
+pagination, or retrieval-specific continuation handling themselves.
+
 ## Decision
 
 DeskVault will use a **document-oriented search result contract** at the
@@ -165,6 +171,53 @@ Application boundary.
 The encoding and decoding of continuation values is an Application
 concern and must not expose storage-specific implementation details.
 
+### Application Retrieval Boundary
+
+The Application exposes retrieval through a storage-independent
+`ISearchDocumentsRetriever` contract.
+
+Application consumers request a page through this boundary rather than
+through `IDocumentSearchStore` or another concrete persistence/search
+abstraction.
+
+The retrieval contract is page-shaped:
+
+```text
+SearchDocumentsPage
+├── Results
+├── HasMore
+└── Opaque Continuation
+```
+
+`SearchDocumentsPage` represents the consumer-facing result of one
+retrieval operation. It exposes application-level `SearchDocumentsResult`
+values and the opaque continuation state required to request the next
+page.
+
+The Application search handler is a thin façade over the retrieval
+boundary. It delegates the query and cancellation token to
+`ISearchDocumentsRetriever` and does not own ranking, full-result
+materialization, `Skip`/`Take`, storage pagination, or continuation
+encoding/decoding.
+
+Retrieval implementation details remain behind the boundary. Consumers
+must not need to understand whether matching evidence was obtained from
+SQLite, another search implementation, an index, or another future
+retrieval mechanism.
+
+The retrieval boundary does not require a particular underlying
+implementation strategy. It therefore permits retrieval-side filtering,
+ordering, bounded page selection, lookahead, and other implementation
+optimizations while keeping the Application-facing page contract stable.
+
+The current implementation may still acquire and rank a complete
+candidate collection internally while the boundary is being introduced.
+That internal implementation detail is temporary and is not part of the
+consumer contract. Subsequent retrieval optimization work may move
+matching, ordering, and page-boundary decisions deeper toward the
+retrieval implementation without changing the supported keyword-search
+result, ordering, or continuation semantics defined by this ADR.
+
 ### Search and Persistence Boundary
 
 Infrastructure remains responsible for obtaining matching persisted
@@ -183,7 +236,8 @@ technology.
 
 A retrieval implementation may change how matching results are obtained
 or efficiently bounded, provided that the Application-level search
-ordering and continuation semantics remain behaviorally compatible.
+ordering, result representation, and continuation semantics remain
+behaviorally compatible.
 
 ### Relationship to Canonical Processed Knowledge
 
@@ -244,23 +298,29 @@ Pagination / Continuation
 Represent the last consumed position in the deterministic
 Application-level ordering
 
+Application Retrieval Boundary
+        ↓
+Expose a bounded page-shaped contract without storage-specific details
+
 Retrieval Implementation
         ↓
-Obtain matching results while preserving the Application contract
+Obtain matching results and implement retrieval mechanics while
+preserving the Application contract
 
 UI
         ↓
 Present results and initiate the appropriate existing interaction
 ```
 
-The Application layer owns the semantic search-result, relevance, and
-pagination boundaries.
+The Application layer owns the semantic search-result, relevance,
+pagination, and consumer-facing retrieval boundaries.
 
 Infrastructure owns persistence and search-provider implementation
 details.
 
 The UI consumes application-level results and does not own search
-semantics, relevance ordering, or continuation interpretation.
+semantics, relevance ordering, retrieval mechanics, or continuation
+interpretation.
 
 The workspace architecture remains independent of the search-result
 contract.
@@ -314,6 +374,31 @@ Application-level ordering contract.
 DeskVault therefore uses an opaque continuation representing the full
 last-consumed ranking position instead.
 
+### Expose Storage-Specific Retrieval to Application Consumers
+
+Rejected.
+
+Requiring consumers to depend directly on `IDocumentSearchStore`,
+provider-specific pagination, or concrete retrieval mechanics would make
+the Application consumer surface dependent on the current persistence
+implementation.
+
+DeskVault therefore exposes retrieval through `ISearchDocumentsRetriever`
+and `SearchDocumentsPage`, keeping storage and retrieval implementation
+details behind the Application boundary.
+
+### Make the Retrieval Boundary Require the Final Scalable Strategy
+
+Rejected.
+
+The architectural boundary and the scalable implementation are separate
+concerns. The boundary must be established without prematurely coupling
+it to one retrieval optimization strategy.
+
+The current implementation may therefore retain internal full candidate
+acquisition temporarily, while later retrieval optimization can improve
+boundedness behind the same Application contract.
+
 ## Consequences
 
 ### Positive
@@ -331,9 +416,11 @@ last-consumed ranking position instead.
   continuation.
 - Pagination can resume strictly after a deterministic ranked position.
 - Application contracts remain independent of SQLite and EF Core.
-- Future retrieval implementations can optimize result acquisition
-  without changing the Application search contract or supported keyword
-  ordering.
+- Application consumers depend on a page-shaped retrieval boundary rather
+  than storage-specific retrieval mechanics.
+- Future retrieval implementations can optimize result acquisition,
+  filtering, ordering, and page selection without changing the
+  Application search contract or supported keyword ordering.
 - Search remains separate from UI rendering and workspace lifecycle.
 - The canonical processed representation established by ADR-0011 remains
   the source of processed-content search evidence.
@@ -347,10 +434,15 @@ last-consumed ranking position instead.
 - Search must aggregate matching evidence at the document level.
 - The application introduces an explicit relevance boundary that must
   remain well-defined as ranking evolves.
+- The retrieval boundary introduces an additional Application abstraction
+  that must be maintained as search evolves.
 - Continuation encoding and validation become part of the Application
   search infrastructure.
 - Ranking and continuation semantics must remain compatible when the
   retrieval implementation changes.
+- The current retrieval implementation may temporarily retain full
+  candidate acquisition internally until retrieval scalability is
+  addressed.
 
 These trade-offs are acceptable because document-oriented results,
 deterministic pagination, and replaceable relevance/retrieval boundaries
@@ -379,6 +471,14 @@ The implementation must:
 - keep page size out of continuation identity;
 - reject malformed or request-incompatible continuations;
 - keep EF Core and SQLite types out of Application contracts;
+- expose retrieval through a storage-independent Application contract;
+- expose page results, `HasMore`, and opaque continuation without
+  storage-specific pagination details;
+- keep storage and retrieval mechanics out of Application consumers;
+- keep full-result ranking and pagination operations out of Application
+  consumers;
+- keep concrete retrieval implementations replaceable behind the
+  retrieval boundary;
 - consume the canonical processed representation established by
   ADR-0011;
 - preserve existing document traceability;
@@ -430,6 +530,17 @@ Pagination uses an opaque continuation representing the last consumed
 position in that deterministic ordering. The continuation is independent
 of page size and storage implementation and is bound to the applicable
 search criteria and continuation/ranking contract version.
+
+Application consumers use a storage-independent retrieval boundary that
+returns a page-shaped `SearchDocumentsPage` containing results, a
+`HasMore` indicator, and an opaque continuation. The search handler acts
+as a thin façade and does not expose storage-specific retrieval or
+pagination mechanics to consumers.
+
+The retrieval implementation may evolve from the current internal
+candidate-materialization approach toward bounded retrieval and page
+selection without changing the supported Application-level result,
+ordering, or continuation contract.
 
 The decision establishes the architectural foundation for predictable
 and scalable local document discovery while leaving retrieval
