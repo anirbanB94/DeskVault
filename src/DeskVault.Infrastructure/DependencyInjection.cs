@@ -32,6 +32,8 @@ public static class DependencyInjection
 
         services.AddSingleton<DocumentChunkIdentityBackfill>();
 
+        services.AddSingleton<DocumentLifecycleStateBackfill>();
+
         services.AddSingleton<IHashService, Sha256HashService>();
 
         services.AddSingleton<IEncryptionKeyService, WindowsEncryptionKeyService>();

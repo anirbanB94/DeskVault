@@ -86,6 +86,46 @@ public sealed class DocumentLegacyStateProjectionTests
     }
 
     [Theory]
+    [InlineData(DocumentStatus.Available)]
+    [InlineData(DocumentStatus.Indexed)]
+    public void Restore_WhenLegacyAvailableStateHasUnknownGeneration_PreservesSuccessfulOutcomeWithoutFabricatingGeneration(
+        DocumentStatus status)
+    {
+        // Arrange
+        Document document =
+            RestoreLegacyDocument(
+                status,
+                processingGeneration: 0L,
+                lastSuccessfulProcessingGeneration: 0L);
+
+        // Act
+        DocumentKnowledgeAvailability knowledgeAvailability =
+            document.GetKnowledgeAvailability(
+                DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+        // Assert
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            knowledgeAvailability.State);
+
+        Assert.Equal(
+            0L,
+            knowledgeAvailability.LastAvailableProcessingGeneration);
+
+        Assert.Equal(
+            0L,
+            document.LastSuccessfulProcessingGeneration);
+    }
+
+    [Theory]
     [InlineData(
         DocumentStatus.Imported,
         DocumentLifecycleState.Active,

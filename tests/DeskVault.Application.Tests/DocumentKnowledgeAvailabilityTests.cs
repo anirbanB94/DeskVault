@@ -83,6 +83,107 @@ public sealed class DocumentKnowledgeAvailabilityTests
     }
 
     [Fact]
+    public void Restore_WhenKnowledgeGenerationExceedsLastSuccessfulProcessingGeneration_ThrowsArgumentException()
+    {
+        // Arrange
+        const long lastSuccessfulProcessingGeneration = 5L;
+
+        var knowledgeAvailability =
+            new DocumentKnowledgeAvailability(
+                DocumentKnowledgeRepresentationKind.KeywordSearch,
+                DocumentKnowledgeAvailabilityState.Available,
+                6L);
+
+        // Act
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(
+                () =>
+                    Document.Restore(
+                        Guid.NewGuid(),
+                        "document.txt",
+                        "Test Document",
+                        $"hash-{Guid.NewGuid():N}",
+                        "document.dvault",
+                        DateTime.UtcNow,
+                        DocumentStatus.Available,
+                        5L,
+                        lastSuccessfulProcessingGeneration,
+                        "processing-v1",
+                        DocumentLifecycleState.Active,
+                        DocumentProcessingState.Succeeded,
+                        [
+                            knowledgeAvailability
+                        ]));
+
+        // Assert
+        Assert.Equal(
+            "knowledgeAvailability",
+            exception.ParamName);
+
+        Assert.Contains(
+            "cannot be greater than last successful processing generation",
+            exception.Message);
+    }
+
+    [Fact]
+    public void SetKnowledgeAvailability_WhenGenerationExceedsLastSuccessfulProcessingGeneration_ThrowsAndPreservesExistingOutcome()
+    {
+        // Arrange
+        const long processingGeneration = 5L;
+
+        Document document =
+            Document.Restore(
+                Guid.NewGuid(),
+                "document.txt",
+                "Test Document",
+                $"hash-{Guid.NewGuid():N}",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available,
+                processingGeneration,
+                processingGeneration,
+                "processing-v1",
+                DocumentLifecycleState.Active,
+                DocumentProcessingState.Succeeded,
+                [
+                    new DocumentKnowledgeAvailability(
+                        DocumentKnowledgeRepresentationKind.KeywordSearch,
+                        DocumentKnowledgeAvailabilityState.Available,
+                        processingGeneration)
+                ]);
+
+        // Act
+        ArgumentException exception =
+            Assert.Throws<ArgumentException>(
+                () =>
+                    document.SetKnowledgeAvailability(
+                        DocumentKnowledgeRepresentationKind.KeywordSearch,
+                        DocumentKnowledgeAvailabilityState.Available,
+                        6L));
+
+        // Assert
+        Assert.Equal(
+            "knowledgeAvailability",
+            exception.ParamName);
+
+        DocumentKnowledgeAvailability existingAvailability =
+            document.GetKnowledgeAvailability(
+                DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            existingAvailability.State);
+
+        Assert.Equal(
+            processingGeneration,
+            existingAvailability.LastAvailableProcessingGeneration);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            document.ProcessingState);
+    }
+
+    [Fact]
     public void Failed_WhenGenerationIsNotAvailable_CreatesValidKnowledgeAvailability()
     {
         // Arrange
@@ -155,28 +256,26 @@ public sealed class DocumentKnowledgeAvailabilityTests
     }
 
     [Fact]
-    public void KnowledgeAvailability_WhenGenerationIsZero_ThrowsArgumentOutOfRangeException()
+    public void KnowledgeAvailability_WhenGenerationIsZero_AcceptsHistoricalUnknownGeneration()
     {
         // Arrange
         const long processingGeneration = 0L;
 
         // Act
-        ArgumentOutOfRangeException exception =
-            Assert.Throws<ArgumentOutOfRangeException>(
-                () =>
-                    new DocumentKnowledgeAvailability(
-                        DocumentKnowledgeRepresentationKind.KeywordSearch,
-                        DocumentKnowledgeAvailabilityState.Unavailable,
-                        processingGeneration));
+        var availability =
+            new DocumentKnowledgeAvailability(
+                DocumentKnowledgeRepresentationKind.KeywordSearch,
+                DocumentKnowledgeAvailabilityState.Available,
+                processingGeneration);
 
         // Assert
         Assert.Equal(
-            "lastAvailableProcessingGeneration",
-            exception.ParamName);
+            DocumentKnowledgeAvailabilityState.Available,
+            availability.State);
 
-        Assert.Contains(
-            "must be greater than zero",
-            exception.Message);
+        Assert.Equal(
+            0L,
+            availability.LastAvailableProcessingGeneration);
     }
 
     [Fact]
@@ -200,7 +299,7 @@ public sealed class DocumentKnowledgeAvailabilityTests
             exception.ParamName);
 
         Assert.Contains(
-            "must be greater than zero",
+            "cannot be negative",
             exception.Message);
     }
 
@@ -260,13 +359,28 @@ public sealed class DocumentKnowledgeAvailabilityTests
     public void SetKnowledgeAvailability_WhenRepresentationIsAlreadyDefined_ReplacesExistingOutcome()
     {
         // Arrange
-        Document document =
-            CreateDocument();
+        const long processingGeneration = 4L;
 
-        document.SetKnowledgeAvailability(
-            DocumentKnowledgeRepresentationKind.KeywordSearch,
-            DocumentKnowledgeAvailabilityState.Failed,
-            null);
+        Document document =
+            Document.Restore(
+                Guid.NewGuid(),
+                "document.txt",
+                "Test Document",
+                $"hash-{Guid.NewGuid():N}",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available,
+                processingGeneration,
+                processingGeneration,
+                "processing-v1",
+                DocumentLifecycleState.Active,
+                DocumentProcessingState.Succeeded,
+                [
+                    new DocumentKnowledgeAvailability(
+                        DocumentKnowledgeRepresentationKind.KeywordSearch,
+                        DocumentKnowledgeAvailabilityState.Failed,
+                        null)
+                ]);
 
         // Act
         document.SetKnowledgeAvailability(
@@ -295,13 +409,23 @@ public sealed class DocumentKnowledgeAvailabilityTests
     public void SetKnowledgeAvailability_WhenRepresentationIsNotAlreadyDefined_AddsIndependentOutcome()
     {
         // Arrange
+        const long processingGeneration = 2L;
+
         Document document =
-            Document.Create(
+            Document.Restore(
                 Guid.NewGuid(),
                 "document.txt",
                 "Test Document",
                 $"hash-{Guid.NewGuid():N}",
-                "document.dvault");
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available,
+                processingGeneration,
+                processingGeneration,
+                "processing-v1",
+                DocumentLifecycleState.Active,
+                DocumentProcessingState.Succeeded,
+                []);
 
         // Act
         // KeywordSearch is currently the only concrete MVP2 representation.

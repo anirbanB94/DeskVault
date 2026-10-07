@@ -14,6 +14,10 @@ public sealed class DocumentEntity
 
     public int Status { get; set; }
 
+    public int LifecycleState { get; set; }
+
+    public int ProcessingState { get; set; }
+
     public string StoredFilePath { get; set; } = string.Empty;
 
     public long ProcessingGeneration { get; set; }

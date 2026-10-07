@@ -89,6 +89,10 @@ public sealed class SqliteDocumentProcessingStore
             await _dbContextFactory.CreateDbContextAsync(
                 cancellationToken);
 
+        DocumentStatus legacyStatus =
+            MapProcessingStateToLegacyStatus(
+                state);
+
         int rowsAffected =
             await dbContext.Documents
                 .Where(
@@ -98,10 +102,15 @@ public sealed class SqliteDocumentProcessingStore
                         processingGeneration)
                 .ExecuteUpdateAsync(
                     setters =>
-                        setters.SetProperty(
-                            document => document.Status,
-                            (int)MapProcessingStateToLegacyStatus(
-                                state)),
+                        setters
+                            .SetProperty(
+                                document =>
+                                    document.ProcessingState,
+                                (int)state)
+                            .SetProperty(
+                                document =>
+                                    document.Status,
+                                (int)legacyStatus),
                     cancellationToken);
 
         if (rowsAffected != 0)
@@ -113,7 +122,8 @@ public sealed class SqliteDocumentProcessingStore
             await dbContext.Documents
                 .AsNoTracking()
                 .SingleOrDefaultAsync(
-                    entity => entity.Id == documentId,
+                    entity =>
+                        entity.Id == documentId,
                     cancellationToken);
 
         if (document is null)
@@ -192,7 +202,12 @@ public sealed class SqliteDocumentProcessingStore
                         setters =>
                             setters
                                 .SetProperty(
-                                    entity => entity.Status,
+                                    entity =>
+                                        entity.ProcessingState,
+                                    (int)DocumentProcessingState.Succeeded)
+                                .SetProperty(
+                                    entity =>
+                                        entity.Status,
                                     (int)DocumentStatus.Available)
                                 .SetProperty(
                                     entity =>
@@ -295,9 +310,15 @@ public sealed class SqliteDocumentProcessingStore
                         processingGeneration)
                 .ExecuteUpdateAsync(
                     setters =>
-                        setters.SetProperty(
-                            entity => entity.Status,
-                            (int)recoveryStatus),
+                        setters
+                            .SetProperty(
+                                entity =>
+                                    entity.ProcessingState,
+                                (int)DocumentProcessingState.Cancelled)
+                            .SetProperty(
+                                entity =>
+                                    entity.Status,
+                                (int)recoveryStatus),
                     cancellationToken);
 
         if (rowsAffected != 0)

@@ -228,6 +228,15 @@ public sealed class SqliteDocumentProcessingStoreTests
                 connection,
                 document.Id);
 
+        DocumentProcessingState persistedProcessingState =
+            await GetDocumentProcessingStateAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            DocumentProcessingState.Processing,
+            persistedProcessingState);
+
         Assert.Equal(
             DocumentStatus.Processing,
             persistedStatus);
@@ -291,6 +300,15 @@ public sealed class SqliteDocumentProcessingStoreTests
             await GetDocumentStatusAsync(
                 connection,
                 document.Id);
+
+        DocumentProcessingState persistedProcessingState =
+            await GetDocumentProcessingStateAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            DocumentProcessingState.Processing,
+            persistedProcessingState);
 
         Assert.Equal(
             DocumentStatus.Processing,
@@ -359,6 +377,62 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             DocumentStatus.Imported,
             persistedStatus);
+    }
+
+    [Fact]
+    public async Task PublishProcessingStateAsync_WhenKnowledgeAlreadyExists_PreservesKnowledgeAvailability()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(connection);
+
+        await using (DeskVaultDbContext setupContext =
+            CreateContext(connection))
+        {
+            setupContext.DocumentKnowledgeAvailabilities.Add(
+                new DocumentKnowledgeAvailabilityEntity
+                {
+                    DocumentId = document.Id,
+                    Representation =
+                        (int)DocumentKnowledgeRepresentationKind.KeywordSearch,
+                    State =
+                        (int)DocumentKnowledgeAvailabilityState.Available,
+                    LastAvailableProcessingGeneration = 0L
+                });
+
+            await setupContext.SaveChangesAsync();
+        }
+
+        var store =
+            CreateStore(connection);
+
+        long processingGeneration =
+            await store.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        await store.PublishProcessingStateAsync(
+            document.Id,
+            processingGeneration,
+            DocumentProcessingState.Processing);
+
+        DocumentKnowledgeAvailabilityEntity? availability =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                document.Id);
+
+        Assert.NotNull(
+            availability);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            (DocumentKnowledgeAvailabilityState)
+                availability!.State);
+
+        Assert.Equal(
+            0L,
+            availability.LastAvailableProcessingGeneration);
     }
 
     [Fact]
@@ -564,6 +638,65 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             chunkingRuleVersion.Value,
             chunk.ChunkingRuleVersion);
+    }
+
+    [Fact]
+    public async Task PublishSuccessfulProcessingAsync_PersistsSucceededProcessingStateWithoutChangingKnowledgeAvailability()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(connection);
+
+        var store =
+            CreateStore(connection);
+
+        long processingGeneration =
+            await store.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        await store.PublishProcessingStateAsync(
+            document.Id,
+            processingGeneration,
+            DocumentProcessingState.Processing);
+
+        await store.PublishSuccessfulProcessingAsync(
+            document.Id,
+            processingGeneration,
+            new DocumentProcessingRuleVersion(
+                "processing-v1"),
+            [
+                new DocumentChunk(
+                    0,
+                    "Successful processing result.")
+            ]);
+
+        DocumentProcessingState persistedProcessingState =
+            await GetDocumentProcessingStateAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            DocumentProcessingState.Succeeded,
+            persistedProcessingState);
+
+        DocumentStatus persistedStatus =
+            await GetDocumentStatusAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            DocumentStatus.Available,
+            persistedStatus);
+
+        DocumentKnowledgeAvailabilityEntity? availability =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                document.Id);
+
+        Assert.Null(
+            availability);
     }
 
     [Fact]
@@ -907,6 +1040,59 @@ public sealed class SqliteDocumentProcessingStoreTests
         Assert.Equal(
             0L,
             persistedSuccessfulGeneration);
+    }
+
+    [Fact]
+    public async Task RecoverCancelledProcessingAsync_PersistsCancelledProcessingStateAndPreservesSuccessfulLineage()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(connection);
+
+        var store =
+            CreateStore(connection);
+
+        long processingGeneration =
+            await store.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        await store.PublishProcessingStateAsync(
+            document.Id,
+            processingGeneration,
+            DocumentProcessingState.Processing);
+
+        await store.RecoverCancelledProcessingAsync(
+            document.Id,
+            processingGeneration);
+
+        DocumentProcessingState persistedProcessingState =
+            await GetDocumentProcessingStateAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            DocumentProcessingState.Cancelled,
+            persistedProcessingState);
+
+        long persistedSuccessfulGeneration =
+            await GetLastSuccessfulProcessingGenerationAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            0L,
+            persistedSuccessfulGeneration);
+
+        DocumentStatus persistedStatus =
+            await GetDocumentStatusAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            DocumentStatus.Imported,
+            persistedStatus);
     }
 
     [Fact]
@@ -1366,6 +1552,8 @@ public sealed class SqliteDocumentProcessingStoreTests
                 Sha256Hash = document.Sha256Hash,
                 ImportedAt = document.ImportedAt,
                 Status = (int)document.Status,
+                LifecycleState = (int)document.LifecycleState,
+                ProcessingState = (int)document.ProcessingState,
                 StoredFilePath = document.StoredFilePath,
                 ProcessingGeneration = document.ProcessingGeneration,
                 LastSuccessfulProcessingGeneration =
@@ -1422,6 +1610,27 @@ public sealed class SqliteDocumentProcessingStoreTests
             .SingleAsync();
     }
 
+    private static async Task<DocumentProcessingState>
+        GetDocumentProcessingStateAsync(
+            SqliteConnection connection,
+            Guid documentId)
+    {
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        int processingState =
+            await context.Documents
+                .Where(
+                    document =>
+                        document.Id == documentId)
+                .Select(
+                    document =>
+                        document.ProcessingState)
+                .SingleAsync();
+
+        return (DocumentProcessingState)processingState;
+    }
+
     private static async Task<DocumentStatus> GetDocumentStatusAsync(
         SqliteConnection connection,
         Guid documentId)
@@ -1438,6 +1647,23 @@ public sealed class SqliteDocumentProcessingStoreTests
                 .SingleAsync();
 
         return (DocumentStatus)status;
+    }
+
+    private static async Task<DocumentKnowledgeAvailabilityEntity?>
+        GetKnowledgeAvailabilityAsync(
+            SqliteConnection connection,
+            Guid documentId)
+    {
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        return await context.DocumentKnowledgeAvailabilities
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                availability =>
+                    availability.DocumentId == documentId &&
+                    availability.Representation ==
+                    (int)DocumentKnowledgeRepresentationKind.KeywordSearch);
     }
 
     private static async Task<List<DocumentChunkEntity>> GetChunksAsync(

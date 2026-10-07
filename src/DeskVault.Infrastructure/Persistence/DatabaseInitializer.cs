@@ -21,6 +21,7 @@ public sealed class DatabaseInitializer
     private readonly IDatabaseEncryptionKeyService _databaseEncryptionKeyService;
     private readonly IDatabaseEncryptionMigrator _databaseEncryptionMigrator;
     private readonly DocumentChunkIdentityBackfill _documentChunkIdentityBackfill;
+    private readonly DocumentLifecycleStateBackfill _documentLifecycleStateBackfill;
     private readonly VaultInitializationCoordinator _vaultInitializationCoordinator;
     private readonly ILogger<DatabaseInitializer> _logger;
 
@@ -31,6 +32,7 @@ public sealed class DatabaseInitializer
         IDatabaseEncryptionKeyService databaseEncryptionKeyService,
         IDatabaseEncryptionMigrator databaseEncryptionMigrator,
         DocumentChunkIdentityBackfill documentChunkIdentityBackfill,
+        DocumentLifecycleStateBackfill documentLifecycleStateBackfill,
         VaultInitializationCoordinator vaultInitializationCoordinator,
         ILogger<DatabaseInitializer> logger)
     {
@@ -40,6 +42,7 @@ public sealed class DatabaseInitializer
         _databaseEncryptionKeyService = databaseEncryptionKeyService;
         _databaseEncryptionMigrator = databaseEncryptionMigrator;
         _documentChunkIdentityBackfill = documentChunkIdentityBackfill;
+        _documentLifecycleStateBackfill = documentLifecycleStateBackfill;
         _vaultInitializationCoordinator = vaultInitializationCoordinator;
         _logger = logger;
     }
@@ -101,6 +104,9 @@ public sealed class DatabaseInitializer
             cancellationToken);
 
         await _documentChunkIdentityBackfill.BackfillAsync(
+            cancellationToken);
+
+        await _documentLifecycleStateBackfill.BackfillAsync(
             cancellationToken);
 
         if (migrationBackupExists)

@@ -43,6 +43,14 @@ public sealed class DocumentEntityConfiguration
             .IsRequired();
 
         builder.Property(
+            document => document.LifecycleState)
+        .IsRequired();
+
+        builder.Property(
+                document => document.ProcessingState)
+            .IsRequired();
+
+        builder.Property(
                 document => document.StoredFilePath)
             .IsRequired()
             .HasMaxLength(1024);
