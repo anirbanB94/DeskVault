@@ -364,6 +364,48 @@ public sealed class SearchDocumentsRankerTests
             result => Assert.Equal(singleMatchId, result.DocumentId));
     }
 
+    [Fact]
+    public void GetRankingKey_UsesExistingRelevanceOrderingKeys()
+    {
+        // Arrange
+        SearchDocumentsResult result =
+            new SearchDocumentsResult(
+                Guid.Parse(
+                    "00000000-0000-0000-0000-000000000001"),
+                "Security.md",
+                "Security Policy",
+                [
+                    new SearchMatch(
+                    SearchMatchSource.DocumentMetadata,
+                    SearchMatchKind.Exact,
+                    "Security Policy"),
+
+                new SearchMatch(
+                    SearchMatchSource.ProcessedContent,
+                    SearchMatchKind.Partial,
+                    "Security policy content.")
+                ],
+                2);
+
+        // Act
+        SearchDocumentsRankingKey rankingKey =
+            _ranker.GetRankingKey(
+                result);
+
+        // Assert
+        Assert.Equal(
+            120,
+            rankingKey.RelevanceScore);
+
+        Assert.Equal(
+            "Security Policy",
+            rankingKey.DisplayName);
+
+        Assert.Equal(
+            result.DocumentId,
+            rankingKey.DocumentId);
+    }
+
     private static SearchMatch CreateMatch(
         SearchMatchSource source,
         SearchMatchKind kind)

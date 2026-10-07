@@ -218,6 +218,188 @@ public sealed class DocumentEvidenceIntegrationTests
     }
 
     [Fact]
+    public async Task SearchDocuments_WhenPaginated_ResumesDeterministicallyAcrossDifferentPageSizes()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateRootDirectory();
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            (string FileName, string DisplayName)[] documents =
+            [
+                ("alpha.txt", "Alpha Document"),
+            ("beta.txt", "Beta Document"),
+            ("gamma.txt", "Gamma Document"),
+            ("delta.txt", "Delta Document")
+            ];
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            foreach ((string fileName, string displayName) in documents)
+            {
+                string sourceFilePath =
+                    Path.Combine(
+                        rootDirectory,
+                        fileName);
+
+                await File.WriteAllTextAsync(
+                    sourceFilePath,
+                    $"This document contains the security term for deterministic pagination: {displayName}.");
+
+                Guid documentId =
+                    await ImportDocumentAsync(
+                        harness,
+                        sourceFilePath,
+                        displayName);
+
+                await harness.ProcessingService.ProcessAsync(
+                    documentId);
+            }
+
+            SearchDocumentsQuery fullQuery =
+                new(
+                    "security",
+                    Limit: 10);
+
+            SearchDocumentsQuery firstPageQuery =
+                new(
+                    "security",
+                    Limit: 2);
+
+            // Act
+            SearchDocumentsPage fullPage =
+                await harness.SearchHandler.HandleAsync(
+                    fullQuery);
+
+            SearchDocumentsPage firstPage =
+                await harness.SearchHandler.HandleAsync(
+                    firstPageQuery);
+
+            SearchDocumentsPage secondPage =
+                await harness.SearchHandler.HandleAsync(
+                    new SearchDocumentsQuery(
+                        "security",
+                        Continuation: firstPage.Continuation,
+                        Limit: 1));
+
+            SearchDocumentsPage thirdPage =
+                await harness.SearchHandler.HandleAsync(
+                    new SearchDocumentsQuery(
+                        "security",
+                        Continuation: secondPage.Continuation,
+                        Limit: 5));
+
+            // Assert
+            Assert.Equal(
+                [
+                    "Alpha Document",
+                "Beta Document",
+                "Delta Document",
+                "Gamma Document"
+                ],
+                fullPage.Results
+                    .Select(
+                        result => result.DisplayName));
+
+            Assert.Equal(
+                [
+                    "Alpha Document",
+                "Beta Document"
+                ],
+                firstPage.Results
+                    .Select(
+                        result => result.DisplayName));
+
+            Assert.True(
+                firstPage.HasMore);
+
+            Assert.NotNull(
+                firstPage.Continuation);
+
+            Assert.DoesNotMatch(
+                "^\\d+$",
+                firstPage.Continuation.Value);
+
+            Assert.Equal(
+                "Delta Document",
+                Assert.Single(
+                    secondPage.Results)
+                    .DisplayName);
+
+            Assert.True(
+                secondPage.HasMore);
+
+            Assert.NotNull(
+                secondPage.Continuation);
+
+            Assert.DoesNotMatch(
+                "^\\d+$",
+                secondPage.Continuation.Value);
+
+            Assert.Equal(
+                "Gamma Document",
+                Assert.Single(
+                    thirdPage.Results)
+                    .DisplayName);
+
+            Assert.False(
+                thirdPage.HasMore);
+
+            Assert.Null(
+                thirdPage.Continuation);
+
+            List<SearchDocumentsResult> pagedResults =
+            [
+                .. firstPage.Results,
+            .. secondPage.Results,
+            .. thirdPage.Results
+            ];
+
+            Assert.Equal(
+                fullPage.Results.Select(
+                    result =>
+                        (
+                            result.DocumentId,
+                            result.FileName,
+                            result.DisplayName,
+                            result.MatchCount)),
+                pagedResults.Select(
+                    result =>
+                        (
+                            result.DocumentId,
+                            result.FileName,
+                            result.DisplayName,
+                            result.MatchCount)));
+
+            Assert.Equal(
+                pagedResults.Count,
+                pagedResults
+                    .Select(
+                        result => result.DocumentId)
+                    .Distinct()
+                    .Count());
+        }
+        finally
+        {
+            DeleteRootDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task ProcessDocument_WhenChunkConfigurationChanges_ProducesDeterministicNewBoundariesAndRemainsSearchable()
     {
         string rootDirectory =

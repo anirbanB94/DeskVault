@@ -8,120 +8,96 @@ namespace DeskVault.Application.Tests;
 public sealed class SearchDocumentsHandlerTests
 {
     [Fact]
-    public async Task HandleAsync_ReturnsRankedSearchResults()
+    public async Task HandleAsync_ReturnsRankedFirstPageAndCreatesContinuation()
     {
         // Arrange
+        SearchDocumentsResult firstResult =
+            CreateResult(
+                1,
+                "First Document");
+
+        SearchDocumentsResult secondResult =
+            CreateResult(
+                2,
+                "Second Document");
+
+        SearchDocumentsResult thirdResult =
+            CreateResult(
+                3,
+                "Third Document");
+
         IReadOnlyList<SearchDocumentsResult> searchResults =
         [
-            CreateResult(
-                "Second Document"),
-            CreateResult(
-                "First Document")
+            thirdResult,
+            firstResult,
+            secondResult
         ];
 
         IReadOnlyList<SearchDocumentsResult> rankedResults =
         [
-            searchResults[1],
-            searchResults[0]
+            firstResult,
+            secondResult,
+            thirdResult
         ];
-
-        var store =
-            new Mock<IDocumentSearchStore>();
-
-        var ranker =
-            new Mock<ISearchDocumentsRanker>();
-
-        SearchDocumentsQuery query =
-            new("matching");
-
-        store
-            .Setup(x => x.SearchAsync(
-                query,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(searchResults);
-
-        ranker
-            .Setup(x => x.Rank(searchResults))
-            .Returns(rankedResults);
-
-        SearchDocumentsHandler handler =
-            CreateHandler(
-                store,
-                ranker);
-
-        // Act
-        SearchDocumentsPage page =
-            await handler.HandleAsync(query);
-
-        // Assert
-        Assert.Equal(
-            rankedResults,
-            page.Results);
-
-        Assert.False(
-            page.HasMore);
-
-        Assert.Null(
-            page.Continuation);
-
-        store.Verify(
-            x => x.SearchAsync(
-                query,
-                It.IsAny<CancellationToken>()),
-            Times.Once);
-
-        ranker.Verify(
-            x => x.Rank(searchResults),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task HandleAsync_ReturnsBoundedFirstBatch()
-    {
-        // Arrange
-        IReadOnlyList<SearchDocumentsResult> searchResults =
-        [
-            CreateResult("First Document"),
-            CreateResult("Second Document"),
-            CreateResult("Third Document")
-        ];
-
-        IReadOnlyList<SearchDocumentsResult> rankedResults =
-        [
-            searchResults[0],
-            searchResults[1],
-            searchResults[2]
-        ];
-
-        var store =
-            new Mock<IDocumentSearchStore>();
-
-        var ranker =
-            new Mock<ISearchDocumentsRanker>();
 
         SearchDocumentsQuery query =
             new(
                 "matching",
                 Limit: 2);
 
-        store
-            .Setup(x => x.SearchAsync(
-                query,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(searchResults);
+        SearchDocumentsRankingKey secondResultKey =
+            CreateRankingKey(
+                secondResult,
+                90);
 
-        ranker
-            .Setup(x => x.Rank(searchResults))
-            .Returns(rankedResults);
+        SearchDocumentsContinuation continuation =
+            new("opaque-continuation");
+
+        var store =
+            new Mock<IDocumentSearchStore>();
+
+        var ranker =
+            new Mock<ISearchDocumentsRanker>();
+
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        SetupRanker(
+            ranker,
+            rankedResults,
+            new Dictionary<Guid, int>
+            {
+                [firstResult.DocumentId] = 100,
+                [secondResult.DocumentId] = 90,
+                [thirdResult.DocumentId] = 80
+            });
+
+        store
+            .Setup(
+                x => x.SearchAsync(
+                    query,
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                searchResults);
+
+        codec
+            .Setup(
+                x => x.Create(
+                    query,
+                    secondResultKey))
+            .Returns(
+                continuation);
 
         SearchDocumentsHandler handler =
             CreateHandler(
                 store,
-                ranker);
+                ranker,
+                codec);
 
         // Act
         SearchDocumentsPage page =
-            await handler.HandleAsync(query);
+            await handler.HandleAsync(
+                query);
 
         // Assert
         Assert.Equal(
@@ -131,42 +107,70 @@ public sealed class SearchDocumentsHandlerTests
         Assert.True(
             page.HasMore);
 
-        Assert.NotNull(
+        Assert.Equal(
+            continuation,
             page.Continuation);
 
-        Assert.Equal(
-            "2",
-            page.Continuation.Value);
+        store.Verify(
+            x => x.SearchAsync(
+                query,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        ranker.Verify(
+            x => x.Rank(
+                searchResults),
+            Times.Once);
+
+        codec.Verify(
+            x => x.Create(
+                query,
+                secondResultKey),
+            Times.Once);
     }
 
     [Fact]
-    public async Task HandleAsync_ReturnsSubsequentBatchFromContinuation()
+    public async Task HandleAsync_ResumesStrictlyAfterContinuationPosition()
     {
         // Arrange
+        SearchDocumentsResult firstResult =
+            CreateResult(
+                1,
+                "First Document");
+
+        SearchDocumentsResult secondResult =
+            CreateResult(
+                2,
+                "Second Document");
+
+        SearchDocumentsResult thirdResult =
+            CreateResult(
+                3,
+                "Third Document");
+
+        SearchDocumentsResult fourthResult =
+            CreateResult(
+                4,
+                "Fourth Document");
+
         IReadOnlyList<SearchDocumentsResult> searchResults =
         [
-            CreateResult("First Document"),
-            CreateResult("Second Document"),
-            CreateResult("Third Document"),
-            CreateResult("Fourth Document")
+            firstResult,
+            secondResult,
+            thirdResult,
+            fourthResult
         ];
 
         IReadOnlyList<SearchDocumentsResult> rankedResults =
         [
-            searchResults[0],
-            searchResults[1],
-            searchResults[2],
-            searchResults[3]
+            firstResult,
+            secondResult,
+            thirdResult,
+            fourthResult
         ];
 
-        var store =
-            new Mock<IDocumentSearchStore>();
-
-        var ranker =
-            new Mock<ISearchDocumentsRanker>();
-
         SearchDocumentsContinuation continuation =
-            new("2");
+            new("opaque-continuation");
 
         SearchDocumentsQuery query =
             new(
@@ -174,54 +178,10 @@ public sealed class SearchDocumentsHandlerTests
                 Continuation: continuation,
                 Limit: 2);
 
-        store
-            .Setup(x => x.SearchAsync(
-                query,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(searchResults);
-
-        ranker
-            .Setup(x => x.Rank(searchResults))
-            .Returns(rankedResults);
-
-        SearchDocumentsHandler handler =
-            CreateHandler(
-                store,
-                ranker);
-
-        // Act
-        SearchDocumentsPage page =
-            await handler.HandleAsync(query);
-
-        // Assert
-        Assert.Equal(
-            rankedResults.Skip(2).Take(2),
-            page.Results);
-
-        Assert.False(
-            page.HasMore);
-
-        Assert.Null(
-            page.Continuation);
-    }
-
-    [Fact]
-    public async Task HandleAsync_AppliesBatchAfterRanking()
-    {
-        // Arrange
-        IReadOnlyList<SearchDocumentsResult> searchResults =
-        [
-            CreateResult("Third Document"),
-            CreateResult("First Document"),
-            CreateResult("Second Document")
-        ];
-
-        IReadOnlyList<SearchDocumentsResult> rankedResults =
-        [
-            searchResults[1],
-            searchResults[2],
-            searchResults[0]
-        ];
+        SearchDocumentsRankingKey continuationPosition =
+            CreateRankingKey(
+                secondResult,
+                90);
 
         var store =
             new Mock<IDocumentSearchStore>();
@@ -229,8 +189,96 @@ public sealed class SearchDocumentsHandlerTests
         var ranker =
             new Mock<ISearchDocumentsRanker>();
 
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        SetupRanker(
+            ranker,
+            rankedResults,
+            new Dictionary<Guid, int>
+            {
+                [firstResult.DocumentId] = 100,
+                [secondResult.DocumentId] = 90,
+                [thirdResult.DocumentId] = 80,
+                [fourthResult.DocumentId] = 70
+            });
+
+        store
+            .Setup(
+                x => x.SearchAsync(
+                    query,
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                searchResults);
+
+        codec
+            .Setup(
+                x => x.Decode(
+                    query,
+                    continuation))
+            .Returns(
+                continuationPosition);
+
+        SearchDocumentsHandler handler =
+            CreateHandler(
+                store,
+                ranker,
+                codec);
+
+        // Act
+        SearchDocumentsPage page =
+            await handler.HandleAsync(
+                query);
+
+        // Assert
+        Assert.Equal(
+            [
+                thirdResult,
+                fourthResult
+            ],
+            page.Results);
+
+        Assert.False(
+            page.HasMore);
+
+        Assert.Null(
+            page.Continuation);
+
+        codec.Verify(
+            x => x.Decode(
+                query,
+                continuation),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenResultsHaveSameScore_ResumesAfterDisplayNameTieBreaker()
+    {
+        // Arrange
+        SearchDocumentsResult firstResult =
+            CreateResult(
+                1,
+                "Alpha Document");
+
+        SearchDocumentsResult secondResult =
+            CreateResult(
+                2,
+                "Beta Document");
+
+        SearchDocumentsResult thirdResult =
+            CreateResult(
+                3,
+                "Gamma Document");
+
+        IReadOnlyList<SearchDocumentsResult> rankedResults =
+        [
+            firstResult,
+            secondResult,
+            thirdResult
+        ];
+
         SearchDocumentsContinuation continuation =
-            new("1");
+            new("opaque-continuation");
 
         SearchDocumentsQuery query =
             new(
@@ -238,60 +286,108 @@ public sealed class SearchDocumentsHandlerTests
                 Continuation: continuation,
                 Limit: 1);
 
-        store
-            .Setup(x => x.SearchAsync(
-                query,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(searchResults);
+        SearchDocumentsRankingKey continuationPosition =
+            CreateRankingKey(
+                firstResult,
+                100);
 
-        ranker
-            .Setup(x => x.Rank(searchResults))
-            .Returns(rankedResults);
+        var store =
+            new Mock<IDocumentSearchStore>();
+
+        var ranker =
+            new Mock<ISearchDocumentsRanker>();
+
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        SetupRanker(
+            ranker,
+            rankedResults);
+
+        store
+            .Setup(
+                x => x.SearchAsync(
+                    query,
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                rankedResults);
+
+        codec
+            .Setup(
+                x => x.Decode(
+                    query,
+                    continuation))
+            .Returns(
+                continuationPosition);
 
         SearchDocumentsHandler handler =
             CreateHandler(
                 store,
-                ranker);
+                ranker,
+                codec);
 
         // Act
         SearchDocumentsPage page =
-            await handler.HandleAsync(query);
+            await handler.HandleAsync(
+                query);
 
         // Assert
         Assert.Single(
             page.Results);
 
         Assert.Equal(
-            "Second Document",
-            page.Results[0].DisplayName);
+            secondResult,
+            page.Results[0]);
 
         Assert.True(
             page.HasMore);
 
-        Assert.NotNull(
-            page.Continuation);
-
-        Assert.Equal(
-            "2",
-            page.Continuation.Value);
-
-        ranker.Verify(
-            x => x.Rank(searchResults),
+        codec.Verify(
+            x => x.Decode(
+                query,
+                continuation),
             Times.Once);
     }
 
     [Fact]
-    public async Task HandleAsync_ReturnsNoMoreWhenFinalBatchIsExactLimit()
+    public async Task HandleAsync_WhenScoreAndDisplayNameAreEqual_ResumesUsingDocumentIdTieBreaker()
     {
         // Arrange
-        IReadOnlyList<SearchDocumentsResult> searchResults =
-        [
-            CreateResult("First Document"),
-            CreateResult("Second Document")
-        ];
+        SearchDocumentsResult firstResult =
+            CreateResult(
+                1,
+                "Same Name");
+
+        SearchDocumentsResult secondResult =
+            CreateResult(
+                2,
+                "Same Name");
+
+        SearchDocumentsResult thirdResult =
+            CreateResult(
+                3,
+                "Same Name");
 
         IReadOnlyList<SearchDocumentsResult> rankedResults =
-            searchResults;
+        [
+            firstResult,
+            secondResult,
+            thirdResult
+        ];
+
+        SearchDocumentsContinuation continuation =
+            new("opaque-continuation");
+
+        SearchDocumentsQuery query =
+            new(
+                "matching",
+                Continuation: continuation,
+                Limit: 1);
+
+        SearchDocumentsRankingKey continuationPosition =
+            CreateRankingKey(
+                secondResult,
+                100);
 
         var store =
             new Mock<IDocumentSearchStore>();
@@ -299,66 +395,99 @@ public sealed class SearchDocumentsHandlerTests
         var ranker =
             new Mock<ISearchDocumentsRanker>();
 
-        SearchDocumentsQuery query =
-            new(
-                "matching",
-                Limit: 2);
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        SetupRanker(
+            ranker,
+            rankedResults);
 
         store
-            .Setup(x => x.SearchAsync(
-                query,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(searchResults);
+            .Setup(
+                x => x.SearchAsync(
+                    query,
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                rankedResults);
 
-        ranker
-            .Setup(x => x.Rank(searchResults))
-            .Returns(rankedResults);
+        codec
+            .Setup(
+                x => x.Decode(
+                    query,
+                    continuation))
+            .Returns(
+                continuationPosition);
 
         SearchDocumentsHandler handler =
             CreateHandler(
                 store,
-                ranker);
+                ranker,
+                codec);
 
         // Act
         SearchDocumentsPage page =
-            await handler.HandleAsync(query);
+            await handler.HandleAsync(
+                query);
 
         // Assert
+        Assert.Single(
+            page.Results);
+
         Assert.Equal(
-            2,
-            page.Results.Count);
+            thirdResult,
+            page.Results[0]);
 
         Assert.False(
             page.HasMore);
 
-        Assert.Null(
-            page.Continuation);
+        codec.Verify(
+            x => x.Decode(
+                query,
+                continuation),
+            Times.Once);
     }
 
     [Fact]
-    public async Task HandleAsync_RejectsInvalidContinuation()
+    public async Task HandleAsync_WhenContinuationIsIncompatible_DoesNotRetrieveResults()
     {
         // Arrange
+        SearchDocumentsContinuation continuation =
+            new("incompatible");
+
+        SearchDocumentsQuery query =
+            new(
+                "matching",
+                Continuation: continuation);
+
         var store =
             new Mock<IDocumentSearchStore>();
 
         var ranker =
             new Mock<ISearchDocumentsRanker>();
 
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        codec
+            .Setup(
+                x => x.Decode(
+                    query,
+                    continuation))
+            .Throws(
+                new ArgumentException(
+                    "Continuation does not match the search criteria."));
+
         SearchDocumentsHandler handler =
             CreateHandler(
                 store,
-                ranker);
-
-        SearchDocumentsQuery query =
-            new(
-                "matching",
-                Continuation: new SearchDocumentsContinuation(""));
+                ranker,
+                codec);
 
         // Act
         Func<Task> act =
             () =>
-                handler.HandleAsync(query);
+                handler.HandleAsync(
+                    query);
 
         // Assert
         await Assert.ThrowsAsync<ArgumentException>(
@@ -377,29 +506,83 @@ public sealed class SearchDocumentsHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_RejectsNonPositiveLimit()
+    public async Task HandleAsync_RejectsEmptyContinuation()
     {
         // Arrange
+        SearchDocumentsQuery query =
+            new(
+                "matching",
+                Continuation:
+                    new SearchDocumentsContinuation(
+                        ""));
+
         var store =
             new Mock<IDocumentSearchStore>();
 
         var ranker =
             new Mock<ISearchDocumentsRanker>();
 
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
         SearchDocumentsHandler handler =
             CreateHandler(
                 store,
-                ranker);
+                ranker,
+                codec);
 
+        // Act
+        Func<Task> act =
+            () =>
+                handler.HandleAsync(
+                    query);
+
+        // Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            act);
+
+        store.Verify(
+            x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        codec.Verify(
+            x => x.Decode(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsContinuation>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RejectsNonPositiveLimit()
+    {
+        // Arrange
         SearchDocumentsQuery query =
             new(
                 "matching",
                 Limit: 0);
 
+        var store =
+            new Mock<IDocumentSearchStore>();
+
+        var ranker =
+            new Mock<ISearchDocumentsRanker>();
+
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        SearchDocumentsHandler handler =
+            CreateHandler(
+                store,
+                ranker,
+                codec);
+
         // Act
         Func<Task> act =
             () =>
-                handler.HandleAsync(query);
+                handler.HandleAsync(
+                    query);
 
         // Assert
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
@@ -411,9 +594,10 @@ public sealed class SearchDocumentsHandlerTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
-        ranker.Verify(
-            x => x.Rank(
-                It.IsAny<IReadOnlyList<SearchDocumentsResult>>()),
+        codec.Verify(
+            x => x.Decode(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsContinuation>()),
             Times.Never);
     }
 
@@ -427,19 +611,23 @@ public sealed class SearchDocumentsHandlerTests
         CancellationToken cancellationToken =
             cancellationTokenSource.Token;
 
+        SearchDocumentsQuery query =
+            new("matching");
+
         var store =
             new Mock<IDocumentSearchStore>();
 
         var ranker =
             new Mock<ISearchDocumentsRanker>();
 
-        SearchDocumentsQuery query =
-            new("matching");
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
 
         store
-            .Setup(x => x.SearchAsync(
-                query,
-                cancellationToken))
+            .Setup(
+                x => x.SearchAsync(
+                    query,
+                    cancellationToken))
             .ThrowsAsync(
                 new OperationCanceledException(
                     cancellationToken));
@@ -447,7 +635,8 @@ public sealed class SearchDocumentsHandlerTests
         SearchDocumentsHandler handler =
             CreateHandler(
                 store,
-                ranker);
+                ranker,
+                codec);
 
         cancellationTokenSource.Cancel();
 
@@ -459,7 +648,8 @@ public sealed class SearchDocumentsHandlerTests
                     cancellationToken);
 
         // Assert
-        await Assert.ThrowsAsync<OperationCanceledException>(act);
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            act);
 
         store.Verify(
             x => x.SearchAsync(
@@ -467,26 +657,146 @@ public sealed class SearchDocumentsHandlerTests
                 cancellationToken),
             Times.Once);
 
-        ranker.Verify(
-            x => x.Rank(It.IsAny<IReadOnlyList<SearchDocumentsResult>>()),
+        codec.Verify(
+            x => x.Decode(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsContinuation>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenFinalPageMatchesLimit_DoesNotCreateContinuation()
+    {
+        // Arrange
+        SearchDocumentsResult firstResult =
+            CreateResult(
+                1,
+                "First Document");
+
+        SearchDocumentsResult secondResult =
+            CreateResult(
+                2,
+                "Second Document");
+
+        IReadOnlyList<SearchDocumentsResult> searchResults =
+        [
+            firstResult,
+            secondResult
+        ];
+
+        var store =
+            new Mock<IDocumentSearchStore>();
+
+        var ranker =
+            new Mock<ISearchDocumentsRanker>();
+
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        SetupRanker(
+            ranker,
+            searchResults);
+
+        store
+            .Setup(
+                x => x.SearchAsync(
+                    It.IsAny<SearchDocumentsQuery>(),
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                searchResults);
+
+        SearchDocumentsHandler handler =
+            CreateHandler(
+                store,
+                ranker,
+                codec);
+
+        // Act
+        SearchDocumentsPage page =
+            await handler.HandleAsync(
+                new SearchDocumentsQuery(
+                    "matching",
+                    Limit: 2));
+
+        // Assert
+        Assert.Equal(
+            2,
+            page.Results.Count);
+
+        Assert.False(
+            page.HasMore);
+
+        Assert.Null(
+            page.Continuation);
+
+        codec.Verify(
+            x => x.Create(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey>()),
             Times.Never);
     }
 
     private static SearchDocumentsHandler CreateHandler(
         Mock<IDocumentSearchStore> store,
-        Mock<ISearchDocumentsRanker> ranker)
+        Mock<ISearchDocumentsRanker> ranker,
+        Mock<ISearchDocumentsContinuationCodec> codec)
     {
         return new SearchDocumentsHandler(
             store.Object,
             ranker.Object,
+            codec.Object,
             NullLogger<SearchDocumentsHandler>.Instance);
     }
 
+    private static void SetupRanker(
+        Mock<ISearchDocumentsRanker> ranker,
+        IReadOnlyList<SearchDocumentsResult> rankedResults,
+        IReadOnlyDictionary<Guid, int>? relevanceScores = null)
+    {
+        ranker
+            .Setup(
+                x => x.Rank(
+                    It.IsAny<IReadOnlyList<SearchDocumentsResult>>()))
+            .Returns(
+                rankedResults);
+
+        foreach (SearchDocumentsResult result in rankedResults)
+        {
+            int relevanceScore =
+                relevanceScores is not null &&
+                relevanceScores.TryGetValue(
+                    result.DocumentId,
+                    out int configuredScore)
+                    ? configuredScore
+                    : 100;
+
+            ranker
+                .Setup(
+                    x => x.GetRankingKey(
+                        result))
+                .Returns(
+                    CreateRankingKey(
+                        result,
+                        relevanceScore));
+        }
+    }
+
+    private static SearchDocumentsRankingKey CreateRankingKey(
+        SearchDocumentsResult result,
+        int relevanceScore = 100)
+    {
+        return new SearchDocumentsRankingKey(
+            relevanceScore,
+            result.DisplayName,
+            result.DocumentId);
+    }
+
     private static SearchDocumentsResult CreateResult(
+        int id,
         string displayName)
     {
         return new SearchDocumentsResult(
-            Guid.NewGuid(),
+            CreateDocumentId(id),
             $"{displayName}.txt",
             displayName,
             [
@@ -496,5 +806,12 @@ public sealed class SearchDocumentsHandlerTests
                     "Matching content.")
             ],
             1);
+    }
+
+    private static Guid CreateDocumentId(
+        int id)
+    {
+        return Guid.Parse(
+            $"00000000-0000-0000-0000-{id:D12}");
     }
 }

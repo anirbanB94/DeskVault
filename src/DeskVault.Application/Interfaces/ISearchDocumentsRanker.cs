@@ -6,4 +6,7 @@ public interface ISearchDocumentsRanker
 {
     IReadOnlyList<SearchDocumentsResult> Rank(
         IReadOnlyList<SearchDocumentsResult> results);
+
+    SearchDocumentsRankingKey GetRankingKey(
+        SearchDocumentsResult result);
 }
