@@ -162,12 +162,16 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 importRepository,
                 NullLogger<ImportDocumentHandler>.Instance);
 
-        SearchHandler =
-            new SearchDocumentsHandler(
+        var searchRetriever =
+            new SearchDocumentsRetriever(
                 searchStore,
                 new SearchDocumentsRanker(),
                 new SearchDocumentsContinuationCodec(),
-                NullLogger<SearchDocumentsHandler>.Instance);
+                NullLogger<SearchDocumentsRetriever>.Instance);
+
+        SearchHandler =
+            new SearchDocumentsHandler(
+                searchRetriever);
 
         var workspaceRepository =
             CreateWorkspaceRepository();

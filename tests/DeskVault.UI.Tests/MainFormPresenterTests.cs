@@ -2274,12 +2274,16 @@ public sealed class MainFormPresenterTests
                 repository.Object,
                 NullLogger<ListDocumentsHandler>.Instance);
 
-        var searchDocumentsHandler =
-            new SearchDocumentsHandler(
+        var searchDocumentsRetriever =
+            new SearchDocumentsRetriever(
                 searchStore.Object,
                 new SearchDocumentsRanker(),
                 new SearchDocumentsContinuationCodec(),
-                NullLogger<SearchDocumentsHandler>.Instance);
+                NullLogger<SearchDocumentsRetriever>.Instance);
+
+        var searchDocumentsHandler =
+            new SearchDocumentsHandler(
+                searchDocumentsRetriever);
 
         var createWorkspaceHandler =
             new CreateWorkspaceHandler(

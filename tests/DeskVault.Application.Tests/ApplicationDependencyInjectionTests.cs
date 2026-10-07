@@ -74,6 +74,16 @@ public sealed class ApplicationDependencyInjectionTests
             services,
             descriptor =>
                 descriptor.ServiceType ==
+                    typeof(ISearchDocumentsRetriever)
+                && descriptor.ImplementationType ==
+                    typeof(SearchDocumentsRetriever)
+                && descriptor.Lifetime ==
+                    ServiceLifetime.Singleton);
+
+        Assert.Contains(
+            services,
+            descriptor =>
+                descriptor.ServiceType ==
                     typeof(RecoverDocumentArtifactsHandler)
                 && descriptor.ImplementationType ==
                     typeof(RecoverDocumentArtifactsHandler)
