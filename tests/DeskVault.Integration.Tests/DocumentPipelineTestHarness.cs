@@ -166,6 +166,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             new SearchDocumentsHandler(
                 searchStore,
                 new SearchDocumentsRanker(),
+                new SearchDocumentsContinuationCodec(),
                 NullLogger<SearchDocumentsHandler>.Instance);
 
         var workspaceRepository =

@@ -67,6 +67,9 @@ public sealed class ApplicationDependencyInjectionTests
         Assert.IsType<SearchDocumentsRanker>(
             serviceProvider.GetRequiredService<ISearchDocumentsRanker>());
 
+        Assert.IsType<SearchDocumentsContinuationCodec>(
+            serviceProvider.GetRequiredService<ISearchDocumentsContinuationCodec>());
+
         Assert.Contains(
             services,
             descriptor =>

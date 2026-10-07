@@ -20,18 +20,24 @@ public sealed class SearchDocumentsRanker : ISearchDocumentsRanker
                     new
                     {
                         Result = result,
-                        Score = CalculateScore(result)
+                        RankingKey = GetRankingKey(result)
                     })
-            .OrderByDescending(
-                item => item.Score)
-            .ThenBy(
-                item => item.Result.DisplayName,
-                StringComparer.Ordinal)
-            .ThenBy(
-                item => item.Result.DocumentId)
+            .OrderBy(
+                item => item.RankingKey)
             .Select(
                 item => item.Result)
             .ToList();
+    }
+
+    public SearchDocumentsRankingKey GetRankingKey(
+        SearchDocumentsResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new SearchDocumentsRankingKey(
+            CalculateScore(result),
+            result.DisplayName,
+            result.DocumentId);
     }
 
     private static int CalculateScore(

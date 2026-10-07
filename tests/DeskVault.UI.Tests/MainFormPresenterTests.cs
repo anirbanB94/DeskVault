@@ -2278,6 +2278,7 @@ public sealed class MainFormPresenterTests
             new SearchDocumentsHandler(
                 searchStore.Object,
                 new SearchDocumentsRanker(),
+                new SearchDocumentsContinuationCodec(),
                 NullLogger<SearchDocumentsHandler>.Instance);
 
         var createWorkspaceHandler =
