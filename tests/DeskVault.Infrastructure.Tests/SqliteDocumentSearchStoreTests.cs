@@ -270,6 +270,179 @@ public sealed class SqliteDocumentSearchStoreTests
             staleResults);
     }
 
+    [Theory]
+    [InlineData(DocumentKnowledgeAvailabilityState.Unavailable)]
+    [InlineData(DocumentKnowledgeAvailabilityState.Failed)]
+    [InlineData(DocumentKnowledgeAvailabilityState.Stale)]
+    public async Task SearchAsync_WhenKeywordSearchIsNotAvailable_DoesNotReturnProcessedContent(
+        DocumentKnowledgeAvailabilityState availabilityState)
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "availability-test.txt",
+                "Availability Test Document");
+
+        await using (DeskVaultDbContext context =
+            CreateContext(connection))
+        {
+            DocumentKnowledgeAvailabilityEntity availability =
+                await context.DocumentKnowledgeAvailabilities
+                    .SingleAsync(
+                        item =>
+                            item.DocumentId == document.Id &&
+                            item.Representation ==
+                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+            availability.State =
+                (int)availabilityState;
+
+            await context.SaveChangesAsync();
+        }
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            document.Id,
+            0L,
+            [
+                new DocumentChunk(
+                    0,
+                    "availability-gated searchable content.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "availability-gated"));
+
+        Assert.Empty(
+            results);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenKeywordSearchAvailabilityGenerationDoesNotMatchCurrentSuccessfulGeneration_DoesNotReturnProcessedContent()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "generation-mismatch.txt",
+                "Generation Mismatch Document");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        long processingGeneration =
+            await processingStore.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        await processingStore.PublishSuccessfulProcessingAsync(
+            document.Id,
+            processingGeneration,
+            new DocumentProcessingRuleVersion(
+                "processing-v1"),
+            [
+                new DocumentChunk(
+                0,
+                "generation-gated-content-search-target.")
+            ]);
+
+        await using (DeskVaultDbContext context =
+            CreateContext(connection))
+        {
+            DocumentKnowledgeAvailabilityEntity availability =
+                await context.DocumentKnowledgeAvailabilities
+                    .SingleAsync(
+                        item =>
+                            item.DocumentId == document.Id &&
+                            item.Representation ==
+                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+            availability.State =
+                (int)DocumentKnowledgeAvailabilityState.Available;
+
+            availability.LastAvailableProcessingGeneration =
+                0L;
+
+            await context.SaveChangesAsync();
+        }
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "generation-gated-content-search-target"));
+
+        Assert.Empty(
+            results);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WhenKeywordSearchIsUnavailable_StillReturnsDocumentMetadataMatches()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "metadata-only.txt",
+                "Metadata Only Search Target");
+
+        await using (DeskVaultDbContext context =
+            CreateContext(connection))
+        {
+            DocumentKnowledgeAvailabilityEntity availability =
+                await context.DocumentKnowledgeAvailabilities
+                    .SingleAsync(
+                        item =>
+                            item.DocumentId == document.Id &&
+                            item.Representation ==
+                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+            availability.State =
+                (int)DocumentKnowledgeAvailabilityState.Unavailable;
+
+            availability.LastAvailableProcessingGeneration =
+                null;
+
+            await context.SaveChangesAsync();
+        }
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "metadata-only"));
+
+        SearchDocumentsResult result =
+            Assert.Single(results);
+
+        Assert.Equal(
+            document.Id,
+            result.DocumentId);
+
+        Assert.Contains(
+            result.Matches,
+            match =>
+                match.Source ==
+                SearchMatchSource.DocumentMetadata);
+    }
+
     [Fact]
     public async Task SearchAsync_ReturnsResultsInDocumentAndChunkOrder()
     {
@@ -835,8 +1008,26 @@ public sealed class SqliteDocumentSearchStoreTests
                 DisplayName = document.DisplayName,
                 Sha256Hash = document.Sha256Hash,
                 ImportedAt = document.ImportedAt,
-                Status = (int)document.Status,
-                StoredFilePath = document.StoredFilePath
+                Status = (int)DocumentStatus.Available,
+                LifecycleState =
+                    (int)DocumentLifecycleState.Active,
+                ProcessingState =
+                    (int)DocumentProcessingState.Succeeded,
+                StoredFilePath = document.StoredFilePath,
+                ProcessingGeneration = 0L,
+                LastSuccessfulProcessingGeneration = 0L,
+                LastSuccessfulProcessingRuleVersion = null
+            });
+
+        context.DocumentKnowledgeAvailabilities.Add(
+            new DocumentKnowledgeAvailabilityEntity
+            {
+                DocumentId = document.Id,
+                Representation =
+                    (int)DocumentKnowledgeRepresentationKind.KeywordSearch,
+                State =
+                    (int)DocumentKnowledgeAvailabilityState.Available,
+                LastAvailableProcessingGeneration = 0L
             });
 
         context.SaveChanges();

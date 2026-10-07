@@ -79,6 +79,21 @@ public sealed class DocumentEvidenceIntegrationTests
                 Assert.NotNull(
                     firstDocument);
 
+                DocumentKnowledgeAvailability firstKeywordSearchAvailability =
+                    Assert.Single(
+                        firstDocument.KnowledgeAvailability,
+                        availability =>
+                            availability.Representation ==
+                            DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+                Assert.Equal(
+                    DocumentKnowledgeAvailabilityState.Available,
+                    firstKeywordSearchAvailability.State);
+
+                Assert.Equal(
+                    1L,
+                    firstKeywordSearchAvailability.LastAvailableProcessingGeneration);
+
                 Assert.Equal(
                     DocumentStatus.Available,
                     firstDocument.Status);
@@ -127,6 +142,21 @@ public sealed class DocumentEvidenceIntegrationTests
 
                 Assert.NotNull(
                     secondDocument);
+
+                DocumentKnowledgeAvailability secondKeywordSearchAvailability =
+                    Assert.Single(
+                        secondDocument.KnowledgeAvailability,
+                        availability =>
+                            availability.Representation ==
+                            DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+                Assert.Equal(
+                    DocumentKnowledgeAvailabilityState.Available,
+                    secondKeywordSearchAvailability.State);
+
+                Assert.Equal(
+                    2L,
+                    secondKeywordSearchAvailability.LastAvailableProcessingGeneration);
 
                 Assert.Equal(
                     DocumentStatus.Available,

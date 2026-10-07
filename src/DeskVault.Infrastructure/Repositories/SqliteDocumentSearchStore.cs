@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Shared.Resources;
 using Microsoft.EntityFrameworkCore;
@@ -132,7 +133,19 @@ public sealed class SqliteDocumentSearchStore
                         .Where(
                             match =>
                                 match.ProcessingGeneration
-                                == match.LastSuccessfulProcessingGeneration)
+                                == match.LastSuccessfulProcessingGeneration
+                                && dbContext.DocumentKnowledgeAvailabilities.Any(
+                                    availability =>
+                                        availability.DocumentId ==
+                                        match.DocumentId
+                                        && availability.Representation ==
+                                        (int)DocumentKnowledgeRepresentationKind.KeywordSearch
+                                        && availability.State ==
+                                        (int)DocumentKnowledgeAvailabilityState.Available
+                                        && availability.LastAvailableProcessingGeneration
+                                        != null
+                                        && availability.LastAvailableProcessingGeneration ==
+                                        match.ProcessingGeneration))
                         .OrderBy(
                             match => match.DocumentId)
                         .ThenBy(

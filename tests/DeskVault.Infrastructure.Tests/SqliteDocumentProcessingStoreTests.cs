@@ -436,6 +436,81 @@ public sealed class SqliteDocumentProcessingStoreTests
     }
 
     [Fact]
+    public async Task PublishProcessingStateAsync_WhenProcessingFails_PreservesExistingKeywordSearchAvailability()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(connection);
+
+        var store =
+            CreateStore(connection);
+
+        long firstGeneration =
+            await store.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        await store.PublishSuccessfulProcessingAsync(
+            document.Id,
+            firstGeneration,
+            new DocumentProcessingRuleVersion(
+                "processing-v1"),
+            [
+                new DocumentChunk(
+                0,
+                "Established searchable content.",
+                ChunkingRuleVersion:
+                    new DocumentChunkingRuleVersion(
+                        "chunking-v1"))
+            ]);
+
+        long secondGeneration =
+            await store.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        await store.PublishProcessingStateAsync(
+            document.Id,
+            secondGeneration,
+            DocumentProcessingState.Failed);
+
+        DocumentKnowledgeAvailabilityEntity? availability =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                document.Id);
+
+        Assert.NotNull(
+            availability);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            (DocumentKnowledgeAvailabilityState)
+                availability!.State);
+
+        Assert.Equal(
+            firstGeneration,
+            availability.LastAvailableProcessingGeneration);
+
+        DocumentProcessingState processingState =
+            await GetDocumentProcessingStateAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            DocumentProcessingState.Failed,
+            processingState);
+
+        long lastSuccessfulProcessingGeneration =
+            await GetLastSuccessfulProcessingGenerationAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            firstGeneration,
+            lastSuccessfulProcessingGeneration);
+    }
+
+    [Fact]
     public async Task PublishSuccessfulProcessingAsync_WhenGenerationIsCurrent_PublishesAvailableAndRecordsSuccessfulGeneration()
     {
         await using SqliteConnection connection =
@@ -641,7 +716,7 @@ public sealed class SqliteDocumentProcessingStoreTests
     }
 
     [Fact]
-    public async Task PublishSuccessfulProcessingAsync_PersistsSucceededProcessingStateWithoutChangingKnowledgeAvailability()
+    public async Task PublishSuccessfulProcessingAsync_PersistsSucceededProcessingStateAndKeywordSearchAvailability()
     {
         await using SqliteConnection connection =
             CreateConnection();
@@ -690,13 +765,97 @@ public sealed class SqliteDocumentProcessingStoreTests
             DocumentStatus.Available,
             persistedStatus);
 
+        long persistedSuccessfulGeneration =
+            await GetLastSuccessfulProcessingGenerationAsync(
+                connection,
+                document.Id);
+
+        Assert.Equal(
+            processingGeneration,
+            persistedSuccessfulGeneration);
+
         DocumentKnowledgeAvailabilityEntity? availability =
             await GetKnowledgeAvailabilityAsync(
                 connection,
                 document.Id);
 
-        Assert.Null(
+        Assert.NotNull(
             availability);
+
+        Assert.Equal(
+            (int)DocumentKnowledgeRepresentationKind.KeywordSearch,
+            availability!.Representation);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            (DocumentKnowledgeAvailabilityState)
+                availability.State);
+
+        Assert.Equal(
+            processingGeneration,
+            availability.LastAvailableProcessingGeneration);
+    }
+
+    [Fact]
+    public async Task PublishSuccessfulProcessingAsync_WhenKeywordSearchAvailabilityAlreadyExists_ReplacesItWithSuccessfulGeneration()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(connection);
+
+        await using (DeskVaultDbContext setupContext =
+            CreateContext(connection))
+        {
+            setupContext.DocumentKnowledgeAvailabilities.Add(
+                new DocumentKnowledgeAvailabilityEntity
+                {
+                    DocumentId = document.Id,
+                    Representation =
+                        (int)DocumentKnowledgeRepresentationKind.KeywordSearch,
+                    State =
+                        (int)DocumentKnowledgeAvailabilityState.Stale,
+                    LastAvailableProcessingGeneration = 0L
+                });
+
+            await setupContext.SaveChangesAsync();
+        }
+
+        var store =
+            CreateStore(connection);
+
+        long processingGeneration =
+            await store.AcquireProcessingGenerationAsync(
+                document.Id);
+
+        await store.PublishSuccessfulProcessingAsync(
+            document.Id,
+            processingGeneration,
+            new DocumentProcessingRuleVersion(
+                "processing-v1"),
+            [
+                new DocumentChunk(
+                    0,
+                    "Successful processing result.")
+            ]);
+
+        DocumentKnowledgeAvailabilityEntity? availability =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                document.Id);
+
+        Assert.NotNull(
+            availability);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            (DocumentKnowledgeAvailabilityState)
+                availability!.State);
+
+        Assert.Equal(
+            processingGeneration,
+            availability.LastAvailableProcessingGeneration);
     }
 
     [Fact]
