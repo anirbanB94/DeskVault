@@ -25,9 +25,16 @@ a responsibility of the persistence provider or the UI, and the
 Application contract should not become tied to the current SQLite
 implementation or to a future search technology.
 
+As search result sets grow, pagination also requires a deterministic
+ordering and continuation mechanism. A continuation must represent a
+stable position in the Application-level ranked result sequence without
+exposing storage-specific offsets or retrieval implementation details to
+search consumers.
+
 The architectural boundary must therefore allow the search
 implementation and relevance strategy to evolve without replacing the
-document-oriented result contract.
+document-oriented result contract, while preserving deterministic
+keyword-search ordering and continuation semantics.
 
 ## Decision
 
@@ -100,12 +107,63 @@ information rather than on:
 
 The ranking mechanism must be replaceable.
 
-This ADR establishes the separation between search-result
-representation and relevance ordering but does not prescribe a ranking
-formula, weighting scheme, score representation, or specific relevance
-signals.
+The deterministic keyword-search ordering contract is:
 
-Those decisions belong to the relevance-ranking work.
+1. relevance score descending;
+2. `DisplayName` using ordinal ascending comparison;
+3. `DocumentId` ascending.
+
+These ordering keys provide a stable and unambiguous Application-level
+ordering for otherwise tied results.
+
+This ADR establishes the deterministic ordering contract but does not
+prescribe a particular ranking formula, weighting scheme, score
+representation, or specific relevance signals.
+
+### Deterministic Pagination and Continuation
+
+Pagination is part of the Application-level search boundary.
+
+A continuation represents the position of the **last consumed result** in
+the deterministic ranked ordering.
+
+The continuation is opaque to search consumers. Consumers must not need
+to know whether the underlying implementation represents the position
+through an offset, database key, provider-specific cursor, or another
+retrieval mechanism.
+
+The continuation must preserve the complete deterministic ordering
+position, including:
+
+- relevance score;
+- `DisplayName`; and
+- `DocumentId`.
+
+The continuation must also be bound to the normalized search criteria
+and the applicable continuation/ranking contract version.
+
+A continuation created for materially different search criteria or an
+incompatible contract must be rejected rather than interpreted as a
+position in a different result sequence.
+
+Page size is not part of continuation identity. A valid continuation
+therefore remains meaningful when the requested page size changes.
+
+Resuming from a continuation means returning only results that occur
+strictly after the represented ranked position.
+
+For an unchanged eligible result set, repeated execution of the same
+search criteria must preserve relative result ordering and pagination
+must not skip or duplicate results.
+
+This decision does not provide snapshot semantics. Changes to the
+eligible result set between requests may therefore affect later pages.
+
+Malformed or incompatible continuation values must be rejected at the
+Application boundary.
+
+The encoding and decoding of continuation values is an Application
+concern and must not expose storage-specific implementation details.
 
 ### Search and Persistence Boundary
 
@@ -122,6 +180,10 @@ that contract.
 The search-result architecture therefore remains independent of the
 current SQLite implementation and of any particular future search
 technology.
+
+A retrieval implementation may change how matching results are obtained
+or efficiently bounded, provided that the Application-level search
+ordering and continuation semantics remain behaviorally compatible.
 
 ### Relationship to Canonical Processed Knowledge
 
@@ -174,21 +236,31 @@ Represent the matched document and supporting evidence
 
 Relevance
         ↓
-Determine ordering through a replaceable Application boundary
+Determine deterministic ordering through a replaceable
+Application boundary
+
+Pagination / Continuation
+        ↓
+Represent the last consumed position in the deterministic
+Application-level ordering
+
+Retrieval Implementation
+        ↓
+Obtain matching results while preserving the Application contract
 
 UI
         ↓
 Present results and initiate the appropriate existing interaction
 ```
 
-The Application layer owns the semantic search-result and relevance
-boundaries.
+The Application layer owns the semantic search-result, relevance, and
+pagination boundaries.
 
 Infrastructure owns persistence and search-provider implementation
 details.
 
 The UI consumes application-level results and does not own search
-semantics or relevance ordering.
+semantics, relevance ordering, or continuation interpretation.
 
 The workspace architecture remains independent of the search-result
 contract.
@@ -227,6 +299,21 @@ UI-owned ranking would make consumers responsible for reproducing search
 semantics and would prevent a consistent application-level ordering
 model.
 
+### Integer Offset Continuation
+
+Rejected.
+
+An integer offset represents a location in a materialized result set
+rather than the deterministic ranked position of a specific consumed
+result.
+
+Offset-based continuation also makes the continuation dependent on
+materialized result counts and page traversal rather than on the
+Application-level ordering contract.
+
+DeskVault therefore uses an opaque continuation representing the full
+last-consumed ranking position instead.
+
 ## Consequences
 
 ### Positive
@@ -237,9 +324,16 @@ model.
 - Matching evidence can be retained without making chunks the primary
   result type.
 - Search relevance remains separate from persistence implementation.
-- Relevance behavior can evolve without redesigning the document result
-  contract.
+- Deterministic tie-breaking produces predictable keyword-search order.
+- Continuations remain opaque to consumers and independent of storage
+  implementation.
+- Changing page size does not invalidate an otherwise compatible
+  continuation.
+- Pagination can resume strictly after a deterministic ranked position.
 - Application contracts remain independent of SQLite and EF Core.
+- Future retrieval implementations can optimize result acquisition
+  without changing the Application search contract or supported keyword
+  ordering.
 - Search remains separate from UI rendering and workspace lifecycle.
 - The canonical processed representation established by ADR-0011 remains
   the source of processed-content search evidence.
@@ -253,10 +347,14 @@ model.
 - Search must aggregate matching evidence at the document level.
 - The application introduces an explicit relevance boundary that must
   remain well-defined as ranking evolves.
+- Continuation encoding and validation become part of the Application
+  search infrastructure.
+- Ranking and continuation semantics must remain compatible when the
+  retrieval implementation changes.
 
-These trade-offs are acceptable because document-oriented results and
-replaceable relevance are required foundations for richer local
-document discovery.
+These trade-offs are acceptable because document-oriented results,
+deterministic pagination, and replaceable relevance/retrieval boundaries
+are required foundations for richer local document discovery.
 
 ## Implementation Constraints
 
@@ -270,6 +368,16 @@ The implementation must:
   required;
 - keep relevance ordering separate from UI presentation;
 - keep relevance ordering separate from persistence implementation;
+- preserve deterministic ranking order using relevance score descending,
+  `DisplayName` ordinal ascending, and `DocumentId` ascending;
+- represent continuation as opaque Application-level state rather than a
+  storage-specific offset;
+- encode enough ranking state to resume strictly after the last consumed
+  result;
+- bind continuation to normalized search criteria and the applicable
+  continuation/ranking contract version;
+- keep page size out of continuation identity;
+- reject malformed or request-incompatible continuations;
 - keep EF Core and SQLite types out of Application contracts;
 - consume the canonical processed representation established by
   ADR-0011;
@@ -277,11 +385,14 @@ The implementation must:
 - preserve existing search cancellation and error-propagation behavior;
 - remain independent of embeddings, vector retrieval, RAG, and AI;
 - remain independent of workspace lifecycle and document-opening
-  orchestration.
+  orchestration;
+- allow retrieval implementation to evolve without changing supported
+  keyword-search behavior or deterministic ordering unless explicitly
+  refined.
 
-The concrete search behavior, matching rules, ranking algorithm, and UI
-interaction are owned by their respective implementation work and are
-not prescribed by this ADR.
+The concrete search behavior, matching rules, ranking algorithm, retrieval
+optimization strategy, and UI interaction are owned by their respective
+implementation work and are not prescribed by this ADR.
 
 ## Related Decisions and Work
 
@@ -311,6 +422,16 @@ primary result type.
 Relevance ordering is separated from both persistence and UI through a
 replaceable Application-level boundary.
 
-The decision establishes the architectural foundation for richer local
-document discovery while leaving concrete matching, ranking, and
-presentation behavior to the appropriate implementation work.
+Current keyword search uses deterministic ordering based on relevance
+score descending, `DisplayName` ordinal ascending, and `DocumentId`
+ascending.
+
+Pagination uses an opaque continuation representing the last consumed
+position in that deterministic ordering. The continuation is independent
+of page size and storage implementation and is bound to the applicable
+search criteria and continuation/ranking contract version.
+
+The decision establishes the architectural foundation for predictable
+and scalable local document discovery while leaving retrieval
+implementation details and future MVP 3 AI capabilities outside the
+Application contract.
