@@ -185,10 +185,12 @@ metadata. Processing-state publication and knowledge-availability publication
 remain separate persistence concerns.
 
 Processing-store publication may update the legacy `DocumentStatus`
-compatibility projection and the durable `ProcessingState`, but it does not
-automatically create, remove, or rewrite a `DocumentKnowledgeAvailabilities`
-record. Knowledge eligibility is owned by the independent representation
-lifecycle.
+compatibility projection and the durable `ProcessingState`. A successful
+processing publication establishes the concrete MVP2
+`KeywordSearch` availability as an explicit `Available` representation in the
+same atomic publication boundary. This does not make future knowledge
+representations dependent on processing success; each representation remains
+independently owned by its own availability lifecycle.
 
 ### Derived Content Publication
 
@@ -203,7 +205,10 @@ The successful publication operation must:
 1. verify that the supplied processing generation is still authoritative;
 2. replace the document's derived chunks with the candidate derived result;
 3. set `LastSuccessfulProcessingGeneration` to the same processing generation;
-4. commit the successful derived result and its lineage as one transaction.
+4. establish or refresh the concrete MVP2 `KeywordSearch` knowledge availability
+   as `Available`, associated with the same processing generation;
+5. commit the successful derived result, its processing lineage, and the
+   concrete `KeywordSearch` availability as one transaction.
 
 The processing execution outcome is `Succeeded`. The legacy `DocumentStatus`
 may still receive a compatibility projection during persistence migration.
@@ -213,6 +218,13 @@ solely from the processing execution outcome.
 The same successful publication must also persist
 `LastSuccessfulProcessingRuleVersion` for the processing-rule version that
 produced the candidate result.
+
+For the concrete MVP2 `KeywordSearch` representation, the candidate derived
+result becomes searchable only when the persisted `KeywordSearch` availability
+is established as `Available` and its `LastAvailableProcessingGeneration`
+matches the successful processing generation. Searchability must not be
+inferred solely from the presence of chunks or
+`LastSuccessfulProcessingGeneration`.
 
 Conceptually:
 
@@ -226,6 +238,7 @@ Chunk
 ONE TRANSACTION
     ├── Replace derived chunks
     ├── LastSuccessfulProcessingGeneration = current generation
+    ├── KeywordSearch = Available @ current generation
     └── LastSuccessfulProcessingRuleVersion = current processing-rule version
     ↓
 Commit
@@ -260,8 +273,12 @@ When a processing attempt is cancelled:
   further state or derived content.
 - A previously successful derived result remains identified by
   `LastSuccessfulProcessingGeneration` and is not removed or replaced.
-- Processing outcome is represented as `Cancelled`; knowledge availability
-  remains a separate concern and is not implicitly changed by cancellation.
+- Processing outcome is represented as `Cancelled`; previously available
+  knowledge representations remain associated with their last valid
+  processing generation unless an explicit representation lifecycle operation
+  changes them.
+- In particular, cancellation or failure of a later processing attempt must
+  not remove or reset previously available `KeywordSearch` knowledge.
 - Cancellation must not remove or replace previously successful chunks.
 - The cancellation recovery state transition must itself be conditional on
   the processing generation remaining authoritative, so an obsolete attempt
@@ -406,15 +423,16 @@ Failed
 
 The current concrete MVP2 representation is `KeywordSearch`.
 
-A processing attempt may therefore finish with:
+A processing attempt may finish with:
 
 ```text
 ProcessingState = Succeeded
-KeywordSearch = Unavailable
 ```
 
-without treating the processing attempt as failed. A representation may likewise
-be `Failed` without changing unrelated processing or lifecycle state.
+while other knowledge representations remain `Unavailable`, `Stale`, or
+`Failed` without treating the processing attempt as failed. For the concrete
+MVP2 `KeywordSearch` representation, successful processing publication
+establishes `Available` for the same successful processing generation.
 
 When a representation is `Available` or `Stale`, its
 `LastAvailableProcessingGeneration` identifies the successful processing
@@ -440,15 +458,14 @@ A knowledge record with a generation greater than the document's
 the domain or persistence/migration boundary rather than silently retained or
 rewritten.
 
-Successful processing does not automatically create or update
-`KeywordSearch` availability. A document may legitimately be:
-
-```text
-ProcessingState = Succeeded
-KeywordSearch = Unavailable
-```
-
-because knowledge representation eligibility is independently governed.
+For the concrete MVP2 `KeywordSearch` representation, successful
+processing publication establishes `KeywordSearch = Available` for the same
+successful processing generation as part of the atomic persistence boundary.
+This makes current keyword search immediately usable without introducing a
+dependency on any future knowledge or indexing representation. The general
+knowledge-availability model remains independent, so other representations
+may still be `Unavailable`, `Stale`, or `Failed` without changing the
+processing outcome or the availability of `KeywordSearch`.
 
 ### Legacy Lifecycle Migration and Historical Knowledge
 
@@ -764,12 +781,14 @@ guarantee.
 
 Stable chunk identity and provenance are addressed separately.
 
-### Treat processing success as knowledge availability
+### Treat processing success as universal knowledge availability
 
 Rejected.
 
-Successful processing establishes a coherent processing result, but individual
-derived representations may still be unavailable, stale, or failed.
+Successful processing establishes the concrete MVP2 `KeywordSearch`
+representation as available, but it must not imply that every future or
+unrelated knowledge representation is available. Representation-specific
+availability remains independently governed.
 
 ### Treat knowledge-stage failure as processing failure
 
@@ -789,6 +808,12 @@ must not implicitly change unrelated processing or document lifecycle state.
 * Sequential repeated processing remains deterministic and idempotent.
 * Existing transactional chunk replacement remains useful.
 * Processing execution remains separated from derived knowledge availability.
+* The concrete MVP2 `KeywordSearch` representation becomes available atomically
+  with successful processing at the same authoritative generation.
+* Searchability is governed by persisted representation availability and
+  generation alignment rather than inferred from chunks alone.
+* Previously available `KeywordSearch` knowledge survives later failed,
+  cancelled, or stale processing attempts.
 * Processing-specific lifecycle concerns remain separated from generic document
   CRUD.
 * Document-artifact consistency has a distinct reconciliation boundary.
@@ -807,7 +832,9 @@ must not implicitly change unrelated processing or document lifecycle state.
 * Additional lifecycle tests are required.
 * Existing repository and processing-store contracts may require
   processing-specific lifecycle operations.
-* Individual knowledge representations require explicit availability semantics.
+* Individual knowledge representations require explicit availability semantics,
+  while the concrete MVP2 `KeywordSearch` representation participates in the
+  successful processing publication boundary.
 * Generic document updates must preserve processing lineage rather than
   treating the document as metadata-only state.
 * Database schema evolution requires an EF Core migration and an explicit
@@ -836,6 +863,12 @@ The implementation must:
 * persist lifecycle, processing, and knowledge availability independently;
 * preserve complete processing lineage across generic document updates;
 * associate `Available` and `Stale` knowledge with a non-negative processing generation;
+* establish concrete MVP2 `KeywordSearch` availability atomically with a successful
+  processing publication and associate it with the same processing generation;
+* require persisted `KeywordSearch` availability and generation alignment before
+  treating processed content as searchable;
+* preserve previously available `KeywordSearch` knowledge when a later processing
+  attempt fails, is cancelled, or becomes stale;
 * permit generation `0` only as explicit historical unknown-producing-generation semantics;
 * reject knowledge availability whose generation is greater than the document's
   `LastSuccessfulProcessingGeneration`;

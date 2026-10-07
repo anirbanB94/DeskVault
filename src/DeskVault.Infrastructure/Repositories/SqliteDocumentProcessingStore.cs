@@ -240,6 +240,43 @@ public sealed class SqliteDocumentProcessingStore
                     currentDocument.ProcessingGeneration);
             }
 
+            DocumentKnowledgeAvailabilityEntity?
+                keywordSearchAvailability =
+                    await dbContext.DocumentKnowledgeAvailabilities
+                        .SingleOrDefaultAsync(
+                            availability =>
+                                availability.DocumentId == documentId &&
+                                availability.Representation ==
+                                (int)DocumentKnowledgeRepresentationKind.KeywordSearch,
+                            cancellationToken);
+
+            if (keywordSearchAvailability is null)
+            {
+                await dbContext.DocumentKnowledgeAvailabilities.AddAsync(
+                    new DocumentKnowledgeAvailabilityEntity
+                    {
+                        DocumentId = documentId,
+                        Representation =
+                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch,
+                        State =
+                            (int)DocumentKnowledgeAvailabilityState.Available,
+                        LastAvailableProcessingGeneration =
+                            processingGeneration
+                    },
+                    cancellationToken);
+            }
+            else
+            {
+                keywordSearchAvailability.State =
+                    (int)DocumentKnowledgeAvailabilityState.Available;
+
+                keywordSearchAvailability.LastAvailableProcessingGeneration =
+                    processingGeneration;
+            }
+
+            await dbContext.SaveChangesAsync(
+                cancellationToken);
+
             cancellationToken.ThrowIfCancellationRequested();
 
             await transaction.CommitAsync(
