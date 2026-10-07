@@ -146,6 +146,50 @@ newer processing state.
 A renderer may observe processing information for presentation, but it must not
 change processing state as a side effect of rendering.
 
+### Durable Lifecycle Persistence
+
+The independent lifecycle model is durable, not merely an in-memory domain
+projection.
+
+The `Documents` persistence record stores:
+
+```text
+LifecycleState
+ProcessingState
+ProcessingGeneration
+LastSuccessfulProcessingGeneration
+LastSuccessfulProcessingRuleVersion?
+```
+
+The legacy `DocumentStatus` column remains as a compatibility projection while
+existing callers and historical data are transitioned, but it is not the
+authoritative source of lifecycle or processing execution state.
+
+Each derived knowledge representation is persisted independently through a
+`DocumentKnowledgeAvailabilities` record identified by `(DocumentId,
+Representation)`:
+
+```text
+Representation
+State
+LastAvailableProcessingGeneration?
+```
+
+Generic document persistence must restore and update all of these values
+without silently discarding processing lineage or unrelated knowledge state.
+
+`UpdateAsync` therefore preserves `ProcessingGeneration`,
+`LastSuccessfulProcessingGeneration`, and
+`LastSuccessfulProcessingRuleVersion` in addition to ordinary document
+metadata. Processing-state publication and knowledge-availability publication
+remain separate persistence concerns.
+
+Processing-store publication may update the legacy `DocumentStatus`
+compatibility projection and the durable `ProcessingState`, but it does not
+automatically create, remove, or rewrite a `DocumentKnowledgeAvailabilities`
+record. Knowledge eligibility is owned by the independent representation
+lifecycle.
+
 ### Derived Content Publication
 
 Persisted document chunks represent the current successful derived processing
@@ -288,10 +332,10 @@ change `LastSuccessfulProcessingGeneration`.
 When a processing attempt is cancelled:
 
 - If `LastSuccessfulProcessingGeneration` identifies a previously successful
-  result, cancellation recovery publishes `Available` and preserves that
-  result.
+  result, cancellation recovery publishes the legacy `DocumentStatus = Available`
+  compatibility projection and preserves that result.
 - If no successful processing generation exists, cancellation recovery
-  publishes `Imported`.
+  publishes the legacy `DocumentStatus = Imported` compatibility projection.
 - Cancellation must not modify `LastSuccessfulProcessingGeneration`.
 
 All updates to `LastSuccessfulProcessingGeneration` and cancellation recovery
@@ -319,7 +363,8 @@ The same successfully published derived representation
 
 A successful processing attempt updates `LastSuccessfulProcessingRuleVersion`
 in the same atomic transaction that replaces its derived chunks, publishes
-`Available`, and updates `LastSuccessfulProcessingGeneration`.
+the legacy `DocumentStatus = Available` compatibility projection, and updates
+`LastSuccessfulProcessingGeneration`.
 
 The processing-rule version must never become current independently of the
 successful derived representation. Starting a new processing attempt advances
@@ -374,6 +419,105 @@ be `Failed` without changing unrelated processing or lifecycle state.
 When a representation is `Available` or `Stale`, its
 `LastAvailableProcessingGeneration` identifies the successful processing
 generation whose derived knowledge it represents.
+
+The generation is normally positive for knowledge produced by the current
+processing lifecycle. Generation `0` is additionally valid for historical
+knowledge whose producing generation cannot be recovered from legacy
+persistence. This is an explicit unknown-history value, not a fabricated
+attempt identity.
+
+The persistence/domain invariant is:
+
+```text
+Available/Stale
+    → LastAvailableProcessingGeneration is not NULL
+    → LastAvailableProcessingGeneration >= 0
+    → LastAvailableProcessingGeneration <= LastSuccessfulProcessingGeneration
+```
+
+A knowledge record with a generation greater than the document's
+`LastSuccessfulProcessingGeneration` is inconsistent and must be rejected at
+the domain or persistence/migration boundary rather than silently retained or
+rewritten.
+
+Successful processing does not automatically create or update
+`KeywordSearch` availability. A document may legitimately be:
+
+```text
+ProcessingState = Succeeded
+KeywordSearch = Unavailable
+```
+
+because knowledge representation eligibility is independently governed.
+
+### Legacy Lifecycle Migration and Historical Knowledge
+
+Legacy documents originally stored a combined `DocumentStatus` and did not
+persist independent lifecycle, processing, or knowledge-availability records.
+
+The migration establishes compatible independent state without fabricating
+historical information.
+
+The compatibility projection is:
+
+```text
+Status = Imported
+    → LifecycleState = Active
+    → ProcessingState = NeverProcessed
+    → KeywordSearch = Unavailable
+
+Status = Processing
+    → LifecycleState = Active
+    → ProcessingState = Processing
+    → KeywordSearch = Available @ LastSuccessfulProcessingGeneration
+      when a previous successful generation exists
+
+Status = Failed
+    → LifecycleState = Active
+    → ProcessingState = Failed
+    → KeywordSearch = Available @ LastSuccessfulProcessingGeneration
+      when a previous successful generation exists
+
+Status = Indexed / Available
+    → LifecycleState = Active
+    → ProcessingState = Succeeded
+    → KeywordSearch = Available @ LastSuccessfulProcessingGeneration
+
+Status = Archived
+    → LifecycleState = Archived
+    → ProcessingState reflects a known successful prior processing result
+      when one exists; otherwise NeverProcessed
+    → KeywordSearch follows the same historical-success rule
+
+Status = Deleted
+    → LifecycleState = Deleted
+    → ProcessingState reflects a known successful prior processing result
+      when one exists; otherwise NeverProcessed
+    → KeywordSearch = Unavailable
+```
+
+For legacy `Indexed` or `Available` documents where
+`LastSuccessfulProcessingGeneration = 0`, migration preserves the fact that
+usable knowledge existed while leaving its producing generation explicitly
+unknown:
+
+```text
+ProcessingState = Succeeded
+KeywordSearch = Available
+LastAvailableProcessingGeneration = 0
+```
+
+Migration must not invent a positive historical generation.
+
+Schema migration and lifecycle backfill are separate responsibilities. The EF
+Core migration creates the durable schema; the retry-safe backfill interprets
+legacy `Status` and populates independent lifecycle and knowledge state. The
+backfill runs after schema migration inside the existing vault initialization
+critical section.
+
+If the backfill is interrupted, its transaction must roll back completely and
+the same vault must be safe to retry. Existing availability records are not
+overwritten merely because startup is being repeated.
 
 ### Concurrency
 
@@ -664,7 +808,10 @@ must not implicitly change unrelated processing or document lifecycle state.
 * Existing repository and processing-store contracts may require
   processing-specific lifecycle operations.
 * Individual knowledge representations require explicit availability semantics.
-* Database schema evolution requires an EF Core migration.
+* Generic document updates must preserve processing lineage rather than
+  treating the document as metadata-only state.
+* Database schema evolution requires an EF Core migration and an explicit
+  lifecycle/knowledge backfill for historical documents.
 * The transitional compatibility projection of legacy `DocumentStatus` will
   coexist until lifecycle persistence migration is complete.
 * Document-artifact reconciliation and recovery require additional detection,
@@ -684,8 +831,14 @@ The implementation must:
 * preserve transactional chunk replacement;
 * make successful derived-content replacement, processing lineage, and
   `LastSuccessfulProcessingGeneration` update one atomic commit boundary;
+* keep document lifecycle state independent from processing execution state;
 * keep processing execution state independent from knowledge availability;
-* associate `Available` and `Stale` knowledge with a processing generation;
+* persist lifecycle, processing, and knowledge availability independently;
+* preserve complete processing lineage across generic document updates;
+* associate `Available` and `Stale` knowledge with a non-negative processing generation;
+* permit generation `0` only as explicit historical unknown-producing-generation semantics;
+* reject knowledge availability whose generation is greater than the document's
+  `LastSuccessfulProcessingGeneration`;
 * preserve deterministic repeated processing;
 * provide consistent cancellation behavior;
 * provide consistent failure behavior;
@@ -746,8 +899,8 @@ and recovery work.
 * The reliable document processing lifecycle investigation established the
   need for authoritative processing-attempt identity and stale-result
   protection.
-* PBI #106 Technical Task #125 owns durable lifecycle persistence and migration.
-* PBI #106 Technical Task #126 owns current keyword-search availability integration.
+* The persistence design requires independent state persistence, historical
+  lifecycle backfill, and lossless processing lineage restoration.
 * The document-artifact reconciliation work establishes a separate
   consistency boundary between persisted document metadata and encrypted
   document artifacts.
