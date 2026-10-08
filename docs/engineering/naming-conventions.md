@@ -54,6 +54,20 @@ The first three describe implementation rather than product outcomes. The last t
 
 ---
 
+### Technical Debt PBIs
+
+Technical Debt is represented as a Product Backlog Item using the standard Product Backlog Item template.
+
+Technical Debt PBIs:
+* use the `technical-debt` label;
+* use a Developer-oriented User Story:
+  `As a DeskVault Developer, I want ..., so that ...`;
+* describe an engineering, architecture, maintainability, reliability, scalability, or quality outcome;
+* retain the standard PBI structure and acceptance-criteria format;
+* must not use the Technical Task template merely because the work is technical.
+
+Technical Debt PBIs remain Product Backlog Items and may have Technical Tasks, Bugs, or Spikes as child issues where appropriate.
+
 ## 3. Technical Task Naming
 
 Technical Tasks represent implementation work required to deliver a PBI or maintain the product.

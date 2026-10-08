@@ -109,6 +109,14 @@ and planning reference. GitHub is the authoritative source for actionable
 backlog items, prioritization, Sprint planning, implementation progress, and
 related execution decisions.
 
+### Technical Debt
+
+Technical Debt is managed as a Product Backlog Item subtype rather than as a separate work hierarchy.
+
+Technical Debt PBIs use the standard Product Backlog Item structure, carry the `technical-debt` label, and express the engineering outcome from a Developer perspective. They remain subject to the same Definition of Ready, Sprint selection, refinement, acceptance criteria, and Definition of Done expectations as other PBIs.
+
+Technical Debt should be tracked as a PBI when the work represents a coherent engineering, architecture, maintainability, reliability, scalability, or quality outcome. The implementation details belong in Technical Tasks or other appropriate child work items.
+
 ## Definition of Ready
 
 A Product Backlog Item is considered Ready when it is sufficiently understood
