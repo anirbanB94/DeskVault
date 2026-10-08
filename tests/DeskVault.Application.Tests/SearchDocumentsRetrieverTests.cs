@@ -8,7 +8,7 @@ namespace DeskVault.Application.Tests;
 public sealed class SearchDocumentsRetrieverTests
 {
     [Fact]
-    public async Task RetrieveAsync_ReturnsRankedFirstPageAndCreatesContinuation()
+    public async Task RetrieveAsync_ReturnsFirstPageAndCreatesContinuation()
     {
         // Arrange
         SearchDocumentsResult firstResult =
@@ -27,13 +27,6 @@ public sealed class SearchDocumentsRetrieverTests
                 "Third Document");
 
         IReadOnlyList<SearchDocumentsResult> searchResults =
-        [
-            thirdResult,
-            firstResult,
-            secondResult
-        ];
-
-        IReadOnlyList<SearchDocumentsResult> rankedResults =
         [
             firstResult,
             secondResult,
@@ -62,20 +55,19 @@ public sealed class SearchDocumentsRetrieverTests
         var codec =
             new Mock<ISearchDocumentsContinuationCodec>();
 
-        SetupRanker(
-            ranker,
-            rankedResults,
-            new Dictionary<Guid, int>
-            {
-                [firstResult.DocumentId] = 100,
-                [secondResult.DocumentId] = 90,
-                [thirdResult.DocumentId] = 80
-            });
+        ranker
+            .Setup(
+                x => x.GetRankingKey(
+                    secondResult))
+            .Returns(
+                secondResultKey);
 
         store
             .Setup(
                 x => x.SearchAsync(
                     query,
+                    null,
+                    query.Limit,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 searchResults);
@@ -101,7 +93,10 @@ public sealed class SearchDocumentsRetrieverTests
 
         // Assert
         Assert.Equal(
-            rankedResults.Take(2),
+            [
+                firstResult,
+                secondResult
+            ],
             page.Results);
 
         Assert.True(
@@ -114,13 +109,20 @@ public sealed class SearchDocumentsRetrieverTests
         store.Verify(
             x => x.SearchAsync(
                 query,
+                null,
+                query.Limit,
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
         ranker.Verify(
-            x => x.Rank(
-                searchResults),
+            x => x.GetRankingKey(
+                secondResult),
             Times.Once);
+
+        ranker.Verify(
+            x => x.Rank(
+                It.IsAny<IReadOnlyList<SearchDocumentsResult>>()),
+            Times.Never);
 
         codec.Verify(
             x => x.Create(
@@ -155,16 +157,6 @@ public sealed class SearchDocumentsRetrieverTests
 
         IReadOnlyList<SearchDocumentsResult> searchResults =
         [
-            firstResult,
-            secondResult,
-            thirdResult,
-            fourthResult
-        ];
-
-        IReadOnlyList<SearchDocumentsResult> rankedResults =
-        [
-            firstResult,
-            secondResult,
             thirdResult,
             fourthResult
         ];
@@ -192,21 +184,12 @@ public sealed class SearchDocumentsRetrieverTests
         var codec =
             new Mock<ISearchDocumentsContinuationCodec>();
 
-        SetupRanker(
-            ranker,
-            rankedResults,
-            new Dictionary<Guid, int>
-            {
-                [firstResult.DocumentId] = 100,
-                [secondResult.DocumentId] = 90,
-                [thirdResult.DocumentId] = 80,
-                [fourthResult.DocumentId] = 70
-            });
-
         store
             .Setup(
                 x => x.SearchAsync(
                     query,
+                    continuationPosition,
+                    query.Limit,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 searchResults);
@@ -244,11 +227,24 @@ public sealed class SearchDocumentsRetrieverTests
         Assert.Null(
             page.Continuation);
 
+        store.Verify(
+            x => x.SearchAsync(
+                query,
+                continuationPosition,
+                query.Limit,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
         codec.Verify(
             x => x.Decode(
                 query,
                 continuation),
             Times.Once);
+
+        ranker.Verify(
+            x => x.Rank(
+                It.IsAny<IReadOnlyList<SearchDocumentsResult>>()),
+            Times.Never);
     }
 
     [Fact]
@@ -265,18 +261,6 @@ public sealed class SearchDocumentsRetrieverTests
                 2,
                 "Beta Document");
 
-        SearchDocumentsResult thirdResult =
-            CreateResult(
-                3,
-                "Gamma Document");
-
-        IReadOnlyList<SearchDocumentsResult> rankedResults =
-        [
-            firstResult,
-            secondResult,
-            thirdResult
-        ];
-
         SearchDocumentsContinuation continuation =
             new("opaque-continuation");
 
@@ -291,6 +275,11 @@ public sealed class SearchDocumentsRetrieverTests
                 firstResult,
                 100);
 
+        SearchDocumentsRankingKey secondResultKey =
+            CreateRankingKey(
+                secondResult,
+                100);
+
         var store =
             new Mock<IDocumentSearchStore>();
 
@@ -300,17 +289,23 @@ public sealed class SearchDocumentsRetrieverTests
         var codec =
             new Mock<ISearchDocumentsContinuationCodec>();
 
-        SetupRanker(
-            ranker,
-            rankedResults);
+        IReadOnlyList<SearchDocumentsResult> searchResults =
+        [
+            secondResult,
+            CreateResult(
+                3,
+                "Gamma Document")
+        ];
 
         store
             .Setup(
                 x => x.SearchAsync(
                     query,
+                    continuationPosition,
+                    query.Limit,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-                rankedResults);
+                searchResults);
 
         codec
             .Setup(
@@ -342,15 +337,31 @@ public sealed class SearchDocumentsRetrieverTests
         Assert.True(
             page.HasMore);
 
+        Assert.Null(
+            page.Continuation);
+
+        store.Verify(
+            x => x.SearchAsync(
+                query,
+                continuationPosition,
+                query.Limit,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
         codec.Verify(
             x => x.Decode(
                 query,
                 continuation),
             Times.Once);
+
+        ranker.Verify(
+            x => x.Rank(
+                It.IsAny<IReadOnlyList<SearchDocumentsResult>>()),
+            Times.Never);
     }
 
     [Fact]
-    public async Task RetrieveAsync_WhenScoreAndDisplayNameAreEqual_ResumesUsingDocumentIdTieBreaker()
+    public async Task RetrieveAsync_WhenScoreAndDisplayNameAreEqual_ContinuesUsingDocumentIdTieBreaker()
     {
         // Arrange
         SearchDocumentsResult firstResult =
@@ -368,13 +379,6 @@ public sealed class SearchDocumentsRetrieverTests
                 3,
                 "Same Name");
 
-        IReadOnlyList<SearchDocumentsResult> rankedResults =
-        [
-            firstResult,
-            secondResult,
-            thirdResult
-        ];
-
         SearchDocumentsContinuation continuation =
             new("opaque-continuation");
 
@@ -389,6 +393,11 @@ public sealed class SearchDocumentsRetrieverTests
                 secondResult,
                 100);
 
+        IReadOnlyList<SearchDocumentsResult> searchResults =
+        [
+            thirdResult
+        ];
+
         var store =
             new Mock<IDocumentSearchStore>();
 
@@ -398,17 +407,15 @@ public sealed class SearchDocumentsRetrieverTests
         var codec =
             new Mock<ISearchDocumentsContinuationCodec>();
 
-        SetupRanker(
-            ranker,
-            rankedResults);
-
         store
             .Setup(
                 x => x.SearchAsync(
                     query,
+                    continuationPosition,
+                    query.Limit,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-                rankedResults);
+                searchResults);
 
         codec
             .Setup(
@@ -443,11 +450,24 @@ public sealed class SearchDocumentsRetrieverTests
         Assert.Null(
             page.Continuation);
 
+        store.Verify(
+            x => x.SearchAsync(
+                query,
+                continuationPosition,
+                query.Limit,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
         codec.Verify(
             x => x.Decode(
                 query,
                 continuation),
             Times.Once);
+
+        ranker.Verify(
+            x => x.Rank(
+                It.IsAny<IReadOnlyList<SearchDocumentsResult>>()),
+            Times.Never);
     }
 
     [Fact]
@@ -499,6 +519,8 @@ public sealed class SearchDocumentsRetrieverTests
         store.Verify(
             x => x.SearchAsync(
                 It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -547,6 +569,8 @@ public sealed class SearchDocumentsRetrieverTests
         store.Verify(
             x => x.SearchAsync(
                 It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -594,6 +618,8 @@ public sealed class SearchDocumentsRetrieverTests
         store.Verify(
             x => x.SearchAsync(
                 It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -630,6 +656,8 @@ public sealed class SearchDocumentsRetrieverTests
             .Setup(
                 x => x.SearchAsync(
                     query,
+                    null,
+                    query.Limit,
                     cancellationToken))
             .ThrowsAsync(
                 new OperationCanceledException(
@@ -657,6 +685,8 @@ public sealed class SearchDocumentsRetrieverTests
         store.Verify(
             x => x.SearchAsync(
                 query,
+                null,
+                query.Limit,
                 cancellationToken),
             Times.Once);
 
@@ -664,6 +694,11 @@ public sealed class SearchDocumentsRetrieverTests
             x => x.Decode(
                 It.IsAny<SearchDocumentsQuery>(),
                 It.IsAny<SearchDocumentsContinuation>()),
+            Times.Never);
+
+        ranker.Verify(
+            x => x.Rank(
+                It.IsAny<IReadOnlyList<SearchDocumentsResult>>()),
             Times.Never);
     }
 
@@ -687,6 +722,11 @@ public sealed class SearchDocumentsRetrieverTests
             secondResult
         ];
 
+        SearchDocumentsQuery query =
+            new(
+                "matching",
+                Limit: 2);
+
         var store =
             new Mock<IDocumentSearchStore>();
 
@@ -696,14 +736,12 @@ public sealed class SearchDocumentsRetrieverTests
         var codec =
             new Mock<ISearchDocumentsContinuationCodec>();
 
-        SetupRanker(
-            ranker,
-            searchResults);
-
         store
             .Setup(
                 x => x.SearchAsync(
-                    It.IsAny<SearchDocumentsQuery>(),
+                    query,
+                    null,
+                    query.Limit,
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 searchResults);
@@ -717,9 +755,7 @@ public sealed class SearchDocumentsRetrieverTests
         // Act
         SearchDocumentsPage page =
             await retriever.RetrieveAsync(
-                new SearchDocumentsQuery(
-                    "matching",
-                    Limit: 2));
+                query);
 
         // Assert
         Assert.Equal(
@@ -732,10 +768,23 @@ public sealed class SearchDocumentsRetrieverTests
         Assert.Null(
             page.Continuation);
 
+        store.Verify(
+            x => x.SearchAsync(
+                query,
+                null,
+                query.Limit,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
         codec.Verify(
             x => x.Create(
                 It.IsAny<SearchDocumentsQuery>(),
                 It.IsAny<SearchDocumentsRankingKey>()),
+            Times.Never);
+
+        ranker.Verify(
+            x => x.Rank(
+                It.IsAny<IReadOnlyList<SearchDocumentsResult>>()),
             Times.Never);
     }
 
@@ -749,39 +798,6 @@ public sealed class SearchDocumentsRetrieverTests
             ranker.Object,
             codec.Object,
             NullLogger<SearchDocumentsRetriever>.Instance);
-    }
-
-    private static void SetupRanker(
-        Mock<ISearchDocumentsRanker> ranker,
-        IReadOnlyList<SearchDocumentsResult> rankedResults,
-        IReadOnlyDictionary<Guid, int>? relevanceScores = null)
-    {
-        ranker
-            .Setup(
-                x => x.Rank(
-                    It.IsAny<IReadOnlyList<SearchDocumentsResult>>()))
-            .Returns(
-                rankedResults);
-
-        foreach (SearchDocumentsResult result in rankedResults)
-        {
-            int relevanceScore =
-                relevanceScores is not null &&
-                relevanceScores.TryGetValue(
-                    result.DocumentId,
-                    out int configuredScore)
-                    ? configuredScore
-                    : 100;
-
-            ranker
-                .Setup(
-                    x => x.GetRankingKey(
-                        result))
-                .Returns(
-                    CreateRankingKey(
-                        result,
-                        relevanceScore));
-        }
     }
 
     private static SearchDocumentsRankingKey CreateRankingKey(

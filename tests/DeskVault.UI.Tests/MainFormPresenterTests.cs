@@ -49,6 +49,8 @@ public sealed class MainFormPresenterTests
                 It.Is<SearchDocumentsQuery>(
                     query =>
                         query.SearchText == "security"),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 CreateSearchResults(
@@ -80,6 +82,8 @@ public sealed class MainFormPresenterTests
                         query.SearchText == "security" &&
                         query.Continuation == null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -123,6 +127,8 @@ public sealed class MainFormPresenterTests
                     query =>
                         query.SearchText == searchText &&
                         query.FileTypes == null),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
@@ -156,6 +162,8 @@ public sealed class MainFormPresenterTests
                         query.FileTypes == null &&
                         query.Continuation == null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -180,6 +188,8 @@ public sealed class MainFormPresenterTests
                         query.FileTypes != null &&
                         query.FileTypes.Count == 1 &&
                         query.FileTypes[0] == fileType),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
@@ -215,6 +225,8 @@ public sealed class MainFormPresenterTests
                         query.FileTypes[0] == fileType &&
                         query.Continuation == null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -229,6 +241,8 @@ public sealed class MainFormPresenterTests
             .Setup(x => x.SearchAsync(
                 It.Is<SearchDocumentsQuery>(
                     query => query.SearchText == "unknown"),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
@@ -257,6 +271,8 @@ public sealed class MainFormPresenterTests
                         query.SearchText == "unknown" &&
                         query.Continuation == null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -302,6 +318,8 @@ public sealed class MainFormPresenterTests
                         query.SearchText == searchText &&
                         query.Continuation == null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new InvalidOperationException(
@@ -332,6 +350,8 @@ public sealed class MainFormPresenterTests
                         query.SearchText == searchText &&
                         query.Continuation == null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -396,9 +416,13 @@ public sealed class MainFormPresenterTests
                 It.Is<SearchDocumentsQuery>(
                     query =>
                         query.SearchText == firstSearchText),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .Returns((
                 SearchDocumentsQuery _,
+                SearchDocumentsRankingKey? _,
+                int _,
                 CancellationToken _) =>
                     firstSearchCompletion.Task);
 
@@ -407,9 +431,13 @@ public sealed class MainFormPresenterTests
                 It.Is<SearchDocumentsQuery>(
                     query =>
                         query.SearchText == secondSearchText),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .Returns((
                 SearchDocumentsQuery _,
+                SearchDocumentsRankingKey? _,
+                int _,
                 CancellationToken _) =>
                     secondSearchCompletion.Task);
 
@@ -490,6 +518,8 @@ public sealed class MainFormPresenterTests
                 It.Is<SearchDocumentsQuery>(
                     query =>
                         query.SearchText == firstSearchText),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -498,6 +528,8 @@ public sealed class MainFormPresenterTests
                 It.Is<SearchDocumentsQuery>(
                     query =>
                         query.SearchText == secondSearchText),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -530,6 +562,8 @@ public sealed class MainFormPresenterTests
                     query =>
                         query.SearchText == searchText &&
                         query.Continuation == null),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
             [
@@ -542,9 +576,13 @@ public sealed class MainFormPresenterTests
                     query =>
                         query.SearchText == searchText &&
                         query.Continuation != null),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .Returns((
                 SearchDocumentsQuery _,
+                SearchDocumentsRankingKey? _,
+                int _,
                 CancellationToken _) =>
                     loadMoreCompletion.Task);
 
@@ -554,9 +592,13 @@ public sealed class MainFormPresenterTests
                     query =>
                         query.SearchText == newerSearchText &&
                         query.Continuation == null),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .Returns((
                 SearchDocumentsQuery _,
+                SearchDocumentsRankingKey? _,
+                int _,
                 CancellationToken _) =>
                     newerSearchCompletion.Task);
 
@@ -644,8 +686,11 @@ public sealed class MainFormPresenterTests
         const string searchText =
             "security";
 
-        IReadOnlyList<SearchDocumentsResult> searchResults =
+        IReadOnlyList<SearchDocumentsResult> initialSearchResults =
             CreateSearchResultsForBatching(21);
+
+        SearchDocumentsResult finalResult =
+            initialSearchResults[20];
 
         var searchStore =
             new Mock<IDocumentSearchStore>();
@@ -654,9 +699,29 @@ public sealed class MainFormPresenterTests
             .Setup(x => x.SearchAsync(
                 It.Is<SearchDocumentsQuery>(
                     query =>
-                        query.SearchText == searchText),
+                        query.SearchText == searchText &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(searchResults);
+            .ReturnsAsync(
+                initialSearchResults);
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation != null &&
+                        query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                finalResult
+            ]);
 
         var view =
             new Mock<IMainFormView>();
@@ -689,6 +754,8 @@ public sealed class MainFormPresenterTests
                         query.SearchText == searchText &&
                         query.Continuation == null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -699,6 +766,8 @@ public sealed class MainFormPresenterTests
                         query.SearchText == searchText &&
                         query.Continuation != null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -708,7 +777,7 @@ public sealed class MainFormPresenterTests
                     results =>
                         results.Count == 1 &&
                         results[0].DocumentId ==
-                            searchResults[20].DocumentId)),
+                            finalResult.DocumentId)),
             Times.Once);
 
         view.Verify(
@@ -739,6 +808,8 @@ public sealed class MainFormPresenterTests
                 It.Is<SearchDocumentsQuery>(
                     query =>
                         query.SearchText == searchText),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(searchResults);
 
@@ -780,6 +851,8 @@ public sealed class MainFormPresenterTests
                         query.FileTypes[0] == fileType &&
                         query.Continuation == null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -793,6 +866,8 @@ public sealed class MainFormPresenterTests
                         query.FileTypes[0] == fileType &&
                         query.Continuation != null &&
                         query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -803,17 +878,42 @@ public sealed class MainFormPresenterTests
         const string searchText =
             "security";
 
-        IReadOnlyList<SearchDocumentsResult> searchResults =
+        IReadOnlyList<SearchDocumentsResult> initialSearchResults =
             CreateSearchResultsForBatching(21);
+
+        SearchDocumentsResult finalResult =
+            initialSearchResults[20];
 
         var searchStore =
             new Mock<IDocumentSearchStore>();
 
         searchStore
             .Setup(x => x.SearchAsync(
-                It.IsAny<SearchDocumentsQuery>(),
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(searchResults);
+            .ReturnsAsync(
+                initialSearchResults);
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation != null &&
+                        query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                finalResult
+            ]);
 
         var view =
             new Mock<IMainFormView>();
@@ -847,7 +947,9 @@ public sealed class MainFormPresenterTests
             x => x.AppendSearchResults(
                 It.Is<IReadOnlyList<SearchResultListItem>>(
                     results =>
-                        results.Count == 1)),
+                        results.Count == 1 &&
+                        results[0].DocumentId ==
+                            finalResult.DocumentId)),
             Times.Once);
     }
 
@@ -881,6 +983,8 @@ public sealed class MainFormPresenterTests
         searchStore.Verify(
             x => x.SearchAsync(
                 It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 

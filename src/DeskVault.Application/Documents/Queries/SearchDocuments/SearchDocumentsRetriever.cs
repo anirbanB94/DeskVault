@@ -59,34 +59,28 @@ public sealed class SearchDocumentsRetriever : ISearchDocumentsRetriever
         _logger.LogInformation(
             LogMessages.DocumentSearchStarted);
 
-        var results =
+        IReadOnlyList<SearchDocumentsResult> results =
             await _searchStore.SearchAsync(
                 query,
+                continuationPosition,
+                query.Limit,
                 cancellationToken);
 
-        var rankedResults =
-            _ranker.Rank(
-                results);
-
-        int position =
-            FindStartingPosition(
-                rankedResults,
-                continuationPosition);
-
-        var pagedResults =
-            rankedResults
-                .Skip(position)
-                .Take(query.Limit)
-                .ToList();
-
         bool hasMore =
-            position + pagedResults.Count <
-            rankedResults.Count;
+            results.Count > query.Limit;
+
+        IReadOnlyList<SearchDocumentsResult> pagedResults =
+            hasMore
+                ? results
+                    .Take(query.Limit)
+                    .ToList()
+                : results;
 
         SearchDocumentsContinuation? nextContinuation =
             null;
 
-        if (hasMore)
+        if (hasMore &&
+            pagedResults.Count > 0)
         {
             SearchDocumentsRankingKey lastRankingKey =
                 _ranker.GetRankingKey(
@@ -100,38 +94,11 @@ public sealed class SearchDocumentsRetriever : ISearchDocumentsRetriever
 
         _logger.LogInformation(
             LogMessages.DocumentSearchCompleted,
-            rankedResults.Count);
+            pagedResults.Count);
 
         return new SearchDocumentsPage(
             pagedResults,
             hasMore,
             nextContinuation);
-    }
-
-    private int FindStartingPosition(
-        IReadOnlyList<SearchDocumentsResult> rankedResults,
-        SearchDocumentsRankingKey? continuationPosition)
-    {
-        if (continuationPosition is null)
-        {
-            return 0;
-        }
-
-        for (int index = 0;
-             index < rankedResults.Count;
-             index++)
-        {
-            SearchDocumentsRankingKey rankingKey =
-                _ranker.GetRankingKey(
-                    rankedResults[index]);
-
-            if (rankingKey.CompareTo(
-                    continuationPosition.Value) > 0)
-            {
-                return index;
-            }
-        }
-
-        return rankedResults.Count;
     }
 }

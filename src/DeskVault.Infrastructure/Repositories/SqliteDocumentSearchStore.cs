@@ -12,22 +12,37 @@ public sealed class SqliteDocumentSearchStore
     : IDocumentSearchStore
 {
     private readonly IDbContextFactory<DeskVaultDbContext> _dbContextFactory;
+    private readonly ISearchDocumentsRanker _ranker;
     private readonly ILogger<SqliteDocumentSearchStore> _logger;
 
     public SqliteDocumentSearchStore(
         IDbContextFactory<DeskVaultDbContext> dbContextFactory,
+        ISearchDocumentsRanker ranker,
         ILogger<SqliteDocumentSearchStore> logger)
     {
+        ArgumentNullException.ThrowIfNull(dbContextFactory);
+        ArgumentNullException.ThrowIfNull(ranker);
+        ArgumentNullException.ThrowIfNull(logger);
+
         _dbContextFactory = dbContextFactory;
+        _ranker = ranker;
         _logger = logger;
     }
 
     public async Task<IReadOnlyList<SearchDocumentsResult>> SearchAsync(
         SearchDocumentsQuery query,
+        SearchDocumentsRankingKey? continuationPosition,
+        int pageSize,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentException.ThrowIfNullOrWhiteSpace(query.SearchText);
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pageSize));
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -47,152 +62,183 @@ public sealed class SqliteDocumentSearchStore
                 NormalizeFileTypes(
                     query.FileTypes);
 
-            var documents =
-                await dbContext.Documents
-                    .AsNoTracking()
-                    .Select(
-                        document =>
-                            new
-                            {
-                                document.Id,
-                                document.FileName,
-                                document.DisplayName,
-                                document.LastSuccessfulProcessingGeneration
-                            })
-                    .ToListAsync(
-                        cancellationToken);
-
-            if (normalizedFileTypes is not null)
-            {
-                documents =
-                    documents
-                        .Where(
-                            document =>
-                                normalizedFileTypes.Contains(
-                                    Path.GetExtension(
-                                        document.FileName),
-                                    StringComparer.OrdinalIgnoreCase))
-                        .ToList();
-            }
-
-            var documentMatches =
-                documents.ToDictionary(
-                    document => document.Id,
-                    _ => new List<SearchMatch>());
-
-            foreach (var document in documents)
-            {
-                AddMetadataMatch(
-                    documentMatches[document.Id],
-                    document.FileName,
-                    normalizedSearchText);
-
-                AddMetadataMatch(
-                    documentMatches[document.Id],
-                    document.DisplayName,
-                    normalizedSearchText);
-            }
-
-            Guid[] eligibleDocumentIds =
-                documents
-                    .Select(
-                        document =>
-                            document.Id)
-                    .ToArray();
-
             string escapedSearchText =
                 EscapeLikePattern(
                     normalizedSearchText);
 
-            var contentMatches =
-                eligibleDocumentIds.Length == 0
-                    ? []
-                    : await dbContext.DocumentChunks
-                        .AsNoTracking()
-                        .Where(
-                            chunk =>
-                                eligibleDocumentIds.Contains(
-                                    chunk.DocumentId)
-                                && EF.Functions.Like(
-                                    chunk.Text,
-                                    $"%{escapedSearchText}%",
-                                    "\\"))
-                        .Join(
-                            dbContext.Documents,
-                            chunk => chunk.DocumentId,
-                            document => document.Id,
-                            (chunk, document) =>
-                                new
-                                {
-                                    chunk.DocumentId,
-                                    chunk.Order,
-                                    chunk.Text,
-                                    chunk.ProcessingGeneration,
-                                    document.LastSuccessfulProcessingGeneration
-                                })
-                        .Where(
-                            match =>
-                                match.ProcessingGeneration
-                                == match.LastSuccessfulProcessingGeneration
-                                && dbContext.DocumentKnowledgeAvailabilities.Any(
-                                    availability =>
-                                        availability.DocumentId ==
-                                        match.DocumentId
-                                        && availability.Representation ==
-                                        (int)DocumentKnowledgeRepresentationKind.KeywordSearch
-                                        && availability.State ==
-                                        (int)DocumentKnowledgeAvailabilityState.Available
-                                        && availability.LastAvailableProcessingGeneration
-                                        != null
-                                        && availability.LastAvailableProcessingGeneration ==
-                                        match.ProcessingGeneration))
-                        .OrderBy(
-                            match => match.DocumentId)
-                        .ThenBy(
-                            match => match.Order)
-                        .ToListAsync(
-                            cancellationToken);
+            var contentMatchesQuery =
+                from chunk in dbContext.DocumentChunks.AsNoTracking()
+                join document in dbContext.Documents.AsNoTracking()
+                    on chunk.DocumentId equals document.Id
+                where
+                    EF.Functions.Like(
+                        chunk.Text,
+                        $"%{escapedSearchText}%",
+                        "\\")
+                    && chunk.ProcessingGeneration ==
+                       document.LastSuccessfulProcessingGeneration
+                    && dbContext.DocumentKnowledgeAvailabilities.Any(
+                        availability =>
+                            availability.DocumentId ==
+                            chunk.DocumentId
+                            && availability.Representation ==
+                            (int)
+                                DocumentKnowledgeRepresentationKind
+                                    .KeywordSearch
+                            && availability.State ==
+                            (int)
+                                DocumentKnowledgeAvailabilityState
+                                    .Available
+                            && availability.LastAvailableProcessingGeneration
+                               != null
+                            && availability.LastAvailableProcessingGeneration ==
+                               chunk.ProcessingGeneration)
+                select new
+                {
+                    chunk.DocumentId,
+                    chunk.Order,
+                    chunk.Text
+                };
 
-            foreach (var contentMatch in contentMatches)
+            var candidateRows =
+                from document in dbContext.Documents.AsNoTracking()
+                join contentMatch in contentMatchesQuery
+                    on document.Id equals contentMatch.DocumentId
+                    into matchingChunks
+                from contentMatch in matchingChunks.DefaultIfEmpty()
+                orderby document.Id, contentMatch.Order
+                select new
+                {
+                    document.Id,
+                    document.FileName,
+                    document.DisplayName,
+                    ChunkOrder =
+                        contentMatch == null
+                            ? null
+                            : (int?)contentMatch.Order,
+                    ChunkText =
+                        contentMatch == null
+                            ? null
+                            : contentMatch.Text
+                };
+
+            int bufferCapacity =
+                pageSize == int.MaxValue
+                    ? int.MaxValue
+                    : pageSize + 1;
+
+            var buffer =
+                new PriorityQueue<
+                    SearchDocumentsResult,
+                    SearchDocumentsRankingKey>(
+                    bufferCapacity,
+                    Comparer<SearchDocumentsRankingKey>.Create(
+                        static (left, right) =>
+                            right.CompareTo(left)));
+
+            Guid? currentDocumentId = null;
+            string? currentFileName = null;
+            string? currentDisplayName = null;
+            List<SearchMatch>? currentMatches = null;
+            bool currentDocumentIncluded = false;
+
+            async Task FlushCurrentDocumentAsync()
             {
-                documentMatches[contentMatch.DocumentId].Add(
-                    new SearchMatch(
-                        SearchMatchSource.ProcessedContent,
-                        DetermineMatchKind(
-                            contentMatch.Text,
-                            normalizedSearchText),
-                        contentMatch.Text));
+                if (!currentDocumentIncluded ||
+                    currentDocumentId is null ||
+                    currentFileName is null ||
+                    currentDisplayName is null ||
+                    currentMatches is null)
+                {
+                    return;
+                }
+
+                if (currentMatches.Count == 0)
+                {
+                    return;
+                }
+
+                SearchDocumentsResult result =
+                    new(
+                        currentDocumentId.Value,
+                        currentFileName,
+                        currentDisplayName,
+                        currentMatches,
+                        currentMatches.Count);
+
+                SearchDocumentsRankingKey rankingKey =
+                    _ranker.GetRankingKey(
+                        result);
+
+                if (continuationPosition is not null &&
+                    rankingKey.CompareTo(
+                        continuationPosition.Value) <= 0)
+                {
+                    return;
+                }
+
+                AddCandidate(
+                    buffer,
+                    result,
+                    rankingKey,
+                    bufferCapacity);
             }
 
-            var results =
-                documents
-                    .Where(
-                        document =>
-                            documentMatches[document.Id].Count > 0)
-                    .OrderBy(
-                        document => document.DisplayName)
-                    .ThenBy(
-                        document => document.Id)
-                    .Select(
-                        document =>
-                        {
-                            List<SearchMatch> matches =
-                                documentMatches[document.Id];
+            await foreach (
+                var row in candidateRows.AsAsyncEnumerable()
+                    .WithCancellation(cancellationToken))
+            {
+                if (currentDocumentId != row.Id)
+                {
+                    await FlushCurrentDocumentAsync();
 
-                            return new SearchDocumentsResult(
-                                document.Id,
-                                document.FileName,
-                                document.DisplayName,
-                                matches,
-                                matches.Count);
-                        })
-                    .ToList();
+                    currentDocumentId = row.Id;
+                    currentFileName = row.FileName;
+                    currentDisplayName = row.DisplayName;
+                    currentMatches = [];
+                    currentDocumentIncluded =
+                        normalizedFileTypes is null ||
+                        normalizedFileTypes.Contains(
+                            Path.GetExtension(
+                                row.FileName),
+                            StringComparer.OrdinalIgnoreCase);
 
-            _logger.LogInformation(
-                LogMessages.DocumentSearchStoreCompleted,
-                results.Count);
+                    if (currentDocumentIncluded)
+                    {
+                        AddMetadataMatch(
+                            currentMatches,
+                            row.FileName,
+                            normalizedSearchText);
 
-            return results;
+                        AddMetadataMatch(
+                            currentMatches,
+                            row.DisplayName,
+                            normalizedSearchText);
+                    }
+                }
+
+                if (currentDocumentIncluded &&
+                    row.ChunkText is not null)
+                {
+                    currentMatches!.Add(
+                        new SearchMatch(
+                            SearchMatchSource.ProcessedContent,
+                            DetermineMatchKind(
+                                row.ChunkText,
+                                normalizedSearchText),
+                            row.ChunkText));
+                }
+            }
+
+            await FlushCurrentDocumentAsync();
+
+            return buffer
+                .UnorderedItems
+                .Select(
+                    item => item.Element)
+                .OrderBy(
+                    result => _ranker.GetRankingKey(result))
+                .ToList();
         }
         catch (OperationCanceledException)
         {
@@ -241,6 +287,40 @@ public sealed class SqliteDocumentSearchStore
         return normalizedFileTypes.Length == 0
             ? null
             : normalizedFileTypes;
+    }
+
+    private static void AddCandidate(
+        PriorityQueue<
+            SearchDocumentsResult,
+            SearchDocumentsRankingKey> buffer,
+        SearchDocumentsResult result,
+        SearchDocumentsRankingKey rankingKey,
+        int capacity)
+    {
+        if (buffer.Count < capacity)
+        {
+            buffer.Enqueue(
+                result,
+                rankingKey);
+
+            return;
+        }
+
+        buffer.TryPeek(
+            out _,
+            out SearchDocumentsRankingKey worstKey);
+
+        if (rankingKey.CompareTo(
+                worstKey) >= 0)
+        {
+            return;
+        }
+
+        buffer.Dequeue();
+
+        buffer.Enqueue(
+            result,
+            rankingKey);
     }
 
     private static void AddMetadataMatch(
