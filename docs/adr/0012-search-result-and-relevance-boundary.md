@@ -210,13 +210,42 @@ implementation strategy. It therefore permits retrieval-side filtering,
 ordering, bounded page selection, lookahead, and other implementation
 optimizations while keeping the Application-facing page contract stable.
 
-The current implementation may still acquire and rank a complete
-candidate collection internally while the boundary is being introduced.
-That internal implementation detail is temporary and is not part of the
-consumer contract. Subsequent retrieval optimization work may move
-matching, ordering, and page-boundary decisions deeper toward the
-retrieval implementation without changing the supported keyword-search
-result, ordering, or continuation semantics defined by this ADR.
+The retrieval implementation must keep paginated result state bounded.
+A request for page size `N` must not require materializing the complete
+matching ranked result set in Application or retrieval memory merely to
+produce that page. The retrieval implementation may inspect more
+candidate data internally, but it must retain only the bounded state
+needed to produce the requested page and a lookahead result sufficient to
+determine `HasMore`.
+
+Continuation-aware retrieval must apply the decoded deterministic
+ranking position at the retrieval boundary so that candidates at or before
+the continuation are excluded before the page is formed. The
+Application retriever must therefore not reconstruct a complete ranked
+collection and apply `Skip`/`Take` after retrieval.
+
+The retrieval implementation must preserve the application-defined
+relevance contract while performing bounded retrieval. Storage/provider
+optimizations may determine how candidates are obtained or ordered, but
+they must remain behaviorally equivalent to the Application-level ranking
+contract and must not introduce storage-specific observable ranking
+semantics.
+
+Document-level evidence and `MatchCount` semantics remain part of the
+Application result contract. Retrieval may process matching evidence
+incrementally, but it must not load every matching chunk solely to build a
+complete intermediate result collection when only one page is requested.
+
+Filtering and eligibility semantics must be established before the page
+boundary is applied, including current search-text matching, file-type
+filtering, metadata matching, and the eligibility of currently successful
+processed knowledge. The precise provider-side optimization of those
+operations remains an implementation concern as long as observable search
+behavior is preserved.
+
+First-page, subsequent-page, empty-result, and final-page behavior must be
+predictable under the same deterministic ordering and opaque continuation
+contract.
 
 ### Search and Persistence Boundary
 
@@ -236,8 +265,8 @@ technology.
 
 A retrieval implementation may change how matching results are obtained
 or efficiently bounded, provided that the Application-level search
-ordering, result representation, and continuation semantics remain
-behaviorally compatible.
+ordering, result representation, filtering/eligibility behavior, and
+continuation semantics remain behaviorally compatible.
 
 ### Relationship to Canonical Processed Knowledge
 
@@ -304,7 +333,7 @@ Expose a bounded page-shaped contract without storage-specific details
 
 Retrieval Implementation
         ↓
-Obtain matching results and implement retrieval mechanics while
+Obtain matching results and implement bounded retrieval mechanics while
 preserving the Application contract
 
 UI
@@ -392,12 +421,17 @@ details behind the Application boundary.
 Rejected.
 
 The architectural boundary and the scalable implementation are separate
-concerns. The boundary must be established without prematurely coupling
-it to one retrieval optimization strategy.
+concerns. The boundary should not prematurely couple consumers to one
+provider or one retrieval optimization strategy.
 
-The current implementation may therefore retain internal full candidate
-acquisition temporarily, while later retrieval optimization can improve
-boundedness behind the same Application contract.
+The scalable implementation is therefore defined in terms of durable
+behavioral invariants: bounded retained result state, retrieval-side page
+selection and lookahead, continuation-aware retrieval, preservation of
+the application-defined ranking contract, and preservation of observable
+search filtering and eligibility semantics.
+
+The concrete provider strategy may evolve as long as those invariants and
+the Application-facing search contract remain compatible.
 
 ## Consequences
 
@@ -418,6 +452,12 @@ boundedness behind the same Application contract.
 - Application contracts remain independent of SQLite and EF Core.
 - Application consumers depend on a page-shaped retrieval boundary rather
   than storage-specific retrieval mechanics.
+- Paginated retrieval retains bounded result state instead of materializing
+  the complete matching ranked result set for every request.
+- `HasMore` can be established through bounded lookahead rather than a
+  complete candidate count.
+- Continuation-aware retrieval avoids Application-level full-result
+  `Skip`/`Take` pagination.
 - Future retrieval implementations can optimize result acquisition,
   filtering, ordering, and page selection without changing the
   Application search contract or supported keyword ordering.
@@ -440,13 +480,13 @@ boundedness behind the same Application contract.
   search infrastructure.
 - Ranking and continuation semantics must remain compatible when the
   retrieval implementation changes.
-- The current retrieval implementation may temporarily retain full
-  candidate acquisition internally until retrieval scalability is
-  addressed.
+- Retrieval implementations must maintain bounded page/lookahead state
+  while preserving deterministic ranking and evidence semantics.
 
 These trade-offs are acceptable because document-oriented results,
-deterministic pagination, and replaceable relevance/retrieval boundaries
-are required foundations for richer local document discovery.
+deterministic pagination, bounded retrieval, and replaceable
+relevance/retrieval boundaries are required foundations for richer local
+document discovery.
 
 ## Implementation Constraints
 
@@ -479,6 +519,19 @@ The implementation must:
   consumers;
 - keep concrete retrieval implementations replaceable behind the
   retrieval boundary;
+- keep paginated retained result state bounded to the requested page and
+  necessary lookahead rather than materializing the complete matching
+  ranked result set;
+- apply continuation position at the retrieval boundary rather than by
+  full-result Application paging;
+- preserve the application-defined ranking contract when retrieval
+  ordering is optimized;
+- preserve document-level evidence and `MatchCount` semantics while
+  processing matching evidence incrementally;
+- apply matching, file-type filtering, metadata matching, and processed-
+  content eligibility semantics before the page boundary is applied;
+- preserve first-page, subsequent-page, empty-result, and final-page
+  behavior;
 - consume the canonical processed representation established by
   ADR-0011;
 - preserve existing document traceability;
@@ -492,7 +545,8 @@ The implementation must:
 
 The concrete search behavior, matching rules, ranking algorithm, retrieval
 optimization strategy, and UI interaction are owned by their respective
-implementation work and are not prescribed by this ADR.
+implementation work and are not prescribed by this ADR beyond the durable
+architectural invariants stated above.
 
 ## Related Decisions and Work
 
@@ -537,10 +591,13 @@ returns a page-shaped `SearchDocumentsPage` containing results, a
 as a thin façade and does not expose storage-specific retrieval or
 pagination mechanics to consumers.
 
-The retrieval implementation may evolve from the current internal
-candidate-materialization approach toward bounded retrieval and page
-selection without changing the supported Application-level result,
-ordering, or continuation contract.
+Paginated retrieval is performed with bounded retained result state. The
+retrieval implementation applies continuation-aware filtering and
+produces the requested page plus bounded lookahead rather than
+materializing the complete matching ranked result set. This preserves the
+Application-defined relevance, evidence, filtering, eligibility, and
+continuation contracts while allowing provider-specific retrieval
+optimization behind the boundary.
 
 The decision establishes the architectural foundation for predictable
 and scalable local document discovery while leaving retrieval
