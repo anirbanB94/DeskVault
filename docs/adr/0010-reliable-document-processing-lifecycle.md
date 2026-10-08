@@ -51,8 +51,7 @@ attempts.
 
 The processing lifecycle therefore requires an authoritative mechanism that
 can identify which processing attempt is current and prevent obsolete
-attempts
-from publishing state or derived content.
+attempts from publishing state or derived content.
 
 The lifecycle also needs to distinguish three concerns that were previously
 represented through a combined `DocumentStatus`:
@@ -488,12 +487,16 @@ Status = Processing
     → ProcessingState = Processing
     → KeywordSearch = Available @ LastSuccessfulProcessingGeneration
       when a previous successful generation exists
+    → when LastSuccessfulProcessingGeneration = 0 and persisted legacy
+      DocumentChunks exist, KeywordSearch = Available @ 0
 
 Status = Failed
     → LifecycleState = Active
     → ProcessingState = Failed
     → KeywordSearch = Available @ LastSuccessfulProcessingGeneration
       when a previous successful generation exists
+    → when LastSuccessfulProcessingGeneration = 0 and persisted legacy
+      DocumentChunks exist, KeywordSearch = Available @ 0
 
 Status = Indexed / Available
     → LifecycleState = Active
@@ -505,6 +508,8 @@ Status = Archived
     → ProcessingState reflects a known successful prior processing result
       when one exists; otherwise NeverProcessed
     → KeywordSearch follows the same historical-success rule
+    → when LastSuccessfulProcessingGeneration = 0 and persisted legacy
+      DocumentChunks exist, KeywordSearch = Available @ 0
 
 Status = Deleted
     → LifecycleState = Deleted
@@ -524,13 +529,38 @@ KeywordSearch = Available
 LastAvailableProcessingGeneration = 0
 ```
 
+For legacy `Processing`, `Failed`, or `Archived` documents where
+`LastSuccessfulProcessingGeneration = 0`, persisted `DocumentChunks` are
+valid migration evidence that historical keyword knowledge existed even
+though the producing processing generation cannot be recovered:
+
+```text
+ProcessingState = Processing / Failed / NeverProcessed
+KeywordSearch = Available
+LastAvailableProcessingGeneration = 0
+```
+
+The exact `ProcessingState` remains determined by the legacy status projection.
+For `Archived`, the lifecycle remains `Archived`; for `Processing`, it remains
+`Processing`; and for `Failed`, it remains `Failed`.
+
+Persisted chunk evidence is migration-specific historical evidence. It does not
+change the runtime rule that processed content is searchable only when
+persisted `KeywordSearch` availability is `Available` and its
+`LastAvailableProcessingGeneration` aligns with the document's
+`LastSuccessfulProcessingGeneration`.
+
+A legacy `Imported` document is not treated as searchable merely because
+persisted chunk rows exist, and a `Deleted` document remains unavailable.
+Migration must not use chunk presence to override those lifecycle semantics.
+
 Migration must not invent a positive historical generation.
 
 Schema migration and lifecycle backfill are separate responsibilities. The EF
 Core migration creates the durable schema; the retry-safe backfill interprets
-legacy `Status` and populates independent lifecycle and knowledge state. The
-backfill runs after schema migration inside the existing vault initialization
-critical section.
+legacy `Status`, existing persisted chunk evidence, and knowledge state to
+populate independent lifecycle and knowledge state. The backfill runs after
+schema migration inside the existing vault initialization critical section.
 
 If the backfill is interrupted, its transaction must roll back completely and
 the same vault must be safe to retry. Existing availability records are not
@@ -870,6 +900,12 @@ The implementation must:
 * preserve previously available `KeywordSearch` knowledge when a later processing
   attempt fails, is cancelled, or becomes stale;
 * permit generation `0` only as explicit historical unknown-producing-generation semantics;
+* during legacy lifecycle migration, allow persisted `DocumentChunks` to establish
+  historical `KeywordSearch = Available @ 0` only for `Processing`, `Failed`, or
+  `Archived` documents whose `LastSuccessfulProcessingGeneration = 0`;
+* preserve `Imported` and `Deleted` legacy knowledge as `Unavailable`;
+* treat legacy persisted chunk evidence as migration-specific historical evidence
+  rather than a runtime replacement for persisted knowledge availability;
 * reject knowledge availability whose generation is greater than the document's
   `LastSuccessfulProcessingGeneration`;
 * preserve deterministic repeated processing;
@@ -987,6 +1023,14 @@ are preserved for further recovery rather than normalized destructively.
 Recovery does not alter processing-generation authority, processing state, or
 derived chunks. Knowledge availability remains independently governed by its
 representation lifecycle.
+
+Legacy lifecycle migration may use persisted `DocumentChunks` as explicit
+historical evidence of keyword knowledge when a `Processing`, `Failed`, or
+`Archived` document has `LastSuccessfulProcessingGeneration = 0`. That
+evidence is converted into `KeywordSearch = Available @ 0` without inventing
+a historical processing attempt. `Imported` and `Deleted` documents remain
+unavailable, and runtime searchability continues to require persisted
+knowledge availability and generation alignment.
 
 This separation prevents obsolete processing attempts from overwriting newer
 document state or derived content while ensuring that database/filesystem
