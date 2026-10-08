@@ -57,6 +57,8 @@ public static class DependencyInjection
 
         services.AddSingleton<ISearchDocumentsContinuationCodec, SearchDocumentsContinuationCodec>();
 
+        services.AddSingleton<ISearchDocumentsRetriever, SearchDocumentsRetriever>();
+
         services.AddSingleton<SearchDocumentsHandler>();
 
         services.AddSingleton<ReconcileDocumentArtifactsHandler>();
