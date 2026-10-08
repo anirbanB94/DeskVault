@@ -51,7 +51,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "searchable"));
+                    "searchable"),
+                null,
+                20);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -119,6 +121,78 @@ public sealed class SqliteDocumentSearchStoreTests
     }
 
     [Fact]
+    public async Task SearchAsync_WhenManyCandidatesExist_ReturnsOnlyPageAndLookahead()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        for (int index = 1;
+             index <= 50;
+             index++)
+        {
+            _ =
+                CreateAndPersistDocument(
+                    connection,
+                    $"bulk-search-{index:D2}.txt",
+                    $"Bulk Search {index:D2}");
+        }
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        const int pageSize = 5;
+
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(
+                    "bulk-search"),
+                null,
+                pageSize);
+
+        Assert.Equal(
+            pageSize + 1,
+            results.Count);
+
+        Assert.Equal(
+            [
+                "Bulk Search 01",
+            "Bulk Search 02",
+            "Bulk Search 03",
+            "Bulk Search 04",
+            "Bulk Search 05",
+            "Bulk Search 06"
+            ],
+            results.Select(
+                    result => result.DisplayName)
+                .ToArray());
+
+        Assert.Equal(
+            results.Count,
+            results
+                .Select(
+                    result => result.DocumentId)
+                .Distinct()
+                .Count());
+
+        Assert.All(
+            results,
+            result =>
+            {
+                Assert.Equal(
+                    1,
+                    result.MatchCount);
+
+                SearchMatch match =
+                    Assert.Single(
+                        result.Matches);
+
+                Assert.Equal(
+                    SearchMatchSource.DocumentMetadata,
+                    match.Source);
+            });
+    }
+
+    [Fact]
     public async Task SearchAsync_WhenSearchTextDiffersOnlyByCase_ReturnsMatchingChunk()
     {
         await using SqliteConnection connection =
@@ -148,7 +222,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "SECURITY"));
+                    "SECURITY"),
+                null,
+                20);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -203,7 +279,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "does-not-exist"));
+                    "does-not-exist"),
+                null,
+                20);
 
         Assert.Empty(
             results);
@@ -264,7 +342,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> staleResults =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "authoritative-search-term"));
+                    "authoritative-search-term"),
+                null,
+                20);
 
         Assert.Empty(
             staleResults);
@@ -321,7 +401,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "availability-gated"));
+                    "availability-gated"),
+                null,
+                20);
 
         Assert.Empty(
             results);
@@ -383,7 +465,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "generation-gated-content-search-target"));
+                    "generation-gated-content-search-target"),
+                null,
+                20);
 
         Assert.Empty(
             results);
@@ -427,7 +511,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "metadata-only"));
+                    "metadata-only"),
+                null,
+                20);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -496,7 +582,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "matching"));
+                    "matching"),
+                null,
+                20);
 
         Assert.Equal(
             2,
@@ -564,7 +652,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "100%"));
+                    "100%"),
+                null,
+                20);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -630,7 +720,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "file_name"));
+                    "file_name"),
+                null,
+                20);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -697,7 +789,9 @@ public sealed class SqliteDocumentSearchStoreTests
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
                     "searchable",
-                    [".txt"]));
+                    [".txt"]),
+                null,
+                20);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -772,7 +866,9 @@ public sealed class SqliteDocumentSearchStoreTests
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
                     "searchable",
-                    ["TXT", ".MD"]));
+                    ["TXT", ".MD"]),
+                null,
+                20);
 
         Assert.Equal(
             2,
@@ -832,7 +928,9 @@ public sealed class SqliteDocumentSearchStoreTests
         IReadOnlyList<SearchDocumentsResult> results =
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
-                    "searchable"));
+                    "searchable"),
+                null,
+                20);
 
         Assert.Equal(
             2,
@@ -878,7 +976,9 @@ public sealed class SqliteDocumentSearchStoreTests
             await searchStore.SearchAsync(
                 new SearchDocumentsQuery(
                     "searchable",
-                    [".unsupported"]));
+                    [".unsupported"]),
+                null,
+                20);
 
         Assert.Empty(
             results);
@@ -897,7 +997,9 @@ public sealed class SqliteDocumentSearchStoreTests
             () =>
                 searchStore.SearchAsync(
                     new SearchDocumentsQuery(
-                        "   ")));
+                        "   "),
+                null,
+                20));
     }
 
     [Fact]
@@ -919,6 +1021,8 @@ public sealed class SqliteDocumentSearchStoreTests
                 searchStore.SearchAsync(
                     new SearchDocumentsQuery(
                         "matching"),
+                    null,
+                    20,
                     cancellationTokenSource.Token));
     }
 
@@ -981,6 +1085,7 @@ public sealed class SqliteDocumentSearchStoreTests
     {
         return new SqliteDocumentSearchStore(
             CreateFactory(connection),
+            new SearchDocumentsRanker(),
             NullLogger<SqliteDocumentSearchStore>.Instance);
     }
 

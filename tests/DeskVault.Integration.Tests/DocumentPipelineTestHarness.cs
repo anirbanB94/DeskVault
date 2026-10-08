@@ -337,6 +337,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         return new SqliteDocumentSearchStore(
             CreateFactory(
                 _connection),
+            new SearchDocumentsRanker(),
             NullLogger<SqliteDocumentSearchStore>.Instance);
     }
 
