@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents.Chunking;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
@@ -301,6 +302,182 @@ public sealed class DocumentLifecycleStateBackfillTests
             DocumentProcessingState.Succeeded,
             (DocumentProcessingState)
                 deletedDocument.ProcessingState);
+
+        DocumentKnowledgeAvailabilityEntity deletedKnowledge =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                DeletedDocumentId);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Unavailable,
+            (DocumentKnowledgeAvailabilityState)
+                deletedKnowledge.State);
+
+        Assert.Null(
+            deletedKnowledge.LastAvailableProcessingGeneration);
+    }
+
+    [Fact]
+    public async Task BackfillAsync_WhenPersistedLegacyChunksExist_PreservesHistoricalKeywordKnowledgeAtUnknownGeneration()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        await InsertLegacyDocumentAsync(
+            connection,
+            ProcessingDocumentId,
+            DocumentStatus.Processing,
+            processingGeneration: 5L,
+            lastSuccessfulProcessingGeneration: 0L);
+
+        await InsertLegacyDocumentAsync(
+            connection,
+            FailedDocumentId,
+            DocumentStatus.Failed,
+            processingGeneration: 6L,
+            lastSuccessfulProcessingGeneration: 0L);
+
+        await InsertLegacyDocumentAsync(
+            connection,
+            ArchivedDocumentId,
+            DocumentStatus.Archived,
+            processingGeneration: 2L,
+            lastSuccessfulProcessingGeneration: 0L);
+
+        await InsertLegacyDocumentAsync(
+            connection,
+            ImportedDocumentId,
+            DocumentStatus.Imported,
+            processingGeneration: 0L,
+            lastSuccessfulProcessingGeneration: 0L);
+
+        await InsertLegacyDocumentAsync(
+            connection,
+            DeletedDocumentId,
+            DocumentStatus.Deleted,
+            processingGeneration: 7L,
+            lastSuccessfulProcessingGeneration: 0L);
+
+        await InsertLegacyChunkAsync(
+            connection,
+            ProcessingDocumentId,
+            "processing legacy knowledge");
+
+        await InsertLegacyChunkAsync(
+            connection,
+            FailedDocumentId,
+            "failed legacy knowledge");
+
+        await InsertLegacyChunkAsync(
+            connection,
+            ArchivedDocumentId,
+            "archived legacy knowledge");
+
+        await InsertLegacyChunkAsync(
+            connection,
+            ImportedDocumentId,
+            "imported legacy content");
+
+        await InsertLegacyChunkAsync(
+            connection,
+            DeletedDocumentId,
+            "deleted legacy content");
+
+        DocumentLifecycleStateBackfill backfill =
+            CreateBackfill(
+                connection);
+
+        await backfill.BackfillAsync();
+
+        DocumentEntity processingDocument =
+            await GetDocumentAsync(
+                connection,
+                ProcessingDocumentId);
+
+        Assert.Equal(
+            DocumentProcessingState.Processing,
+            (DocumentProcessingState)
+                processingDocument.ProcessingState);
+
+        DocumentKnowledgeAvailabilityEntity processingKnowledge =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                ProcessingDocumentId);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            (DocumentKnowledgeAvailabilityState)
+                processingKnowledge.State);
+
+        Assert.Equal(
+            0L,
+            processingKnowledge.LastAvailableProcessingGeneration);
+
+        DocumentEntity failedDocument =
+            await GetDocumentAsync(
+                connection,
+                FailedDocumentId);
+
+        Assert.Equal(
+            DocumentProcessingState.Failed,
+            (DocumentProcessingState)
+                failedDocument.ProcessingState);
+
+        DocumentKnowledgeAvailabilityEntity failedKnowledge =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                FailedDocumentId);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            (DocumentKnowledgeAvailabilityState)
+                failedKnowledge.State);
+
+        Assert.Equal(
+            0L,
+            failedKnowledge.LastAvailableProcessingGeneration);
+
+        DocumentEntity archivedDocument =
+            await GetDocumentAsync(
+                connection,
+                ArchivedDocumentId);
+
+        Assert.Equal(
+            DocumentLifecycleState.Archived,
+            (DocumentLifecycleState)
+                archivedDocument.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.NeverProcessed,
+            (DocumentProcessingState)
+                archivedDocument.ProcessingState);
+
+        DocumentKnowledgeAvailabilityEntity archivedKnowledge =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                ArchivedDocumentId);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Available,
+            (DocumentKnowledgeAvailabilityState)
+                archivedKnowledge.State);
+
+        Assert.Equal(
+            0L,
+            archivedKnowledge.LastAvailableProcessingGeneration);
+
+        DocumentKnowledgeAvailabilityEntity importedKnowledge =
+            await GetKnowledgeAvailabilityAsync(
+                connection,
+                ImportedDocumentId);
+
+        Assert.Equal(
+            DocumentKnowledgeAvailabilityState.Unavailable,
+            (DocumentKnowledgeAvailabilityState)
+                importedKnowledge.State);
+
+        Assert.Null(
+            importedKnowledge.LastAvailableProcessingGeneration);
 
         DocumentKnowledgeAvailabilityEntity deletedKnowledge =
             await GetKnowledgeAvailabilityAsync(
@@ -735,6 +912,42 @@ public sealed class DocumentLifecycleStateBackfillTests
                     (int)lifecycleState,
                 ProcessingState =
                     (int)processingState
+            });
+
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task InsertLegacyChunkAsync(
+        SqliteConnection connection,
+        Guid documentId,
+        string text)
+    {
+        await using DeskVaultDbContext context =
+            CreateContext(
+                connection);
+
+        context.DocumentChunks.Add(
+            new DocumentChunkEntity
+            {
+                Id =
+                    Guid.NewGuid(),
+                DocumentId =
+                    documentId,
+                Order =
+                    0,
+                Text =
+                    text,
+                ContentHash =
+                    DocumentChunkIdentity.ComputeContentHash(
+                        text),
+                ProcessingGeneration =
+                    0L,
+                ChunkingRuleVersion =
+                    null,
+                SourceLocationStartLine =
+                    null,
+                SourceLocationEndLine =
+                    null
             });
 
         await context.SaveChangesAsync();
