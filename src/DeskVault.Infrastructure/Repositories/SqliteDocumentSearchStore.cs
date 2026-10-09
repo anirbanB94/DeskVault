@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Shared.Resources;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +37,10 @@ public sealed class SqliteDocumentSearchStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        ArgumentException.ThrowIfNullOrWhiteSpace(query.SearchText);
+
+        string normalizedSearchText =
+            SearchTextCanonicalizer.CanonicalizeSearchText(
+                query.SearchText);
 
         if (pageSize <= 0)
         {
@@ -55,9 +59,6 @@ public sealed class SqliteDocumentSearchStore
                 await _dbContextFactory.CreateDbContextAsync(
                     cancellationToken);
 
-            string normalizedSearchText =
-                query.SearchText.Trim();
-
             IReadOnlyList<string>? normalizedFileTypes =
                 NormalizeFileTypes(
                     query.FileTypes);
@@ -71,10 +72,9 @@ public sealed class SqliteDocumentSearchStore
                 join document in dbContext.Documents.AsNoTracking()
                     on chunk.DocumentId equals document.Id
                 where
-                    EF.Functions.Like(
+                    SqliteSearchFunctions.ContainsCanonicalized(
                         chunk.Text,
-                        $"%{escapedSearchText}%",
-                        "\\")
+                        normalizedSearchText)
                     && chunk.ProcessingGeneration ==
                        document.LastSuccessfulProcessingGeneration
                     && dbContext.DocumentKnowledgeAvailabilities.Any(
@@ -220,11 +220,15 @@ public sealed class SqliteDocumentSearchStore
                 if (currentDocumentIncluded &&
                     row.ChunkText is not null)
                 {
+                    string canonicalChunkText =
+                        SearchTextCanonicalizer.CanonicalizeValue(
+                            row.ChunkText);
+
                     currentMatches!.Add(
                         new SearchMatch(
                             SearchMatchSource.ProcessedContent,
                             DetermineMatchKind(
-                                row.ChunkText,
+                                canonicalChunkText,
                                 normalizedSearchText),
                             row.ChunkText));
                 }
@@ -328,9 +332,13 @@ public sealed class SqliteDocumentSearchStore
         string value,
         string searchText)
     {
-        if (!value.Contains(
-                searchText,
-                StringComparison.OrdinalIgnoreCase))
+        string canonicalValue =
+            SearchTextCanonicalizer.CanonicalizeValue(
+                value);
+
+        if (!SearchTextCanonicalizer.ContainsCanonicalized(
+                canonicalValue,
+                searchText))
         {
             return;
         }
@@ -339,7 +347,7 @@ public sealed class SqliteDocumentSearchStore
             new SearchMatch(
                 SearchMatchSource.DocumentMetadata,
                 DetermineMatchKind(
-                    value,
+                    canonicalValue,
                     searchText),
                 value));
     }
@@ -363,13 +371,13 @@ public sealed class SqliteDocumentSearchStore
     }
 
     private static SearchMatchKind DetermineMatchKind(
-        string value,
-        string searchText)
+        string canonicalValue,
+        string canonicalSearchText)
     {
         int matchIndex =
-            value.IndexOf(
-                searchText,
-                StringComparison.OrdinalIgnoreCase);
+            SearchTextCanonicalizer.IndexOfCanonicalized(
+                canonicalValue,
+                canonicalSearchText);
 
         if (matchIndex < 0)
         {
@@ -379,15 +387,15 @@ public sealed class SqliteDocumentSearchStore
         bool leftBoundary =
             matchIndex == 0
             || !IsLexicalCharacter(
-                value[matchIndex - 1]);
+                canonicalValue[matchIndex - 1]);
 
         int matchEnd =
-            matchIndex + searchText.Length;
+            matchIndex + canonicalSearchText.Length;
 
         bool rightBoundary =
-            matchEnd == value.Length
+            matchEnd == canonicalValue.Length
             || !IsLexicalCharacter(
-                value[matchEnd]);
+                canonicalValue[matchEnd]);
 
         return leftBoundary && rightBoundary
             ? SearchMatchKind.Exact

@@ -478,6 +478,173 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task EncryptedDatabase_WhenSearchingUnicodeCaseAndCanonicalEquivalence_ReturnsMetadataAndProcessedContentMatches()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] databaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "café-unicode-integration.txt");
+
+            const string sourceText =
+                "The cafe\u0301 receipt contains searchable Unicode content.";
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            await using ServiceProvider serviceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey);
+
+            var initializer =
+                serviceProvider.GetRequiredService<DatabaseInitializer>();
+
+            await initializer.InitializeAsync();
+
+            var importHandler =
+                serviceProvider.GetRequiredService<ImportDocumentHandler>();
+
+            var processingService =
+                serviceProvider.GetRequiredService<IDocumentProcessingService>();
+
+            var searchHandler =
+                serviceProvider.GetRequiredService<SearchDocumentsHandler>();
+
+            ImportDocumentResult importResult =
+                await importHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "CAFÉ Unicode Receipt"));
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Guid documentId =
+                importResult.DocumentId.Value;
+
+            await processingService.ProcessAsync(
+                documentId);
+
+            string[] searchTexts =
+            [
+                "café",
+            "cafe\u0301",
+            "CAFÉ",
+            "CAFE\u0301"
+            ];
+
+            // Act
+            var searchPages =
+                new List<SearchDocumentsPage>();
+
+            foreach (string searchText in searchTexts)
+            {
+                SearchDocumentsPage page =
+                    await searchHandler.HandleAsync(
+                        new SearchDocumentsQuery(
+                            searchText));
+
+                searchPages.Add(
+                    page);
+            }
+
+            // Assert
+            Assert.Equal(
+                searchTexts.Length,
+                searchPages.Count);
+
+            foreach (SearchDocumentsPage page in searchPages)
+            {
+                SearchDocumentsResult result =
+                    Assert.Single(
+                        page.Results,
+                        item => item.DocumentId == documentId);
+
+                Assert.Equal(
+                    "café-unicode-integration.txt",
+                    result.FileName);
+
+                Assert.Equal(
+                    "CAFÉ Unicode Receipt",
+                    result.DisplayName);
+
+                Assert.Equal(
+                    3,
+                    result.MatchCount);
+
+                Assert.Collection(
+                    result.Matches,
+                    match =>
+                    {
+                        Assert.Equal(
+                            SearchMatchSource.DocumentMetadata,
+                            match.Source);
+
+                        Assert.Equal(
+                            SearchMatchKind.Exact,
+                            match.Kind);
+
+                        Assert.Equal(
+                            "café-unicode-integration.txt",
+                            match.Context);
+                    },
+                    match =>
+                    {
+                        Assert.Equal(
+                            SearchMatchSource.DocumentMetadata,
+                            match.Source);
+
+                        Assert.Equal(
+                            SearchMatchKind.Exact,
+                            match.Kind);
+
+                        Assert.Equal(
+                            "CAFÉ Unicode Receipt",
+                            match.Context);
+                    },
+                    match =>
+                    {
+                        Assert.Equal(
+                            SearchMatchSource.ProcessedContent,
+                            match.Source);
+
+                        Assert.Equal(
+                            SearchMatchKind.Exact,
+                            match.Kind);
+
+                        Assert.Contains(
+                            "café receipt",
+                            match.Context,
+                            StringComparison.OrdinalIgnoreCase);
+                    });
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                databaseKey);
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
     private static ServiceProvider BuildServiceProvider(
         string rootDirectory,
         byte[] databaseKey)
