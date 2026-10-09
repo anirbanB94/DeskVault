@@ -60,6 +60,16 @@ public sealed class DocumentLifecycleStateBackfill
                         group =>
                             group.ToList());
 
+        HashSet<Guid> documentsWithPersistedChunks =
+            await dbContext.DocumentChunks
+                .AsNoTracking()
+                .Select(
+                    chunk =>
+                        chunk.DocumentId)
+                .Distinct()
+                .ToHashSetAsync(
+                    cancellationToken);
+
         bool hasChanges = false;
 
         foreach (DocumentEntity document in documents)
@@ -93,7 +103,9 @@ public sealed class DocumentLifecycleStateBackfill
             LegacyStateProjection projection =
                 ResolveLegacyState(
                     document.Status,
-                    document.LastSuccessfulProcessingGeneration);
+                    document.LastSuccessfulProcessingGeneration,
+                    documentsWithPersistedChunks.Contains(
+                        document.Id));
 
             document.LifecycleState =
                 (int)projection.LifecycleState;
@@ -143,7 +155,8 @@ public sealed class DocumentLifecycleStateBackfill
 
     private static LegacyStateProjection ResolveLegacyState(
         int statusValue,
-        long lastSuccessfulProcessingGeneration)
+        long lastSuccessfulProcessingGeneration,
+        bool hasPersistedChunks)
     {
         if (!Enum.IsDefined(
                 typeof(DocumentStatus),
@@ -211,6 +224,20 @@ public sealed class DocumentLifecycleStateBackfill
                 processingState,
                 DocumentKnowledgeAvailabilityState.Available,
                 lastSuccessfulProcessingGeneration);
+        }
+
+        if (status is
+                DocumentStatus.Processing or
+                DocumentStatus.Failed or
+                DocumentStatus.Archived &&
+            lastSuccessfulProcessingGeneration == 0L &&
+            hasPersistedChunks)
+        {
+            return new LegacyStateProjection(
+                lifecycleState,
+                processingState,
+                DocumentKnowledgeAvailabilityState.Available,
+                0L);
         }
 
         return new LegacyStateProjection(

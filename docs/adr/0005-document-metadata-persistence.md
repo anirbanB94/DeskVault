@@ -236,9 +236,21 @@ exceed `LastSuccessfulProcessingGeneration`.
 
 Generation `0` has explicit historical semantics. It means that the producing
 processing generation is unknown because the legacy persisted data predates
-reliable processing-generation provenance. Migration may therefore preserve
-usable legacy `Available` or `Indexed` knowledge as `Available @ generation 0`,
-but must never invent a positive historical generation.
+reliable processing-generation provenance.
+
+Migration may therefore preserve usable legacy `Available` or `Indexed`
+knowledge as `Available @ generation 0`. It may also preserve historical
+keyword knowledge for legacy `Processing`, `Failed`, or `Archived` documents
+as `Available @ generation 0` when persisted `DocumentChunks` provide
+evidence that usable derived content existed, even though the historical
+processing generation cannot be recovered.
+
+This chunk-evidence rule applies only to the explicit legacy migration
+boundary. It does not make chunk presence a general runtime searchability
+criterion, and it does not override the established `Imported` or `Deleted`
+semantics: those legacy states remain `KeywordSearch = Unavailable`.
+
+Migration must never invent a positive historical generation.
 
 A successful processing publication does not implicitly create or modify a
 knowledge-availability record. Knowledge representation state is persisted
@@ -551,6 +563,15 @@ and knowledge state for legacy documents. It is retry-safe and idempotent:
 existing knowledge availability is not silently overwritten, and an
 interrupted backfill can be retried after rollback.
 
+During legacy lifecycle backfill, persisted `DocumentChunks` may provide
+explicit historical evidence of keyword knowledge for `Processing`, `Failed`,
+or `Archived` documents whose `LastSuccessfulProcessingGeneration` is `0`.
+In that case the backfill persists `KeywordSearch = Available @ 0` without
+inventing a historical processing generation. This migration-specific rule
+does not override `Imported` or `Deleted` semantics and does not replace the
+runtime requirement for persisted knowledge availability and generation
+alignment.
+
 The backfill validates persisted `Available` and `Stale` generation lineage
 before accepting already-existing knowledge records. A knowledge generation
 greater than the document's `LastSuccessfulProcessingGeneration` is treated as
@@ -609,6 +630,13 @@ vaults. Legacy `Available` and `Indexed` documents with generation `0` are
 restored as successfully processed with `KeywordSearch = Available @ 0`,
 explicitly preserving historical uncertainty rather than inventing a
 producing generation.
+
+For legacy `Processing`, `Failed`, and `Archived` documents with
+`LastSuccessfulProcessingGeneration = 0`, persisted legacy `DocumentChunks`
+also provide migration evidence that historical keyword knowledge existed.
+Those documents retain their independently projected lifecycle and processing
+states while `KeywordSearch` is restored as `Available @ 0`. Legacy
+`Imported` and `Deleted` documents remain unavailable.
 
 `SqliteDocumentRepository` restores and updates lifecycle state, processing
 state, knowledge availability, and processing lineage as one lossless
@@ -731,6 +759,13 @@ derived representation.
 
 Historical persisted knowledge without recoverable rule-version information
 retains `NULL` version values rather than receiving fabricated versions.
+
+Legacy lifecycle migration may also preserve existing keyword-search knowledge
+for `Processing`, `Failed`, or `Archived` documents with unknown historical
+processing generation when persisted `DocumentChunks` provide the evidence.
+That evidence is represented as `KeywordSearch = Available @ 0` and does not
+invent a historical processing attempt or override `Imported`/`Deleted`
+unavailability.
 
 Encrypted document content remains stored separately as `.dvault` files, and
 the Application layer remains independent of EF Core and SQLite-specific

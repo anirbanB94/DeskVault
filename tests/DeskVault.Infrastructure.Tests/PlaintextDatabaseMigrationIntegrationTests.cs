@@ -395,6 +395,186 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
     }
 
     [Fact]
+    public async Task PlaintextDatabase_WhenLegacyFailedDocumentHasPersistedChunks_PreservesSearchableKnowledge()
+    {
+        SQLitePCL.Batteries_V2.Init();
+
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] databaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        Guid firstChunkId =
+            Guid.NewGuid();
+
+        Guid secondChunkId =
+            Guid.NewGuid();
+
+        DateTime importedAt =
+            new DateTime(
+                2026,
+                8,
+                1,
+                11,
+                0,
+                0,
+                DateTimeKind.Utc);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        try
+        {
+            CreatePlaintextDeskVaultDatabase(
+                databasePath,
+                documentId,
+                firstChunkId,
+                secondChunkId,
+                importedAt,
+                DocumentStatus.Failed);
+
+            ServiceProvider serviceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey);
+
+            await using (serviceProvider)
+            {
+                DatabaseInitializer initializer =
+                    serviceProvider.GetRequiredService<DatabaseInitializer>();
+
+                await initializer.InitializeAsync();
+            }
+
+            ServiceProvider verificationServiceProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey);
+
+            await using (verificationServiceProvider)
+            {
+                DatabaseInitializer initializer =
+                    verificationServiceProvider.GetRequiredService<DatabaseInitializer>();
+
+                await initializer.InitializeAsync();
+
+                IDocumentRepository repository =
+                    verificationServiceProvider.GetRequiredService<IDocumentRepository>();
+
+                SearchDocumentsHandler searchHandler =
+                    verificationServiceProvider.GetRequiredService<SearchDocumentsHandler>();
+
+                Document? document =
+                    await repository.GetByIdAsync(
+                        documentId);
+
+                Assert.NotNull(
+                    document);
+
+                Assert.Equal(
+                    DocumentLifecycleState.Active,
+                    document.LifecycleState);
+
+                Assert.Equal(
+                    DocumentProcessingState.Failed,
+                    document.ProcessingState);
+
+                Assert.Equal(
+                    0L,
+                    document.ProcessingGeneration);
+
+                Assert.Equal(
+                    0L,
+                    document.LastSuccessfulProcessingGeneration);
+
+                DocumentKnowledgeAvailability keywordSearchAvailability =
+                    document.GetKnowledgeAvailability(
+                        DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+                Assert.Equal(
+                    DocumentKnowledgeAvailabilityState.Available,
+                    keywordSearchAvailability.State);
+
+                Assert.Equal(
+                    0L,
+                    keywordSearchAvailability.LastAvailableProcessingGeneration);
+
+                await using DeskVaultDbContext dbContext =
+                    await verificationServiceProvider
+                        .GetRequiredService<
+                            IDbContextFactory<DeskVaultDbContext>>()
+                        .CreateDbContextAsync();
+
+                List<DocumentChunkEntity> chunks =
+                    await dbContext.DocumentChunks
+                        .AsNoTracking()
+                        .Where(
+                            chunk =>
+                                chunk.DocumentId ==
+                                documentId)
+                        .OrderBy(
+                            chunk =>
+                                chunk.Order)
+                        .ToListAsync();
+
+                Assert.Equal(
+                    2,
+                    chunks.Count);
+
+                Assert.Equal(
+                    "The plaintext migration test contains searchable content.",
+                    chunks[0].Text);
+
+                Assert.Equal(
+                    "This second chunk verifies that chunk ordering and content survive migration.",
+                    chunks[1].Text);
+
+                Assert.All(
+                    chunks,
+                    chunk =>
+                        Assert.Equal(
+                            0L,
+                            chunk.ProcessingGeneration));
+
+                SearchDocumentsPage searchPage =
+                    await searchHandler.HandleAsync(
+                        new SearchDocumentsQuery(
+                            "plaintext migration"));
+
+                SearchDocumentsResult matchingResult =
+                    Assert.Single(
+                        searchPage.Results,
+                        result =>
+                            result.DocumentId ==
+                            documentId);
+
+                Assert.Contains(
+                    matchingResult.Matches,
+                    match =>
+                        match.Source ==
+                        SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "plaintext migration",
+                            StringComparison.OrdinalIgnoreCase));
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                databaseKey);
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task EncryptedDatabase_WhenMigrationBackupRemainsAfterPromotion_IsRecoveredAndBackupRemoved()
     {
         SQLitePCL.Batteries_V2.Init();
@@ -1737,7 +1917,8 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
         Guid documentId,
         Guid firstChunkId,
         Guid secondChunkId,
-        DateTime importedAt)
+        DateTime importedAt,
+        DocumentStatus status = DocumentStatus.Available)
     {
         sqlite3? database = null;
 
@@ -1839,7 +2020,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     'Plaintext Migration Test',
                     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                     '{importedAtValue}',
-                    {(int)DocumentStatus.Available},
+                    {(int)status},
                     '{storedFilePath.Replace("'", "''")}');
 
                 INSERT INTO "DocumentChunks" (
