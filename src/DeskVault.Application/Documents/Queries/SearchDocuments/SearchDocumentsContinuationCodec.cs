@@ -9,7 +9,7 @@ public sealed class SearchDocumentsContinuationCodec
     : ISearchDocumentsContinuationCodec
 {
     private const int CurrentFormatVersion = 1;
-    private const int CurrentRankingContractVersion = 1;
+    private const int CurrentRankingContractVersion = 2;
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new()
@@ -149,7 +149,8 @@ public sealed class SearchDocumentsContinuationCodec
         SearchDocumentsQuery query)
     {
         string normalizedSearchText =
-            query.SearchText.Trim();
+            SearchTextCanonicalizer.CanonicalizeSearchText(
+                query.SearchText);
 
         IReadOnlyList<string> normalizedFileTypes =
             NormalizeFileTypes(

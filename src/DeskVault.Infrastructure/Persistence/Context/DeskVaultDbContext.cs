@@ -1,4 +1,5 @@
 using DeskVault.Infrastructure.Persistence.Entities;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace DeskVault.Infrastructure.Persistence.Context;
@@ -9,6 +10,13 @@ public sealed class DeskVaultDbContext : DbContext
         DbContextOptions<DeskVaultDbContext> options)
         : base(options)
     {
+        if (Database.GetDbConnection() is SqliteConnection connection)
+        {
+            connection.CreateFunction<string, string, bool>(
+                SqliteSearchFunctions.ContainsCanonicalizedFunctionName,
+                SqliteSearchFunctions.ContainsCanonicalized,
+                isDeterministic: true);
+        }
     }
 
     public DbSet<DocumentEntity> Documents =>
@@ -32,6 +40,15 @@ public sealed class DeskVaultDbContext : DbContext
     {
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(DeskVaultDbContext).Assembly);
+
+        modelBuilder
+            .HasDbFunction(
+                typeof(SqliteSearchFunctions).GetMethod(
+                    nameof(
+                        SqliteSearchFunctions.ContainsCanonicalized),
+                    [typeof(string), typeof(string)])!)
+            .HasName(
+                SqliteSearchFunctions.ContainsCanonicalizedFunctionName);
 
         base.OnModelCreating(modelBuilder);
     }

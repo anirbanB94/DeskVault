@@ -2,6 +2,7 @@ using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Domain.Documents;
+using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Infrastructure.Repositories;
@@ -190,6 +191,119 @@ public sealed class SqliteDocumentSearchStoreTests
                     SearchMatchSource.DocumentMetadata,
                     match.Source);
             });
+    }
+
+    [Theory]
+    [InlineData("café")]
+    [InlineData("cafe\u0301")]
+    [InlineData("CAFÉ")]
+    [InlineData("CAFE\u0301")]
+    public async Task SearchAsync_WhenSearchTextUsesUnicodeCaseAndCanonicalEquivalence_ReturnsMetadataAndContentMatches(
+        string searchText)
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "café-notes.txt",
+                "CAFÉ Notes");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            document.Id,
+            0L,
+            [
+                new DocumentChunk(
+                0,
+                "The cafe\u0301 receipt.")
+            ]);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        // Act
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery(searchText),
+                null,
+                20);
+
+        SearchDocumentsResult result =
+            Assert.Single(results);
+
+        // Assert
+        Assert.Equal(
+            3,
+            result.MatchCount);
+
+        Assert.Collection(
+            result.Matches,
+            match => AssertExactMatch(
+                match,
+                SearchMatchSource.DocumentMetadata,
+                "café-notes.txt"),
+            match => AssertExactMatch(
+                match,
+                SearchMatchSource.DocumentMetadata,
+                "CAFÉ Notes"),
+            match => AssertExactMatch(
+                match,
+                SearchMatchSource.ProcessedContent,
+                "The cafe\u0301 receipt."));
+    }
+
+    [Fact]
+    public async Task SqliteSearchFunctions_WhenMappedThroughEfCore_MatchesCanonicalEquivalentStoredChunk()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "unicode-test.txt",
+                "Unicode Test Document");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        await processingStore.ReplaceChunksAsync(
+            document.Id,
+            0L,
+            [
+                new DocumentChunk(
+                0,
+                "The cafe\u0301 receipt.")
+            ]);
+
+        string canonicalSearchText =
+            SearchTextCanonicalizer.CanonicalizeSearchText(
+                "café");
+
+        await using DeskVaultDbContext context =
+            CreateContext(connection);
+
+        // Act
+        bool result =
+            await context.DocumentChunks
+                .AsNoTracking()
+                .AnyAsync(
+                    chunk =>
+                        chunk.DocumentId == document.Id
+                        && SqliteSearchFunctions.ContainsCanonicalized(
+                            chunk.Text,
+                            canonicalSearchText));
+
+        // Assert
+        Assert.True(
+            result,
+            "EF Core should translate the mapped SQLite function and match canonically equivalent chunk text.");
     }
 
     [Fact]
@@ -1024,6 +1138,24 @@ public sealed class SqliteDocumentSearchStoreTests
                     null,
                     20,
                     cancellationTokenSource.Token));
+    }
+
+    private static void AssertExactMatch(
+        SearchMatch match,
+        SearchMatchSource expectedSource,
+        string expectedContext)
+    {
+        Assert.Equal(
+            expectedSource,
+            match.Source);
+
+        Assert.Equal(
+            SearchMatchKind.Exact,
+            match.Kind);
+
+        Assert.Equal(
+            expectedContext,
+            match.Context);
     }
 
     private static void AssertResult(
