@@ -731,7 +731,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
     }
 
     [Fact]
-    public async Task ReconcileAsync_WhenStoredPathDoesNotMatchDocumentIdentity_ReturnsPathMismatch()
+    public async Task ReconcileAsync_WhenStoredPathDoesNotMatchDocumentIdentity_ReportsPathMismatchAndOrphanedArtifact()
     {
         await using var environment =
             await TestEnvironment.CreateAsync();
@@ -777,26 +777,49 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 new ReconcileDocumentArtifactsQuery());
 
         // Assert
-        DocumentArtifactReconciliationResult finding =
-            Assert.Single(
-                result.Findings);
-
         Assert.Equal(
-            DocumentArtifactReconciliationStatus.PathMismatch,
-            finding.Status);
+            2,
+            result.Findings.Count);
+
+        DocumentArtifactReconciliationResult pathMismatchFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.Status ==
+                    DocumentArtifactReconciliationStatus.PathMismatch);
 
         Assert.Equal(
             documentId,
-            finding.DocumentId);
+            pathMismatchFinding.DocumentId);
 
         Assert.Equal(
             Path.GetFullPath(
                 mismatchedArtifactPath),
-            finding.ArtifactPath);
+            pathMismatchFinding.ArtifactPath);
+
+        DocumentArtifactReconciliationResult orphanedArtifactFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.Status ==
+                    DocumentArtifactReconciliationStatus.OrphanedArtifact);
+
+        Assert.Equal(
+            differentArtifactId,
+            orphanedArtifactFinding.DocumentId);
+
+        Assert.Equal(
+            Path.GetFullPath(
+                mismatchedArtifactPath),
+            orphanedArtifactFinding.ArtifactPath);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.CleanupOrphanedArtifact,
+            orphanedArtifactFinding.RecoveryAction);
 
         Assert.True(
             File.Exists(
-                finding.ArtifactPath));
+                orphanedArtifactFinding.ArtifactPath));
     }
 
     [Fact]

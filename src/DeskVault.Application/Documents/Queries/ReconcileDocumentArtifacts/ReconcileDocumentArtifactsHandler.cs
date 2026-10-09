@@ -62,12 +62,34 @@ public sealed class ReconcileDocumentArtifactsHandler
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var expectedArtifactPath =
-                Path.GetFullPath(
-                    document.StoredFilePath);
+            string expectedArtifactPath;
 
-            expectedArtifactPaths.Add(
-                expectedArtifactPath);
+            try
+            {
+                expectedArtifactPath =
+                    Path.GetFullPath(
+                        document.StoredFilePath);
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException
+                    or NotSupportedException
+                    or PathTooLongException
+                    or System.Security.SecurityException)
+            {
+                _logger.LogWarning(
+                    exception,
+                    LogMessages.DocumentArtifactValidationFailed,
+                    document.Id);
+
+                findings.Add(
+                    new DocumentArtifactReconciliationResult(
+                        DocumentArtifactReconciliationStatus.PathMismatch,
+                        document.Id,
+                        document.StoredFilePath,
+                        "The persisted document record contains an artifact path that cannot be safely normalized or validated."));
+
+                continue;
+            }
 
             if (!_storageService.IsOwnedArtifactPath(
                     document.Id,
@@ -82,6 +104,9 @@ public sealed class ReconcileDocumentArtifactsHandler
 
                 continue;
             }
+
+            expectedArtifactPaths.Add(
+                expectedArtifactPath);
 
             if (!normalizedArtifactPaths.Contains(
                     expectedArtifactPath))
