@@ -369,9 +369,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             .Setup(x => x.EnumerateAsync(
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-            [
-                document.StoredFilePath
-            ]);
+            Array.Empty<string>());
 
         var reader =
             new Mock<IDocumentReader>();
@@ -462,9 +460,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             .Setup(x => x.EnumerateAsync(
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-            [
-                storedArtifactPath
-            ]);
+            Array.Empty<string>());
 
         var reader =
             new Mock<IDocumentReader>();
@@ -576,6 +572,257 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenMismatchedStoredPathReferencesOrphanedArtifact_ReportsBothFindings()
+    {
+        // Arrange
+        Guid documentId =
+            Guid.NewGuid();
+
+        Guid orphanArtifactId =
+            Guid.NewGuid();
+
+        string orphanArtifactPath =
+            Path.GetFullPath(
+                Path.Combine(
+                    "Documents",
+                    $"{orphanArtifactId}.dvault"));
+
+        Document document =
+            Document.Create(
+                documentId,
+                "document.txt",
+                "Mismatched Path Document",
+                "sha256-test-hash",
+                orphanArtifactPath);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([document]);
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        artifactEnumerator
+            .Setup(x => x.EnumerateAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                orphanArtifactPath
+            ]);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        storageService
+            .Setup(x => x.IsOwnedArtifactPath(
+                documentId,
+                orphanArtifactPath))
+            .Returns(false);
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        Assert.Equal(
+            2,
+            result.Findings.Count);
+
+        DocumentArtifactReconciliationResult pathMismatch =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.Status ==
+                    DocumentArtifactReconciliationStatus.PathMismatch);
+
+        Assert.Equal(
+            documentId,
+            pathMismatch.DocumentId);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.PreserveForRecovery,
+            pathMismatch.RecoveryAction);
+
+        DocumentArtifactReconciliationResult orphanFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.Status ==
+                    DocumentArtifactReconciliationStatus.OrphanedArtifact);
+
+        Assert.Equal(
+            orphanArtifactId,
+            orphanFinding.DocumentId);
+
+        Assert.Equal(
+            orphanArtifactPath,
+            orphanFinding.ArtifactPath);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.CleanupOrphanedArtifact,
+            orphanFinding.RecoveryAction);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                documentId,
+                orphanArtifactPath),
+            Times.Once);
+
+        reader.Verify(
+            x => x.OpenReadAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenStoredPathCannotBeNormalized_ReportsPathMismatchAndContinuesWithOtherDocuments()
+    {
+        // Arrange
+        Guid malformedDocumentId =
+            Guid.NewGuid();
+
+        const string malformedStoredPath =
+            "Documents\0invalid.dvault";
+
+        Document malformedDocument =
+            Document.Create(
+                malformedDocumentId,
+                "malformed.txt",
+                "Malformed Path Document",
+                "sha256-test-hash",
+                malformedStoredPath);
+
+        Document validDocument =
+            CreateDocument();
+
+        string expectedValidArtifactPath =
+            Path.GetFullPath(
+                validDocument.StoredFilePath);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                malformedDocument,
+                validDocument
+            ]);
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        artifactEnumerator
+            .Setup(x => x.EnumerateAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                validDocument.StoredFilePath
+            ]);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        reader
+            .Setup(x => x.OpenReadAsync(
+                validDocument.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new MemoryStream(
+                    "decrypted-content"u8.ToArray()));
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery());
+
+        // Assert
+        Assert.Equal(
+            2,
+            result.Findings.Count);
+
+        var malformedPathFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    malformedDocument.Id);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.PathMismatch,
+            malformedPathFinding.Status);
+
+        Assert.Equal(
+            malformedStoredPath,
+            malformedPathFinding.ArtifactPath);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.PreserveForRecovery,
+            malformedPathFinding.RecoveryAction);
+
+        var validDocumentFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    validDocument.Id);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.Matched,
+            validDocumentFinding.Status);
+
+        Assert.Equal(
+            expectedValidArtifactPath,
+            validDocumentFinding.ArtifactPath);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                malformedDocument.Id,
+                It.IsAny<string>()),
+            Times.Never);
+
+        reader.Verify(
+            x => x.OpenReadAsync(
+                malformedDocument.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        reader.Verify(
+            x => x.OpenReadAsync(
+                validDocument.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
