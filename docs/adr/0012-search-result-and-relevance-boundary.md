@@ -42,6 +42,20 @@ paged. Consumers should request a bounded page of application-level
 results and should not need to perform full-result ranking, storage-level
 pagination, or retrieval-specific continuation handling themselves.
 
+Keyword search also requires consistent matching semantics across
+document metadata and persisted processed content. Processing
+normalization establishes a canonical representation for searchable
+content, but search input and metadata can have different Unicode
+representations. Canonically equivalent Unicode text must not produce
+different search outcomes merely because it uses composed or decomposed
+characters.
+
+Matching must also remain deterministic and culture-independent. The
+same canonical query should be interpreted consistently across metadata
+and eligible processed content without changing document identity,
+canonical processed knowledge, deterministic result ordering, or
+pagination semantics.
+
 ## Decision
 
 DeskVault will use a **document-oriented search result contract** at the
@@ -98,6 +112,51 @@ canonical representation of the document or its processed knowledge.
 The search-result contract does not prescribe a particular snippet
 algorithm, evidence limit, lexical matching taxonomy, or query syntax.
 
+### Keyword Matching and Unicode Canonicalization
+
+Keyword search must apply consistent matching semantics to document
+metadata and eligible persisted processed content.
+
+Search input is trimmed and normalized to Unicode Normalization Form C
+(NFC) before matching. Candidate values used for matching are also
+normalized to NFC without trimming their content.
+
+Matching uses ordinal, case-insensitive comparison semantics. It must
+not depend on the current culture or the user's locale.
+
+Consequently:
+
+- canonically equivalent composed and decomposed Unicode forms must
+  match;
+- case differences must be handled consistently for metadata and
+  processed content;
+- equivalent search inputs must produce the same canonical search
+  criteria;
+- ASCII case-insensitive matching must remain supported;
+- literal query characters must not be reinterpreted as wildcard syntax;
+- returned matching evidence must preserve its original display text.
+
+Canonical equivalence is not accent folding. Search must not remove
+diacritics or treat text that is not canonically equivalent as
+equivalent merely because it looks similar.
+
+This matching contract does not redefine the document processing
+normalization pipeline. Processing remains responsible for producing
+canonical processed knowledge according to its existing normalization
+contract. Search canonicalizes candidate values for comparison and
+normalizes query input without rewriting the persisted document or
+chunk representation.
+
+Metadata and processed-content matching must use the same canonical
+normalization and ordinal, case-insensitive comparison semantics.
+Provider-specific implementations may differ internally, but the
+observable matching behavior must remain equivalent.
+
+Unicode matching is part of the keyword-search behavior rather than a
+new persistence model or a new retrieval technology. Implementations
+must preserve existing document eligibility, file-type filtering,
+matching evidence, ranking, and bounded retrieval behavior.
+
 ### Relevance Boundary
 
 Relevance ordering is an Application-level search concern.
@@ -151,6 +210,12 @@ and the applicable continuation/ranking contract version.
 A continuation created for materially different search criteria or an
 incompatible contract must be rejected rather than interpreted as a
 position in a different result sequence.
+
+A change that modifies observable keyword-matching behavior must not
+silently reuse continuation state created under an incompatible
+matching contract. The Unicode-aware matching change advances the
+ranking contract version to version 2. The continuation format version
+remains independent of that ranking contract version.
 
 Page size is not part of continuation identity. A valid continuation
 therefore remains meaningful when the requested page size changes.
@@ -237,11 +302,11 @@ incrementally, but it must not load every matching chunk solely to build a
 complete intermediate result collection when only one page is requested.
 
 Filtering and eligibility semantics must be established before the page
-boundary is applied, including current search-text matching, file-type
-filtering, metadata matching, and the eligibility of currently successful
-processed knowledge. The precise provider-side optimization of those
-operations remains an implementation concern as long as observable search
-behavior is preserved.
+boundary is applied, including canonicalized search-text matching,
+file-type filtering, metadata matching, and the eligibility of currently
+successful processed knowledge. The precise provider-side optimization of
+those operations remains an implementation concern as long as observable
+search behavior is preserved.
 
 First-page, subsequent-page, empty-result, and final-page behavior must be
 predictable under the same deterministic ordering and opaque continuation
@@ -265,8 +330,9 @@ technology.
 
 A retrieval implementation may change how matching results are obtained
 or efficiently bounded, provided that the Application-level search
-ordering, result representation, filtering/eligibility behavior, and
-continuation semantics remain behaviorally compatible.
+ordering, result representation, filtering/eligibility behavior, Unicode
+matching semantics, and continuation semantics remain behaviorally
+compatible.
 
 ### Relationship to Canonical Processed Knowledge
 
@@ -286,6 +352,11 @@ Search does not redefine:
 A processed-content match may refer to the canonical document and its
 underlying processed representation, while the application-level search
 result remains document-oriented.
+
+Search normalization must not change the canonical persisted chunk text
+or its identity and content hash. Unicode-aware matching affects how
+candidate text is compared, not how canonical processed knowledge is
+produced or persisted.
 
 ### Separation from UI and Workspace
 
@@ -312,30 +383,32 @@ The responsibilities are separated as follows:
 Search / Discovery
         ↓
 Identify matching documents and evidence
-
+        ↓
+Canonicalize search input and candidate text for comparison
+        ↓
 Search Result Model
         ↓
 Represent the matched document and supporting evidence
-
+        ↓
 Relevance
         ↓
 Determine deterministic ordering through a replaceable
 Application boundary
-
+        ↓
 Pagination / Continuation
         ↓
 Represent the last consumed position in the deterministic
 Application-level ordering
-
+        ↓
 Application Retrieval Boundary
         ↓
 Expose a bounded page-shaped contract without storage-specific details
-
+        ↓
 Retrieval Implementation
         ↓
 Obtain matching results and implement bounded retrieval mechanics while
 preserving the Application contract
-
+        ↓
 UI
         ↓
 Present results and initiate the appropriate existing interaction
@@ -444,11 +517,19 @@ the Application-facing search contract remain compatible.
   result type.
 - Search relevance remains separate from persistence implementation.
 - Deterministic tie-breaking produces predictable keyword-search order.
+- Canonically equivalent composed and decomposed Unicode queries produce
+  consistent matching outcomes.
+- Metadata and processed-content matching share the same canonical,
+  ordinal, case-insensitive matching semantics.
+- Unicode matching is deterministic and independent of the current
+  culture.
+- Returned evidence retains its original display text.
 - Continuations remain opaque to consumers and independent of storage
   implementation.
 - Changing page size does not invalidate an otherwise compatible
   continuation.
 - Pagination can resume strictly after a deterministic ranked position.
+- Incompatible pre-change continuations are rejected.
 - Application contracts remain independent of SQLite and EF Core.
 - Application consumers depend on a page-shaped retrieval boundary rather
   than storage-specific retrieval mechanics.
@@ -480,13 +561,17 @@ the Application-facing search contract remain compatible.
   search infrastructure.
 - Ranking and continuation semantics must remain compatible when the
   retrieval implementation changes.
+- Previously issued continuations from an incompatible ranking contract
+  must be rejected, requiring affected searches to restart.
 - Retrieval implementations must maintain bounded page/lookahead state
   while preserving deterministic ranking and evidence semantics.
+- Unicode-aware matching adds canonicalization work to candidate
+  comparison.
 
 These trade-offs are acceptable because document-oriented results,
-deterministic pagination, bounded retrieval, and replaceable
-relevance/retrieval boundaries are required foundations for richer local
-document discovery.
+deterministic pagination, bounded retrieval, consistent Unicode matching,
+and replaceable relevance/retrieval boundaries are required foundations
+for richer local document discovery.
 
 ## Implementation Constraints
 
@@ -508,6 +593,8 @@ The implementation must:
   result;
 - bind continuation to normalized search criteria and the applicable
   continuation/ranking contract version;
+- advance the ranking contract version when matching semantics change
+  incompatibly;
 - keep page size out of continuation identity;
 - reject malformed or request-incompatible continuations;
 - keep EF Core and SQLite types out of Application contracts;
@@ -528,6 +615,18 @@ The implementation must:
   ordering is optimized;
 - preserve document-level evidence and `MatchCount` semantics while
   processing matching evidence incrementally;
+- trim and normalize search input to NFC before keyword matching;
+- normalize candidate values to NFC for matching without trimming their
+  stored or returned content;
+- apply ordinal, case-insensitive matching consistently to metadata and
+  eligible processed content;
+- keep Unicode matching independent of the current culture;
+- preserve canonical processed text, chunk identity, content hash,
+  provenance, and processing generation;
+- preserve existing ASCII keyword-search behavior;
+- preserve literal matching for query characters rather than treating
+  those characters as wildcard syntax;
+- preserve original text in returned matching evidence;
 - apply matching, file-type filtering, metadata matching, and processed-
   content eligibility semantics before the page boundary is applied;
 - preserve first-page, subsequent-page, empty-result, and final-page
@@ -580,10 +679,20 @@ Current keyword search uses deterministic ordering based on relevance
 score descending, `DisplayName` ordinal ascending, and `DocumentId`
 ascending.
 
+Keyword search trims and normalizes input to NFC and normalizes candidate
+values to NFC for comparison. Metadata and eligible processed content use
+the same ordinal, case-insensitive matching semantics, independent of
+culture. Canonically equivalent composed and decomposed Unicode text
+therefore matches consistently, without changing the canonical persisted
+processed representation or returned evidence text.
+
 Pagination uses an opaque continuation representing the last consumed
 position in that deterministic ordering. The continuation is independent
 of page size and storage implementation and is bound to the applicable
-search criteria and continuation/ranking contract version.
+normalized search criteria and continuation/ranking contract version.
+The Unicode-aware matching change advances the ranking contract version
+to version 2 so continuations issued under the previous matching contract
+are rejected.
 
 Application consumers use a storage-independent retrieval boundary that
 returns a page-shaped `SearchDocumentsPage` containing results, a
@@ -595,9 +704,9 @@ Paginated retrieval is performed with bounded retained result state. The
 retrieval implementation applies continuation-aware filtering and
 produces the requested page plus bounded lookahead rather than
 materializing the complete matching ranked result set. This preserves the
-Application-defined relevance, evidence, filtering, eligibility, and
-continuation contracts while allowing provider-specific retrieval
-optimization behind the boundary.
+Application-defined relevance, evidence, filtering, eligibility, Unicode
+matching, and continuation contracts while allowing provider-specific
+retrieval optimization behind the boundary.
 
 The decision establishes the architectural foundation for predictable
 and scalable local document discovery while leaving retrieval
