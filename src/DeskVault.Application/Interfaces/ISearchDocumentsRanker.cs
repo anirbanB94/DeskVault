@@ -9,4 +9,6 @@ public interface ISearchDocumentsRanker
 
     SearchDocumentsRankingKey GetRankingKey(
         SearchDocumentsResult result);
+
+    int GetMatchScore(SearchMatch match);
 }

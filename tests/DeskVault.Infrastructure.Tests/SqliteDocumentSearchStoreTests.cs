@@ -34,16 +34,16 @@ public sealed class SqliteDocumentSearchStoreTests
             0L,
             [
                 new DocumentChunk(
-                    0,
-                    "This is the introduction."),
+                0,
+                "This is the introduction."),
 
-                new DocumentChunk(
-                    1,
-                    "This chunk contains the searchable content."),
+            new DocumentChunk(
+                1,
+                "This chunk contains the searchable content."),
 
-                new DocumentChunk(
-                    2,
-                    "This is the conclusion.")
+            new DocumentChunk(
+                2,
+                "This is the conclusion.")
             ]);
 
         var searchStore =
@@ -71,54 +71,109 @@ public sealed class SqliteDocumentSearchStoreTests
             document.DisplayName,
             result.DisplayName);
 
+        // All matching evidence must still contribute to MatchCount.
         Assert.Equal(
             3,
             result.MatchCount);
 
-        Assert.Collection(
-            result.Matches,
-            match =>
-            {
-                Assert.Equal(
-                    SearchMatchSource.DocumentMetadata,
-                    match.Source);
+        // Only the first representative evidence item is retained.
+        SearchMatch retainedMatch =
+            Assert.Single(result.Matches);
 
-                Assert.Equal(
-                    SearchMatchKind.Exact,
-                    match.Kind);
+        Assert.Equal(
+            SearchMatchSource.DocumentMetadata,
+            retainedMatch.Source);
 
-                Assert.Equal(
-                    "searchable.txt",
-                    match.Context);
-            },
-            match =>
-            {
-                Assert.Equal(
-                    SearchMatchSource.DocumentMetadata,
-                    match.Source);
+        Assert.Equal(
+            SearchMatchKind.Exact,
+            retainedMatch.Kind);
 
-                Assert.Equal(
-                    SearchMatchKind.Exact,
-                    match.Kind);
+        Assert.Equal(
+            "searchable.txt",
+            retainedMatch.Context);
 
-                Assert.Equal(
-                    "Searchable Document",
-                    match.Context);
-            },
-            match =>
-            {
-                Assert.Equal(
-                    SearchMatchSource.ProcessedContent,
-                    match.Source);
+        // Filename, display name and matching chunk each score 100, 100 and 60.
+        Assert.NotNull(
+            result.RelevanceScore);
 
-                Assert.Equal(
-                    SearchMatchKind.Exact,
-                    match.Kind);
+        Assert.Equal(
+            260,
+            result.RelevanceScore.Value);
+    }
 
-                Assert.Equal(
-                    "This chunk contains the searchable content.",
-                    match.Context);
-            });
+    [Fact]
+    public async Task SearchAsync_WhenDocumentHasManyMatchingChunks_BoundsRetainedEvidenceAndPreservesCountAndScore()
+    {
+        // Arrange
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        Document document =
+            CreateAndPersistDocument(
+                connection,
+                "evidence-heavy.txt",
+                "Evidence Heavy Document");
+
+        var processingStore =
+            CreateProcessingStore(connection);
+
+        const int matchingChunkCount = 64;
+
+        DocumentChunk[] chunks =
+            Enumerable.Range(0, matchingChunkCount)
+                .Select(
+                    index => new DocumentChunk(
+                        index,
+                        $"needle in matching content chunk {index:D2}."))
+                .ToArray();
+
+        await processingStore.ReplaceChunksAsync(
+            document.Id,
+            0L,
+            chunks);
+
+        var searchStore =
+            CreateSearchStore(connection);
+
+        // Act
+        IReadOnlyList<SearchDocumentsResult> results =
+            await searchStore.SearchAsync(
+                new SearchDocumentsQuery("needle"),
+                null,
+                20);
+
+        // Assert
+        SearchDocumentsResult result =
+            Assert.Single(results);
+
+        // All 64 matching content chunks must still be counted.
+        Assert.Equal(
+            matchingChunkCount,
+            result.MatchCount);
+
+        // Evidence retained by a result must not grow with matching chunks.
+        SearchMatch retainedMatch =
+            Assert.Single(result.Matches);
+
+        Assert.Equal(
+            SearchMatchSource.ProcessedContent,
+            retainedMatch.Source);
+
+        Assert.Equal(
+            SearchMatchKind.Exact,
+            retainedMatch.Kind);
+
+        Assert.Equal(
+            "needle in matching content chunk 00.",
+            retainedMatch.Context);
+
+        // Every matching chunk still contributes its full relevance score.
+        Assert.NotNull(
+            result.RelevanceScore);
+
+        Assert.Equal(
+            matchingChunkCount * 60,
+            result.RelevanceScore.Value);
     }
 
     [Fact]
@@ -241,20 +296,29 @@ public sealed class SqliteDocumentSearchStoreTests
             3,
             result.MatchCount);
 
-        Assert.Collection(
-            result.Matches,
-            match => AssertExactMatch(
-                match,
-                SearchMatchSource.DocumentMetadata,
-                "café-notes.txt"),
-            match => AssertExactMatch(
-                match,
-                SearchMatchSource.DocumentMetadata,
-                "CAFÉ Notes"),
-            match => AssertExactMatch(
-                match,
-                SearchMatchSource.ProcessedContent,
-                "The cafe\u0301 receipt."));
+        // The first matching metadata item is representative evidence.
+        SearchMatch retainedMatch =
+            Assert.Single(result.Matches);
+
+        Assert.Equal(
+            SearchMatchSource.DocumentMetadata,
+            retainedMatch.Source);
+
+        Assert.Equal(
+            SearchMatchKind.Exact,
+            retainedMatch.Kind);
+
+        Assert.Equal(
+            "café-notes.txt",
+            retainedMatch.Context);
+
+        // Two metadata matches and one content match still contribute to ranking.
+        Assert.NotNull(
+            result.RelevanceScore);
+
+        Assert.Equal(
+            260,
+            result.RelevanceScore.Value);
     }
 
     [Fact]
@@ -1175,33 +1239,34 @@ public sealed class SqliteDocumentSearchStoreTests
             expectedDocument.DisplayName,
             result.DisplayName);
 
+        // MatchCount continues to represent every matching chunk.
         Assert.Equal(
             expectedMatchTexts.Count,
             result.MatchCount);
 
+        // Only the first matching chunk is retained as representative evidence.
+        SearchMatch retainedMatch =
+            Assert.Single(result.Matches);
+
         Assert.Equal(
-            expectedMatchTexts.Count,
-            result.Matches.Count);
+            SearchMatchSource.ProcessedContent,
+            retainedMatch.Source);
 
-        for (int index = 0;
-            index < expectedMatchTexts.Count;
-            index++)
-        {
-            SearchMatch match =
-                result.Matches[index];
+        Assert.Equal(
+            SearchMatchKind.Exact,
+            retainedMatch.Kind);
 
-            Assert.Equal(
-                SearchMatchSource.ProcessedContent,
-                match.Source);
+        Assert.Equal(
+            expectedMatchTexts[0],
+            retainedMatch.Context);
 
-            Assert.Equal(
-                SearchMatchKind.Exact,
-                match.Kind);
+        // The full set of matches must still contribute to relevance.
+        Assert.NotNull(
+            result.RelevanceScore);
 
-            Assert.Equal(
-                expectedMatchTexts[index],
-                match.Context);
-        }
+        Assert.Equal(
+            expectedMatchTexts.Count * 60,
+            result.RelevanceScore.Value);
     }
 
     private static SqliteDocumentProcessingStore CreateProcessingStore(
