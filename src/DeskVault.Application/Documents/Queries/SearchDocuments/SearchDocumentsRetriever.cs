@@ -49,6 +49,14 @@ public sealed class SearchDocumentsRetriever : ISearchDocumentsRetriever
                 nameof(query.Limit));
         }
 
+        if (query.Limit > SearchOptions.MaximumPageSize)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(query.Limit),
+                query.Limit,
+                $"Search page size cannot exceed {SearchOptions.MaximumPageSize}.");
+        }
+
         SearchDocumentsRankingKey? continuationPosition =
             query.Continuation is null
                 ? null

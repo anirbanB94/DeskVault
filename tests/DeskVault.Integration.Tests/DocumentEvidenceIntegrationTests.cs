@@ -400,6 +400,96 @@ public sealed class DocumentEvidenceIntegrationTests
     }
 
     [Fact]
+    public async Task SearchDocuments_WhenPageSizeIsAtMaximum_AcceptsRequestAndRejectsLargerRequest()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateRootDirectory();
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            const string searchText =
+                "bounded page size integration marker";
+
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "bounded-page-size.txt");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                $"This document contains the {searchText}.");
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            Guid documentId =
+                await ImportDocumentAsync(
+                    harness,
+                    sourceFilePath,
+                    "Bounded Page Size Integration Document");
+
+            await harness.ProcessingService.ProcessAsync(
+                documentId);
+
+            SearchDocumentsQuery maximumSizeQuery =
+                new(
+                    searchText,
+                    Limit: SearchOptions.MaximumPageSize);
+
+            // Act: the maximum supported page size is accepted.
+            SearchDocumentsPage page =
+                await harness.SearchHandler.HandleAsync(
+                    maximumSizeQuery);
+
+            // Assert: existing keyword-search behavior is preserved.
+            AssertSearchResult(
+                page,
+                documentId,
+                searchText);
+
+            Assert.False(
+                page.HasMore);
+
+            Assert.Null(
+                page.Continuation);
+
+            Assert.Equal(
+                SearchOptions.DefaultPageSize,
+                new SearchDocumentsQuery(searchText).Limit);
+
+            // Act and assert: a request above the maximum is rejected.
+            Func<Task> oversizedSearch =
+                async () =>
+                {
+                    await harness.SearchHandler.HandleAsync(
+                        new SearchDocumentsQuery(
+                            searchText,
+                            Limit: SearchOptions.MaximumPageSize + 1));
+                };
+
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+                oversizedSearch);
+        }
+        finally
+        {
+            DeleteRootDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task ProcessDocument_WhenChunkConfigurationChanges_ProducesDeterministicNewBoundariesAndRemainsSearchable()
     {
         string rootDirectory =
