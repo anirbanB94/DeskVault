@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -78,6 +79,131 @@ public sealed class WindowsEncryptionKeyServiceTests
         }
         finally
         {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenCalledConcurrently_PersistsOneAuthoritativeKey()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[][]? keys = null;
+        byte[]? persistedKey = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            const int ConcurrentCallCount = 16;
+
+            WindowsEncryptionKeyService[] services =
+                Enumerable.Range(
+                    0,
+                    ConcurrentCallCount)
+                .Select(
+                    _ => CreateService(dataPaths))
+                .ToArray();
+
+            using var startGate =
+                new ManualResetEventSlim(false);
+
+            Task<byte[]>[] initializationTasks =
+                services
+                    .Select(
+                        service =>
+                            Task.Run(
+                                async () =>
+                                {
+                                    startGate.Wait();
+
+                                    return await service.GetOrCreateKeyAsync();
+                                }))
+                    .ToArray();
+
+            // Act
+            startGate.Set();
+
+            // Assert
+            keys =
+                await Task.WhenAll(
+                    initializationTasks);
+
+            Assert.Equal(
+                ConcurrentCallCount,
+                keys.Length);
+
+            byte[] expectedKey =
+                keys[0];
+
+            foreach (byte[] key in keys)
+            {
+                Assert.Equal(
+                    expectedKey,
+                    key);
+            }
+
+            string keyFilePath =
+                GetKeyFilePath(dataPaths);
+
+            Assert.True(
+                File.Exists(keyFilePath));
+
+            string[] persistedFiles =
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory);
+
+            Assert.Single(
+                persistedFiles);
+
+            Assert.Equal(
+                Path.GetFullPath(keyFilePath),
+                Path.GetFullPath(persistedFiles[0]));
+
+            byte[] protectedKeyFromFile =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
+
+            try
+            {
+                persistedKey =
+                    ProtectedData.Unprotect(
+                        protectedKeyFromFile,
+                        null,
+                        DataProtectionScope.CurrentUser);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(
+                    protectedKeyFromFile);
+            }
+
+            Assert.Equal(
+                expectedKey,
+                persistedKey);
+        }
+        finally
+        {
+            if (keys is not null)
+            {
+                foreach (byte[] key in keys)
+                {
+                    CryptographicOperations.ZeroMemory(
+                        key);
+                }
+            }
+
+            if (persistedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedKey);
+            }
+
             DeleteTemporaryDirectory(
                 rootDirectory);
         }
@@ -183,6 +309,100 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             Assert.True(
                 File.Exists(keyFilePath));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenConcurrentPublicationFails_DoesNotLeaveTemporaryKeyFiles()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            Directory.CreateDirectory(
+                dataPaths.SecurityDirectory);
+
+            string keyFilePath =
+                GetKeyFilePath(dataPaths);
+
+            Directory.CreateDirectory(
+                keyFilePath);
+
+            const int ConcurrentCallCount = 2;
+
+            WindowsEncryptionKeyService[] services =
+                Enumerable.Range(
+                    0,
+                    ConcurrentCallCount)
+                .Select(
+                    _ => CreateService(dataPaths))
+                .ToArray();
+
+            using var startGate =
+                new ManualResetEventSlim(false);
+
+            Task<byte[]>[] initializationTasks =
+                services
+                    .Select(
+                        service =>
+                            Task.Run(
+                                async () =>
+                                {
+                                    startGate.Wait();
+
+                                    return await service.GetOrCreateKeyAsync();
+                                }))
+                    .ToArray();
+
+            // Act
+            startGate.Set();
+
+            Exception?[] failures =
+                await Task.WhenAll(
+                    initializationTasks.Select(
+                        async task =>
+                            await Record.ExceptionAsync(
+                                async () =>
+                                {
+                                    await task;
+                                })));
+
+            // Assert
+            Assert.Equal(
+                ConcurrentCallCount,
+                failures.Length);
+
+            Assert.All(
+                failures,
+                failure =>
+                {
+                    Assert.NotNull(failure);
+
+                    Assert.True(
+                        failure is IOException or UnauthorizedAccessException,
+                        $"Unexpected failure type: {failure?.GetType().FullName ?? "null"}");
+                });
+
+            Assert.True(
+                Directory.Exists(keyFilePath));
+
+            Assert.False(
+                File.Exists(keyFilePath));
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
         }
         finally
         {

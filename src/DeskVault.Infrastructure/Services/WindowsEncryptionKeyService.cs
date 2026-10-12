@@ -28,6 +28,11 @@ public sealed class WindowsEncryptionKeyService :
         _logger.LogInformation(
             LogMessages.EncryptionKeyRetrievalStarted);
 
+        string? temporaryKeyFilePath = null;
+        byte[]? candidateKey = null;
+        byte[]? protectedKey = null;
+        bool candidateKeyPublished = false;
+
         try
         {
             string securityDirectory =
@@ -43,16 +48,10 @@ public sealed class WindowsEncryptionKeyService :
 
             if (File.Exists(keyFilePath))
             {
-                byte[] protectedKeyFromFile =
-                    await File.ReadAllBytesAsync(
+                byte[] existingKey =
+                    await ReadKeyFromFileAsync(
                         keyFilePath,
                         cancellationToken);
-
-                byte[] key =
-                    ProtectedData.Unprotect(
-                        protectedKeyFromFile,
-                        null,
-                        DataProtectionScope.CurrentUser);
 
                 _logger.LogInformation(
                     LogMessages.EncryptionKeyLoaded);
@@ -60,22 +59,75 @@ public sealed class WindowsEncryptionKeyService :
                 _logger.LogInformation(
                     LogMessages.EncryptionKeyOperationCompleted);
 
-                return key;
+                return existingKey;
             }
 
-            byte[] newKey =
+            candidateKey =
                 RandomNumberGenerator.GetBytes(32);
 
-            byte[] protectedKey =
+            protectedKey =
                 ProtectedData.Protect(
-                    newKey,
+                    candidateKey,
                     null,
                     DataProtectionScope.CurrentUser);
 
-            await File.WriteAllBytesAsync(
-                keyFilePath,
-                protectedKey,
-                cancellationToken);
+            temporaryKeyFilePath =
+                Path.Combine(
+                    securityDirectory,
+                    $"{KeyFileName}.{Guid.NewGuid():N}.tmp");
+
+            await using (var temporaryKeyFile =
+                new FileStream(
+                    temporaryKeyFilePath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 4096,
+                    useAsync: true))
+            {
+                await temporaryKeyFile.WriteAsync(
+                    protectedKey,
+                    cancellationToken);
+
+                await temporaryKeyFile.FlushAsync(
+                    cancellationToken);
+
+                temporaryKeyFile.Flush(
+                    flushToDisk: true);
+            }
+
+            try
+            {
+                // Moving within the same directory publishes the complete
+                // protected key without overwriting an existing master.key.
+                File.Move(
+                    temporaryKeyFilePath,
+                    keyFilePath);
+            }
+            catch (IOException) when (File.Exists(keyFilePath))
+            {
+                // Another initializer published the authoritative key first.
+                // Discard this candidate and retrieve the persisted key.
+                CryptographicOperations.ZeroMemory(
+                    candidateKey);
+
+                candidateKey = null;
+
+                byte[] authoritativeKey =
+                    await ReadKeyFromFileAsync(
+                        keyFilePath,
+                        cancellationToken);
+
+                _logger.LogInformation(
+                    LogMessages.EncryptionKeyLoaded);
+
+                _logger.LogInformation(
+                    LogMessages.EncryptionKeyOperationCompleted);
+
+                return authoritativeKey;
+            }
+
+            candidateKeyPublished = true;
 
             _logger.LogInformation(
                 LogMessages.EncryptionKeyCreated);
@@ -83,7 +135,7 @@ public sealed class WindowsEncryptionKeyService :
             _logger.LogInformation(
                 LogMessages.EncryptionKeyOperationCompleted);
 
-            return newKey;
+            return candidateKey;
         }
         catch (OperationCanceledException)
         {
@@ -96,6 +148,63 @@ public sealed class WindowsEncryptionKeyService :
                 LogMessages.EncryptionKeyOperationFailed);
 
             throw;
+        }
+        finally
+        {
+            if (!candidateKeyPublished &&
+                candidateKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    candidateKey);
+            }
+
+            if (protectedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    protectedKey);
+            }
+
+            if (temporaryKeyFilePath is not null)
+            {
+                try
+                {
+                    File.Delete(
+                        temporaryKeyFilePath);
+                }
+                catch (IOException)
+                {
+                    _logger.LogWarning(
+                        LogMessages.EncryptionKeyTemporaryFileCleanupFailed);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    _logger.LogWarning(
+                        LogMessages.EncryptionKeyTemporaryFileCleanupFailed);
+                }
+            }
+        }
+    }
+
+    private static async Task<byte[]> ReadKeyFromFileAsync(
+        string keyFilePath,
+        CancellationToken cancellationToken)
+    {
+        byte[] protectedKeyFromFile =
+            await File.ReadAllBytesAsync(
+                keyFilePath,
+                cancellationToken);
+
+        try
+        {
+            return ProtectedData.Unprotect(
+                protectedKeyFromFile,
+                null,
+                DataProtectionScope.CurrentUser);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                protectedKeyFromFile);
         }
     }
 }

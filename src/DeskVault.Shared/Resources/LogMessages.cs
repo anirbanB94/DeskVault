@@ -307,6 +307,9 @@ public static class LogMessages
     public const string EncryptionKeyOperationFailed =
         "Infrastructure encryption key operation failed.";
 
+    public const string EncryptionKeyTemporaryFileCleanupFailed =
+        "Infrastructure temporary protected encryption key cleanup failed.";
+
     public const string DatabaseEncryptionKeyLoaded =
         "Infrastructure database encryption key loaded.";
 
