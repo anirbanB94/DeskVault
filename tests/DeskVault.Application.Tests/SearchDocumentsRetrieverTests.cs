@@ -631,6 +631,117 @@ public sealed class SearchDocumentsRetrieverTests
     }
 
     [Fact]
+    public async Task RetrieveAsync_AcceptsMaximumSupportedLimit()
+    {
+        // Arrange
+        const int maximumPageSize =
+            SearchOptions.MaximumPageSize;
+
+        SearchDocumentsQuery query =
+            new(
+                "matching",
+                Limit: maximumPageSize);
+
+        var store =
+            new Mock<IDocumentSearchStore>();
+
+        var ranker =
+            new Mock<ISearchDocumentsRanker>();
+
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        store
+            .Setup(
+                x => x.SearchAsync(
+                    query,
+                    null,
+                    maximumPageSize,
+                    It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                Array.Empty<SearchDocumentsResult>());
+
+        SearchDocumentsRetriever retriever =
+            CreateRetriever(
+                store,
+                ranker,
+                codec);
+
+        // Act
+        SearchDocumentsPage page =
+            await retriever.RetrieveAsync(
+                query);
+
+        // Assert
+        Assert.Empty(page.Results);
+        Assert.False(page.HasMore);
+        Assert.Null(page.Continuation);
+
+        store.Verify(
+            x => x.SearchAsync(
+                query,
+                null,
+                maximumPageSize,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        codec.Verify(
+            x => x.Decode(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsContinuation>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RetrieveAsync_RejectsLimitAboveMaximum()
+    {
+        // Arrange
+        SearchDocumentsQuery query =
+            new(
+                "matching",
+                Limit: SearchOptions.MaximumPageSize + 1);
+
+        var store =
+            new Mock<IDocumentSearchStore>();
+
+        var ranker =
+            new Mock<ISearchDocumentsRanker>();
+
+        var codec =
+            new Mock<ISearchDocumentsContinuationCodec>();
+
+        SearchDocumentsRetriever retriever =
+            CreateRetriever(
+                store,
+                ranker,
+                codec);
+
+        // Act
+        Func<Task> act =
+            () =>
+                retriever.RetrieveAsync(
+                    query);
+
+        // Assert
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            act);
+
+        store.Verify(
+            x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        codec.Verify(
+            x => x.Decode(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsContinuation>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task RetrieveAsync_PropagatesCancellationToken()
     {
         // Arrange
