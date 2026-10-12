@@ -18,6 +18,9 @@ SHA-256 hashing is used for document identity and duplicate detection. A hash is
 
 Documents stored on the local filesystem must therefore be protected against unauthorized access to the application's storage directory.
 
+Encryption key management is part of this security boundary. The master encryption key must remain protected at rest, and its initial creation must not permit concurrent application
+operations to establish competing authoritative keys. If different callers use different keys while writing or reading encrypted content, the persisted artifact may become unreadable.
+
 ## Decision
 
 DeskVault will encrypt document contents before they are persisted to application-managed storage.
@@ -43,6 +46,26 @@ AES-256-GCM will be the initial authenticated encryption algorithm.
 Encryption keys will not be stored directly beside the document files. A locally protected key-management mechanism will be introduced using Windows-protected storage for the initial desktop implementation.
 
 The key-management implementation will remain behind an Infrastructure abstraction so that it can be replaced or extended in the future.
+
+### Atomic Master-Key Provisioning
+
+Initial master-key creation must be atomic with respect to publication of the canonical key file.
+
+The master key is stored in the application-managed security directory as `master.key` and is protected using Windows DPAPI with `DataProtectionScope.CurrentUser`.
+
+When the canonical key file already exists, the service reads and unprotects that persisted key rather than generating and writing a replacement.
+
+When the canonical key file does not exist, the service generates a candidate key and protects it before persistence. The protected candidate is written to a uniquely named temporary file in the same security directory.
+The temporary file is flushed before publication.
+
+Publication uses a same-directory file move that does not overwrite an existing destination. If another initializer publishes `master.key` first, the losing initializer discards its candidate and reads the authoritative persisted key.
+
+The canonical `master.key` file is the source of truth after publication. A temporary candidate is never an alternative authoritative key. Concurrent initialization attempts must therefore converge on the same persisted key,
+or fail without silently replacing an existing canonical key.
+
+The implementation must preserve existing-key retrieval and must not log key material. Temporary protected data and unpublished in-memory key candidates are cleared when practical, and temporary files are cleaned up on normal completion or failure.
+
+This decision addresses atomic initial master-key provisioning. Database-key provisioning, strict read-only key retrieval, key identity and versioning, encrypted-record format changes, and replacement or rotation policy remain separate responsibilities.
 
 The stored file will continue to use an application-generated identifier rather than the original filename.
 
@@ -124,6 +147,8 @@ The Application layer must not construct or accept physical managed artifact pat
 - The storage implementation remains replaceable.
 - Authenticated encryption provides confidentiality and tamper detection.
 - The architecture leaves room for future key rotation and stronger key-management strategies.
+- Concurrent first-time master-key initialization converges on one authoritative persisted key rather than allowing a losing initializer to overwrite the canonical key.
+- Existing-key retrieval continues to use the protected persisted key.
 - Document-owned artifact operations have one canonical identity and cannot intentionally select another document's managed artifact by supplying an arbitrary path.
 - Reconciliation can distinguish readable content from an actually owned and content-consistent artifact.
 - Safe orphan cleanup can converge after interrupted lifecycle operations without weakening valid document/artifact relationships.
@@ -133,6 +158,8 @@ The Application layer must not construct or accept physical managed artifact pat
 - Storage and retrieval become more complex.
 - Encryption and decryption introduce additional CPU and I/O overhead.
 - Key management becomes a critical security responsibility.
+- Atomic provisioning adds temporary-file creation, flushing, publication, and cleanup handling.
+- An abrupt process or system termination can leave an unpublished temporary key file. Such a file is not authoritative and must not be mistaken for `master.key`.
 - Existing plaintext files created by earlier development versions require migration or cleanup.
 - Files can no longer be opened directly from the managed storage directory.
 - Reconciliation and recovery require additional validation and lifecycle handling for inconsistent states.
@@ -158,6 +185,18 @@ Document-owned lifecycle operations must not accept caller-controlled artifact p
 Reconciliation must not treat readability as proof of ownership. Content validation must compare decrypted artifact content with the persisted document identity before classifying an artifact as matched.
 
 Recovery must not expose document contents or cryptographic material through logs. Recovery decisions must be based on document identity and canonical ownership evidence rather than arbitrary physical paths.
+
+### Master-Key Provisioning Invariants
+
+- The canonical `master.key` file must not be silently replaced by a competing initializer.
+- A candidate key must be protected before it is written to a temporary file.
+- Publication of a complete candidate must not overwrite an existing canonical key.
+- A losing initializer must use the authoritative persisted key, not return its own unpublished candidate.
+- If the authoritative key cannot be retrieved or unprotected, initialization must fail rather than silently replace it.
+- Temporary candidate files are not authoritative key files.
+- Key material must not be written to logs.
+- In-memory candidate key material and protected temporary buffers must be cleared when practical.
+- Cleanup failures must not expose key material or sensitive file contents through logs.
 
 ### Recovery Safety Invariants
 
@@ -210,6 +249,14 @@ not perform cryptographic operations directly.
 Encryption keys are protected using the Windows-protected key-management
 implementation rather than being stored beside encrypted document files.
 
+Master-key provisioning uses a unique temporary file in the security directory
+and a non-overwriting publication operation to establish `master.key`.
+If concurrent initializers contend to publish a key, the initializer that does
+not publish the canonical file discards its own candidate and retrieves the persisted key. The canonical file remains the authority for subsequent key retrieval.
+
+This atomic publication rule covers initial master-key provisioning only.
+It does not introduce a replacement-key hierarchy or define key rotation policy.
+
 Document retrieval follows the corresponding protected path:
 
 ```text
@@ -252,7 +299,7 @@ appear consistent.
 
 ## Result
 
-DeskVault now protects imported document content at rest while keeping
+DeskVault protects imported document content at rest while keeping
 document metadata and encrypted document content in separate storage
 boundaries.
 
@@ -274,6 +321,10 @@ The canonical document-to-artifact identity is enforced by Infrastructure,
 while Application interacts with the storage and reader abstractions by
 document identity. Persisted physical artifact references remain metadata and
 are not treated as authoritative for ordinary document lifecycle access.
+
+Master-key initialization publishes one canonical protected key without allowing
+a concurrent losing initializer to overwrite it or return a competing key as
+authoritative. Subsequent retrieval uses the persisted protected key.
 
 Reconciliation verifies both ownership and decrypted content identity before
 classifying a document/artifact relationship as valid.
