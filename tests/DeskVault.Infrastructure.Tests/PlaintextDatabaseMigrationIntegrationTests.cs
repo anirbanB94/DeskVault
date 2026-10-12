@@ -375,13 +375,31 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     "Plaintext Migration Test",
                     matchingResult.DisplayName);
 
-                Assert.Contains(
-                    matchingResult.Matches,
-                    match =>
-                        match.Source == SearchMatchSource.ProcessedContent &&
-                        match.Context.Contains(
-                            "plaintext migration",
-                            StringComparison.OrdinalIgnoreCase));
+                Assert.Equal(
+                    2,
+                    matchingResult.MatchCount);
+
+                SearchMatch retainedMatch =
+                    Assert.Single(matchingResult.Matches);
+
+                Assert.Equal(
+                    SearchMatchSource.DocumentMetadata,
+                    retainedMatch.Source);
+
+                Assert.Equal(
+                    SearchMatchKind.Exact,
+                    retainedMatch.Kind);
+
+                Assert.Equal(
+                    "Plaintext Migration Test",
+                    retainedMatch.Context);
+
+                Assert.NotNull(
+                    matchingResult.RelevanceScore);
+
+                Assert.Equal(
+                    160,
+                    matchingResult.RelevanceScore.Value);
             }
         }
         finally
@@ -554,14 +572,31 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                             result.DocumentId ==
                             documentId);
 
-                Assert.Contains(
-                    matchingResult.Matches,
-                    match =>
-                        match.Source ==
-                        SearchMatchSource.ProcessedContent &&
-                        match.Context.Contains(
-                            "plaintext migration",
-                            StringComparison.OrdinalIgnoreCase));
+                Assert.Equal(
+                    2,
+                    matchingResult.MatchCount);
+
+                SearchMatch retainedMatch =
+                    Assert.Single(matchingResult.Matches);
+
+                Assert.Equal(
+                    SearchMatchSource.DocumentMetadata,
+                    retainedMatch.Source);
+
+                Assert.Equal(
+                    SearchMatchKind.Exact,
+                    retainedMatch.Kind);
+
+                Assert.Equal(
+                    "Plaintext Migration Test",
+                    retainedMatch.Context);
+
+                Assert.NotNull(
+                    matchingResult.RelevanceScore);
+
+                Assert.Equal(
+                    160,
+                    matchingResult.RelevanceScore.Value);
             }
         }
         finally

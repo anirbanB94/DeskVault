@@ -235,13 +235,31 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     "Encrypted Database Integration Test",
                     restoredResult.DisplayName);
 
-                Assert.Contains(
-                    restoredResult.Matches,
-                    match =>
-                        match.Source == SearchMatchSource.ProcessedContent &&
-                        match.Context.Contains(
-                            "encrypted database",
-                            StringComparison.OrdinalIgnoreCase));
+                Assert.Equal(
+                    2,
+                    restoredResult.MatchCount);
+
+                SearchMatch retainedMatch =
+                    Assert.Single(restoredResult.Matches);
+
+                Assert.Equal(
+                    SearchMatchSource.DocumentMetadata,
+                    retainedMatch.Source);
+
+                Assert.Equal(
+                    SearchMatchKind.Exact,
+                    retainedMatch.Kind);
+
+                Assert.Equal(
+                    "Encrypted Database Integration Test",
+                    retainedMatch.Context);
+
+                Assert.NotNull(
+                    restoredResult.RelevanceScore);
+
+                Assert.Equal(
+                    160,
+                    restoredResult.RelevanceScore.Value);
             }
         }
         finally
@@ -588,51 +606,27 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     3,
                     result.MatchCount);
 
-                Assert.Collection(
-                    result.Matches,
-                    match =>
-                    {
-                        Assert.Equal(
-                            SearchMatchSource.DocumentMetadata,
-                            match.Source);
+                SearchMatch retainedMatch =
+                    Assert.Single(result.Matches);
 
-                        Assert.Equal(
-                            SearchMatchKind.Exact,
-                            match.Kind);
+                Assert.Equal(
+                    SearchMatchSource.DocumentMetadata,
+                    retainedMatch.Source);
 
-                        Assert.Equal(
-                            "café-unicode-integration.txt",
-                            match.Context);
-                    },
-                    match =>
-                    {
-                        Assert.Equal(
-                            SearchMatchSource.DocumentMetadata,
-                            match.Source);
+                Assert.Equal(
+                    SearchMatchKind.Exact,
+                    retainedMatch.Kind);
 
-                        Assert.Equal(
-                            SearchMatchKind.Exact,
-                            match.Kind);
+                Assert.Equal(
+                    "café-unicode-integration.txt",
+                    retainedMatch.Context);
 
-                        Assert.Equal(
-                            "CAFÉ Unicode Receipt",
-                            match.Context);
-                    },
-                    match =>
-                    {
-                        Assert.Equal(
-                            SearchMatchSource.ProcessedContent,
-                            match.Source);
+                Assert.NotNull(
+                    result.RelevanceScore);
 
-                        Assert.Equal(
-                            SearchMatchKind.Exact,
-                            match.Kind);
-
-                        Assert.Contains(
-                            "café receipt",
-                            match.Context,
-                            StringComparison.OrdinalIgnoreCase);
-                    });
+                Assert.Equal(
+                    260,
+                    result.RelevanceScore.Value);
             }
         }
         finally

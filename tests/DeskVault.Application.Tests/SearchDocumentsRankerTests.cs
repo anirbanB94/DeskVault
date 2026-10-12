@@ -406,6 +406,43 @@ public sealed class SearchDocumentsRankerTests
             rankingKey.DocumentId);
     }
 
+    [Fact]
+    public void GetRankingKey_UsesAggregateRelevanceScoreWhenEvidenceIsBounded()
+    {
+        // Arrange
+        SearchDocumentsResult result =
+            new(
+                CreateDocumentId(1),
+                "many-matches.txt",
+                "Many Matches",
+                [
+                    CreateMatch(
+                    SearchMatchSource.ProcessedContent,
+                    SearchMatchKind.Exact)
+                ],
+                MatchCount: 50)
+            {
+                RelevanceScore = 3000
+            };
+
+        // Act
+        SearchDocumentsRankingKey rankingKey =
+            _ranker.GetRankingKey(result);
+
+        // Assert
+        Assert.Equal(
+            3000,
+            rankingKey.RelevanceScore);
+
+        Assert.Equal(
+            "Many Matches",
+            rankingKey.DisplayName);
+
+        Assert.Equal(
+            result.DocumentId,
+            rankingKey.DocumentId);
+    }
+
     private static SearchMatch CreateMatch(
         SearchMatchSource source,
         SearchMatchKind kind)

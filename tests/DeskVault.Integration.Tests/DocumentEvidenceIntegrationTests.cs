@@ -375,14 +375,16 @@ public sealed class DocumentEvidenceIntegrationTests
                             result.DocumentId,
                             result.FileName,
                             result.DisplayName,
-                            result.MatchCount)),
+                            result.MatchCount,
+                            result.RelevanceScore)),
                 pagedResults.Select(
                     result =>
                         (
                             result.DocumentId,
                             result.FileName,
                             result.DisplayName,
-                            result.MatchCount)));
+                            result.MatchCount,
+                            result.RelevanceScore)));
 
             Assert.Equal(
                 pagedResults.Count,
@@ -481,6 +483,128 @@ public sealed class DocumentEvidenceIntegrationTests
 
             await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
                 oversizedSearch);
+        }
+        finally
+        {
+            DeleteRootDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task SearchDocuments_WhenDocumentHasManyMatchingChunks_BoundsRetainedEvidenceAndPreservesCountAndScore()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateRootDirectory();
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            const int matchingChunkCount = 64;
+
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    "evidence-retention-heavy.txt");
+
+            string sourceText =
+                string.Join(
+                    "\n\n",
+                    Enumerable.Range(
+                        0,
+                        matchingChunkCount)
+                    .Select(
+                        index =>
+                            $"needle match {index:D2} context"));
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8);
+
+            var processingOptions =
+                new DocumentProcessingOptions
+                {
+                    MaxChunkSize = 40,
+                    ChunkOverlap = 0
+                };
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey,
+                    processingOptions: processingOptions);
+
+            Guid documentId =
+                await ImportDocumentAsync(
+                    harness,
+                    sourceFilePath,
+                    "Evidence Retention Integration Document");
+
+            await harness.ProcessingService.ProcessAsync(
+                documentId);
+
+            List<DocumentChunkEntity> chunks =
+                await harness.GetChunksAsync(
+                    documentId);
+
+            Assert.Equal(
+                matchingChunkCount,
+                chunks.Count);
+
+            // Act
+            SearchDocumentsPage page =
+                await harness.SearchHandler.HandleAsync(
+                    new SearchDocumentsQuery("needle"));
+
+            // Assert
+            SearchDocumentsResult result =
+                Assert.Single(
+                    page.Results,
+                    item => item.DocumentId == documentId);
+
+            Assert.Equal(
+                matchingChunkCount,
+                result.MatchCount);
+
+            SearchMatch retainedMatch =
+                Assert.Single(
+                    result.Matches);
+
+            Assert.Equal(
+                SearchMatchSource.ProcessedContent,
+                retainedMatch.Source);
+
+            Assert.Equal(
+                SearchMatchKind.Exact,
+                retainedMatch.Kind);
+
+            Assert.Contains(
+                "needle match 00",
+                retainedMatch.Context,
+                StringComparison.Ordinal);
+
+            Assert.NotNull(
+                result.RelevanceScore);
+
+            Assert.Equal(
+                matchingChunkCount * 60,
+                result.RelevanceScore.Value);
+
+            Assert.False(
+                page.HasMore);
+
+            Assert.Null(
+                page.Continuation);
         }
         finally
         {

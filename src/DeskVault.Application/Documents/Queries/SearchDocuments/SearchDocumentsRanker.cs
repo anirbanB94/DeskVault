@@ -35,29 +35,35 @@ public sealed class SearchDocumentsRanker : ISearchDocumentsRanker
         ArgumentNullException.ThrowIfNull(result);
 
         return new SearchDocumentsRankingKey(
-            CalculateScore(result),
+            result.RelevanceScore ?? CalculateScore(result),
             result.DisplayName,
             result.DocumentId);
     }
 
-    private static int CalculateScore(
+    private int CalculateScore(
         SearchDocumentsResult result)
     {
-        return result.Matches.Sum(
-            match =>
-                match.Source switch
-                {
-                    SearchMatchSource.DocumentMetadata =>
-                        match.Kind == SearchMatchKind.Exact
-                            ? ExactMetadataScore
-                            : PartialMetadataScore,
+        return result.Matches.Sum(GetMatchScore);
+    }
 
-                    SearchMatchSource.ProcessedContent =>
-                        match.Kind == SearchMatchKind.Exact
-                            ? ExactContentScore
-                            : PartialContentScore,
+    public int GetMatchScore(
+        SearchMatch match)
+    {
+        ArgumentNullException.ThrowIfNull(match);
 
-                    _ => 0
-                });
+        return match.Source switch
+        {
+            SearchMatchSource.DocumentMetadata =>
+                match.Kind == SearchMatchKind.Exact
+                    ? ExactMetadataScore
+                    : PartialMetadataScore,
+
+            SearchMatchSource.ProcessedContent =>
+                match.Kind == SearchMatchKind.Exact
+                    ? ExactContentScore
+                    : PartialContentScore,
+
+            _ => 0
+        };
     }
 }

@@ -141,6 +141,25 @@ public sealed class SqliteDocumentSearchStore
             string? currentDisplayName = null;
             List<SearchMatch>? currentMatches = null;
             bool currentDocumentIncluded = false;
+            int currentMatchCount = 0;
+            int currentRelevanceScore = 0;
+
+            void AddMatch(SearchMatch match)
+            {
+                currentMatchCount++;
+
+                currentRelevanceScore +=
+                    _ranker.GetMatchScore(
+                        match);
+
+                if (currentMatches is not null &&
+                    currentMatches.Count <
+                    SearchOptions.MaximumRetainedEvidenceCount)
+                {
+                    currentMatches.Add(
+                        match);
+                }
+            }
 
             async Task FlushCurrentDocumentAsync()
             {
@@ -153,7 +172,7 @@ public sealed class SqliteDocumentSearchStore
                     return;
                 }
 
-                if (currentMatches.Count == 0)
+                if (currentMatchCount == 0)
                 {
                     return;
                 }
@@ -164,7 +183,10 @@ public sealed class SqliteDocumentSearchStore
                         currentFileName,
                         currentDisplayName,
                         currentMatches,
-                        currentMatches.Count);
+                        currentMatchCount)
+                    {
+                        RelevanceScore = currentRelevanceScore
+                    };
 
                 SearchDocumentsRankingKey rankingKey =
                     _ranker.GetRankingKey(
@@ -196,6 +218,9 @@ public sealed class SqliteDocumentSearchStore
                     currentFileName = row.FileName;
                     currentDisplayName = row.DisplayName;
                     currentMatches = [];
+                    currentMatchCount = 0;
+                    currentRelevanceScore = 0;
+
                     currentDocumentIncluded =
                         normalizedFileTypes is null ||
                         normalizedFileTypes.Contains(
@@ -206,12 +231,12 @@ public sealed class SqliteDocumentSearchStore
                     if (currentDocumentIncluded)
                     {
                         AddMetadataMatch(
-                            currentMatches,
+                            AddMatch,
                             row.FileName,
                             normalizedSearchText);
 
                         AddMetadataMatch(
-                            currentMatches,
+                            AddMatch,
                             row.DisplayName,
                             normalizedSearchText);
                     }
@@ -224,7 +249,7 @@ public sealed class SqliteDocumentSearchStore
                         SearchTextCanonicalizer.CanonicalizeValue(
                             row.ChunkText);
 
-                    currentMatches!.Add(
+                    AddMatch(
                         new SearchMatch(
                             SearchMatchSource.ProcessedContent,
                             DetermineMatchKind(
@@ -328,7 +353,7 @@ public sealed class SqliteDocumentSearchStore
     }
 
     private static void AddMetadataMatch(
-        List<SearchMatch> matches,
+        Action<SearchMatch> addMatch,
         string value,
         string searchText)
     {
@@ -343,7 +368,7 @@ public sealed class SqliteDocumentSearchStore
             return;
         }
 
-        matches.Add(
+        addMatch(
             new SearchMatch(
                 SearchMatchSource.DocumentMetadata,
                 DetermineMatchKind(
