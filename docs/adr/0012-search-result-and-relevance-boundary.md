@@ -109,8 +109,27 @@ experience.
 The evidence represents the match; it does not become a second
 canonical representation of the document or its processed knowledge.
 
-The search-result contract does not prescribe a particular snippet
-algorithm, evidence limit, lexical matching taxonomy, or query syntax.
+The MVP 2 retention policy bounds the `Matches` collection to at most
+one representative evidence item per result, as defined by
+`SearchOptions.MaximumRetainedEvidenceCount`. The retained item is the
+first matching evidence item encountered by the current deterministic
+evidence traversal. This preserves the existing result-context
+consumption pattern while avoiding retention of every matching chunk's
+full text.
+
+`MatchCount` represents the total number of matching evidence items found
+for the document, not the number retained in `Matches`. Consequently,
+`MatchCount` may exceed `Matches.Count`.
+
+The bounded-retention policy does not redefine matching semantics or the
+relevance score. Aggregate relevance information must preserve
+contributions from all matching evidence. Any future change to the
+retention count or evidence-selection behavior must preserve the existing
+consumer-visible search contract or be introduced as an explicit contract
+change.
+
+This ADR does not prescribe a general snippet-generation algorithm,
+lexical matching taxonomy, or query syntax.
 
 ### Keyword Matching and Unicode Canonicalization
 
@@ -184,6 +203,16 @@ ordering for otherwise tied results.
 This ADR establishes the deterministic ordering contract but does not
 prescribe a particular ranking formula, weighting scheme, score
 representation, or specific relevance signals.
+
+Bounding the retained evidence must not change the relevance score.
+When retrieval supplies `SearchDocumentsResult.RelevanceScore`, that
+aggregate represents the contributions of all matching evidence,
+including evidence whose context is not retained in `Matches`. When an
+aggregate score is not supplied, the ranker may calculate the score from
+the available `Matches` collection, provided that collection represents
+the complete evidence for that result. Ranking must never silently
+recompute an all-match score from a truncated representative-evidence
+list.
 
 ### Deterministic Pagination and Continuation
 
@@ -307,10 +336,22 @@ they must remain behaviorally equivalent to the Application-level ranking
 contract and must not introduce storage-specific observable ranking
 semantics.
 
-Document-level evidence and `MatchCount` semantics remain part of the
-Application result contract. Retrieval may process matching evidence
-incrementally, but it must not load every matching chunk solely to build a
-complete intermediate result collection when only one page is requested.
+Document-level evidence, aggregate relevance, and `MatchCount` semantics
+remain part of the Application result contract. The MVP 2 policy limits
+the retained `Matches` collection to
+`SearchOptions.MaximumRetainedEvidenceCount`, currently one
+representative item per result.
+
+`MatchCount` records all matching evidence items, not just retained
+items. The aggregate relevance score must likewise include every match,
+even when only one context is retained. Retrieval should calculate these
+aggregates incrementally and must not retain every matching chunk's full
+context solely to build a complete evidence collection for a page.
+
+The retained representative item must preserve the useful result context
+consumed by the current UI. Evidence reduction must not change document
+eligibility, match classification, ranking, tie-breaking, continuation
+positions, or pagination behavior.
 
 Filtering and eligibility semantics must be established before the page
 boundary is applied, including canonicalized search-text matching,
@@ -526,6 +567,12 @@ the Application-facing search contract remain compatible.
   document result.
 - Matching evidence can be retained without making chunks the primary
   result type.
+- The MVP 2 result contract retains at most one representative evidence
+  item per result.
+- `MatchCount` continues to represent all matching evidence rather than
+  the retained evidence-list length.
+- Aggregate relevance preserves the contribution of every match even
+  when matching contexts are not retained.
 - Search relevance remains separate from persistence implementation.
 - Deterministic tie-breaking produces predictable keyword-search order.
 - Canonically equivalent composed and decomposed Unicode queries produce
@@ -592,6 +639,17 @@ The implementation must:
 - preserve authoritative document identity;
 - retain sufficient document display information for result consumers;
 - support representative matching evidence;
+- bound retained `Matches` to
+  `SearchOptions.MaximumRetainedEvidenceCount`, currently one item per
+  result;
+- preserve deterministic representative-evidence selection for result
+  context;
+- preserve `MatchCount` as the total number of matching evidence items,
+  not the number retained in `Matches`;
+- compute or preserve aggregate relevance using every matching evidence
+  item independently of evidence retention;
+- avoid retaining all matching chunk contexts solely to maintain match
+  counts or ranking;
 - allow metadata and processed-content evidence to be distinguished where
   required;
 - keep relevance ordering separate from UI presentation;
@@ -684,9 +742,11 @@ architectural invariants stated above.
 DeskVault uses a document-oriented Application-level search-result
 boundary.
 
-A search result represents the matched document and can retain
-representative matching evidence without making individual chunks the
-primary result type.
+A search result represents the matched document and retains at most one
+representative matching evidence item under the current MVP 2 policy,
+without making individual chunks the primary result type. `MatchCount`
+continues to describe all matching evidence, and aggregate relevance
+continues to include contributions from all matches.
 
 Relevance ordering is separated from both persistence and UI through a
 replaceable Application-level boundary.
@@ -726,7 +786,10 @@ contract.
 Paginated retrieval is performed with bounded retained result state. The
 retrieval implementation applies continuation-aware filtering and
 produces the requested page plus bounded lookahead rather than
-materializing the complete matching ranked result set. This preserves the
+materializing the complete matching ranked result set. Per-result
+representative evidence is also bounded to one item under the current MVP
+2 policy; total `MatchCount` and aggregate relevance account for every
+match independently of retained context. This preserves the
 Application-defined relevance, evidence, filtering, eligibility, Unicode
 matching, and continuation contracts while allowing provider-specific
 retrieval optimization behind the boundary.
