@@ -283,6 +283,17 @@ candidate data internally, but it must retain only the bounded state
 needed to produce the requested page and a lookahead result sufficient to
 determine `HasMore`.
 
+The requested page size is also an explicit Application-level resource
+contract. The current MVP 2 implementation supports page sizes from 1
+through 100, inclusive, while preserving the default page size of 20.
+`SearchOptions.MaximumPageSize` defines the maximum, and
+`SearchDocumentsRetriever` enforces the supported range before decoding
+continuation or invoking the retrieval store. Requests outside the
+supported range are rejected deterministically rather than allowing
+callers to expand retained page and lookahead state without an explicit
+bound. Page size remains excluded from continuation identity, so valid
+continuations remain independent of the requested page size.
+
 Continuation-aware retrieval must apply the decoded deterministic
 ranking position at the retrieval boundary so that candidates at or before
 the continuation are excluded before the page is formed. The
@@ -596,6 +607,11 @@ The implementation must:
 - advance the ranking contract version when matching semantics change
   incompatibly;
 - keep page size out of continuation identity;
+- define the supported search page-size range as 1 through 100, while
+  preserving the default page size of 20;
+- reject non-positive and above-maximum page-size requests at the
+  Application retrieval boundary before continuation decoding or
+  retrieval-store access;
 - reject malformed or request-incompatible continuations;
 - keep EF Core and SQLite types out of Application contracts;
 - expose retrieval through a storage-independent Application contract;
@@ -699,6 +715,13 @@ returns a page-shaped `SearchDocumentsPage` containing results, a
 `HasMore` indicator, and an opaque continuation. The search handler acts
 as a thin façade and does not expose storage-specific retrieval or
 pagination mechanics to consumers.
+
+The Application retrieval contract supports page sizes from 1 through
+100, inclusive, with a default of 20. Requests outside this range are
+rejected before continuation decoding or retrieval-store access. This
+explicit request bound complements the bounded result state and lookahead
+policy and does not change the page-size-independent continuation
+contract.
 
 Paginated retrieval is performed with bounded retained result state. The
 retrieval implementation applies continuation-aware filtering and
