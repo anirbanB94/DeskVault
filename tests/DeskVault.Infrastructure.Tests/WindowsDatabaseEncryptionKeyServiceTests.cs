@@ -458,6 +458,170 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenInitializedConcurrently_UsesSingleAuthoritativeKeyAndLeavesNoTemporaryFiles()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[][]? initializedKeys = null;
+        byte[]? persistedProtectedKey = null;
+        byte[]? authoritativeKey = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            const int concurrentCallCount = 16;
+
+            var startGate =
+                new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+            Task<byte[]>[] initializationTasks =
+                Enumerable
+                    .Range(0, concurrentCallCount)
+                    .Select(
+                        _ =>
+                            Task.Run(
+                                async () =>
+                                {
+                                    await startGate.Task;
+
+                                    return await CreateService(
+                                        dataPaths)
+                                        .GetOrCreateKeyAsync();
+                                }))
+                    .ToArray();
+
+            startGate.SetResult(true);
+
+            initializedKeys =
+                await Task.WhenAll(
+                    initializationTasks);
+
+            string keyFilePath =
+                GetDatabaseKeyFilePath(
+                    dataPaths);
+
+            Assert.True(
+                File.Exists(keyFilePath));
+
+            string[] keyFiles =
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory);
+
+            Assert.Single(keyFiles);
+
+            Assert.Equal(
+                keyFilePath,
+                keyFiles[0]);
+
+            persistedProtectedKey =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
+
+            authoritativeKey =
+                ProtectedData.Unprotect(
+                    persistedProtectedKey,
+                    null,
+                    DataProtectionScope.CurrentUser);
+
+            Assert.Equal(
+                32,
+                authoritativeKey.Length);
+
+            Assert.All(
+                initializedKeys,
+                key =>
+                    Assert.Equal(
+                        authoritativeKey,
+                        key));
+        }
+        finally
+        {
+            if (initializedKeys is not null)
+            {
+                foreach (byte[] key in initializedKeys)
+                {
+                    CryptographicOperations.ZeroMemory(
+                        key);
+                }
+            }
+
+            if (authoritativeKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    authoritativeKey);
+            }
+
+            if (persistedProtectedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedProtectedKey);
+            }
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenKeyPublicationFails_CleansTemporaryProtectedKeyFile()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            Directory.CreateDirectory(
+                dataPaths.SecurityDirectory);
+
+            string keyFilePath =
+                GetDatabaseKeyFilePath(
+                    dataPaths);
+
+            Directory.CreateDirectory(
+                keyFilePath);
+
+            var service =
+                CreateService(
+                    dataPaths);
+
+            Exception? exception =
+                await Record.ExceptionAsync(
+                    () =>
+                        service.GetOrCreateKeyAsync());
+
+            Assert.NotNull(exception);
+
+            Assert.True(
+                exception is IOException or UnauthorizedAccessException);
+
+            Assert.True(
+                Directory.Exists(keyFilePath));
+
+            Assert.False(
+                File.Exists(keyFilePath));
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "database.key.*.tmp"));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
     private static WindowsDatabaseEncryptionKeyService CreateService(
         DeskVaultDataPaths dataPaths)
     {
