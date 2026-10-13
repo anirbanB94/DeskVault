@@ -319,6 +319,9 @@ public static class LogMessages
     public const string DatabaseEncryptionKeyOperationFailed =
         "Infrastructure database encryption key operation failed.";
 
+    public const string DatabaseEncryptionKeyTemporaryFileCleanupFailed =
+        "Infrastructure temporary protected database encryption key cleanup failed.";
+
     public const string DocumentHashStarted =
         "Infrastructure document hash computation started.";
 

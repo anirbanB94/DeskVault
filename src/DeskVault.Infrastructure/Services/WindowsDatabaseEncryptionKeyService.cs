@@ -26,6 +26,11 @@ public sealed class WindowsDatabaseEncryptionKeyService :
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        string? temporaryKeyFilePath = null;
+        byte[]? candidateKey = null;
+        byte[]? protectedKey = null;
+        bool candidateKeyPublished = false;
+
         try
         {
             string securityDirectory =
@@ -46,25 +51,69 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                     cancellationToken);
             }
 
-            byte[] newKey =
+            candidateKey =
                 RandomNumberGenerator.GetBytes(
                     KeySize);
 
-            byte[] protectedKey =
+            protectedKey =
                 ProtectedData.Protect(
-                    newKey,
+                    candidateKey,
                     null,
                     DataProtectionScope.CurrentUser);
 
-            await File.WriteAllBytesAsync(
-                keyFilePath,
-                protectedKey,
-                cancellationToken);
+            temporaryKeyFilePath =
+                Path.Combine(
+                    securityDirectory,
+                    $"{KeyFileName}.{Guid.NewGuid():N}.tmp");
+
+            await using (var temporaryKeyFile =
+                new FileStream(
+                    temporaryKeyFilePath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 4096,
+                    useAsync: true))
+            {
+                await temporaryKeyFile.WriteAsync(
+                    protectedKey,
+                    cancellationToken);
+
+                await temporaryKeyFile.FlushAsync(
+                    cancellationToken);
+
+                temporaryKeyFile.Flush(
+                    flushToDisk: true);
+            }
+
+            try
+            {
+                // Publish the complete protected key without overwriting
+                // an existing canonical database.key file.
+                File.Move(
+                    temporaryKeyFilePath,
+                    keyFilePath);
+            }
+            catch (IOException) when (File.Exists(keyFilePath))
+            {
+                // Another initializer published the authoritative key first.
+                // Discard this candidate and retrieve the persisted key.
+                CryptographicOperations.ZeroMemory(
+                    candidateKey);
+
+                candidateKey = null;
+
+                return await ReadExistingKeyAsync(
+                    keyFilePath,
+                    cancellationToken);
+            }
+
+            candidateKeyPublished = true;
 
             _logger.LogInformation(
                 LogMessages.DatabaseEncryptionKeyCreated);
 
-            return newKey;
+            return candidateKey;
         }
         catch (OperationCanceledException)
         {
@@ -77,6 +126,40 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                 LogMessages.DatabaseEncryptionKeyOperationFailed);
 
             throw;
+        }
+        finally
+        {
+            if (!candidateKeyPublished &&
+                candidateKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    candidateKey);
+            }
+
+            if (protectedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    protectedKey);
+            }
+
+            if (temporaryKeyFilePath is not null)
+            {
+                try
+                {
+                    File.Delete(
+                        temporaryKeyFilePath);
+                }
+                catch (IOException)
+                {
+                    _logger.LogWarning(
+                        LogMessages.DatabaseEncryptionKeyTemporaryFileCleanupFailed);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    _logger.LogWarning(
+                        LogMessages.DatabaseEncryptionKeyTemporaryFileCleanupFailed);
+                }
+            }
         }
     }
 
@@ -125,18 +208,37 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                 keyFilePath,
                 cancellationToken);
 
-        byte[] key =
-            ProtectedData.Unprotect(
-                protectedKeyFromFile,
-                null,
-                DataProtectionScope.CurrentUser);
+        byte[]? key = null;
 
-        ValidateKey(key);
+        try
+        {
+            key =
+                ProtectedData.Unprotect(
+                    protectedKeyFromFile,
+                    null,
+                    DataProtectionScope.CurrentUser);
 
-        _logger.LogInformation(
-            LogMessages.DatabaseEncryptionKeyLoaded);
+            ValidateKey(key);
 
-        return key;
+            _logger.LogInformation(
+                LogMessages.DatabaseEncryptionKeyLoaded);
+
+            byte[] retrievedKey = key;
+            key = null;
+
+            return retrievedKey;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                protectedKeyFromFile);
+
+            if (key is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    key);
+            }
+        }
     }
 
     private static void ValidateKey(

@@ -54,6 +54,25 @@ configuration, source code, or database connection strings as plaintext.
 Key generation, protection, and retrieval therefore remain separate from
 the database provider decision.
 
+Database-key provisioning must also be safe when multiple callers attempt
+first-time initialization concurrently. A check-then-create operation
+against the canonical `Security\database.key` path is insufficient:
+multiple callers can observe that the key is absent and independently
+attempt to write their protected key candidates to the same destination.
+Without an atomic publication boundary, these callers can interfere with
+one another and cannot reliably establish a single authoritative key.
+
+The canonical database-key artifact must therefore be published only
+after a complete protected key has been written. Concurrent provisioning
+attempts must converge on the same authoritative persisted key without
+overwriting an already-published key or leaving competing temporary
+candidates behind.
+
+The database-key provisioning mechanism must preserve the distinction
+between explicit key creation/retrieval and strict retrieval of an
+existing key. A caller that requires an existing database key must not
+silently create a replacement when that key is absent.
+
 The database-encryption implementation must also preserve the existing
 persistence lifecycle:
 
@@ -155,6 +174,78 @@ the buffer is cleared after use.
 
 The database encryption key must not be logged, exposed through
 user-facing exceptions, or stored as plaintext application configuration.
+
+### Atomic Database Encryption Key Provisioning
+
+`IDatabaseEncryptionKeyService.GetOrCreateKeyAsync` is the explicit
+provisioning path for the database encryption key. When the canonical
+`Security\database.key` artifact already exists, the service retrieves
+and validates the existing key rather than generating a replacement.
+
+When the canonical key is absent, provisioning follows an atomic
+publication strategy:
+
+```text
+Check canonical database.key
+        ↓
+Generate candidate database key
+        ↓
+Protect candidate using Windows DPAPI
+        ↓
+Write protected candidate to a unique temporary file
+        ↓
+Flush temporary file contents
+        ↓
+Publish using a non-overwriting file move
+        ↓
+Canonical database.key becomes authoritative
+```
+
+The temporary file is created in the same Security directory as the
+canonical key, using a unique name and create-new semantics. The
+protected candidate is written and flushed before publication.
+
+Publication uses a file move that does not overwrite an existing
+destination. The complete protected key is therefore published at the
+canonical path only after the temporary file has been written.
+
+The non-overwriting publication step is the concurrency boundary.
+Concurrent first-time initializers may generate different in-memory
+candidates, but only one candidate can be published at the canonical
+destination.
+
+If another initializer publishes the canonical key first, the losing
+initializer discards its own candidate and retrieves the persisted
+authoritative key. It must not return its losing candidate as the
+database key or overwrite the already-published canonical artifact.
+
+This ensures that callers completing concurrent first-time provisioning
+converge on the same persisted database key.
+
+Temporary protected-key files are cleanup artifacts, not authoritative
+key storage. The provisioning operation attempts to remove its temporary
+file after success, failure, or cancellation. Failure to clean up a
+temporary file is logged through a dedicated non-secret diagnostic
+message; key material must not be included in that diagnostic.
+
+Transient key buffers that are no longer needed are cleared. This
+includes rejected candidate keys, protected-key buffers, and protected
+key bytes read from storage when those buffers are no longer required.
+The authoritative candidate returned to the successful caller remains
+available to that caller under the existing key-service contract, and
+its consumer remains responsible for clearing the returned key buffer
+after use.
+
+Strict retrieval through `IDatabaseEncryptionKeyService.GetKeyAsync`
+remains distinct from provisioning. It must retrieve and validate the
+existing canonical key or fail when the key is missing or invalid. It
+must not create a replacement key as a fallback.
+
+Atomic provisioning does not introduce another encryption hierarchy,
+key identity/version metadata, rotation policy, or operational recovery
+mechanism. Those concerns remain outside this decision.
+
+### Database Initialization
 
 Database initialization will configure the encrypted SQLite connection
 before Entity Framework Core migrations are executed:
@@ -354,6 +445,20 @@ key was protected. DeskVault does not provide an independent recovery
 mechanism for a key that can no longer be unprotected by that Windows
 user context.
 
+Atomic database-key provisioning ensures that the canonical protected
+key is published only after the complete candidate has been written.
+Concurrent first-time provisioning attempts converge on the key
+published first, rather than overwriting the canonical artifact with
+competing candidates.
+
+A temporary protected-key file may exist while provisioning is in
+progress. It is treated as transient state and is cleaned up after the
+operation. Cleanup failures are logged without exposing key material.
+
+Strict existing-key retrieval remains separate from provisioning.
+Missing or invalid existing keys result in controlled failure rather
+than silently triggering replacement-key creation in the read path.
+
 Incorrect or unavailable database keys result in controlled database
 initialization failure rather than silently falling back to an unencrypted
 database.
@@ -448,6 +553,16 @@ The provider-level migration spike established the following behavior:
 - Coordinator regression tests verify same-vault serialization,
   release-after-failure, cancellation while waiting, unrelated-vault
   concurrency, and first-run root-directory creation.
+- Focused database encryption key-service regression tests verify that
+  concurrent independent service instances converge on one persisted
+  authoritative key, that only the canonical database-key file remains
+  after successful provisioning, and that failed publication does not
+  leave a temporary protected-key file behind.
+- Database-key provisioning integration coverage verifies concurrent
+  first-time initialization, retrieval of the persisted authoritative
+  key through the registered Infrastructure service, successful database
+  initialization through `DatabaseInitializer`, and database
+  connectivity through `IDbContextFactory<DeskVaultDbContext>`.
 - Production-path integration tests verify that concurrent
   initialization of an existing plaintext vault converges on a single
   encrypted canonical database with migration artifacts cleaned up and
