@@ -753,5 +753,14 @@ public sealed class FileSystemStorageServiceTests
             return Task.FromResult(
                 _key.ToArray());
         }
+
+        public Task<byte[]> GetKeyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                _key.ToArray());
+        }
     }
 }

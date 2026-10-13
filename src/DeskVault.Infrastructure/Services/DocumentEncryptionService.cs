@@ -132,7 +132,7 @@ public sealed class DocumentEncryptionService
         try
         {
             byte[] key =
-                await _keyService.GetOrCreateKeyAsync(
+                await _keyService.GetKeyAsync(
                     cancellationToken);
 
             await ReadAndValidateHeaderAsync(

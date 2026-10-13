@@ -198,6 +198,110 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task DatabaseAccess_WhenDatabaseKeyIsMissing_ThrowsWithoutCreatingReplacementKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var services =
+                new ServiceCollection();
+
+            services.AddLogging();
+
+            IConfiguration configuration =
+                new ConfigurationBuilder()
+                    .Build();
+
+            services.AddSingleton(
+                dataPaths);
+
+            services.AddInfrastructure(
+                configuration);
+
+            await using ServiceProvider serviceProvider =
+                services.BuildServiceProvider();
+
+            var initializer =
+                serviceProvider.GetRequiredService<
+                    DatabaseInitializer>();
+
+            await initializer.InitializeAsync();
+
+            string databaseKeyPath =
+                Path.Combine(
+                    dataPaths.SecurityDirectory,
+                    "database.key");
+
+            Assert.True(
+                File.Exists(dataPaths.DatabasePath));
+
+            Assert.True(
+                File.Exists(databaseKeyPath));
+
+            File.Delete(
+                databaseKeyPath);
+
+            string[] securityFilesBeforeAccess =
+                Directory.GetFiles(
+                        dataPaths.SecurityDirectory)
+                    .OrderBy(
+                        path => path,
+                        StringComparer.Ordinal)
+                    .ToArray();
+
+            var factory =
+                serviceProvider.GetRequiredService<
+                    IDbContextFactory<DeskVaultDbContext>>();
+
+            await Assert.ThrowsAsync<CryptographicException>(
+                () =>
+                    factory.CreateDbContextAsync());
+
+            Assert.False(
+                File.Exists(databaseKeyPath));
+
+            Assert.Equal(
+                securityFilesBeforeAccess,
+                Directory.GetFiles(
+                        dataPaths.SecurityDirectory)
+                    .OrderBy(
+                        path => path,
+                        StringComparer.Ordinal)
+                    .ToArray());
+
+            Assert.True(
+                File.Exists(dataPaths.DatabasePath));
+
+            Assert.Throws<CryptographicException>(
+                () =>
+                    factory.CreateDbContext());
+
+            Assert.False(
+                File.Exists(databaseKeyPath));
+
+            Assert.Equal(
+                securityFilesBeforeAccess,
+                Directory.GetFiles(
+                        dataPaths.SecurityDirectory)
+                    .OrderBy(
+                        path => path,
+                        StringComparer.Ordinal)
+                    .ToArray());
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string directory =

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -112,6 +113,76 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             Assert.Equal(
                 secondContent,
                 secondDecrypted.ToArray());
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenMasterKeyIsMissing_ThrowsWithoutCreatingReplacementKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "DeskVault missing master-key integration regression test.");
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            DocumentEncryptionService encryptionService =
+                CreateEncryptionService(dataPaths);
+
+            await using var source =
+                new MemoryStream(originalContent);
+
+            await using var encrypted =
+                new MemoryStream();
+
+            await encryptionService.EncryptAsync(
+                source,
+                encrypted);
+
+            string keyFilePath =
+                Path.Combine(
+                    dataPaths.SecurityDirectory,
+                    "master.key");
+
+            Assert.True(
+                File.Exists(keyFilePath));
+
+            File.Delete(keyFilePath);
+
+            encrypted.Position = 0;
+
+            DocumentEncryptionService decryptionService =
+                CreateEncryptionService(dataPaths);
+
+            await using var decrypted =
+                new MemoryStream();
+
+            await Assert.ThrowsAsync<CryptographicException>(
+                () =>
+                    decryptionService.DecryptAsync(
+                        encrypted,
+                        decrypted));
+
+            Assert.False(
+                File.Exists(keyFilePath));
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
+
+            Assert.Empty(
+                decrypted.ToArray());
         }
         finally
         {
