@@ -65,11 +65,23 @@ or fail without silently replacing an existing canonical key.
 
 The implementation must preserve existing-key retrieval and must not log key material. Temporary protected data and unpublished in-memory key candidates are cleared when practical, and temporary files are cleaned up on normal completion or failure.
 
-This decision addresses atomic initial master-key provisioning. Database-key provisioning, strict read-only key retrieval, key identity and versioning, encrypted-record format changes, and replacement or rotation policy remain separate responsibilities.
+This section addresses atomic initial master-key provisioning. Strict existing-key retrieval for document decryption is defined in the following section. Database-key provisioning, key identity and versioning, encrypted-record format changes, and replacement or rotation policy remain separate responsibilities.
 
 The stored file will continue to use an application-generated identifier rather than the original filename.
 
 The original file extension may be retained as metadata where useful, but the stored content itself will be encrypted and must not be treated as an ordinary user-openable file.
+
+### Strict Existing-Key Retrieval for Document Decryption
+
+Normal document decryption uses `IEncryptionKeyService.GetKeyAsync()` to retrieve the existing master key.
+
+Strict retrieval must read the canonical `master.key`, unprotect it under the current Windows security context, and validate the retrieved 32-byte key before using it for document decryption. It must not provision a replacement when the expected key is missing, invalid, unavailable, or cannot be unprotected.
+
+A failed retrieval must not create the security directory as a side effect of retrieval, generate a candidate key, create a replacement `master.key`, overwrite protected key material, or delete or otherwise modify stored key state. File-access failures remain failures and must not be converted into permission to provision another key.
+
+`IEncryptionKeyService.GetOrCreateKeyAsync()` remains the explicit provisioning-capable operation for callers permitted to initialize the key. Document encryption may use that operation; normal document decryption must use `GetKeyAsync()`.
+
+Key-related failure diagnostics must not disclose plaintext key bytes, protected key blobs, decrypted document content, or credentials. Failures are surfaced through the existing Infrastructure exception and logging boundary without silent key recovery.
 
 ### Document-Owned Artifact Identity
 
@@ -149,6 +161,7 @@ The Application layer must not construct or accept physical managed artifact pat
 - The architecture leaves room for future key rotation and stronger key-management strategies.
 - Concurrent first-time master-key initialization converges on one authoritative persisted key rather than allowing a losing initializer to overwrite the canonical key.
 - Existing-key retrieval continues to use the protected persisted key.
+- Normal document decryption fails rather than silently creating a replacement key when the expected master key is unavailable.
 - Document-owned artifact operations have one canonical identity and cannot intentionally select another document's managed artifact by supplying an arbitrary path.
 - Reconciliation can distinguish readable content from an actually owned and content-consistent artifact.
 - Safe orphan cleanup can converge after interrupted lifecycle operations without weakening valid document/artifact relationships.
@@ -197,6 +210,14 @@ Recovery must not expose document contents or cryptographic material through log
 - Key material must not be written to logs.
 - In-memory candidate key material and protected temporary buffers must be cleared when practical.
 - Cleanup failures must not expose key material or sensitive file contents through logs.
+
+### Strict Retrieval Invariants
+
+- Normal document decryption must retrieve the existing master key through `IEncryptionKeyService.GetKeyAsync()`.
+- Strict retrieval must not create a replacement `master.key` or modify existing protected key material.
+- A missing, invalid, or unavailable expected key must result in explicit failure rather than fallback to provisioning.
+- Explicit first-time provisioning remains available through `GetOrCreateKeyAsync()` for operations permitted to create a key.
+- Key-related logs must not contain plaintext key bytes, protected key blobs, decrypted document content, or credentials.
 
 ### Recovery Safety Invariants
 
@@ -257,6 +278,8 @@ not publish the canonical file discards its own candidate and retrieves the pers
 This atomic publication rule covers initial master-key provisioning only.
 It does not introduce a replacement-key hierarchy or define key rotation policy.
 
+Document encryption obtains its key through the provisioning-capable key-service operation. Document decryption uses `IEncryptionKeyService.GetKeyAsync()` to retrieve the existing key. Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state.
+
 Document retrieval follows the corresponding protected path:
 
 ```text
@@ -268,7 +291,7 @@ Infrastructure
     ↓
 Canonical artifact resolution from DocumentId
     ↓
-Protected key material
+Strict retrieval of existing protected key
     ↓
 AES-GCM authentication and decryption
     ↓
@@ -325,6 +348,8 @@ are not treated as authoritative for ordinary document lifecycle access.
 Master-key initialization publishes one canonical protected key without allowing
 a concurrent losing initializer to overwrite it or return a competing key as
 authoritative. Subsequent retrieval uses the persisted protected key.
+
+Normal document decryption retrieves the existing master key without provisioning a replacement. Missing or invalid key material results in explicit failure, and a failed read does not modify the stored key state.
 
 Reconciliation verifies both ownership and decrypted content identity before
 classifying a document/artifact relationship as valid.
