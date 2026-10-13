@@ -5810,5 +5810,14 @@ public sealed class DocumentImportIntegrationTests
             return Task.FromResult(
                 _key);
         }
+
+        public Task<byte[]> GetKeyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                _key);
+        }
     }
 }

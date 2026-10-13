@@ -43,6 +43,57 @@ public sealed class DocumentEncryptionServiceTests
     }
 
     [Fact]
+    public async Task DecryptAsync_UsesExistingKeyWithoutProvisioning()
+    {
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "DeskVault strict key retrieval test.");
+
+        byte[] key =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            var encryptionService =
+                new DocumentEncryptionService(
+                    new TestEncryptionKeyService(key),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source =
+                new MemoryStream(originalContent);
+
+            await using var encrypted =
+                new MemoryStream();
+
+            await encryptionService.EncryptAsync(
+                source,
+                encrypted);
+
+            encrypted.Position = 0;
+
+            var decryptionService =
+                new DocumentEncryptionService(
+                    new ExistingKeyOnlyTestEncryptionKeyService(key),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var decrypted =
+                new MemoryStream();
+
+            await decryptionService.DecryptAsync(
+                encrypted,
+                decrypted);
+
+            Assert.Equal(
+                originalContent,
+                decrypted.ToArray());
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [Fact]
     public async Task EncryptAndDecryptAsync_WhenContentIsEmpty_RestoresEmptyContent()
     {
         byte[] originalContent = [];
@@ -640,6 +691,36 @@ public sealed class DocumentEncryptionServiceTests
             NullLogger<DocumentEncryptionService>.Instance);
     }
 
+    private sealed class ExistingKeyOnlyTestEncryptionKeyService
+        : IEncryptionKeyService
+    {
+        private readonly byte[] _key;
+
+        public ExistingKeyOnlyTestEncryptionKeyService(
+            byte[] key)
+        {
+            _key = key.ToArray();
+        }
+
+        public Task<byte[]> GetKeyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                _key.ToArray());
+        }
+
+        public Task<byte[]> GetOrCreateKeyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            throw new InvalidOperationException(
+                "Document decryption must not provision an encryption key.");
+        }
+    }
+
     private sealed class TestEncryptionKeyService
         : IEncryptionKeyService
     {
@@ -652,6 +733,15 @@ public sealed class DocumentEncryptionServiceTests
         }
 
         public Task<byte[]> GetOrCreateKeyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                _key);
+        }
+
+        public Task<byte[]> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
