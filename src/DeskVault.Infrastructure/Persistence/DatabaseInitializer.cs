@@ -88,12 +88,12 @@ public sealed class DatabaseInitializer
         if (!File.Exists(
                 _dataPaths.DatabasePath))
         {
-            byte[] databaseKey =
+            EncryptionKeyMaterial databaseKeyMaterial =
                 await _databaseEncryptionKeyService.GetOrCreateKeyAsync(
                     cancellationToken);
 
             CryptographicOperations.ZeroMemory(
-                databaseKey);
+                databaseKeyMaterial.KeyBytes);
         }
 
         await using var dbContext =
@@ -201,7 +201,7 @@ public sealed class DatabaseInitializer
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        byte[] databaseKey =
+        EncryptionKeyMaterial databaseKeyMaterial =
             await _databaseEncryptionKeyService.GetOrCreateKeyAsync(
                 cancellationToken);
 
@@ -209,13 +209,13 @@ public sealed class DatabaseInitializer
         {
             await _databaseEncryptionMigrator.MigrateAsync(
                 migrationPath,
-                databaseKey,
+                databaseKeyMaterial.KeyBytes,
                 cancellationToken);
         }
         finally
         {
             CryptographicOperations.ZeroMemory(
-                databaseKey);
+                databaseKeyMaterial.KeyBytes);
         }
 
         cancellationToken.ThrowIfCancellationRequested();

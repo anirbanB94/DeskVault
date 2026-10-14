@@ -845,30 +845,38 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         : IDatabaseEncryptionKeyService
     {
         private readonly byte[] _key;
+        private readonly Guid _keyId = Guid.NewGuid();
 
         public TestDatabaseEncryptionKeyService(
             byte[] key)
         {
-            _key =
-                key.ToArray();
+            _key = key.ToArray();
         }
 
-        public Task<byte[]> GetOrCreateKeyAsync(
+        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key.ToArray());
+                CreateMaterial());
         }
 
-        public Task<byte[]> GetKeyAsync(
+        public Task<EncryptionKeyMaterial> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key.ToArray());
+                CreateMaterial());
+        }
+
+        private EncryptionKeyMaterial CreateMaterial()
+        {
+            return new EncryptionKeyMaterial(
+                _key.ToArray(),
+                _keyId,
+                keyVersion: 1);
         }
     }
 }

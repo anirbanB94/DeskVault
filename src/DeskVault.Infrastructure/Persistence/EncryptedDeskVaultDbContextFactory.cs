@@ -21,11 +21,13 @@ public sealed class EncryptedDeskVaultDbContextFactory :
 
     public DeskVaultDbContext CreateDbContext()
     {
-        byte[] databaseKey =
+        EncryptionKeyMaterial databaseKeyMaterial =
             _databaseEncryptionKeyService
                 .GetKeyAsync()
                 .GetAwaiter()
                 .GetResult();
+
+        byte[] databaseKey = databaseKeyMaterial.KeyBytes;
 
         try
         {
@@ -43,9 +45,11 @@ public sealed class EncryptedDeskVaultDbContextFactory :
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        byte[] databaseKey =
+        EncryptionKeyMaterial databaseKeyMaterial =
             await _databaseEncryptionKeyService.GetKeyAsync(
                 cancellationToken);
+
+        byte[] databaseKey = databaseKeyMaterial.KeyBytes;
 
         try
         {

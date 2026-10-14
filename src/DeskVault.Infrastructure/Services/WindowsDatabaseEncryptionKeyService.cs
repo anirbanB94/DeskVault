@@ -21,14 +21,16 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         _logger = logger;
     }
 
-    public async Task<byte[]> GetOrCreateKeyAsync(
+    public async Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         string? temporaryKeyFilePath = null;
         byte[]? candidateKey = null;
+        byte[]? keyPayload = null;
         byte[]? protectedKey = null;
+        Guid candidateKeyId = Guid.Empty;
         bool candidateKeyPublished = false;
 
         try
@@ -55,9 +57,18 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                 RandomNumberGenerator.GetBytes(
                     KeySize);
 
+            candidateKeyId = Guid.NewGuid();
+
+            keyPayload =
+                ProtectedEncryptionKeyPayload.Encode(
+                    candidateKey,
+                    EncryptionKeyPurpose.Database,
+                    candidateKeyId,
+                    keyVersion: 1);
+
             protectedKey =
                 ProtectedData.Protect(
-                    candidateKey,
+                    keyPayload,
                     null,
                     DataProtectionScope.CurrentUser);
 
@@ -108,12 +119,18 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                     cancellationToken);
             }
 
+            EncryptionKeyMaterial candidateMaterial =
+                new(
+                    candidateKey,
+                    candidateKeyId,
+                    keyVersion: 1);
+
             candidateKeyPublished = true;
 
             _logger.LogInformation(
                 LogMessages.DatabaseEncryptionKeyCreated);
 
-            return candidateKey;
+            return candidateMaterial;
         }
         catch (OperationCanceledException)
         {
@@ -134,6 +151,12 @@ public sealed class WindowsDatabaseEncryptionKeyService :
             {
                 CryptographicOperations.ZeroMemory(
                     candidateKey);
+            }
+
+            if (keyPayload is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    keyPayload);
             }
 
             if (protectedKey is not null)
@@ -163,7 +186,7 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         }
     }
 
-    public async Task<byte[]> GetKeyAsync(
+    public async Task<EncryptionKeyMaterial> GetKeyAsync(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -199,7 +222,7 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         }
     }
 
-    private async Task<byte[]> ReadExistingKeyAsync(
+    private async Task<EncryptionKeyMaterial> ReadExistingKeyAsync(
         string keyFilePath,
         CancellationToken cancellationToken)
     {
@@ -208,46 +231,37 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                 keyFilePath,
                 cancellationToken);
 
-        byte[]? key = null;
+        byte[]? keyPayload = null;
 
         try
         {
-            key =
+            keyPayload =
                 ProtectedData.Unprotect(
                     protectedKeyFromFile,
                     null,
                     DataProtectionScope.CurrentUser);
 
-            ValidateKey(key);
+            EncryptionKeyMaterial keyMaterial =
+                ProtectedEncryptionKeyPayload.Decode(
+                    keyPayload,
+                    protectedKeyFromFile,
+                    EncryptionKeyPurpose.Database);
 
             _logger.LogInformation(
                 LogMessages.DatabaseEncryptionKeyLoaded);
 
-            byte[] retrievedKey = key;
-            key = null;
-
-            return retrievedKey;
+            return keyMaterial;
         }
         finally
         {
             CryptographicOperations.ZeroMemory(
                 protectedKeyFromFile);
 
-            if (key is not null)
+            if (keyPayload is not null)
             {
                 CryptographicOperations.ZeroMemory(
-                    key);
+                    keyPayload);
             }
-        }
-    }
-
-    private static void ValidateKey(
-        byte[] key)
-    {
-        if (key.Length != KeySize)
-        {
-            throw new CryptographicException(
-                "The database encryption key has an invalid length.");
         }
     }
 }

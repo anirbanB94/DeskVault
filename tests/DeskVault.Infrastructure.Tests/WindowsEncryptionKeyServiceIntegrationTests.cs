@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using DeskVault.Infrastructure.Services;
@@ -186,6 +187,208 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
         }
         finally
         {
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenLegacyMasterKeyAndVersionTwoDocumentExist_RemainsReadableWithoutRewritingKeyArtifact()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] legacyKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "Existing DeskVault version-two document encrypted with a legacy master key.");
+
+        byte[] nonce =
+            RandomNumberGenerator.GetBytes(12);
+
+        byte[] tag =
+            new byte[16];
+
+        byte[] ciphertext =
+            new byte[originalContent.Length];
+
+        byte[] encryptedDocument = [];
+
+        byte[]? protectedLegacyArtifact = null;
+        byte[]? protectedArtifactBeforeRead = null;
+        byte[]? protectedArtifactAfterRead = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            Directory.CreateDirectory(
+                dataPaths.SecurityDirectory);
+
+            string keyFilePath =
+                Path.Combine(
+                    dataPaths.SecurityDirectory,
+                    "master.key");
+
+            // Preserve the original legacy format: DPAPI protects the
+            // raw key rather than a versioned metadata payload.
+            protectedLegacyArtifact =
+                ProtectedData.Protect(
+                    legacyKey,
+                    null,
+                    DataProtectionScope.CurrentUser);
+
+            await File.WriteAllBytesAsync(
+                keyFilePath,
+                protectedLegacyArtifact);
+
+            protectedArtifactBeforeRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
+
+            // Build an existing version-two encrypted document using
+            // AES-GCM with no associated data, as legacy records did.
+            using (var aes = new AesGcm(
+                legacyKey,
+                tag.Length))
+            {
+                aes.Encrypt(
+                    nonce,
+                    originalContent,
+                    ciphertext,
+                    tag);
+            }
+
+            const int HeaderSize = 8;
+
+            int lengthOffset =
+                HeaderSize;
+
+            int nonceOffset =
+                lengthOffset + sizeof(int);
+
+            int tagOffset =
+                nonceOffset + nonce.Length;
+
+            int ciphertextOffset =
+                tagOffset + tag.Length;
+
+            encryptedDocument =
+                new byte[
+                    ciphertextOffset +
+                    ciphertext.Length];
+
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                encryptedDocument.AsSpan(0, sizeof(uint)),
+                0x44564C54);
+
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                encryptedDocument.AsSpan(sizeof(uint), sizeof(uint)),
+                2);
+
+            BinaryPrimitives.WriteInt32LittleEndian(
+                encryptedDocument.AsSpan(lengthOffset, sizeof(int)),
+                ciphertext.Length);
+
+            nonce.CopyTo(
+                encryptedDocument.AsSpan(
+                    nonceOffset,
+                    nonce.Length));
+
+            tag.CopyTo(
+                encryptedDocument.AsSpan(
+                    tagOffset,
+                    tag.Length));
+
+            ciphertext.CopyTo(
+                encryptedDocument.AsSpan(
+                    ciphertextOffset,
+                    ciphertext.Length));
+
+            DocumentEncryptionService decryptionService =
+                CreateEncryptionService(
+                    dataPaths);
+
+            await using var source =
+                new MemoryStream(
+                    encryptedDocument);
+
+            await using var decrypted =
+                new MemoryStream();
+
+            // Act
+            await decryptionService.DecryptAsync(
+                source,
+                decrypted);
+
+            protectedArtifactAfterRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
+
+            // Assert: legacy ciphertext remains readable.
+            Assert.Equal(
+                originalContent,
+                decrypted.ToArray());
+
+            // Assert: the canonical legacy key artifact remains unchanged.
+            Assert.Equal(
+                protectedArtifactBeforeRead,
+                protectedArtifactAfterRead);
+
+            Assert.Equal(
+                protectedLegacyArtifact,
+                protectedArtifactAfterRead);
+
+            // Strict retrieval must not create a replacement key or
+            // leave temporary candidate files.
+            Assert.Equal(
+                new[] { keyFilePath },
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                legacyKey);
+
+            CryptographicOperations.ZeroMemory(
+                originalContent);
+
+            CryptographicOperations.ZeroMemory(
+                nonce);
+
+            CryptographicOperations.ZeroMemory(
+                tag);
+
+            CryptographicOperations.ZeroMemory(
+                ciphertext);
+
+            CryptographicOperations.ZeroMemory(
+                encryptedDocument);
+
+            if (protectedLegacyArtifact is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    protectedLegacyArtifact);
+            }
+
+            if (protectedArtifactBeforeRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    protectedArtifactBeforeRead);
+            }
+
+            if (protectedArtifactAfterRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    protectedArtifactAfterRead);
+            }
+
             DeleteTemporaryDirectory(
                 rootDirectory);
         }

@@ -21,7 +21,7 @@ public sealed class WindowsEncryptionKeyService :
         _logger = logger;
     }
 
-    public async Task<byte[]> GetOrCreateKeyAsync(
+    public async Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -31,7 +31,9 @@ public sealed class WindowsEncryptionKeyService :
 
         string? temporaryKeyFilePath = null;
         byte[]? candidateKey = null;
+        byte[]? keyPayload = null;
         byte[]? protectedKey = null;
+        Guid candidateKeyId = Guid.Empty;
         bool candidateKeyPublished = false;
 
         try
@@ -49,7 +51,7 @@ public sealed class WindowsEncryptionKeyService :
 
             if (File.Exists(keyFilePath))
             {
-                byte[] existingKey =
+                EncryptionKeyMaterial existingKey =
                     await ReadKeyFromFileAsync(
                         keyFilePath,
                         cancellationToken);
@@ -66,9 +68,18 @@ public sealed class WindowsEncryptionKeyService :
             candidateKey =
                 RandomNumberGenerator.GetBytes(KeySize);
 
+            candidateKeyId = Guid.NewGuid();
+
+            keyPayload =
+                ProtectedEncryptionKeyPayload.Encode(
+                    candidateKey,
+                    EncryptionKeyPurpose.Document,
+                    candidateKeyId,
+                    keyVersion: 1);
+
             protectedKey =
                 ProtectedData.Protect(
-                    candidateKey,
+                    keyPayload,
                     null,
                     DataProtectionScope.CurrentUser);
 
@@ -114,7 +125,7 @@ public sealed class WindowsEncryptionKeyService :
 
                 candidateKey = null;
 
-                byte[] authoritativeKey =
+                EncryptionKeyMaterial authoritativeKey =
                     await ReadKeyFromFileAsync(
                         keyFilePath,
                         cancellationToken);
@@ -128,6 +139,12 @@ public sealed class WindowsEncryptionKeyService :
                 return authoritativeKey;
             }
 
+            EncryptionKeyMaterial candidateMaterial =
+                new(
+                    candidateKey,
+                    candidateKeyId,
+                    keyVersion: 1);
+
             candidateKeyPublished = true;
 
             _logger.LogInformation(
@@ -136,7 +153,7 @@ public sealed class WindowsEncryptionKeyService :
             _logger.LogInformation(
                 LogMessages.EncryptionKeyOperationCompleted);
 
-            return candidateKey;
+            return candidateMaterial;
         }
         catch (OperationCanceledException)
         {
@@ -157,6 +174,12 @@ public sealed class WindowsEncryptionKeyService :
             {
                 CryptographicOperations.ZeroMemory(
                     candidateKey);
+            }
+
+            if (keyPayload is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    keyPayload);
             }
 
             if (protectedKey is not null)
@@ -186,7 +209,7 @@ public sealed class WindowsEncryptionKeyService :
         }
     }
 
-    public async Task<byte[]> GetKeyAsync(
+    public async Task<EncryptionKeyMaterial> GetKeyAsync(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -207,7 +230,7 @@ public sealed class WindowsEncryptionKeyService :
                     "The document encryption key is unavailable.");
             }
 
-            byte[] key =
+            EncryptionKeyMaterial key =
                 await ReadKeyFromFileAsync(
                     keyFilePath,
                     cancellationToken);
@@ -234,7 +257,7 @@ public sealed class WindowsEncryptionKeyService :
         }
     }
 
-    private static async Task<byte[]> ReadKeyFromFileAsync(
+    private static async Task<EncryptionKeyMaterial> ReadKeyFromFileAsync(
         string keyFilePath,
         CancellationToken cancellationToken)
     {
@@ -243,43 +266,31 @@ public sealed class WindowsEncryptionKeyService :
                 keyFilePath,
                 cancellationToken);
 
-        byte[]? key = null;
+        byte[]? keyPayload = null;
 
         try
         {
-            key =
+            keyPayload =
                 ProtectedData.Unprotect(
                     protectedKeyFromFile,
                     null,
                     DataProtectionScope.CurrentUser);
 
-            ValidateKey(key);
-
-            byte[] retrievedKey = key;
-            key = null;
-
-            return retrievedKey;
+            return ProtectedEncryptionKeyPayload.Decode(
+                keyPayload,
+                protectedKeyFromFile,
+                EncryptionKeyPurpose.Document);
         }
         finally
         {
             CryptographicOperations.ZeroMemory(
                 protectedKeyFromFile);
 
-            if (key is not null)
+            if (keyPayload is not null)
             {
                 CryptographicOperations.ZeroMemory(
-                    key);
+                    keyPayload);
             }
-        }
-    }
-
-    private static void ValidateKey(
-        byte[] key)
-    {
-        if (key.Length != KeySize)
-        {
-            throw new CryptographicException(
-                "The document encryption key has an invalid length.");
         }
     }
 }

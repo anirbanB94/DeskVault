@@ -26,6 +26,7 @@ using DeskVault.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 
 namespace DeskVault.Integration.Tests;
@@ -54,6 +55,10 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
     public EncryptedDocumentReader DocumentReader { get; }
 
+    private static readonly ConcurrentDictionary<string, Guid>
+        TestKeyIdentitiesByDatabasePath =
+            new(StringComparer.OrdinalIgnoreCase);
+
     public DocumentPipelineTestHarness(
         string rootDirectory,
         string databasePath,
@@ -74,6 +79,11 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
 
         _encryptionKey =
             [.. encryptionKey];
+
+        Guid testKeyId =
+            TestKeyIdentitiesByDatabasePath.GetOrAdd(
+                Path.GetFullPath(databasePath),
+                static _ => Guid.NewGuid());
 
         _connection =
             CreateConnection(
@@ -97,7 +107,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         var encryptionService =
             new DocumentEncryptionService(
                 new TestEncryptionKeyService(
-                    _encryptionKey),
+                    _encryptionKey,
+                    testKeyId),
                 NullLogger<DocumentEncryptionService>.Instance);
 
         var artifactPathResolver =
@@ -434,29 +445,40 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         : IEncryptionKeyService
     {
         private readonly byte[] _key;
+        private readonly Guid _keyId;
 
         public TestEncryptionKeyService(
-            byte[] key)
+            byte[] key,
+            Guid keyId)
         {
             _key = key;
+            _keyId = keyId;
         }
 
-        public Task<byte[]> GetOrCreateKeyAsync(
+        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key);
+                CreateMaterial());
         }
 
-        public Task<byte[]> GetKeyAsync(
+        public Task<EncryptionKeyMaterial> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key);
+                CreateMaterial());
+        }
+
+        private EncryptionKeyMaterial CreateMaterial()
+        {
+            return new EncryptionKeyMaterial(
+                _key.ToArray(),
+                _keyId,
+                keyVersion: 1);
         }
     }
 }

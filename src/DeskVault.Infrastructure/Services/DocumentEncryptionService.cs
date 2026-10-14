@@ -14,6 +14,8 @@ public sealed class DocumentEncryptionService
     private const int HeaderSize = 4 + 4;
 
     private const uint FileMagic = 0x44564C54;
+    private static readonly byte[] KeyLineageAssociatedDataDomain =
+        "DeskVault.DocumentEncryption.KeyLineage.v1"u8.ToArray();
     private const uint FormatVersion = 2;
 
     private readonly IEncryptionKeyService _keyService;
@@ -39,9 +41,14 @@ public sealed class DocumentEncryptionService
 
         try
         {
-            byte[] key =
+            EncryptionKeyMaterial keyMaterial =
                 await _keyService.GetOrCreateKeyAsync(
                     cancellationToken);
+
+            byte[] key = keyMaterial.KeyBytes;
+
+            byte[] associatedData =
+                CreateKeyLineageAssociatedData(keyMaterial);
 
             await WriteHeaderAsync(
                 destination,
@@ -67,7 +74,8 @@ public sealed class DocumentEncryptionService
                     nonce,
                     buffer.AsSpan(0, bytesRead),
                     ciphertext,
-                    tag);
+                    tag,
+                    associatedData);
 
                 byte[] length = new byte[sizeof(int)];
 
@@ -131,9 +139,14 @@ public sealed class DocumentEncryptionService
 
         try
         {
-            byte[] key =
+            EncryptionKeyMaterial keyMaterial =
                 await _keyService.GetKeyAsync(
                     cancellationToken);
+
+            byte[] key = keyMaterial.KeyBytes;
+
+            byte[] associatedData =
+                CreateKeyLineageAssociatedData(keyMaterial);
 
             await ReadAndValidateHeaderAsync(
                 source,
@@ -195,7 +208,8 @@ public sealed class DocumentEncryptionService
                     nonce,
                     ciphertext,
                     tag,
-                    plaintext);
+                    plaintext,
+                    associatedData);
 
                 await destination.WriteAsync(
                     plaintext,
@@ -219,6 +233,58 @@ public sealed class DocumentEncryptionService
 
             throw;
         }
+    }
+
+    /// <summary>
+    /// Creates authenticated metadata that binds document ciphertext to its
+    /// encryption key identity and lifecycle version.
+    /// </summary>
+    /// <remarks>
+    /// Legacy version-zero keys use empty associated data to preserve
+    /// compatibility with existing version-two encrypted documents.
+    /// </remarks>
+    private static byte[] CreateKeyLineageAssociatedData(
+        EncryptionKeyMaterial keyMaterial)
+    {
+        if (keyMaterial.KeyVersion == 0)
+        {
+            return Array.Empty<byte>();
+        }
+
+        const int KeyIdLength = 16;
+
+        int keyVersionOffset =
+            KeyLineageAssociatedDataDomain.Length + KeyIdLength;
+
+        byte[] associatedData =
+            new byte[
+                KeyLineageAssociatedDataDomain.Length +
+                KeyIdLength +
+                sizeof(int)];
+
+        KeyLineageAssociatedDataDomain.CopyTo(
+            associatedData,
+            0);
+
+        if (!keyMaterial.KeyId.TryWriteBytes(
+                associatedData.AsSpan(
+                    KeyLineageAssociatedDataDomain.Length,
+                    KeyIdLength)))
+        {
+            CryptographicOperations.ZeroMemory(
+                associatedData);
+
+            throw new CryptographicException(
+                "The document encryption key identity could not be encoded.");
+        }
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            associatedData.AsSpan(
+                keyVersionOffset,
+                sizeof(int)),
+            keyMaterial.KeyVersion);
+
+        return associatedData;
     }
 
     private static async Task WriteHeaderAsync(

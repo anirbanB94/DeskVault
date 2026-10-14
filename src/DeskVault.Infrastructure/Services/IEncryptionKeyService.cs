@@ -6,13 +6,13 @@ public interface IEncryptionKeyService
     /// Retrieves the existing document-encryption key without
     /// provisioning a replacement.
     /// </summary>
-    Task<byte[]> GetKeyAsync(
+    Task<EncryptionKeyMaterial> GetKeyAsync(
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves the existing document-encryption key or explicitly
     /// provisions one when the key does not exist.
     /// </summary>
-    Task<byte[]> GetOrCreateKeyAsync(
+    Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
         CancellationToken cancellationToken = default);
 }

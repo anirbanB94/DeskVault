@@ -354,6 +354,7 @@ public sealed class EncryptedDocumentReaderTests
         : IEncryptionKeyService
     {
         private readonly byte[] _key;
+        private readonly Guid _keyId = Guid.NewGuid();
 
         public TestEncryptionKeyService(
             byte[] key)
@@ -361,22 +362,30 @@ public sealed class EncryptedDocumentReaderTests
             _key = key;
         }
 
-        public Task<byte[]> GetOrCreateKeyAsync(
+        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key.ToArray());
+                CreateMaterial());
         }
 
-        public Task<byte[]> GetKeyAsync(
+        public Task<EncryptionKeyMaterial> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key.ToArray());
+                CreateMaterial());
+        }
+
+        private EncryptionKeyMaterial CreateMaterial()
+        {
+            return new EncryptionKeyMaterial(
+                _key.ToArray(),
+                _keyId,
+                keyVersion: 1);
         }
     }
 }
