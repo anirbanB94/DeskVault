@@ -5011,25 +5011,8 @@ public sealed class DocumentImportIntegrationTests
                 File.Exists(
                     document.StoredFilePath));
 
-            var encryptionService =
-                new DocumentEncryptionService(
-                    new TestEncryptionKeyService(
-                        encryptionKey),
-                    NullLogger<DocumentEncryptionService>.Instance);
-
-            var artifactPathResolver =
-                new DocumentArtifactPathResolver(
-                    new DeskVaultDataPaths(
-                        rootDirectory));
-
-            var reader =
-                new EncryptedDocumentReader(
-                    encryptionService,
-                    artifactPathResolver,
-                    NullLogger<EncryptedDocumentReader>.Instance);
-
             await using Stream decryptedStream =
-                await reader.OpenReadAsync(
+                await harness.DocumentReader.OpenReadAsync(
                     document.Id);
 
             using var decryptedContent =
@@ -5795,6 +5778,7 @@ public sealed class DocumentImportIntegrationTests
         : IEncryptionKeyService
     {
         private readonly byte[] _key;
+        private readonly Guid _keyId = Guid.NewGuid();
 
         public TestEncryptionKeyService(
             byte[] key)
@@ -5802,22 +5786,30 @@ public sealed class DocumentImportIntegrationTests
             _key = key;
         }
 
-        public Task<byte[]> GetOrCreateKeyAsync(
+        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key);
+                CreateMaterial());
         }
 
-        public Task<byte[]> GetKeyAsync(
+        public Task<EncryptionKeyMaterial> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key);
+                CreateMaterial());
+        }
+
+        private EncryptionKeyMaterial CreateMaterial()
+        {
+            return new EncryptionKeyMaterial(
+                _key.ToArray(),
+                _keyId,
+                keyVersion: 1);
         }
     }
 }

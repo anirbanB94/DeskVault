@@ -65,7 +65,7 @@ or fail without silently replacing an existing canonical key.
 
 The implementation must preserve existing-key retrieval and must not log key material. Temporary protected data and unpublished in-memory key candidates are cleared when practical, and temporary files are cleaned up on normal completion or failure.
 
-This section addresses atomic initial master-key provisioning. Strict existing-key retrieval for document decryption is defined in the following section. Database-key provisioning, key identity and versioning, encrypted-record format changes, and replacement or rotation policy remain separate responsibilities.
+This section addresses atomic initial master-key provisioning. Strict existing-key retrieval for document decryption is defined in the following section. The shared key identity/version contract is defined in the following subsection. Database-provider behavior is also described by ADR-0009; encrypted-record format changes remain with #228, and the authorization and operational policy for replacement or rotation remains with #229.
 
 The stored file will continue to use an application-generated identifier rather than the original filename.
 
@@ -82,6 +82,47 @@ A failed retrieval must not create the security directory as a side effect of re
 `IEncryptionKeyService.GetOrCreateKeyAsync()` remains the explicit provisioning-capable operation for callers permitted to initialize the key. Document encryption may use that operation; normal document decryption must use `GetKeyAsync()`.
 
 Key-related failure diagnostics must not disclose plaintext key bytes, protected key blobs, decrypted document content, or credentials. Failures are surfaced through the existing Infrastructure exception and logging boundary without silent key recovery.
+
+### Key Identity and Version Semantics
+
+The document and database key services use a shared key-metadata payload for newly provisioned keys. The complete payload is protected as one unit with Windows DPAPI under `DataProtectionScope.CurrentUser`; plaintext payload bytes are not persisted as a key artifact.
+
+The current plaintext payload layout (after DPAPI unprotection) is 58 bytes:
+
+| Offset | Length | Meaning |
+| --- | ---: | --- |
+| 0 | 4 bytes | ASCII marker `DVKP` |
+| 4 | 1 byte | Payload format version; currently `1` |
+| 5 | 1 byte | Key purpose: `1` for document encryption, `2` for database encryption |
+| 6 | 16 bytes | Non-empty key-lineage `Guid`, encoded by .NET `Guid` byte APIs |
+| 22 | 4 bytes | Positive, little-endian signed 32-bit key lifecycle version |
+| 26 | 32 bytes | AES-256 key bytes |
+
+The payload format version, key lifecycle version, and encrypted-document record version are separate concepts. The document `.dvault` record remains format version `2`; this decision does not change its byte layout.
+
+`KeyId` identifies a logical key lineage, while `KeyVersion` identifies a concrete key within that lineage. Newly provisioned keys receive a new non-empty `KeyId` and start at key version `1`. Normal retrieval preserves the persisted identity and version; it does not generate or rewrite lifecycle metadata. `GetKeyAsync()` is strictly non-provisioning and fails when the expected key is missing, unreadable, invalid, unprotectable, or has a purpose marker that does not match the retrieving service. `GetOrCreateKeyAsync()` provisions only when the expected canonical key artifact is absent; it does not silently replace an unusable existing artifact.
+
+The lifecycle distinction for future operations is:
+
+- An authorized rotation within the same lineage retains `KeyId` and increases `KeyVersion` for the new concrete key.
+- An intentional replacement that starts a new lineage uses a new `KeyId` and starts that lineage at version `1`.
+- Missing, unreadable, invalid, or unprotectable key material is not evidence that replacement or rotation was intended. Normal retrieval fails without creating or changing the canonical key artifact.
+
+The explicit authorization rules, data-transition requirements, and operational procedures for replacement and rotation remain owned by #229. Operational recovery must restore the established identity/version of an existing vault rather than inventing a new lineage.
+
+#### Legacy Pre-Versioned Key Artifacts
+
+Legacy `master.key` and `database.key` artifacts contain only the raw 32-byte key within their DPAPI-protected payload and have no embedded identity, version, or purpose marker. The decoder represents these artifacts using key version `0` and derives a deterministic non-secret `KeyId` from a domain-separated SHA-256 digest using `DeskVault.LegacyProtectedKeyIdentity.v1`, the expected purpose, and the exact persisted protected artifact. This preserves repeatable identity for repeated reads without persisting plaintext metadata, rewriting the artifact, replacing key bytes, or requiring existing encrypted data to be re-encrypted.
+
+Because a legacy payload has no embedded purpose marker, its purpose is inferred from the canonical key service/path that reads it. The decoder therefore cannot prove from a legacy artifact alone that a blob copied between the document and database key paths was originally created for the receiving purpose. New metadata-bearing payloads include an explicit purpose marker and mismatched purpose is rejected.
+
+A legacy `KeyId` is derived from the exact protected artifact. Re-protecting the same raw key into a different DPAPI blob can therefore produce a different derived identifier. The current compatibility behavior preserves the original artifact rather than re-protecting it. Any future transition from legacy metadata must explicitly preserve or migrate the established lineage; normal retrieval must not silently perform that transition.
+
+#### Binding Document Ciphertext to Key Lineage
+
+For versioned key material (key version greater than `0`), `DocumentEncryptionService` supplies AES-GCM associated data consisting of the `DeskVault.DocumentEncryption.KeyLineage.v1` domain separator, `KeyId`, and the little-endian key version. This authenticates the document ciphertext against the key identity/version returned by the key service without placing key bytes or lifecycle metadata in ordinary logs or plaintext configuration. It does not add fields to the version-2 document record.
+
+For key version `0`, associated data remains empty so existing version-2 encrypted documents created before key identity/version support remain decryptable. Consequently, the current legacy document format does not authenticate a derived legacy identity/version against ciphertext. The detailed document-record contract—including whole-document completeness, chunk ordering and document identity binding, and persisted content-hash verification—remains owned by #228.
 
 ### Document-Owned Artifact Identity
 
@@ -279,6 +320,8 @@ This atomic publication rule covers initial master-key provisioning only.
 It does not introduce a replacement-key hierarchy or define key rotation policy.
 
 Document encryption obtains its key through the provisioning-capable key-service operation. Document decryption uses `IEncryptionKeyService.GetKeyAsync()` to retrieve the existing key. Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state.
+
+New master-key artifacts store `KeyId`, key version, and the document-purpose marker within the DPAPI-protected `DVKP` payload described above. New key artifacts start at version `1`. Existing raw-key artifacts are read as legacy version `0` with a deterministic identity derived from the exact protected artifact and are not rewritten during retrieval. For versioned keys, document ciphertext authentication uses key-lineage associated data while the document record remains format version `2`; legacy version-zero reads retain the empty-associated-data behavior.
 
 Document retrieval follows the corresponding protected path:
 

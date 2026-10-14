@@ -1,8 +1,9 @@
-using System.Security.Cryptography;
-using System.Text;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -52,11 +53,13 @@ public sealed class DocumentEncryptionServiceTests
         byte[] key =
             RandomNumberGenerator.GetBytes(32);
 
+        Guid keyId = Guid.NewGuid();
+
         try
         {
             var encryptionService =
                 new DocumentEncryptionService(
-                    new TestEncryptionKeyService(key),
+                    new TestEncryptionKeyService(key, keyId),
                     NullLogger<DocumentEncryptionService>.Instance);
 
             await using var source =
@@ -73,7 +76,7 @@ public sealed class DocumentEncryptionServiceTests
 
             var decryptionService =
                 new DocumentEncryptionService(
-                    new ExistingKeyOnlyTestEncryptionKeyService(key),
+                    new ExistingKeyOnlyTestEncryptionKeyService(key, keyId),
                     NullLogger<DocumentEncryptionService>.Instance);
 
             await using var decrypted =
@@ -89,6 +92,228 @@ public sealed class DocumentEncryptionServiceTests
         }
         finally
         {
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenReadingLegacyVersionTwoDocument_WithUnversionedKey_Succeeds()
+    {
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "Existing DeskVault version-two encrypted document.");
+
+        byte[] key =
+            RandomNumberGenerator.GetBytes(
+                EncryptionKeyMaterial.KeySizeBytes);
+
+        byte[] nonce =
+            RandomNumberGenerator.GetBytes(12);
+
+        byte[] tag = new byte[16];
+
+        byte[] ciphertext =
+            new byte[originalContent.Length];
+
+        byte[] encryptedDocument =
+            new byte[
+                8 +
+                sizeof(int) +
+                nonce.Length +
+                tag.Length +
+                ciphertext.Length];
+
+        Guid keyId = Guid.NewGuid();
+
+        try
+        {
+            using (var aes = new AesGcm(key, tag.Length))
+            {
+                aes.Encrypt(
+                    nonce,
+                    originalContent,
+                    ciphertext,
+                    tag);
+            }
+
+            // Construct the existing version-two document header.
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                encryptedDocument.AsSpan(0, sizeof(uint)),
+                0x44564C54);
+
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                encryptedDocument.AsSpan(sizeof(uint), sizeof(uint)),
+                2);
+
+            // Construct the original length/nonce/tag/ciphertext chunk.
+            int lengthOffset = 8;
+            int nonceOffset = lengthOffset + sizeof(int);
+            int tagOffset = nonceOffset + nonce.Length;
+            int ciphertextOffset = tagOffset + tag.Length;
+
+            BinaryPrimitives.WriteInt32LittleEndian(
+                encryptedDocument.AsSpan(lengthOffset, sizeof(int)),
+                ciphertext.Length);
+
+            nonce.CopyTo(
+                encryptedDocument.AsSpan(nonceOffset, nonce.Length));
+
+            tag.CopyTo(
+                encryptedDocument.AsSpan(tagOffset, tag.Length));
+
+            ciphertext.CopyTo(
+                encryptedDocument.AsSpan(
+                    ciphertextOffset,
+                    ciphertext.Length));
+
+            var service =
+                new DocumentEncryptionService(
+                    new ExistingKeyOnlyTestEncryptionKeyService(
+                        key,
+                        keyId,
+                        keyVersion: 0),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source =
+                new MemoryStream(encryptedDocument);
+
+            await using var destination =
+                new MemoryStream();
+
+            await service.DecryptAsync(
+                source,
+                destination);
+
+            Assert.Equal(
+                originalContent,
+                destination.ToArray());
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(originalContent);
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(nonce);
+            CryptographicOperations.ZeroMemory(tag);
+            CryptographicOperations.ZeroMemory(ciphertext);
+            CryptographicOperations.ZeroMemory(encryptedDocument);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenKeyIdentityDiffers_ThrowsAuthenticationTagMismatchException()
+    {
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "DeskVault key identity validation test.");
+
+        byte[] key =
+            RandomNumberGenerator.GetBytes(
+                EncryptionKeyMaterial.KeySizeBytes);
+
+        Guid encryptionKeyId =
+            Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+        Guid decryptionKeyId =
+            Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        try
+        {
+            var encryptionService =
+                new DocumentEncryptionService(
+                    new TestEncryptionKeyService(
+                        key,
+                        encryptionKeyId),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source =
+                new MemoryStream(originalContent);
+
+            await using var encrypted =
+                new MemoryStream();
+
+            await encryptionService.EncryptAsync(
+                source,
+                encrypted);
+
+            encrypted.Position = 0;
+
+            var decryptionService =
+                new DocumentEncryptionService(
+                    new ExistingKeyOnlyTestEncryptionKeyService(
+                        key,
+                        decryptionKeyId,
+                        keyVersion: 1),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var destination =
+                new MemoryStream();
+
+            await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
+                () => decryptionService.DecryptAsync(
+                    encrypted,
+                    destination));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(originalContent);
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenKeyVersionDiffers_ThrowsAuthenticationTagMismatchException()
+    {
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "DeskVault key version validation test.");
+
+        byte[] key =
+            RandomNumberGenerator.GetBytes(
+                EncryptionKeyMaterial.KeySizeBytes);
+
+        Guid keyId =
+            Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        try
+        {
+            var encryptionService =
+                new DocumentEncryptionService(
+                    new TestEncryptionKeyService(
+                        key,
+                        keyId),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source =
+                new MemoryStream(originalContent);
+
+            await using var encrypted =
+                new MemoryStream();
+
+            await encryptionService.EncryptAsync(
+                source,
+                encrypted);
+
+            encrypted.Position = 0;
+
+            var decryptionService =
+                new DocumentEncryptionService(
+                    new ExistingKeyOnlyTestEncryptionKeyService(
+                        key,
+                        keyId,
+                        keyVersion: 2),
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var destination =
+                new MemoryStream();
+
+            await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
+                () => decryptionService.DecryptAsync(
+                    encrypted,
+                    destination));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(originalContent);
             CryptographicOperations.ZeroMemory(key);
         }
     }
@@ -695,23 +920,29 @@ public sealed class DocumentEncryptionServiceTests
         : IEncryptionKeyService
     {
         private readonly byte[] _key;
+        private readonly Guid _keyId;
+        private readonly int _keyVersion;
 
         public ExistingKeyOnlyTestEncryptionKeyService(
-            byte[] key)
+            byte[] key,
+            Guid? keyId = null,
+            int keyVersion = 1)
         {
             _key = key.ToArray();
+            _keyId = keyId ?? Guid.NewGuid();
+            _keyVersion = keyVersion;
         }
 
-        public Task<byte[]> GetKeyAsync(
+        public Task<EncryptionKeyMaterial> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key.ToArray());
+                CreateMaterial());
         }
 
-        public Task<byte[]> GetOrCreateKeyAsync(
+        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -719,35 +950,54 @@ public sealed class DocumentEncryptionServiceTests
             throw new InvalidOperationException(
                 "Document decryption must not provision an encryption key.");
         }
+
+        private EncryptionKeyMaterial CreateMaterial()
+        {
+            return new EncryptionKeyMaterial(
+                _key.ToArray(),
+                _keyId,
+                _keyVersion);
+        }
     }
 
     private sealed class TestEncryptionKeyService
         : IEncryptionKeyService
     {
         private readonly byte[] _key;
+        private readonly Guid _keyId;
 
         public TestEncryptionKeyService(
-            byte[] key)
+            byte[] key,
+            Guid? keyId = null)
         {
             _key = key;
+            _keyId = keyId ?? Guid.NewGuid();
         }
 
-        public Task<byte[]> GetOrCreateKeyAsync(
+        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key);
+                CreateMaterial());
         }
 
-        public Task<byte[]> GetKeyAsync(
+        public Task<EncryptionKeyMaterial> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(
-                _key);
+                CreateMaterial());
+        }
+
+        private EncryptionKeyMaterial CreateMaterial()
+        {
+            return new EncryptionKeyMaterial(
+                _key.ToArray(),
+                _keyId,
+                keyVersion: 1);
         }
     }
 }

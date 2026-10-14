@@ -241,9 +241,17 @@ remains distinct from provisioning. It must retrieve and validate the
 existing canonical key or fail when the key is missing or invalid. It
 must not create a replacement key as a fallback.
 
-Atomic provisioning does not introduce another encryption hierarchy,
-key identity/version metadata, rotation policy, or operational recovery
-mechanism. Those concerns remain outside this decision.
+Atomic provisioning does not introduce another encryption hierarchy. The shared key identity/version payload is defined by ADR-0004 and its use for the database key is documented in the following subsection. Replacement/rotation authorization and operational recovery remain separate responsibilities.
+
+### Database Key Identity and Version Semantics
+
+The database key uses the shared DPAPI-protected `DVKP` payload contract described in ADR-0004, including the payload format version, non-secret `KeyId`, lifecycle `KeyVersion`, and purpose marker. The purpose value for a database key is `2`. Newly provisioned database keys receive a new `KeyId` and begin at key version `1`; repeated retrieval returns the persisted metadata without changing the canonical `database.key` artifact.
+
+Legacy `database.key` artifacts that contain only a DPAPI-protected raw 32-byte key are decoded as key version `0`. Their deterministic legacy identity is derived from the expected database purpose and exact persisted protected artifact. Retrieval does not rewrite or re-protect the legacy artifact. Because the legacy payload contains no purpose marker, its intended purpose cannot be proven from the payload itself; this compatibility limitation is documented in ADR-0004.
+
+The database encryption provider continues to receive the actual key bytes as its SQLite encryption password. `KeyId` and `KeyVersion` are not embedded in the SQLite database file and this decision does not change the encrypted database format or trigger database re-encryption. Instead, the identity/version metadata is protected together with the key in the canonical DPAPI-protected key artifact. Missing or invalid key state fails through strict retrieval; it must not cause implicit key replacement or fallback to an unencrypted database.
+
+For future authorized rotation within an established lineage, `KeyId` remains stable and `KeyVersion` increases with the new concrete key. An intentional replacement that starts a new lineage uses a new `KeyId` and version `1`. The policy that authorizes those operations, the database re-encryption/transition procedure, and recovery handling remain outside this provider decision and are owned by #229 and the existing operational recovery work. Normal retrieval never infers rotation or replacement from a missing or unusable key.
 
 ### Database Initialization
 
@@ -563,6 +571,7 @@ The provider-level migration spike established the following behavior:
   key through the registered Infrastructure service, successful database
   initialization through `DatabaseInitializer`, and database
   connectivity through `IDbContextFactory<DeskVaultDbContext>`.
+- Key identity/version regression tests verify version `1` metadata for new database keys, stable identity/version across repeated reads, rejection of a document-purpose payload by the database-key service without modifying either key artifact, and legacy raw-key compatibility at version `0` without rewriting the canonical artifact.
 - Production-path integration tests verify that concurrent
   initialization of an existing plaintext vault converges on a single
   encrypted canonical database with migration artifacts cleaned up and
