@@ -42,6 +42,7 @@ public sealed class OpenDocumentHandlerTests
         documentReader
             .Setup(x => x.OpenReadAsync(
                 documentId,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>(),
                 It.IsAny<long?>()))
             .ReturnsAsync(expectedContent);
@@ -70,6 +71,7 @@ public sealed class OpenDocumentHandlerTests
         documentReader.Verify(
             x => x.OpenReadAsync(
                 documentId,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>(),
                 It.IsAny<long?>()),
             Times.Once);
@@ -110,6 +112,7 @@ public sealed class OpenDocumentHandlerTests
         documentReader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>(),
                 It.IsAny<long?>()),
             Times.Never);

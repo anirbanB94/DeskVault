@@ -25,7 +25,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -68,7 +68,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var encrypted =
                 new MemoryStream();
 
-            await encryptionService.EncryptAsync(
+            await encryptionService.EncryptLegacyVersion2Async(
                 source,
                 encrypted);
 
@@ -231,7 +231,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var encrypted =
                 new MemoryStream();
 
-            await encryptionService.EncryptAsync(
+            await encryptionService.EncryptLegacyVersion2Async(
                 source,
                 encrypted);
 
@@ -289,7 +289,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var encrypted =
                 new MemoryStream();
 
-            await encryptionService.EncryptAsync(
+            await encryptionService.EncryptLegacyVersion2Async(
                 source,
                 encrypted);
 
@@ -332,7 +332,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -362,7 +362,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -462,7 +462,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -503,7 +503,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -546,7 +546,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -597,7 +597,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -649,7 +649,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -723,7 +723,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -770,7 +770,7 @@ public sealed class DocumentEncryptionServiceTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () =>
-                service.EncryptAsync(
+                service.EncryptLegacyVersion2Async(
                     source,
                     destination,
                     cancellationTokenSource.Token));
@@ -790,7 +790,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
+        await service.EncryptLegacyVersion2Async(
             source,
             encrypted);
 
@@ -810,6 +810,566 @@ public sealed class DocumentEncryptionServiceTests
                     encrypted,
                     destination,
                     cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task EncryptAndDecryptAsync_ForDocumentVersionThree_RestoresContent()
+    {
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "DeskVault version-three record test.");
+
+        Guid documentId = Guid.NewGuid();
+
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream(originalContent);
+
+        await using var encrypted =
+            new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted,
+            documentId);
+
+        byte[] encryptedBytes = encrypted.ToArray();
+
+        Assert.Equal(
+            3u,
+            BinaryPrimitives.ReadUInt32LittleEndian(
+                encryptedBytes.AsSpan(4, sizeof(uint))));
+
+        encrypted.Position = 0;
+
+        await using var decrypted =
+            new MemoryStream();
+
+        await service.DecryptAsync(
+            encrypted,
+            decrypted,
+            documentId);
+
+        Assert.Equal(
+            originalContent,
+            decrypted.ToArray());
+    }
+
+    [Fact]
+    public async Task EncryptAndDecryptAsync_ForMultiChunkVersionThree_RestoresContent()
+    {
+        const int chunkSize = 1024 * 1024;
+
+        byte[] originalContent = new byte[chunkSize + 37];
+        Array.Fill(originalContent, (byte)'M');
+
+        Guid documentId = Guid.NewGuid();
+        DocumentEncryptionService service = CreateService();
+
+        await using var source = new MemoryStream(originalContent);
+        await using var encrypted = new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted,
+            documentId);
+
+        byte[] encryptedBytes = encrypted.ToArray();
+
+        Assert.Equal(
+            3u,
+            BinaryPrimitives.ReadUInt32LittleEndian(
+                encryptedBytes.AsSpan(4, sizeof(uint))));
+
+        encrypted.Position = 0;
+
+        await using var decrypted = new MemoryStream();
+
+        await service.DecryptAsync(
+            encrypted,
+            decrypted,
+            documentId);
+
+        Assert.Equal(originalContent, decrypted.ToArray());
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenVersionThreeRecordContainsTrailingBytes_ThrowsCryptographicException()
+    {
+        Guid documentId = Guid.NewGuid();
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes("Trailing data validation test."));
+
+        await using var encrypted = new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted,
+            documentId);
+
+        byte[] recordWithTrailingData = encrypted.ToArray();
+
+        Array.Resize(
+            ref recordWithTrailingData,
+            recordWithTrailingData.Length + 1);
+
+        recordWithTrailingData[^1] = 0xA5;
+
+        await using var tamperedSource =
+            new MemoryStream(recordWithTrailingData);
+
+        await using var destination = new MemoryStream();
+
+        await Assert.ThrowsAsync<CryptographicException>(
+            () => service.DecryptAsync(
+                tamperedSource,
+                destination,
+                documentId));
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenVersionThreeChunkIsSubstitutedFromAnotherDocument_ThrowsAuthenticationTagMismatchException()
+    {
+        byte[] firstContent =
+            Encoding.UTF8.GetBytes("Document A payload.");
+
+        byte[] secondContent =
+            Encoding.UTF8.GetBytes("Document B payload.");
+
+        Assert.Equal(firstContent.Length, secondContent.Length);
+
+        Guid firstDocumentId = Guid.NewGuid();
+        Guid secondDocumentId = Guid.NewGuid();
+
+        DocumentEncryptionService service = CreateService();
+
+        await using var firstSource = new MemoryStream(firstContent);
+        await using var secondSource = new MemoryStream(secondContent);
+        await using var firstEncrypted = new MemoryStream();
+        await using var secondEncrypted = new MemoryStream();
+
+        await service.EncryptAsync(
+            firstSource,
+            firstEncrypted,
+            firstDocumentId);
+
+        await service.EncryptAsync(
+            secondSource,
+            secondEncrypted,
+            secondDocumentId);
+
+        byte[] firstRecord = firstEncrypted.ToArray();
+        byte[] secondRecord = secondEncrypted.ToArray();
+
+        const int headerSize = 8;
+        const int chunkMetadataSize = sizeof(int) + 12 + 16;
+
+        int dataRecordLength =
+            chunkMetadataSize + firstContent.Length;
+
+        Assert.Equal(firstRecord.Length, secondRecord.Length);
+
+        // Substitute document B's complete data record into document A's record.
+        // Keep document A's header and authenticated final record unchanged.
+        Buffer.BlockCopy(
+            secondRecord,
+            headerSize,
+            firstRecord,
+            headerSize,
+            dataRecordLength);
+
+        await using var substitutedSource = new MemoryStream(firstRecord);
+        await using var destination = new MemoryStream();
+
+        await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
+            () => service.DecryptAsync(
+                substitutedSource,
+                destination,
+                firstDocumentId));
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenLegacyVersionTwoRecordIsTruncatedAtEachStructuralBoundary_RejectsEveryIncompletePrefix()
+    {
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes("Legacy record boundary validation."));
+
+        await using var encrypted = new MemoryStream();
+
+        // The legacy overload intentionally creates a format-2 test fixture.
+        await service.EncryptLegacyVersion2Async(
+            source,
+            encrypted);
+
+        byte[] encryptedBytes = encrypted.ToArray();
+
+        for (int prefixLength = 0;
+             prefixLength < encryptedBytes.Length;
+             prefixLength++)
+        {
+            // A header-only version-2 artifact is the valid legacy representation
+            // of an empty document, so it must not be treated as a truncation.
+            if (prefixLength == 8)
+            {
+                continue;
+            }
+
+            await using var truncatedSource =
+                new MemoryStream(
+                    encryptedBytes[..prefixLength]);
+
+            await using var destination = new MemoryStream();
+
+            await Assert.ThrowsAsync<CryptographicException>(
+                () => service.DecryptAsync(
+                    truncatedSource,
+                    destination));
+        }
+    }
+
+    [Fact]
+    public async Task EncryptAndDecryptAsync_ForEmptyVersionThreeDocument_PreservesEmptyContent()
+    {
+        Guid documentId = Guid.NewGuid();
+
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream([]);
+
+        await using var encrypted =
+            new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted,
+            documentId);
+
+        byte[] encryptedBytes = encrypted.ToArray();
+
+        // Header plus authenticated terminal record:
+        // 8-byte header + 4-byte length + 12-byte nonce + 16-byte tag.
+        Assert.Equal(
+            8 + sizeof(int) + 12 + 16,
+            encryptedBytes.Length);
+
+        Assert.Equal(
+            0,
+            BinaryPrimitives.ReadInt32LittleEndian(
+                encryptedBytes.AsSpan(8, sizeof(int))));
+
+        encrypted.Position = 0;
+
+        await using var decrypted =
+            new MemoryStream();
+
+        await service.DecryptAsync(
+            encrypted,
+            decrypted,
+            documentId);
+
+        Assert.Empty(decrypted.ToArray());
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenVersionThreeDocumentIdentityDiffers_ThrowsAuthenticationTagMismatchException()
+    {
+        Guid encryptionDocumentId = Guid.NewGuid();
+        Guid decryptionDocumentId = Guid.NewGuid();
+
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(
+                    "Document identity binding test."));
+
+        await using var encrypted =
+            new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted,
+            encryptionDocumentId);
+
+        encrypted.Position = 0;
+
+        await using var destination =
+            new MemoryStream();
+
+        await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
+            () => service.DecryptAsync(
+                encrypted,
+                destination,
+                decryptionDocumentId));
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenVersionThreeRecordIsTruncatedAtAnyByteBoundary_ThrowsCryptographicException()
+    {
+        Guid documentId = Guid.NewGuid();
+
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(
+                    "Every byte boundary must be validated."));
+
+        await using var encrypted =
+            new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted,
+            documentId);
+
+        byte[] encryptedBytes = encrypted.ToArray();
+
+        // Every proper prefix truncates at least one byte from the
+        // header, a chunk field, or the authenticated terminal record.
+        for (int prefixLength = 0;
+             prefixLength < encryptedBytes.Length;
+             prefixLength++)
+        {
+            await using var truncatedSource =
+                new MemoryStream(
+                    encryptedBytes[..prefixLength]);
+
+            await using var destination =
+                new MemoryStream();
+
+            await Assert.ThrowsAsync<CryptographicException>(
+                () => service.DecryptAsync(
+                    truncatedSource,
+                    destination,
+                    documentId));
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenVersionThreeRecordEndsAtACompleteChunkBoundary_ThrowsCryptographicException()
+    {
+        const int chunkSize = 1024 * 1024;
+        const int terminalRecordSize = sizeof(int) + 12 + 16;
+
+        byte[] originalContent =
+            new byte[chunkSize + 37];
+
+        Array.Fill(originalContent, (byte)'A');
+
+        Guid documentId = Guid.NewGuid();
+
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream(originalContent);
+
+        await using var encrypted =
+            new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted,
+            documentId);
+
+        byte[] encryptedBytes = encrypted.ToArray();
+
+        // Remove the entire terminal record while leaving every data
+        // chunk intact. EOF at that boundary must not indicate success.
+        byte[] truncatedBytes =
+            encryptedBytes[..^terminalRecordSize];
+
+        await using var truncatedSource =
+            new MemoryStream(truncatedBytes);
+
+        await using var destination =
+            new MemoryStream();
+
+        await Assert.ThrowsAsync<CryptographicException>(
+            () => service.DecryptAsync(
+                truncatedSource,
+                destination,
+                documentId));
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenVersionThreeChunksAreReordered_ThrowsAuthenticationTagMismatchException()
+    {
+        const int chunkSize = 1024 * 1024;
+        const int recordOverhead = sizeof(int) + 12 + 16;
+        const int terminalRecordSize = recordOverhead;
+        const int secondChunkSize = 7;
+
+        byte[] originalContent =
+            new byte[chunkSize + secondChunkSize];
+
+        Array.Fill(
+            originalContent,
+            (byte)'A',
+            0,
+            chunkSize);
+
+        Array.Fill(
+            originalContent,
+            (byte)'B',
+            chunkSize,
+            secondChunkSize);
+
+        Guid documentId = Guid.NewGuid();
+
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream(originalContent);
+
+        await using var encrypted =
+            new MemoryStream();
+
+        await service.EncryptAsync(
+            source,
+            encrypted,
+            documentId);
+
+        byte[] encryptedBytes = encrypted.ToArray();
+
+        int firstRecordOffset = 8;
+        int firstRecordLength = recordOverhead + chunkSize;
+
+        int secondRecordOffset =
+            firstRecordOffset + firstRecordLength;
+
+        int secondRecordLength =
+            recordOverhead + secondChunkSize;
+
+        int finalRecordOffset =
+            secondRecordOffset + secondRecordLength;
+
+        Assert.Equal(
+            encryptedBytes.Length - terminalRecordSize,
+            finalRecordOffset);
+
+        byte[] reorderedBytes =
+            new byte[encryptedBytes.Length];
+
+        // Preserve the header.
+        encryptedBytes.AsSpan(0, 8)
+            .CopyTo(reorderedBytes);
+
+        // Reverse the two complete data records.
+        encryptedBytes.AsSpan(
+                secondRecordOffset,
+                secondRecordLength)
+            .CopyTo(
+                reorderedBytes.AsSpan(firstRecordOffset));
+
+        encryptedBytes.AsSpan(
+                firstRecordOffset,
+                firstRecordLength)
+            .CopyTo(
+                reorderedBytes.AsSpan(
+                    firstRecordOffset + secondRecordLength));
+
+        // The original final record is retained unchanged.
+        encryptedBytes.AsSpan(
+                finalRecordOffset,
+                terminalRecordSize)
+            .CopyTo(
+                reorderedBytes.AsSpan(
+                    finalRecordOffset));
+
+        await using var reorderedSource =
+            new MemoryStream(reorderedBytes);
+
+        await using var destination =
+            new MemoryStream();
+
+        await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
+            () => service.DecryptAsync(
+                reorderedSource,
+                destination,
+                documentId));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(1024 * 1024 + 1)]
+    public async Task DecryptAsync_WhenLegacyVersionTwoChunkLengthIsInvalid_ThrowsCryptographicException(
+        int chunkLength)
+    {
+        byte[] malformedRecord =
+            new byte[8 + sizeof(int)];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            malformedRecord.AsSpan(0, sizeof(uint)),
+            0x44564C54);
+
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            malformedRecord.AsSpan(sizeof(uint), sizeof(uint)),
+            2);
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            malformedRecord.AsSpan(8, sizeof(int)),
+            chunkLength);
+
+        DocumentEncryptionService service = CreateService();
+
+        await using var source =
+            new MemoryStream(malformedRecord);
+
+        await using var destination =
+            new MemoryStream();
+
+        await Assert.ThrowsAsync<CryptographicException>(
+            () => service.DecryptAsync(
+                source,
+                destination));
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WhenVersionThreeChunkLengthExceedsMaximum_ThrowsCryptographicException()
+    {
+        const int oversizedChunkLength = 1024 * 1024 + 1;
+
+        byte[] malformedRecord =
+            new byte[8 + sizeof(int)];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            malformedRecord.AsSpan(0, sizeof(uint)),
+            0x44564C54);
+
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            malformedRecord.AsSpan(sizeof(uint), sizeof(uint)),
+            3);
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            malformedRecord.AsSpan(8, sizeof(int)),
+            oversizedChunkLength);
+
+        Guid documentId = Guid.NewGuid();
+
+        DocumentEncryptionService service =
+            CreateService();
+
+        await using var source =
+            new MemoryStream(malformedRecord);
+
+        await using var destination =
+            new MemoryStream();
+
+        await Assert.ThrowsAsync<CryptographicException>(
+            () => service.DecryptAsync(
+                source,
+                destination,
+                documentId));
     }
 
     private sealed class CancellingReadStream
@@ -928,7 +1488,7 @@ public sealed class DocumentEncryptionServiceTests
             Guid? keyId = null,
             int keyVersion = 1)
         {
-            _key = key.ToArray();
+            _key = [.. key];
             _keyId = keyId ?? Guid.NewGuid();
             _keyVersion = keyVersion;
         }
@@ -954,7 +1514,7 @@ public sealed class DocumentEncryptionServiceTests
         private EncryptionKeyMaterial CreateMaterial()
         {
             return new EncryptionKeyMaterial(
-                _key.ToArray(),
+                [.. _key],
                 _keyId,
                 _keyVersion);
         }
@@ -995,7 +1555,7 @@ public sealed class DocumentEncryptionServiceTests
         private EncryptionKeyMaterial CreateMaterial()
         {
             return new EncryptionKeyMaterial(
-                _key.ToArray(),
+                [.. _key],
                 _keyId,
                 keyVersion: 1);
         }

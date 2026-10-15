@@ -207,8 +207,6 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     DataPaths),
                 DocumentReader,
                 _storageService,
-                new Sha256HashService(
-                    NullLogger<Sha256HashService>.Instance),
                 NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
 
         RecoveryHandler =

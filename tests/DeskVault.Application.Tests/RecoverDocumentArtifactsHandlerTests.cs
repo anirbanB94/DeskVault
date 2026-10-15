@@ -1,10 +1,11 @@
-using System.Security.Cryptography;
 using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.Security.Cryptography;
 
 namespace DeskVault.Application.Tests;
 
@@ -36,17 +37,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
-        var hashService =
-            CreateMatchingHashService();
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
-
+                storageService);
         // Act
         RecoverDocumentArtifactsResult result =
             await handler.HandleAsync(
@@ -92,6 +88,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -131,16 +128,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
-        var hashService =
-            CreateMatchingHashService();
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         RecoverDocumentArtifactsResult firstResult =
@@ -214,16 +207,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
             .Returns(
                 Task.CompletedTask);
 
-        var hashService =
-            CreateMatchingHashService();
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         await Assert.ThrowsAsync<IOException>(
@@ -287,6 +276,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         reader
             .Setup(x => x.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new MemoryStream(
@@ -295,16 +285,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
-        var hashService =
-            CreateMatchingHashService();
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         RecoverDocumentArtifactsResult result =
@@ -362,16 +348,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                 orphanPath))
             .Returns(false);
 
-        var hashService =
-            CreateMatchingHashService();
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         RecoverDocumentArtifactsResult result =
@@ -424,16 +406,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
-        var hashService =
-            CreateMatchingHashService();
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         RecoverDocumentArtifactsResult result =
@@ -485,16 +463,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
-        var hashService =
-            CreateMatchingHashService();
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         RecoverDocumentArtifactsResult result =
@@ -548,6 +522,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         reader
             .Setup(x => x.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new CryptographicException(
@@ -556,16 +531,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
-        var hashService =
-            CreateMatchingHashService();
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         RecoverDocumentArtifactsResult result =
@@ -619,31 +590,20 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         reader
             .Setup(x => x.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new MemoryStream(
-                    "different-content"u8.ToArray()));
+            .ThrowsAsync(
+                new DocumentContentIntegrityException());
 
         var storageService =
             CreateStorageServiceMock();
-
-        var hashService =
-            new Mock<IHashService>();
-
-        hashService
-            .Setup(x => x.ComputeSha256Async(
-                It.IsAny<Stream>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                "different-sha256-hash");
 
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         RecoverDocumentArtifactsResult result =
@@ -689,16 +649,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
-        var hashService =
-            CreateMatchingHashService();
-
         ReconcileDocumentArtifactsHandler reconciliationHandler =
             CreateReconciliationHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         var handler =
             new RecoverDocumentArtifactsHandler(
@@ -741,16 +697,14 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         Mock<IDocumentRepository> repository,
         Mock<IDocumentArtifactEnumerator> artifactEnumerator,
         Mock<IDocumentReader> reader,
-        Mock<IStorageService> storageService,
-        Mock<IHashService> hashService)
+        Mock<IStorageService> storageService)
     {
         ReconcileDocumentArtifactsHandler reconciliationHandler =
             CreateReconciliationHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         return new RecoverDocumentArtifactsHandler(
             repository.Object,
@@ -763,15 +717,13 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         Mock<IDocumentRepository> repository,
         Mock<IDocumentArtifactEnumerator> artifactEnumerator,
         Mock<IDocumentReader> reader,
-        Mock<IStorageService> storageService,
-        Mock<IHashService> hashService)
+        Mock<IStorageService> storageService)
     {
         return new ReconcileDocumentArtifactsHandler(
             repository.Object,
             artifactEnumerator.Object,
             reader.Object,
             storageService.Object,
-            hashService.Object,
             NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
     }
 
@@ -817,21 +769,6 @@ public sealed class RecoverDocumentArtifactsHandlerTests
             .Returns(true);
 
         return storageService;
-    }
-
-    private static Mock<IHashService> CreateMatchingHashService()
-    {
-        var hashService =
-            new Mock<IHashService>();
-
-        hashService
-            .Setup(x => x.ComputeSha256Async(
-                It.IsAny<Stream>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                "sha256-test-hash");
-
-        return hashService;
     }
 
     private static Document CreateDocument()

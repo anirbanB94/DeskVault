@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SQLitePCL;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -1074,14 +1075,14 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 new DocumentEncryptionService(
                     new TestDocumentEncryptionKeyService(
                         documentEncryptionKey),
-                    Microsoft.Extensions.Logging.Abstractions.NullLogger<DocumentEncryptionService>.Instance);
+                    NullLogger<DocumentEncryptionService>.Instance);
 
             var storageService =
                 new FileSystemStorageService(
                     documentEncryptionService,
                     dataPaths,
                     new DocumentArtifactPathResolver(dataPaths),
-                    Microsoft.Extensions.Logging.Abstractions.NullLogger<FileSystemStorageService>.Instance);
+                    NullLogger<FileSystemStorageService>.Instance);
 
             string sourceFilePath =
                 Path.Combine(
@@ -1316,11 +1317,18 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     documentEncryptionService,
                     new DocumentArtifactPathResolver(
                         dataPaths),
-                    Microsoft.Extensions.Logging.Abstractions.NullLogger<EncryptedDocumentReader>.Instance);
+                    NullLogger<EncryptedDocumentReader>.Instance);
+
+            string expectedSourceContentHash =
+                Convert.ToHexString(
+                    SHA256.HashData(
+                        existingSourceContent))
+                .ToLowerInvariant();
 
             await using Stream decryptedArtifact =
                 await documentReader.OpenReadAsync(
-                    documentId);
+                    documentId,
+                    expectedSourceContentHash);
 
             using var decryptedMemory =
                 new MemoryStream();

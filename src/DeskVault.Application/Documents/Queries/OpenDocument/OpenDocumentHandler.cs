@@ -43,6 +43,7 @@ public sealed class OpenDocumentHandler
         Stream content =
             await _documentReader.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 cancellationToken);
 
         _logger.LogInformation(

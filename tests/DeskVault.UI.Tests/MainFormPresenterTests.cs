@@ -1036,6 +1036,7 @@ public sealed class MainFormPresenterTests
         documentReader
             .Setup(x => x.OpenReadAsync(
                 documentId,
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
             CreateContentStream(
@@ -1390,6 +1391,7 @@ public sealed class MainFormPresenterTests
         documentReader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -1434,6 +1436,7 @@ public sealed class MainFormPresenterTests
         documentReader
             .Setup(x => x.OpenReadAsync(
                 documentId,
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
             new InvalidOperationException(

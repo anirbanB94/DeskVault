@@ -1,6 +1,8 @@
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Interfaces;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -24,9 +26,12 @@ public sealed class EncryptedDocumentReader : IDocumentReader
 
     public async Task<Stream> OpenReadAsync(
         Guid documentId,
+        string expectedSha256Hash,
         CancellationToken cancellationToken = default,
         long? maximumPlaintextBytes = null)
     {
+        ArgumentNullException.ThrowIfNull(expectedSha256Hash);
+
         cancellationToken.ThrowIfCancellationRequested();
 
         string storedFilePath =
@@ -50,18 +55,47 @@ public sealed class EncryptedDocumentReader : IDocumentReader
             var decryptedStream =
                 new MemoryStream();
 
-            await _encryptionService.DecryptAsync(
-                source,
-                decryptedStream,
-                cancellationToken,
-                maximumPlaintextBytes);
+            try
+            {
+                await _encryptionService.DecryptAsync(
+                    source,
+                    decryptedStream,
+                    documentId,
+                    cancellationToken,
+                    maximumPlaintextBytes);
 
-            decryptedStream.Position = 0;
+                decryptedStream.Position = 0;
 
-            _logger.LogInformation(
-                LogMessages.DocumentReaderCompleted);
+                byte[] actualHashBytes =
+                    await SHA256.HashDataAsync(
+                        decryptedStream,
+                        cancellationToken);
 
-            return decryptedStream;
+                string actualSha256Hash =
+                    Convert.ToHexString(
+                        actualHashBytes);
+
+                if (!string.Equals(
+                    actualSha256Hash,
+                    expectedSha256Hash,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new DocumentContentIntegrityException();
+                }
+
+                decryptedStream.Position = 0;
+
+                _logger.LogInformation(
+                    LogMessages.DocumentReaderCompleted);
+
+                return decryptedStream;
+            }
+            catch
+            {
+                await decryptedStream.DisposeAsync();
+
+                throw;
+            }
         }
         catch (OperationCanceledException)
         {
