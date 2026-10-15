@@ -1,9 +1,10 @@
-using System.Security.Cryptography;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.Security.Cryptography;
 
 namespace DeskVault.Application.Tests;
 
@@ -45,6 +46,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader
             .Setup(x => x.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new MemoryStream(
@@ -90,6 +92,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -165,6 +168,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -241,6 +245,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -287,6 +292,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader
             .Setup(x => x.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new CryptographicException(
@@ -420,6 +426,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -511,6 +518,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -570,6 +578,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -689,6 +698,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -747,6 +757,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader
             .Setup(x => x.OpenReadAsync(
                 validDocument.Id,
+                validDocument.Sha256Hash,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new MemoryStream(
@@ -815,12 +826,14 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader.Verify(
             x => x.OpenReadAsync(
                 malformedDocument.Id,
+                malformedDocument.Sha256Hash,
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
         reader.Verify(
             x => x.OpenReadAsync(
                 validDocument.Id,
+                validDocument.Sha256Hash,
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -928,6 +941,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader
             .Setup(x => x.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new MemoryStream(
@@ -936,23 +950,12 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
-        var hashService =
-            new Mock<IHashService>();
-
-        hashService
-            .Setup(x => x.ComputeSha256Async(
-                It.IsAny<Stream>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                document.Sha256Hash);
-
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         ReconcileDocumentArtifactsResult result =
@@ -966,12 +969,6 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         Assert.Equal(
             DocumentArtifactReconciliationStatus.Matched,
             finding.Status);
-
-        hashService.Verify(
-            x => x.ComputeSha256Async(
-                It.IsAny<Stream>(),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
 
         Assert.Equal(
             expectedArtifactPath,
@@ -1014,31 +1011,20 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         reader
             .Setup(x => x.OpenReadAsync(
                 document.Id,
+                document.Sha256Hash,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new MemoryStream(
-                    "wrong-content"u8.ToArray()));
+            .ThrowsAsync(
+                new DocumentContentIntegrityException());
 
         var storageService =
             CreateStorageServiceMock();
-
-        var hashService =
-            new Mock<IHashService>();
-
-        hashService
-            .Setup(x => x.ComputeSha256Async(
-                It.IsAny<Stream>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                "different-sha256-hash");
 
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService,
-                hashService);
+                storageService);
 
         // Act
         ReconcileDocumentArtifactsResult result =
@@ -1076,28 +1062,13 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         Mock<IDocumentRepository> repository,
         Mock<IDocumentArtifactEnumerator> artifactEnumerator,
         Mock<IDocumentReader> reader,
-        Mock<IStorageService> storageService,
-        Mock<IHashService>? hashService = null)
+        Mock<IStorageService> storageService)
     {
-        if (hashService is null)
-        {
-            hashService =
-                new Mock<IHashService>();
-
-            hashService
-                .Setup(x => x.ComputeSha256Async(
-                    It.IsAny<Stream>(),
-                    It.IsAny<CancellationToken>()))
-                .ReturnsAsync(
-                    "sha256-test-hash");
-        }
-
         return new ReconcileDocumentArtifactsHandler(
             repository.Object,
             artifactEnumerator.Object,
             reader.Object,
             storageService.Object,
-            hashService.Object,
             NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
     }
 

@@ -391,6 +391,87 @@ public sealed class ProcessDocumentHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenDocumentContentIntegrityFails_PublishesFailureStateWithoutExtractingOrPublishingContent()
+    {
+        // Arrange
+        Document document = CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var processingContext =
+            CreateProcessingContext(repository);
+
+        processingContext.Reader
+            .ThrowDocumentContentIntegrityExceptionOnOpen = true;
+
+        // Act
+        await Assert.ThrowsAsync<DocumentContentIntegrityException>(
+            () =>
+                processingContext.Handler.HandleAsync(
+                    new ProcessDocumentCommand(
+                        document.Id)));
+
+        // Assert
+        Assert.True(
+            processingContext.Reader.WasOpened);
+
+        Assert.Equal(
+            document.Id,
+            processingContext.Reader.OpenedDocumentId);
+
+        Assert.False(
+            processingContext.Extractor.WasCalled);
+
+        Assert.Equal(
+            1L,
+            processingContext.ProcessingStore.AcquiredGeneration);
+
+        Assert.Equal(
+            [
+                DocumentProcessingState.Processing,
+            DocumentProcessingState.Failed
+            ],
+            processingContext.ProcessingStore.PublishedStates
+                .Select(x => x.State)
+                .ToArray());
+
+        Assert.All(
+            processingContext.ProcessingStore.PublishedStates,
+            publication =>
+                Assert.Equal(
+                    1L,
+                    publication.ProcessingGeneration));
+
+        Assert.False(
+            processingContext.ProcessingStore.WasSuccessfulProcessingPublished);
+
+        Assert.False(
+            processingContext.ProcessingStore.WasCancellationRecoveryRequested);
+
+        Assert.Equal(
+            0,
+            processingContext.ProcessingStore.SuccessfulProcessingCallCount);
+
+        Assert.Empty(
+            processingContext.ProcessingStore.SuccessfulProcessingChunks);
+
+        Assert.Equal(
+            DocumentLifecycleState.Active,
+            document.LifecycleState);
+
+        Assert.Equal(
+            DocumentProcessingState.Failed,
+            document.ProcessingState);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenResourceLimitIsExceeded_PublishesFailureStateAndRethrows()
     {
         // Arrange
@@ -1384,8 +1465,11 @@ public sealed class ProcessDocumentHandlerTests
 
         public bool ThrowResourceLimitExceededOnOpen { get; set; }
 
+        public bool ThrowDocumentContentIntegrityExceptionOnOpen { get; set; }
+
         public Task<Stream> OpenReadAsync(
             Guid documentId,
+            string expectedSha256Hash,
             CancellationToken cancellationToken = default,
             long? maximumPlaintextBytes = null)
         {
@@ -1406,6 +1490,11 @@ public sealed class ProcessDocumentHandlerTests
                 throw new ResourceLimitExceededException(
                     limitBytes,
                     limitBytes + 1L);
+            }
+
+            if (ThrowDocumentContentIntegrityExceptionOnOpen)
+            {
+                throw new DocumentContentIntegrityException();
             }
 
             Stream stream =

@@ -78,6 +78,7 @@ public sealed class FileSystemStorageService : IStorageService
                 await _encryptionService.EncryptAsync(
                     source,
                     destination,
+                    documentId,
                     cancellationToken);
             }
             else
@@ -88,6 +89,7 @@ public sealed class FileSystemStorageService : IStorageService
                 await _encryptionService.EncryptAsync(
                     hashingSource,
                     destination,
+                    documentId,
                     cancellationToken);
 
                 string actualSha256Hash =

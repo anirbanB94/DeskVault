@@ -96,10 +96,13 @@ public sealed class FileSystemStorageServiceTests
                 sourceFilePath,
                 originalContent);
 
+            Guid documentId =
+                Guid.NewGuid();
+
             string storedFilePath =
                 await storageService.StoreAsync(
                     sourceFilePath,
-                    Guid.NewGuid());
+                    documentId);
 
             await using var encryptedSource =
                 new FileStream(
@@ -113,7 +116,8 @@ public sealed class FileSystemStorageServiceTests
 
             await encryptionService.DecryptAsync(
                 encryptedSource,
-                decryptedDestination);
+                decryptedDestination,
+                documentId);
 
             byte[] decryptedContent =
                 decryptedDestination.ToArray();

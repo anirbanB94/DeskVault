@@ -147,7 +147,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             await using var encrypted =
                 new MemoryStream();
 
-            await encryptionService.EncryptAsync(
+            await encryptionService.EncryptLegacyVersion2Async(
                 source,
                 encrypted);
 
@@ -405,7 +405,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             {
                 startGate.Wait();
 
-                await encryptionService.EncryptAsync(
+                await encryptionService.EncryptLegacyVersion2Async(
                     source,
                     destination);
             });

@@ -5013,7 +5013,8 @@ public sealed class DocumentImportIntegrationTests
 
             await using Stream decryptedStream =
                 await harness.DocumentReader.OpenReadAsync(
-                    document.Id);
+                    document.Id,
+                    document.Sha256Hash);
 
             using var decryptedContent =
                 new MemoryStream();

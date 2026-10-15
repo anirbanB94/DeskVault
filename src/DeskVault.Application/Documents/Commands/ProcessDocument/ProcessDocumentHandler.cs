@@ -119,6 +119,7 @@ public sealed class ProcessDocumentHandler
             await using var documentStream =
                 await _documentReader.OpenReadAsync(
                     document.Id,
+                    document.Sha256Hash,
                     cancellationToken,
                     _maxDecryptedDocumentBytes);
 

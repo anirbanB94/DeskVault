@@ -11,12 +11,20 @@ public sealed class DocumentEncryptionService
     private const int NonceSize = 12;
     private const int TagSize = 16;
     private const int ChunkSize = 1024 * 1024;
-    private const int HeaderSize = 4 + 4;
+    private const int HeaderSize = sizeof(uint) + sizeof(uint);
 
     private const uint FileMagic = 0x44564C54;
+    private const uint LegacyFormatVersion = 2;
+    private const uint FormatVersion = 3;
+
+    private const byte ChunkRecordType = 1;
+    private const byte FinalRecordType = 2;
+
     private static readonly byte[] KeyLineageAssociatedDataDomain =
         "DeskVault.DocumentEncryption.KeyLineage.v1"u8.ToArray();
-    private const uint FormatVersion = 2;
+
+    private static readonly byte[] RecordAssociatedDataDomain =
+        "DeskVault.DocumentEncryption.Record.v3"u8.ToArray();
 
     private readonly IEncryptionKeyService _keyService;
     private readonly ILogger<DocumentEncryptionService> _logger;
@@ -29,10 +37,53 @@ public sealed class DocumentEncryptionService
         _logger = logger;
     }
 
-    public async Task EncryptAsync(
+    /// <summary>
+    /// Writes a legacy version-2 record for compatibility scenarios.
+    /// Production writes must use the document-aware EncryptAsync overload.
+    /// </summary>
+    public Task EncryptLegacyVersion2Async(
         Stream source,
         Stream destination,
         CancellationToken cancellationToken = default)
+    {
+        return EncryptCoreAsync(
+            source,
+            destination,
+            LegacyFormatVersion,
+            null,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes a version-3 record bound to the canonical document identity.
+    /// </summary>
+    public Task EncryptAsync(
+        Stream source,
+        Stream destination,
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (documentId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "The document identity must not be empty.",
+                nameof(documentId));
+        }
+
+        return EncryptCoreAsync(
+            source,
+            destination,
+            FormatVersion,
+            documentId,
+            cancellationToken);
+    }
+
+    private async Task EncryptCoreAsync(
+        Stream source,
+        Stream destination,
+        uint formatVersion,
+        Guid? documentId,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -47,16 +98,22 @@ public sealed class DocumentEncryptionService
 
             byte[] key = keyMaterial.KeyBytes;
 
-            byte[] associatedData =
-                CreateKeyLineageAssociatedData(keyMaterial);
+            byte[]? legacyAssociatedData =
+                formatVersion == LegacyFormatVersion
+                    ? CreateKeyLineageAssociatedData(keyMaterial)
+                    : null;
 
             await WriteHeaderAsync(
                 destination,
+                formatVersion,
                 cancellationToken);
 
             byte[] buffer = new byte[ChunkSize];
 
             using var aes = new AesGcm(key, TagSize);
+
+            long chunkIndex = 0;
+            long totalPlaintextBytes = 0;
 
             int bytesRead;
 
@@ -64,11 +121,28 @@ public sealed class DocumentEncryptionService
                 buffer.AsMemory(0, buffer.Length),
                 cancellationToken)) > 0)
             {
+                if (formatVersion == FormatVersion &&
+                    (chunkIndex == long.MaxValue ||
+                     totalPlaintextBytes > long.MaxValue - bytesRead))
+                {
+                    throw new CryptographicException(
+                        "The encrypted document exceeds supported record limits.");
+                }
+
                 byte[] nonce = RandomNumberGenerator.GetBytes(
                     NonceSize);
 
                 byte[] ciphertext = new byte[bytesRead];
                 byte[] tag = new byte[TagSize];
+
+                byte[] associatedData =
+                    legacyAssociatedData ??
+                    CreateRecordAssociatedData(
+                        keyMaterial,
+                        documentId!.Value,
+                        ChunkRecordType,
+                        chunkIndex,
+                        bytesRead);
 
                 aes.Encrypt(
                     nonce,
@@ -98,6 +172,21 @@ public sealed class DocumentEncryptionService
                 await destination.WriteAsync(
                     ciphertext,
                     cancellationToken);
+
+                totalPlaintextBytes += bytesRead;
+                chunkIndex++;
+            }
+
+            if (formatVersion == FormatVersion)
+            {
+                await WriteFinalRecordAsync(
+                    destination,
+                    aes,
+                    keyMaterial,
+                    documentId!.Value,
+                    chunkIndex,
+                    totalPlaintextBytes,
+                    cancellationToken);
             }
 
             _logger.LogInformation(
@@ -117,11 +206,56 @@ public sealed class DocumentEncryptionService
         }
     }
 
-    public async Task DecryptAsync(
+    /// <summary>
+    /// Decrypts legacy version-2 records without requiring document identity.
+    /// Version-3 records require the document-aware overload.
+    /// </summary>
+    public Task DecryptAsync(
         Stream source,
         Stream destination,
         CancellationToken cancellationToken = default,
         long? maximumPlaintextBytes = null)
+    {
+        return DecryptCoreAsync(
+            source,
+            destination,
+            null,
+            cancellationToken,
+            maximumPlaintextBytes);
+    }
+
+    /// <summary>
+    /// Decrypts a record using the canonical document identity.
+    /// Supports legacy version-2 records and authenticated version-3 records.
+    /// </summary>
+    public Task DecryptAsync(
+        Stream source,
+        Stream destination,
+        Guid documentId,
+        CancellationToken cancellationToken = default,
+        long? maximumPlaintextBytes = null)
+    {
+        if (documentId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "The document identity must not be empty.",
+                nameof(documentId));
+        }
+
+        return DecryptCoreAsync(
+            source,
+            destination,
+            documentId,
+            cancellationToken,
+            maximumPlaintextBytes);
+    }
+
+    private async Task DecryptCoreAsync(
+        Stream source,
+        Stream destination,
+        Guid? documentId,
+        CancellationToken cancellationToken,
+        long? maximumPlaintextBytes)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -132,7 +266,9 @@ public sealed class DocumentEncryptionService
                 "Maximum plaintext bytes must be greater than zero.");
         }
 
-        long totalPlaintextBytes = 0L;
+        long totalPlaintextBytes = 0;
+        long chunkIndex = 0;
+        bool finalRecordFound = false;
 
         _logger.LogInformation(
             LogMessages.DocumentDecryptionStarted);
@@ -145,12 +281,22 @@ public sealed class DocumentEncryptionService
 
             byte[] key = keyMaterial.KeyBytes;
 
-            byte[] associatedData =
-                CreateKeyLineageAssociatedData(keyMaterial);
+            uint formatVersion =
+                await ReadAndValidateHeaderAsync(
+                    source,
+                    cancellationToken);
 
-            await ReadAndValidateHeaderAsync(
-                source,
-                cancellationToken);
+            if (formatVersion == FormatVersion &&
+                !documentId.HasValue)
+            {
+                throw new CryptographicException(
+                    "Document identity is required for this encrypted record.");
+            }
+
+            byte[]? legacyAssociatedData =
+                formatVersion == LegacyFormatVersion
+                    ? CreateKeyLineageAssociatedData(keyMaterial)
+                    : null;
 
             using var aes = new AesGcm(key, TagSize);
 
@@ -166,6 +312,46 @@ public sealed class DocumentEncryptionService
                 int ciphertextLength =
                     BinaryPrimitives.ReadInt32LittleEndian(
                         lengthBuffer);
+
+                // In version 3, a zero-length record is reserved for the
+                // authenticated terminal marker. It is never a data chunk.
+                if (formatVersion == FormatVersion &&
+                    ciphertextLength == 0)
+                {
+                    await ReadExactlyAsync(
+                        source,
+                        nonce,
+                        cancellationToken);
+
+                    await ReadExactlyAsync(
+                        source,
+                        tag,
+                        cancellationToken);
+
+                    byte[] finalAssociatedData =
+                        CreateRecordAssociatedData(
+                            keyMaterial,
+                            documentId!.Value,
+                            FinalRecordType,
+                            chunkIndex,
+                            totalPlaintextBytes);
+
+                    byte[] empty = Array.Empty<byte>();
+
+                    aes.Decrypt(
+                        nonce,
+                        empty,
+                        tag,
+                        empty,
+                        finalAssociatedData);
+
+                    await EnsureEndOfStreamAsync(
+                        source,
+                        cancellationToken);
+
+                    finalRecordFound = true;
+                    break;
+                }
 
                 if (ciphertextLength <= 0 ||
                     ciphertextLength > ChunkSize)
@@ -183,6 +369,15 @@ public sealed class DocumentEncryptionService
                         totalPlaintextBytes + ciphertextLength);
                 }
 
+                if (formatVersion == FormatVersion &&
+                    (chunkIndex == long.MaxValue ||
+                     totalPlaintextBytes >
+                        long.MaxValue - ciphertextLength))
+                {
+                    throw new CryptographicException(
+                        "The encrypted document exceeds supported record limits.");
+                }
+
                 await ReadExactlyAsync(
                     source,
                     nonce,
@@ -193,17 +388,25 @@ public sealed class DocumentEncryptionService
                     tag,
                     cancellationToken);
 
-                byte[] ciphertext =
-                    new byte[ciphertextLength];
+                byte[] ciphertext = new byte[ciphertextLength];
+                byte[] plaintext = new byte[ciphertextLength];
 
                 await ReadExactlyAsync(
                     source,
                     ciphertext,
                     cancellationToken);
 
-                byte[] plaintext =
-                    new byte[ciphertextLength];
+                byte[] associatedData =
+                    legacyAssociatedData ??
+                    CreateRecordAssociatedData(
+                        keyMaterial,
+                        documentId!.Value,
+                        ChunkRecordType,
+                        chunkIndex,
+                        ciphertextLength);
 
+                // Plaintext is produced only after this chunk's GCM
+                // authentication succeeds.
                 aes.Decrypt(
                     nonce,
                     ciphertext,
@@ -216,6 +419,14 @@ public sealed class DocumentEncryptionService
                     cancellationToken);
 
                 totalPlaintextBytes += ciphertextLength;
+                chunkIndex++;
+            }
+
+            if (formatVersion == FormatVersion &&
+                !finalRecordFound)
+            {
+                throw new CryptographicException(
+                    "The encrypted document is missing its authenticated completion record.");
             }
 
             _logger.LogInformation(
@@ -236,8 +447,7 @@ public sealed class DocumentEncryptionService
     }
 
     /// <summary>
-    /// Creates authenticated metadata that binds document ciphertext to its
-    /// encryption key identity and lifecycle version.
+    /// Creates associated data for an encrypted document's key lineage.
     /// </summary>
     /// <remarks>
     /// Legacy version-zero keys use empty associated data to preserve
@@ -267,13 +477,10 @@ public sealed class DocumentEncryptionService
             0);
 
         if (!keyMaterial.KeyId.TryWriteBytes(
-                associatedData.AsSpan(
-                    KeyLineageAssociatedDataDomain.Length,
-                    KeyIdLength)))
+            associatedData.AsSpan(
+                KeyLineageAssociatedDataDomain.Length,
+                KeyIdLength)))
         {
-            CryptographicOperations.ZeroMemory(
-                associatedData);
-
             throw new CryptographicException(
                 "The document encryption key identity could not be encoded.");
         }
@@ -287,26 +494,163 @@ public sealed class DocumentEncryptionService
         return associatedData;
     }
 
+    /// <summary>
+    /// Creates version-three associated data for a data chunk or final record.
+    /// The record type, sequence index, and declared length are authenticated
+    /// along with the key lineage and canonical document identity.
+    /// </summary>
+    private static byte[] CreateRecordAssociatedData(
+        EncryptionKeyMaterial keyMaterial,
+        Guid documentId,
+        byte recordType,
+        long sequenceIndex,
+        long declaredLength)
+    {
+        const int KeyIdLength = 16;
+        const int DocumentIdLength = 16;
+
+        byte[] associatedData =
+            new byte[
+                RecordAssociatedDataDomain.Length +
+                KeyIdLength +
+                sizeof(int) +
+                DocumentIdLength +
+                sizeof(byte) +
+                sizeof(long) +
+                sizeof(long)];
+
+        int offset = 0;
+
+        RecordAssociatedDataDomain.CopyTo(
+            associatedData,
+            offset);
+
+        offset += RecordAssociatedDataDomain.Length;
+
+        if (!keyMaterial.KeyId.TryWriteBytes(
+            associatedData.AsSpan(
+                offset,
+                KeyIdLength)))
+        {
+            throw new CryptographicException(
+                "The document encryption key identity could not be encoded.");
+        }
+
+        offset += KeyIdLength;
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            associatedData.AsSpan(
+                offset,
+                sizeof(int)),
+            keyMaterial.KeyVersion);
+
+        offset += sizeof(int);
+
+        if (!documentId.TryWriteBytes(
+            associatedData.AsSpan(
+                offset,
+                DocumentIdLength)))
+        {
+            throw new CryptographicException(
+                "The document identity could not be encoded.");
+        }
+
+        offset += DocumentIdLength;
+
+        associatedData[offset++] = recordType;
+
+        BinaryPrimitives.WriteInt64LittleEndian(
+            associatedData.AsSpan(
+                offset,
+                sizeof(long)),
+            sequenceIndex);
+
+        offset += sizeof(long);
+
+        BinaryPrimitives.WriteInt64LittleEndian(
+            associatedData.AsSpan(
+                offset,
+                sizeof(long)),
+            declaredLength);
+
+        return associatedData;
+    }
+
     private static async Task WriteHeaderAsync(
         Stream destination,
+        uint formatVersion,
         CancellationToken cancellationToken)
     {
         byte[] header = new byte[HeaderSize];
 
         BinaryPrimitives.WriteUInt32LittleEndian(
-            header.AsSpan(0, 4),
+            header.AsSpan(0, sizeof(uint)),
             FileMagic);
 
         BinaryPrimitives.WriteUInt32LittleEndian(
-            header.AsSpan(4, 4),
-            FormatVersion);
+            header.AsSpan(sizeof(uint), sizeof(uint)),
+            formatVersion);
 
         await destination.WriteAsync(
             header,
             cancellationToken);
     }
 
-    private static async Task ReadAndValidateHeaderAsync(
+    /// <summary>
+    /// Writes a zero-length terminal record authenticated with the number
+    /// of chunks and total plaintext length. Its presence proves that the
+    /// writer reached the end of the version-three record.
+    /// </summary>
+    private static async Task WriteFinalRecordAsync(
+        Stream destination,
+        AesGcm aes,
+        EncryptionKeyMaterial keyMaterial,
+        Guid documentId,
+        long chunkCount,
+        long totalPlaintextBytes,
+        CancellationToken cancellationToken)
+    {
+        byte[] length = new byte[sizeof(int)];
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            length,
+            0);
+
+        byte[] nonce = RandomNumberGenerator.GetBytes(
+            NonceSize);
+
+        byte[] tag = new byte[TagSize];
+        byte[] empty = Array.Empty<byte>();
+
+        byte[] associatedData =
+            CreateRecordAssociatedData(
+                keyMaterial,
+                documentId,
+                FinalRecordType,
+                chunkCount,
+                totalPlaintextBytes);
+
+        aes.Encrypt(
+            nonce,
+            empty,
+            empty,
+            tag,
+            associatedData);
+
+        await destination.WriteAsync(
+            length,
+            cancellationToken);
+
+        await destination.WriteAsync(
+            nonce,
+            cancellationToken);
+
+        await destination.WriteAsync(
+            tag,
+            cancellationToken);
+    }
+
+    private static async Task<uint> ReadAndValidateHeaderAsync(
         Stream source,
         CancellationToken cancellationToken)
     {
@@ -319,11 +663,11 @@ public sealed class DocumentEncryptionService
 
         uint magic =
             BinaryPrimitives.ReadUInt32LittleEndian(
-                header.AsSpan(0, 4));
+                header.AsSpan(0, sizeof(uint)));
 
         uint version =
             BinaryPrimitives.ReadUInt32LittleEndian(
-                header.AsSpan(4, 4));
+                header.AsSpan(sizeof(uint), sizeof(uint)));
 
         if (magic != FileMagic)
         {
@@ -331,10 +675,30 @@ public sealed class DocumentEncryptionService
                 "The encrypted document has an invalid format.");
         }
 
-        if (version != FormatVersion)
+        if (version != LegacyFormatVersion &&
+            version != FormatVersion)
         {
             throw new CryptographicException(
                 "The encrypted document version is not supported.");
+        }
+
+        return version;
+    }
+
+    private static async Task EnsureEndOfStreamAsync(
+        Stream source,
+        CancellationToken cancellationToken)
+    {
+        byte[] trailingByte = new byte[1];
+
+        int bytesRead = await source.ReadAsync(
+            trailingByte.AsMemory(),
+            cancellationToken);
+
+        if (bytesRead != 0)
+        {
+            throw new CryptographicException(
+                "The encrypted document contains trailing data.");
         }
     }
 
