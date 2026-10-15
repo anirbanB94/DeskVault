@@ -98,7 +98,7 @@ The current plaintext payload layout (after DPAPI unprotection) is 58 bytes:
 | 22 | 4 bytes | Positive, little-endian signed 32-bit key lifecycle version |
 | 26 | 32 bytes | AES-256 key bytes |
 
-The payload format version, key lifecycle version, and encrypted-document record version are separate concepts. The document `.dvault` record remains format version `2`; this decision does not change its byte layout.
+The payload format version, key lifecycle version, and encrypted-document record version are separate concepts. New `.dvault` writes use record format version `3`. The reader continues to support format version `2` under the explicit legacy compatibility contract below. Neither record format version is the key lifecycle version, and changing the document-record framing does not change the DPAPI key metadata payload.
 
 `KeyId` identifies a logical key lineage, while `KeyVersion` identifies a concrete key within that lineage. Newly provisioned keys receive a new non-empty `KeyId` and start at key version `1`. Normal retrieval preserves the persisted identity and version; it does not generate or rewrite lifecycle metadata. `GetKeyAsync()` is strictly non-provisioning and fails when the expected key is missing, unreadable, invalid, unprotectable, or has a purpose marker that does not match the retrieving service. `GetOrCreateKeyAsync()` provisions only when the expected canonical key artifact is absent; it does not silently replace an unusable existing artifact.
 
@@ -120,9 +120,115 @@ A legacy `KeyId` is derived from the exact protected artifact. Re-protecting the
 
 #### Binding Document Ciphertext to Key Lineage
 
-For versioned key material (key version greater than `0`), `DocumentEncryptionService` supplies AES-GCM associated data consisting of the `DeskVault.DocumentEncryption.KeyLineage.v1` domain separator, `KeyId`, and the little-endian key version. This authenticates the document ciphertext against the key identity/version returned by the key service without placing key bytes or lifecycle metadata in ordinary logs or plaintext configuration. It does not add fields to the version-2 document record.
+For version-2 records using versioned key material (key version greater than `0`), `DocumentEncryptionService` supplies AES-GCM associated data consisting of the `DeskVault.DocumentEncryption.KeyLineage.v1` domain separator, `KeyId`, and the little-endian key version. This authenticates the document ciphertext against the key identity/version returned by the key service without placing key bytes or lifecycle metadata in ordinary logs or plaintext configuration.
 
-For key version `0`, associated data remains empty so existing version-2 encrypted documents created before key identity/version support remain decryptable. Consequently, the current legacy document format does not authenticate a derived legacy identity/version against ciphertext. The detailed document-record contract—including whole-document completeness, chunk ordering and document identity binding, and persisted content-hash verification—remains owned by #228.
+For version-2 records using key version `0`, associated data remains empty so existing encrypted documents created before key identity/version support remain decryptable. Consequently, the legacy version-2 document format does not authenticate a derived legacy identity/version against ciphertext.
+
+Format-3 records use the distinct `DeskVault.DocumentEncryption.Record.v3` associated-data domain. Their authenticated associated data binds the key identity/version, document identifier, record type, chunk sequence position, and declared data-chunk length. The authenticated final record binds the complete chunk count and total plaintext length. This extends the key-lineage guarantee without changing the key payload format or introducing another encryption hierarchy.
+
+#### Encrypted Document Record Format and Integrity
+
+The encrypted-document record format version identifies the on-disk framing and integrity contract. It is separate from the key lifecycle version and the key payload format version.
+
+New writes use format version `3`. Readers retain support for legacy version-2 artifacts.
+
+##### Record Header
+
+Every supported `.dvault` record begins with an 8-byte header:
+
+| Field | Length | Meaning |
+| --- | ---: | --- |
+| File magic | 4 bytes | Fixed DeskVault encrypted-document marker |
+| Record format version | 4 bytes | Little-endian unsigned version value |
+
+The parser must validate the complete header, the expected magic, and a supported version before processing any record body. A partial header, invalid magic, or unsupported version must fail explicitly; unsupported versions must not be treated as normal encrypted data.
+
+The format version is a record-framing value. It must never be interpreted as `KeyVersion`.
+
+##### Version-3 Data Chunks
+
+A format-3 record contains zero or more authenticated data chunks followed by one mandatory authenticated final record.
+
+Each data chunk contains:
+
+| Field | Length | Meaning |
+| --- | ---: | --- |
+| Ciphertext length | 4 bytes | Positive little-endian length |
+| Nonce | 12 bytes | AES-GCM nonce |
+| Authentication tag | 16 bytes | AES-GCM authentication tag |
+| Ciphertext | Declared length | Encrypted plaintext bytes |
+
+A data chunk must have a length greater than zero and no greater than 1 MiB. The declared length must be structurally available and must agree with the ciphertext bytes available in the record.
+
+A zero length is reserved for the version-3 final record and is not a valid data chunk. Missing length bytes, incomplete nonce, incomplete authentication tag, and incomplete ciphertext must all be rejected.
+
+Every data chunk is authenticated independently using AES-GCM. Its associated data binds the chunk to:
+
+- The version-3 record domain.
+- The key identity and lifecycle version supplied by the key service.
+- The document identifier.
+- The data-chunk record type.
+- The zero-based chunk sequence position.
+- The declared plaintext/ciphertext length.
+
+The same key and associated-data rules must be used for encryption and decryption. Chunks must not be accepted when moved to another position or substituted into a different document's artifact. Structural validation alone does not establish ciphertext authenticity; AES-GCM authentication remains authoritative.
+
+No chunk's plaintext bytes may be written to the returned stream or made available to a caller unless authentication for that chunk succeeds.
+
+##### Version-3 Authenticated Final Record
+
+After all data chunks, a format-3 record must contain one final record. Its serialized structure is:
+
+| Field | Length | Meaning |
+| --- | ---: | --- |
+| Length marker | 4 bytes | Little-endian zero, reserved for the final record |
+| Nonce | 12 bytes | AES-GCM nonce |
+| Authentication tag | 16 bytes | Authenticated final-record tag |
+| Ciphertext | None | The final record contains no data ciphertext |
+
+The final record authenticates an empty plaintext under AES-GCM. Its associated data binds the record to the final-record type, the key identity/version, the document identifier, the total number of data chunks, and the total plaintext length.
+
+The final record is mandatory, including for an empty document. A version-3 empty document is represented by its header followed immediately by the authenticated final record; a zero-length data chunk is never emitted.
+
+The reader must validate the final-record authentication tag and then require exact end-of-file. EOF before the final record, a partial final record, an invalid final tag, or trailing bytes after the final record must be rejected.
+
+The final record prevents EOF at an otherwise complete data-chunk boundary from being sufficient evidence that a version-3 document is complete. It authenticates the declared end of the document against the accumulated chunk count and plaintext length.
+
+##### Legacy Version-2 Compatibility
+
+The version-2 record consists of the 8-byte header followed by zero or more chunks using the legacy structure: a 4-byte little-endian length, a 12-byte nonce, a 16-byte authentication tag, and ciphertext of the declared length.
+
+Version-2 compatibility includes:
+
+- Valid single- and multi-chunk documents.
+- Header-only representation of an empty document.
+- Existing key-lineage associated-data behavior for versioned keys.
+- Empty associated data for legacy version-zero keys.
+- Rejection of invalid magic, unsupported versions, invalid or oversized chunk lengths, incomplete fields, truncated ciphertext, and AES-GCM authentication failures.
+
+Version 2 has no mandatory authenticated final record. Its ciphertext associated data does not bind a chunk to a document identifier or sequence position. The framing alone therefore cannot distinguish a complete document from a record truncated between otherwise complete chunks, nor can it independently establish document identity binding or chunk ordering.
+
+Compatibility must not silently claim the stronger guarantees of version 3. The persisted document SHA-256 identity is the required whole-content integrity check for both format versions.
+
+##### Persisted Content-Identity Verification
+
+`Document.Sha256Hash` is the persisted identity of the complete original document content. The encrypted-record reader must not return plaintext as a successfully verified document until all encrypted content has been decrypted and the SHA-256 hash of the complete plaintext has been compared with the expected persisted hash.
+
+The `IDocumentReader` contract requires callers to supply the persisted expected SHA-256 value. The Infrastructure implementation performs decryption into a private, non-returned buffer, hashes the complete plaintext, and compares the result with the expected value before returning the stream. The buffer must be disposed and the read must fail if decryption, authentication, hashing, cancellation, or content-identity verification fails.
+
+The hash comparison must be case-insensitive for its hexadecimal representation. The implementation must not expose the calculated hash, expected hash, plaintext, key material, or authentication data through exception messages or diagnostics.
+
+A format-2 document truncated at a complete chunk boundary must not be accepted when the resulting plaintext does not match its persisted whole-document hash. The same persisted-content verification applies to format-3 records, in addition to format 3's authenticated final record.
+
+Reconciliation must classify a persisted-content identity mismatch as a content mismatch, not as a valid matched artifact. A cryptographic, format, or I/O failure that prevents the content from being read remains an unreadable-artifact condition. These results must continue to be available to the explicit recovery boundary; an integrity failure must not trigger silent replacement, adoption, or deletion of content.
+
+The SHA-256 check is a consistency check against persisted metadata, not a replacement for AES-GCM authenticity. It does not make legacy format-2 ciphertext independently bound to the document identity or restore its missing authenticated terminator.
+
+##### Distinction from Persisted Document Chunks
+
+Encrypted-record data chunks and final records belong to the Infrastructure encryption format. They are transport/framing units for protected file bytes.
+
+They are separate from persisted application-level `DocumentChunks`, whose logical identity, content hash, processing provenance, ordering, and optional source-location semantics are governed by ADR-0011. Changing encrypted-record chunk boundaries must not change the canonical persisted knowledge-chunk contract.
 
 ### Document-Owned Artifact Identity
 
@@ -144,17 +250,17 @@ Document-artifact reconciliation is the consistency capability used to compare p
 
 Reconciliation must distinguish artifact identity and ownership before recovery is considered.
 
-A readable artifact is not automatically a valid document artifact. Readability establishes only that the encrypted artifact can be opened and decrypted successfully. Ownership remains an exact identity rule enforced against the canonical managed document artifact.
+A readable artifact is not automatically a valid document artifact. Successful decryption and authentication do not alone establish that the returned plaintext matches the persisted content identity. The document reader verifies the complete plaintext against the persisted SHA-256 value before returning a stream.
 
 For a persisted document, reconciliation may classify the expected artifact as:
 
-- matched when the canonical owned artifact is readable and its decrypted content has the expected SHA-256 identity;
+- matched when the canonical owned artifact is readable and its complete decrypted content has the expected SHA-256 identity;
 - missing when the canonical expected artifact is absent;
 - a path mismatch when a persisted physical reference does not resolve to the canonical managed artifact;
-- unreadable when the artifact cannot be authenticated, decrypted, or otherwise validated;
-- a content mismatch when the artifact is readable but its decrypted content does not match the document's persisted SHA-256 identity.
+- unreadable when the artifact cannot be authenticated, decrypted, or otherwise structurally validated;
+- a content mismatch when complete decrypted content does not match the document's persisted SHA-256 identity.
 
-A content mismatch must not be treated as a valid document-artifact relationship merely because the artifact is readable.
+A content mismatch must not be treated as a valid document-artifact relationship merely because the artifact is readable or its individual encrypted chunks authenticate successfully.
 
 For encrypted artifacts without a corresponding persisted document, reconciliation may identify an orphan artifact. Automatic orphan cleanup is permitted only when the artifact yields a document identifier, the identifier is not present in persisted document metadata, and the physical artifact path passes the canonical document-owned artifact boundary. An artifact that lacks sufficient identity or fails ownership validation is preserved for further recovery rather than deleted.
 
@@ -205,6 +311,10 @@ The Application layer must not construct or accept physical managed artifact pat
 - Normal document decryption fails rather than silently creating a replacement key when the expected master key is unavailable.
 - Document-owned artifact operations have one canonical identity and cannot intentionally select another document's managed artifact by supplying an arbitrary path.
 - Reconciliation can distinguish readable content from an actually owned and content-consistent artifact.
+- Format-3 records authenticate document identity, chunk sequence, declared data-chunk lengths, and whole-document completion.
+- A required authenticated final record prevents a format-3 record from being accepted as complete solely because EOF occurs between valid chunks.
+- Whole-document SHA-256 verification prevents the reader from returning plaintext that differs from the persisted document content identity, including for compatible legacy format-2 artifacts.
+- Legacy version-2 compatibility is explicit about integrity properties that its record structure cannot independently guarantee.
 - Safe orphan cleanup can converge after interrupted lifecycle operations without weakening valid document/artifact relationships.
 
 ### Negative
@@ -217,6 +327,9 @@ The Application layer must not construct or accept physical managed artifact pat
 - Existing plaintext files created by earlier development versions require migration or cleanup.
 - Files can no longer be opened directly from the managed storage directory.
 - Reconciliation and recovery require additional validation and lifecycle handling for inconsistent states.
+- Format 3 introduces a mandatory authenticated final record and stricter framing requirements that legacy artifacts do not contain.
+- Legacy format-2 records cannot independently authenticate document identity, chunk ordering, or whole-document completion using their record structure alone. Their compatibility depends on validating the complete decrypted plaintext against the persisted document SHA-256 identity.
+- The reader must hold the complete decrypted document in a private buffer while verifying the whole-document hash before returning a stream. This introduces memory overhead proportional to the decrypted document size, in addition to applicable resource limits.
 
 ## Security Considerations
 
@@ -230,9 +343,11 @@ Encryption keys must never be:
 
 Cryptographic operations must use cryptographically secure random values for nonces and keys.
 
-The implementation must authenticate encrypted content before returning decrypted data.
+The implementation must authenticate encrypted content before returning decrypted data. Version-3 records must authenticate every data chunk and the mandatory final record, and the reader must require exact end-of-file after the final record. The reader must also verify the complete plaintext against the expected persisted document SHA-256 identity before returning a stream.
 
-Cryptographic failures must not expose sensitive document contents through error messages or logs.
+Version-2 compatibility does not by itself authenticate document identity, chunk sequence, or a whole-document terminator. The persisted-content hash gate is therefore mandatory for legacy reads as well; it must not be represented as a new cryptographic property of the legacy ciphertext.
+
+Cryptographic and content-integrity failures must not expose sensitive document contents, plaintext keys, protected key blobs, authentication material, or credentials through exceptions or logs.
 
 Document-owned lifecycle operations must not accept caller-controlled artifact paths that can escape the application-managed `Documents` directory. Canonical document-to-artifact resolution is therefore performed by Infrastructure from the document identifier.
 
@@ -321,7 +436,9 @@ It does not introduce a replacement-key hierarchy or define key rotation policy.
 
 Document encryption obtains its key through the provisioning-capable key-service operation. Document decryption uses `IEncryptionKeyService.GetKeyAsync()` to retrieve the existing key. Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state.
 
-New master-key artifacts store `KeyId`, key version, and the document-purpose marker within the DPAPI-protected `DVKP` payload described above. New key artifacts start at version `1`. Existing raw-key artifacts are read as legacy version `0` with a deterministic identity derived from the exact protected artifact and are not rewritten during retrieval. For versioned keys, document ciphertext authentication uses key-lineage associated data while the document record remains format version `2`; legacy version-zero reads retain the empty-associated-data behavior.
+New master-key artifacts store `KeyId`, key version, and the document-purpose marker within the DPAPI-protected `DVKP` payload described above. New key artifacts start at version `1`. Existing raw-key artifacts are read as legacy version `0` with a deterministic identity derived from the exact protected artifact and are not rewritten during retrieval.
+
+Newly stored document artifacts use encrypted-record format version `3`. The reader also supports version-2 records for compatibility. The encrypted-record format version remains distinct from key lifecycle version. Format 3 authenticates key identity/version, document identity, chunk order, declared data-chunk lengths, and whole-document completion. Version-2 records retain their existing key-lineage associated-data behavior and do not gain those record-level guarantees retroactively.
 
 Document retrieval follows the corresponding protected path:
 
@@ -338,19 +455,17 @@ Strict retrieval of existing protected key
     ↓
 AES-GCM authentication and decryption
     ↓
+Complete plaintext SHA-256 verification against persisted Document.Sha256Hash
+    ↓
 Readable document stream
 ```
 
-Ordinary document opening and lifecycle operations do not trust the persisted
-physical `StoredFilePath` as the authoritative artifact selector. Reconciliation
-may inspect that persisted value as evidence, but ownership is validated
-against the canonical document-owned path.
+The reader decrypts into a private buffer and verifies the complete plaintext against the caller-supplied persisted document hash before returning that buffer as a readable stream.
+A malformed record, authentication failure, unsupported format, invalid final record, truncated content that fails the persisted hash check, or hash mismatch must prevent a successful read. The private plaintext buffer is disposed when validation fails.
 
-Artifact reconciliation additionally validates content identity for a readable
-artifact by hashing the decrypted content and comparing that SHA-256 value
-with the persisted document's `Sha256Hash`. A readable artifact whose content
-hash differs is classified as a content mismatch and is preserved rather than
-treated as a valid match.
+Ordinary document opening and lifecycle operations do not trust the persisted physical `StoredFilePath` as the authoritative artifact selector. Reconciliation may inspect that persisted value as evidence, but ownership is validated against the canonical document-owned path.
+
+Artifact reconciliation validates content identity through the document reader's persisted-hash verification contract. The reader computes the SHA-256 hash of the complete plaintext and compares it with the persisted document's `Sha256Hash` before returning a stream. Reconciliation does not calculate the hash again; it maps `DocumentContentIntegrityException` to a content-mismatch finding. A readable artifact whose content hash differs is classified as a content mismatch and is preserved rather than treated as a valid match.
 
 Recovery is implemented as a separate Application command over reconciliation
 findings. It may clean up a confirmed orphan only when the artifact identity is
@@ -394,7 +509,13 @@ authoritative. Subsequent retrieval uses the persisted protected key.
 
 Normal document decryption retrieves the existing master key without provisioning a replacement. Missing or invalid key material results in explicit failure, and a failed read does not modify the stored key state.
 
-Reconciliation verifies both ownership and decrypted content identity before
+New document writes use format 3. Its authenticated per-chunk metadata binds protected bytes to the expected document, key identity/version, and chunk position, and its mandatory authenticated final record establishes
+the expected whole-record completion boundary. Exact end-of-file is required after that final record.
+
+Legacy version-2 documents remain readable under their documented compatibility limits. Because their record framing does not provide an authenticated document identity, chunk sequence, or final marker, compatibility
+reads depend on verifying the complete plaintext against the persisted `Sha256Hash` before returning a stream. This consistency check does not retroactively make the legacy ciphertext provide format-3 guarantees.
+
+Reconciliation verifies ownership and content identity before
 classifying a document/artifact relationship as valid.
 
 Recovery remains a separate, explicit capability. It performs automatic
