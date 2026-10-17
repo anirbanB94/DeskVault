@@ -699,6 +699,10 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
         string rootDirectory =
             CreateTemporaryDirectory();
 
+        EncryptionKeyMaterial? provisionedKey = null;
+        byte[]? artifactBeforeCancellation = null;
+        byte[]? artifactAfterCancellation = null;
+
         try
         {
             var dataPaths =
@@ -708,7 +712,15 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
             var service =
                 CreateService(dataPaths);
 
-            await service.GetOrCreateKeyAsync();
+            provisionedKey =
+                await service.GetOrCreateKeyAsync();
+
+            string keyFilePath =
+                GetDatabaseKeyFilePath(dataPaths);
+
+            artifactBeforeCancellation =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
 
             using var cancellationTokenSource =
                 new CancellationTokenSource();
@@ -719,19 +731,54 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
                 () =>
                     service.GetKeyAsync(
                         cancellationTokenSource.Token));
+
+            artifactAfterCancellation =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
+
+            Assert.Equal(
+                artifactBeforeCancellation,
+                artifactAfterCancellation);
+
+            Assert.Equal(
+                new[] { keyFilePath },
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
         }
         finally
         {
+            if (provisionedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    provisionedKey.KeyBytes);
+            }
+
+            if (artifactBeforeCancellation is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    artifactBeforeCancellation);
+            }
+
+            if (artifactAfterCancellation is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    artifactAfterCancellation);
+            }
+
             DeleteTemporaryDirectory(
                 rootDirectory);
         }
     }
 
     [Fact]
-    public async Task GetOrCreateKeyAsync_WhenProtectedKeyIsTampered_ThrowsCryptographicException()
+    public async Task GetOrCreateKeyAsync_WhenProtectedKeyIsTampered_ThrowsWithoutModifyingKey()
     {
         string rootDirectory =
             CreateTemporaryDirectory();
+
+        byte[]? protectedKey = null;
+        byte[]? storedBytesBeforeRead = null;
+        byte[]? storedBytesAfterRead = null;
 
         try
         {
@@ -742,12 +789,26 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
             var service =
                 CreateService(dataPaths);
 
-            await service.GetOrCreateKeyAsync();
+            EncryptionKeyMaterial? provisionedKey = null;
+
+            try
+            {
+                provisionedKey =
+                    await service.GetOrCreateKeyAsync();
+            }
+            finally
+            {
+                if (provisionedKey is not null)
+                {
+                    CryptographicOperations.ZeroMemory(
+                        provisionedKey.KeyBytes);
+                }
+            }
 
             string keyFilePath =
                 GetDatabaseKeyFilePath(dataPaths);
 
-            byte[] protectedKey =
+            protectedKey =
                 await File.ReadAllBytesAsync(
                     keyFilePath);
 
@@ -757,12 +818,50 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
                 keyFilePath,
                 protectedKey);
 
+            storedBytesBeforeRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
+
             await Assert.ThrowsAsync<CryptographicException>(
                 () =>
                     service.GetOrCreateKeyAsync());
+
+            storedBytesAfterRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
+
+            Assert.True(
+                File.Exists(keyFilePath));
+
+            Assert.Equal(
+                storedBytesBeforeRead,
+                storedBytesAfterRead);
+
+            Assert.Equal(
+                new[] { keyFilePath },
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
         }
         finally
         {
+            if (protectedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    protectedKey);
+            }
+
+            if (storedBytesBeforeRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    storedBytesBeforeRead);
+            }
+
+            if (storedBytesAfterRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    storedBytesAfterRead);
+            }
+
             DeleteTemporaryDirectory(
                 rootDirectory);
         }

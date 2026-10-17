@@ -177,10 +177,16 @@ user-facing exceptions, or stored as plaintext application configuration.
 
 ### Atomic Database Encryption Key Provisioning
 
-`IDatabaseEncryptionKeyService.GetOrCreateKeyAsync` is the explicit
-provisioning path for the database encryption key. When the canonical
-`Security\database.key` artifact already exists, the service retrieves
-and validates the existing key rather than generating a replacement.
+`IDatabaseEncryptionKeyService.GetOrCreateKeyAsync` is the provisioning-capable
+operation for the database encryption key, not a replacement, rotation,
+repair, or recovery API. `DatabaseInitializer` may use it only when the
+initialization lifecycle has explicitly authorized provisioning for a new
+database or for an existing plaintext database undergoing migration to the
+encrypted format. When the canonical `Security\database.key` artifact already
+exists, the service retrieves and validates the existing key rather than
+generating a replacement. An existing encrypted database must use strict
+retrieval of its established key; a missing, unreadable, invalid, or
+unprotectable key must fail startup without provisioning a new database key.
 
 When the canonical key is absent, provisioning follows an atomic
 publication strategy:
@@ -238,10 +244,13 @@ after use.
 
 Strict retrieval through `IDatabaseEncryptionKeyService.GetKeyAsync`
 remains distinct from provisioning. It must retrieve and validate the
-existing canonical key or fail when the key is missing or invalid. It
-must not create a replacement key as a fallback.
+existing canonical key or fail when the key is missing, unreadable, invalid,
+or cannot be unprotected. It must not create a replacement key as a fallback,
+change canonical key state, or fall back to an unencrypted database.
+Cancellation remains cancellation and must not be converted into a key-failure
+result.
 
-Atomic provisioning does not introduce another encryption hierarchy. The shared key identity/version payload is defined by ADR-0004 and its use for the database key is documented in the following subsection. Replacement/rotation authorization and operational recovery remain separate responsibilities.
+Atomic provisioning does not introduce another encryption hierarchy. The shared key identity/version payload is defined by ADR-0004 and its use for the database key is documented in the following subsection. Intentional key replacement and rotation are unsupported by the current runtime. The shared policy boundary is described by ADR-0004; operational recovery remains separate and must restore the established key identity/version rather than inventing a new lineage.
 
 ### Database Key Identity and Version Semantics
 
@@ -251,7 +260,8 @@ Legacy `database.key` artifacts that contain only a DPAPI-protected raw 32-byte 
 
 The database encryption provider continues to receive the actual key bytes as its SQLite encryption password. `KeyId` and `KeyVersion` are not embedded in the SQLite database file and this decision does not change the encrypted database format or trigger database re-encryption. Instead, the identity/version metadata is protected together with the key in the canonical DPAPI-protected key artifact. Missing or invalid key state fails through strict retrieval; it must not cause implicit key replacement or fallback to an unencrypted database.
 
-For future authorized rotation within an established lineage, `KeyId` remains stable and `KeyVersion` increases with the new concrete key. An intentional replacement that starts a new lineage uses a new `KeyId` and version `1`. The policy that authorizes those operations, the database re-encryption/transition procedure, and recovery handling remain outside this provider decision and are owned by #229 and the existing operational recovery work. Normal retrieval never infers rotation or replacement from a missing or unusable key.
+Intentional key replacement and rotation are unsupported by the current runtime. For a future authorized rotation within an established lineage, `KeyId` must remain stable and `KeyVersion` must increase with the new concrete key. A future intentional replacement that starts a new lineage must use a new `KeyId` and version `1`. Any such operation requires an explicit authorization boundary, an end-to-end database re-encryption or data-transition procedure, verification before the new key becomes authoritative, and a recoverable failure path.
+Normal retrieval never infers rotation or replacement from missing, unreadable, invalid, or unprotectable key material. The shared key lifecycle policy is defined by ADR-0004.
 
 ### Database Initialization
 

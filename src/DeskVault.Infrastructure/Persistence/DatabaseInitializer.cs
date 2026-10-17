@@ -19,6 +19,7 @@ public sealed class DatabaseInitializer
     private readonly DeskVaultDataPaths _dataPaths;
     private readonly IDatabaseFormatDetector _databaseFormatDetector;
     private readonly IDatabaseEncryptionKeyService _databaseEncryptionKeyService;
+    private readonly IEncryptionKeyService _encryptionKeyService;
     private readonly IDatabaseEncryptionMigrator _databaseEncryptionMigrator;
     private readonly DocumentChunkIdentityBackfill _documentChunkIdentityBackfill;
     private readonly DocumentLifecycleStateBackfill _documentLifecycleStateBackfill;
@@ -30,6 +31,7 @@ public sealed class DatabaseInitializer
         DeskVaultDataPaths dataPaths,
         IDatabaseFormatDetector databaseFormatDetector,
         IDatabaseEncryptionKeyService databaseEncryptionKeyService,
+        IEncryptionKeyService encryptionKeyService,
         IDatabaseEncryptionMigrator databaseEncryptionMigrator,
         DocumentChunkIdentityBackfill documentChunkIdentityBackfill,
         DocumentLifecycleStateBackfill documentLifecycleStateBackfill,
@@ -40,6 +42,7 @@ public sealed class DatabaseInitializer
         _dataPaths = dataPaths;
         _databaseFormatDetector = databaseFormatDetector;
         _databaseEncryptionKeyService = databaseEncryptionKeyService;
+        _encryptionKeyService = encryptionKeyService;
         _databaseEncryptionMigrator = databaseEncryptionMigrator;
         _documentChunkIdentityBackfill = documentChunkIdentityBackfill;
         _documentLifecycleStateBackfill = documentLifecycleStateBackfill;
@@ -88,6 +91,19 @@ public sealed class DatabaseInitializer
         if (!File.Exists(
                 _dataPaths.DatabasePath))
         {
+            if (HasStoredDocumentArtifacts())
+            {
+                throw new InvalidOperationException(
+                    "The canonical database is missing while document artifacts exist. Initial key provisioning is not permitted because existing vault state may depend on the missing database or encryption key.");
+            }
+
+            EncryptionKeyMaterial documentKeyMaterial =
+                await _encryptionKeyService.GetOrCreateKeyAsync(
+                    cancellationToken);
+
+            CryptographicOperations.ZeroMemory(
+                documentKeyMaterial.KeyBytes);
+
             EncryptionKeyMaterial databaseKeyMaterial =
                 await _databaseEncryptionKeyService.GetOrCreateKeyAsync(
                     cancellationToken);
@@ -108,6 +124,24 @@ public sealed class DatabaseInitializer
 
         await _documentLifecycleStateBackfill.BackfillAsync(
             cancellationToken);
+
+        string documentKeyPath =
+            Path.Combine(
+                _dataPaths.SecurityDirectory,
+                "master.key");
+
+        if (!File.Exists(documentKeyPath) &&
+            !await dbContext.Documents.AnyAsync(
+                cancellationToken) &&
+            !HasStoredDocumentArtifacts())
+        {
+            EncryptionKeyMaterial documentKeyMaterial =
+                await _encryptionKeyService.GetOrCreateKeyAsync(
+                    cancellationToken);
+
+            CryptographicOperations.ZeroMemory(
+                documentKeyMaterial.KeyBytes);
+        }
 
         if (migrationBackupExists)
         {
@@ -256,6 +290,20 @@ public sealed class DatabaseInitializer
             LogMessages.DatabasePlaintextMigrationCompleted);
 
         return true;
+    }
+
+    private bool HasStoredDocumentArtifacts()
+    {
+        string documentsDirectory =
+            _dataPaths.DocumentsDirectory;
+
+        return
+            Directory.Exists(documentsDirectory) &&
+            Directory.EnumerateFiles(
+                documentsDirectory,
+                "*",
+                SearchOption.AllDirectories)
+            .Any();
     }
 
     private void CleanupMigrationBackup()

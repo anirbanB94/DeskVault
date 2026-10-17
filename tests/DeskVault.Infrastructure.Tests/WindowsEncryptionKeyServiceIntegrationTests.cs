@@ -9,7 +9,7 @@ namespace DeskVault.Infrastructure.Tests;
 public sealed class WindowsEncryptionKeyServiceIntegrationTests
 {
     [Fact]
-    public async Task EncryptAndDecryptAsync_WhenFirstUseIsConcurrent_PreservesDataAcrossServiceInstances()
+    public async Task EncryptAndDecryptAsync_WhenExistingKeyIsUsedConcurrently_PreservesDataAcrossServiceInstances()
     {
         // Arrange
         string rootDirectory =
@@ -23,11 +23,21 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             Encoding.UTF8.GetBytes(
                 "DeskVault verifies concurrent encryption uses the authoritative master key.");
 
+        EncryptionKeyMaterial? initializedKey = null;
+
         try
         {
             var dataPaths =
                 new DeskVaultDataPaths(
                     rootDirectory);
+
+            var keyService =
+                new WindowsEncryptionKeyService(
+                    dataPaths,
+                    NullLogger<WindowsEncryptionKeyService>.Instance);
+
+            initializedKey =
+                await keyService.GetOrCreateKeyAsync();
 
             DocumentEncryptionService firstEncryptionService =
                 CreateEncryptionService(dataPaths);
@@ -117,6 +127,12 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
         }
         finally
         {
+            if (initializedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    initializedKey.KeyBytes);
+            }
+
             DeleteTemporaryDirectory(
                 rootDirectory);
         }
@@ -132,11 +148,21 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             Encoding.UTF8.GetBytes(
                 "DeskVault missing master-key integration regression test.");
 
+        EncryptionKeyMaterial? initializedKey = null;
+
         try
         {
             var dataPaths =
                 new DeskVaultDataPaths(
                     rootDirectory);
+
+            var keyService =
+                new WindowsEncryptionKeyService(
+                    dataPaths,
+                    NullLogger<WindowsEncryptionKeyService>.Instance);
+
+            initializedKey =
+                await keyService.GetOrCreateKeyAsync();
 
             DocumentEncryptionService encryptionService =
                 CreateEncryptionService(dataPaths);
@@ -187,6 +213,12 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
         }
         finally
         {
+            if (initializedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    initializedKey.KeyBytes);
+            }
+
             DeleteTemporaryDirectory(
                 rootDirectory);
         }
@@ -387,6 +419,156 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             {
                 CryptographicOperations.ZeroMemory(
                     protectedArtifactAfterRead);
+            }
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task StoreAsync_WhenMasterKeyIsMissingAfterPriorDocumentStorage_ThrowsWithoutProvisioningReplacementKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] firstContent =
+            Encoding.UTF8.GetBytes(
+                "Existing encrypted document must remain unchanged when the expected master key is missing.");
+
+        byte[] secondContent =
+            Encoding.UTF8.GetBytes(
+                "This document must not be stored without the expected master key.");
+
+        EncryptionKeyMaterial? initializedKey = null;
+        byte[]? firstArtifactBeforeFailure = null;
+        byte[]? firstArtifactAfterFailure = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var documentKeyService =
+                new WindowsEncryptionKeyService(
+                    dataPaths,
+                    NullLogger<WindowsEncryptionKeyService>.Instance);
+
+            // Arrange: provision the initial key before storing existing content.
+            initializedKey =
+                await documentKeyService.GetOrCreateKeyAsync();
+
+            var pathResolver =
+                new DocumentArtifactPathResolver(
+                    dataPaths);
+
+            var storageService =
+                new FileSystemStorageService(
+                    CreateEncryptionService(dataPaths),
+                    dataPaths,
+                    pathResolver,
+                    NullLogger<FileSystemStorageService>.Instance);
+
+            string firstSourcePath =
+                Path.Combine(
+                    rootDirectory,
+                    "first-source.txt");
+
+            string secondSourcePath =
+                Path.Combine(
+                    rootDirectory,
+                    "second-source.txt");
+
+            await File.WriteAllBytesAsync(
+                firstSourcePath,
+                firstContent);
+
+            await File.WriteAllBytesAsync(
+                secondSourcePath,
+                secondContent);
+
+            Guid firstDocumentId =
+                Guid.NewGuid();
+
+            Guid secondDocumentId =
+                Guid.NewGuid();
+
+            string firstArtifactPath =
+                await storageService.StoreAsync(
+                    firstSourcePath,
+                    firstDocumentId);
+
+            string keyFilePath =
+                Path.Combine(
+                    dataPaths.SecurityDirectory,
+                    "master.key");
+
+            Assert.True(
+                File.Exists(keyFilePath));
+
+            firstArtifactBeforeFailure =
+                await File.ReadAllBytesAsync(
+                    firstArtifactPath);
+
+            // Simulate an established vault whose expected key is missing.
+            File.Delete(keyFilePath);
+
+            // Act and assert: ordinary storage must not create a replacement key.
+            await Assert.ThrowsAsync<CryptographicException>(
+                () =>
+                    storageService.StoreAsync(
+                        secondSourcePath,
+                        secondDocumentId));
+
+            firstArtifactAfterFailure =
+                await File.ReadAllBytesAsync(
+                    firstArtifactPath);
+
+            // The missing key and canonical document state must remain unchanged.
+            Assert.False(
+                File.Exists(keyFilePath));
+
+            Assert.False(
+                File.Exists(
+                    pathResolver.GetPath(
+                        secondDocumentId)));
+
+            Assert.True(
+                File.Exists(firstArtifactPath));
+
+            Assert.Equal(
+                firstArtifactBeforeFailure,
+                firstArtifactAfterFailure);
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
+        }
+        finally
+        {
+            if (initializedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    initializedKey.KeyBytes);
+            }
+
+            CryptographicOperations.ZeroMemory(
+                firstContent);
+
+            CryptographicOperations.ZeroMemory(
+                secondContent);
+
+            if (firstArtifactBeforeFailure is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    firstArtifactBeforeFailure);
+            }
+
+            if (firstArtifactAfterFailure is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    firstArtifactAfterFailure);
             }
 
             DeleteTemporaryDirectory(
