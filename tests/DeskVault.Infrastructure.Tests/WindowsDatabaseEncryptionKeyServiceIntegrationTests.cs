@@ -12,6 +12,444 @@ namespace DeskVault.Infrastructure.Tests;
 public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
 {
     [Fact]
+    public async Task DatabaseInitializer_WhenDatabaseIsMissingButDocumentArtifactsExist_FailsWithoutProvisioningKeys()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        byte[] existingArtifactContents =
+            [0x44, 0x56, 0x41, 0x55, 0x4C, 0x54];
+
+        byte[]? artifactContentsAfterInitialization = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            Directory.CreateDirectory(
+                dataPaths.DocumentsDirectory);
+
+            Guid documentId =
+                Guid.NewGuid();
+
+            string documentArtifactPath =
+                Path.Combine(
+                    dataPaths.DocumentsDirectory,
+                    $"{documentId}.dvault");
+
+            await File.WriteAllBytesAsync(
+                documentArtifactPath,
+                existingArtifactContents);
+
+            var services =
+                new ServiceCollection();
+
+            services.AddLogging();
+
+            IConfiguration configuration =
+                new ConfigurationBuilder()
+                    .Build();
+
+            services.AddSingleton(dataPaths);
+            services.AddInfrastructure(configuration);
+
+            await using ServiceProvider serviceProvider =
+                services.BuildServiceProvider();
+
+            var initializer =
+                serviceProvider.GetRequiredService<
+                    DatabaseInitializer>();
+
+            // Act: missing database plus existing document data
+            // must not be treated as a new vault.
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () =>
+                    initializer.InitializeAsync());
+
+            artifactContentsAfterInitialization =
+                await File.ReadAllBytesAsync(
+                    documentArtifactPath);
+
+            // Assert: no database or replacement key is provisioned.
+            Assert.False(
+                File.Exists(
+                    dataPaths.DatabasePath));
+
+            Assert.False(
+                File.Exists(
+                    Path.Combine(
+                        dataPaths.SecurityDirectory,
+                        "master.key")));
+
+            Assert.False(
+                File.Exists(
+                    Path.Combine(
+                        dataPaths.SecurityDirectory,
+                        "database.key")));
+
+            // The existing document artifact must remain unchanged.
+            Assert.Equal(
+                existingArtifactContents,
+                artifactContentsAfterInitialization);
+
+            Assert.Equal(
+                new[] { documentArtifactPath },
+                Directory.GetFiles(
+                    dataPaths.DocumentsDirectory));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                existingArtifactContents);
+
+            if (artifactContentsAfterInitialization is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    artifactContentsAfterInitialization);
+            }
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DatabaseInitializer_WhenInitializingNewVault_ExplicitlyProvisionsBothEncryptionKeys()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        EncryptionKeyMaterial? documentKey = null;
+        EncryptionKeyMaterial? databaseKey = null;
+
+        byte[]? documentArtifactBeforeRestart = null;
+        byte[]? documentArtifactAfterRestart = null;
+        byte[]? databaseArtifactBeforeRestart = null;
+        byte[]? databaseArtifactAfterRestart = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var services =
+                new ServiceCollection();
+
+            services.AddLogging();
+
+            IConfiguration configuration =
+                new ConfigurationBuilder()
+                    .Build();
+
+            services.AddSingleton(dataPaths);
+            services.AddInfrastructure(configuration);
+
+            await using ServiceProvider serviceProvider =
+                services.BuildServiceProvider();
+
+            var initializer =
+                serviceProvider.GetRequiredService<
+                    DatabaseInitializer>();
+
+            // Act: initialize a new vault through the production boundary.
+            await initializer.InitializeAsync();
+
+            string documentKeyPath =
+                Path.Combine(
+                    dataPaths.SecurityDirectory,
+                    "master.key");
+
+            string databaseKeyPath =
+                Path.Combine(
+                    dataPaths.SecurityDirectory,
+                    "database.key");
+
+            // Both keys and the encrypted database must be initialized.
+            Assert.True(
+                File.Exists(dataPaths.DatabasePath));
+
+            Assert.True(
+                File.Exists(documentKeyPath));
+
+            Assert.True(
+                File.Exists(databaseKeyPath));
+
+            Assert.Equal(
+                2,
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory).Length);
+
+            var documentKeyService =
+                serviceProvider.GetRequiredService<
+                    IEncryptionKeyService>();
+
+            var databaseKeyService =
+                serviceProvider.GetRequiredService<
+                    IDatabaseEncryptionKeyService>();
+
+            documentKey =
+                await documentKeyService.GetKeyAsync();
+
+            databaseKey =
+                await databaseKeyService.GetKeyAsync();
+
+            Assert.NotEqual(
+                Guid.Empty,
+                documentKey.KeyId);
+
+            Assert.NotEqual(
+                Guid.Empty,
+                databaseKey.KeyId);
+
+            Assert.Equal(
+                1,
+                documentKey.KeyVersion);
+
+            Assert.Equal(
+                1,
+                databaseKey.KeyVersion);
+
+            // Document and database keys remain separate key materials.
+            Assert.False(
+                documentKey.KeyBytes.SequenceEqual(
+                    databaseKey.KeyBytes));
+
+            Assert.NotEqual(
+                documentKey.KeyId,
+                databaseKey.KeyId);
+
+            documentArtifactBeforeRestart =
+                await File.ReadAllBytesAsync(
+                    documentKeyPath);
+
+            databaseArtifactBeforeRestart =
+                await File.ReadAllBytesAsync(
+                    databaseKeyPath);
+
+            // Repeated startup must reuse existing key state.
+            await initializer.InitializeAsync();
+
+            documentArtifactAfterRestart =
+                await File.ReadAllBytesAsync(
+                    documentKeyPath);
+
+            databaseArtifactAfterRestart =
+                await File.ReadAllBytesAsync(
+                    databaseKeyPath);
+
+            Assert.Equal(
+                documentArtifactBeforeRestart,
+                documentArtifactAfterRestart);
+
+            Assert.Equal(
+                databaseArtifactBeforeRestart,
+                databaseArtifactAfterRestart);
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "*.tmp"));
+        }
+        finally
+        {
+            if (documentKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    documentKey.KeyBytes);
+            }
+
+            if (databaseKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    databaseKey.KeyBytes);
+            }
+
+            if (documentArtifactBeforeRestart is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    documentArtifactBeforeRestart);
+            }
+
+            if (documentArtifactAfterRestart is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    documentArtifactAfterRestart);
+            }
+
+            if (databaseArtifactBeforeRestart is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    databaseArtifactBeforeRestart);
+            }
+
+            if (databaseArtifactAfterRestart is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    databaseArtifactAfterRestart);
+            }
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task DatabaseInitializer_WhenExistingEmptyVaultHasNoDocumentKey_ProvisionsInitialDocumentKey()
+    {
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        EncryptionKeyMaterial? databaseKey = null;
+        EncryptionKeyMaterial? documentKey = null;
+
+        byte[]? databaseArtifactBeforeInitialization = null;
+        byte[]? databaseArtifactAfterInitialization = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            var databaseKeyService =
+                new WindowsDatabaseEncryptionKeyService(
+                    dataPaths,
+                    NullLogger<WindowsDatabaseEncryptionKeyService>.Instance);
+
+            databaseKey =
+                await databaseKeyService.GetOrCreateKeyAsync();
+
+            // Reproduce the valid legacy state: the encrypted database
+            // already exists, but document-key provisioning has not occurred.
+            var existingDatabaseFactory =
+                new EncryptedDeskVaultDbContextFactory(
+                    dataPaths,
+                    databaseKeyService);
+
+            await using (
+                var dbContext =
+                    await existingDatabaseFactory.CreateDbContextAsync())
+            {
+                await dbContext.Database.MigrateAsync();
+            }
+
+            string documentKeyPath =
+                Path.Combine(
+                    dataPaths.SecurityDirectory,
+                    "master.key");
+
+            string databaseKeyPath =
+                Path.Combine(
+                    dataPaths.SecurityDirectory,
+                    "database.key");
+
+            Assert.True(
+                File.Exists(dataPaths.DatabasePath));
+
+            Assert.True(
+                File.Exists(databaseKeyPath));
+
+            Assert.False(
+                File.Exists(documentKeyPath));
+
+            databaseArtifactBeforeInitialization =
+                await File.ReadAllBytesAsync(
+                    databaseKeyPath);
+
+            var services =
+                new ServiceCollection();
+
+            services.AddLogging();
+
+            IConfiguration configuration =
+                new ConfigurationBuilder()
+                    .Build();
+
+            services.AddSingleton(dataPaths);
+            services.AddInfrastructure(configuration);
+
+            await using ServiceProvider serviceProvider =
+                services.BuildServiceProvider();
+
+            var initializer =
+                serviceProvider.GetRequiredService<
+                    DatabaseInitializer>();
+
+            // Act: initialization must recognize this as an empty vault
+            // without treating an unusable existing key as replaceable.
+            await initializer.InitializeAsync();
+
+            var documentKeyService =
+                serviceProvider.GetRequiredService<
+                    IEncryptionKeyService>();
+
+            documentKey =
+                await documentKeyService.GetKeyAsync();
+
+            databaseArtifactAfterInitialization =
+                await File.ReadAllBytesAsync(
+                    databaseKeyPath);
+
+            // Assert: the initial document key is now available.
+            Assert.True(
+                File.Exists(documentKeyPath));
+
+            Assert.NotEqual(
+                Guid.Empty,
+                documentKey.KeyId);
+
+            Assert.Equal(
+                1,
+                documentKey.KeyVersion);
+
+            // Existing database-key state remains authoritative.
+            Assert.Equal(
+                databaseArtifactBeforeInitialization,
+                databaseArtifactAfterInitialization);
+
+            Assert.True(
+                File.Exists(dataPaths.DatabasePath));
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "master.key.*.tmp"));
+        }
+        finally
+        {
+            if (databaseKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    databaseKey.KeyBytes);
+            }
+
+            if (documentKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    documentKey.KeyBytes);
+            }
+
+            if (databaseArtifactBeforeInitialization is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    databaseArtifactBeforeInitialization);
+            }
+
+            if (databaseArtifactAfterInitialization is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    databaseArtifactAfterInitialization);
+            }
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task ConcurrentKeyProvisioning_InitializesEncryptedDatabaseUsingAuthoritativeKey()
     {
         // Arrange

@@ -93,7 +93,7 @@ public sealed class DocumentEncryptionService
         try
         {
             EncryptionKeyMaterial keyMaterial =
-                await _keyService.GetOrCreateKeyAsync(
+                await _keyService.GetKeyAsync(
                     cancellationToken);
 
             byte[] key = keyMaterial.KeyBytes;
