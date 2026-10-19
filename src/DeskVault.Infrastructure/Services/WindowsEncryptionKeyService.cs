@@ -13,13 +13,29 @@ public sealed class WindowsEncryptionKeyService :
 
     private readonly DeskVaultDataPaths _dataPaths;
     private readonly ILogger<WindowsEncryptionKeyService> _logger;
+    private readonly Func<CancellationToken, Task>? _beforeKeyPublicationAsync;
 
     public WindowsEncryptionKeyService(
         DeskVaultDataPaths dataPaths,
         ILogger<WindowsEncryptionKeyService> logger)
+        : this(
+            dataPaths,
+            logger,
+            beforeKeyPublicationAsync: null)
+    {
+    }
+
+    /// <summary>
+    /// Provides a publication seam for deterministic concurrency tests.
+    /// </summary>
+    internal WindowsEncryptionKeyService(
+        DeskVaultDataPaths dataPaths,
+        ILogger<WindowsEncryptionKeyService> logger,
+        Func<CancellationToken, Task>? beforeKeyPublicationAsync)
     {
         _dataPaths = dataPaths;
         _logger = logger;
+        _beforeKeyPublicationAsync = beforeKeyPublicationAsync;
     }
 
     public async Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
@@ -107,6 +123,12 @@ public sealed class WindowsEncryptionKeyService :
 
                 temporaryKeyFile.Flush(
                     flushToDisk: true);
+            }
+
+            if (_beforeKeyPublicationAsync is not null)
+            {
+                await _beforeKeyPublicationAsync(
+                    cancellationToken);
             }
 
             try

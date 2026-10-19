@@ -736,6 +736,235 @@ public sealed class WindowsEncryptionKeyServiceTests
     }
 
     [Fact]
+    public async Task GetOrCreateKeyAsync_WhenCompetingInitializersReachPublicationTogether_UsesPersistedAuthoritativeKey()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        KeyPublicationBarrier? publicationBarrier = null;
+        Task<EncryptionKeyMaterial>[]? initializationTasks = null;
+        EncryptionKeyMaterial[]? keyMaterials = null;
+        EncryptionKeyMaterial? persistedMaterial = null;
+        byte[]? persistedProtectedKey = null;
+        byte[]? unprotectedPayload = null;
+
+        try
+        {
+            // Set up two independent initializers and a shared publication barrier.
+
+            var dataPaths =
+                new DeskVaultDataPaths(
+                    rootDirectory);
+
+            const int participantCount = 2;
+
+            publicationBarrier =
+                new KeyPublicationBarrier(
+                    participantCount);
+
+            WindowsEncryptionKeyService[] services =
+                Enumerable
+                    .Range(0, participantCount)
+                    .Select(
+                        _ =>
+                            new WindowsEncryptionKeyService(
+                                dataPaths,
+                                NullLogger<WindowsEncryptionKeyService>.Instance,
+                                publicationBarrier.WaitAtPublicationAsync))
+                    .ToArray();
+
+            initializationTasks =
+                services
+                    .Select(
+                        service =>
+                            service.GetOrCreateKeyAsync())
+                    .ToArray();
+
+            // Hold both candidates until each initializer reaches publication.
+            await publicationBarrier.WaitForAllArrivalsAsync(
+                TimeSpan.FromSeconds(15));
+
+            Assert.Equal(
+                participantCount,
+                publicationBarrier.ArrivalCount);
+
+            string keyFilePath =
+                GetKeyFilePath(dataPaths);
+
+            Assert.False(
+                File.Exists(keyFilePath));
+
+            // Verify both candidates exist before the canonical key is published.
+            string[] candidateFiles =
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "master.key.*.tmp");
+
+            Assert.Equal(
+                participantCount,
+                candidateFiles.Length);
+
+            // Act
+            publicationBarrier.Release();
+
+            keyMaterials =
+                await Task.WhenAll(
+                    initializationTasks);
+
+            // Assert: each initializer returns the same key material.
+            Assert.Equal(
+                participantCount,
+                keyMaterials.Length);
+
+            EncryptionKeyMaterial expectedMaterial =
+                keyMaterials[0];
+
+            Assert.All(
+                keyMaterials,
+                keyMaterial =>
+                {
+                    Assert.True(
+                        CryptographicOperations.FixedTimeEquals(
+                            expectedMaterial.KeyBytes,
+                            keyMaterial.KeyBytes),
+                        "Concurrent initializers returned different key bytes.");
+
+                    Assert.Equal(
+                        expectedMaterial.KeyId,
+                        keyMaterial.KeyId);
+
+                    Assert.Equal(
+                        expectedMaterial.KeyVersion,
+                        keyMaterial.KeyVersion);
+                });
+
+            Assert.True(
+                File.Exists(keyFilePath));
+
+            string[] persistedFiles =
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory);
+
+            Assert.Single(
+                persistedFiles);
+
+            Assert.Equal(
+                Path.GetFullPath(keyFilePath),
+                Path.GetFullPath(persistedFiles[0]));
+
+            persistedProtectedKey =
+                await File.ReadAllBytesAsync(
+                    keyFilePath);
+
+            unprotectedPayload =
+                ProtectedData.Unprotect(
+                    persistedProtectedKey,
+                    null,
+                    DataProtectionScope.CurrentUser);
+
+            persistedMaterial =
+                ProtectedEncryptionKeyPayload.Decode(
+                    unprotectedPayload,
+                    persistedProtectedKey,
+                    EncryptionKeyPurpose.Document);
+
+            Assert.True(
+                CryptographicOperations.FixedTimeEquals(
+                    expectedMaterial.KeyBytes,
+                    persistedMaterial.KeyBytes),
+                "Persisted canonical key does not match the authoritative key bytes.");
+
+            Assert.Equal(
+                expectedMaterial.KeyId,
+                persistedMaterial.KeyId);
+
+            Assert.Equal(
+                expectedMaterial.KeyVersion,
+                persistedMaterial.KeyVersion);
+
+            Assert.Equal(
+                1,
+                persistedMaterial.KeyVersion);
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "master.key.*.tmp"));
+        }
+        finally
+        {
+            // Always unblock any initializer left waiting if an assertion
+            // or the arrival timeout fails.
+            publicationBarrier?.Release();
+
+            // Observe pending tasks before deleting their temporary directory.
+            if (keyMaterials is null &&
+                initializationTasks is not null)
+            {
+                try
+                {
+                    keyMaterials =
+                        await Task.WhenAll(
+                            initializationTasks);
+                }
+                catch
+                {
+                    // Preserve the original test failure.
+                }
+            }
+
+            // Clear returned key material, including partial task success.
+            if (keyMaterials is not null)
+            {
+                foreach (EncryptionKeyMaterial keyMaterial in keyMaterials)
+                {
+                    CryptographicOperations.ZeroMemory(
+                        keyMaterial.KeyBytes);
+                }
+            }
+            else if (initializationTasks is not null)
+            {
+                foreach (Task<EncryptionKeyMaterial> task in initializationTasks)
+                {
+                    try
+                    {
+                        EncryptionKeyMaterial keyMaterial = await task;
+
+                        CryptographicOperations.ZeroMemory(
+                            keyMaterial.KeyBytes);
+                    }
+                    catch
+                    {
+                        // Preserve the original test failure.
+                    }
+                }
+            }
+
+            if (persistedMaterial is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedMaterial.KeyBytes);
+            }
+
+            if (unprotectedPayload is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    unprotectedPayload);
+            }
+
+            if (persistedProtectedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedProtectedKey);
+            }
+
+            DeleteTemporaryDirectory(
+                rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task GetOrCreateKeyAsync_WhenCalledConcurrently_PersistsOneAuthoritativeKey()
     {
         // Arrange
