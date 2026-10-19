@@ -14,6 +14,7 @@ public sealed class WindowsDatabaseEncryptionKeyService :
     private readonly DeskVaultDataPaths _dataPaths;
     private readonly ILogger<WindowsDatabaseEncryptionKeyService> _logger;
     private readonly Func<CancellationToken, Task>? _beforeKeyPublicationAsync;
+    private readonly IKeyCandidateFileOperations _candidateFileOperations;
 
     public WindowsDatabaseEncryptionKeyService(
         DeskVaultDataPaths dataPaths,
@@ -21,7 +22,8 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         : this(
             dataPaths,
             logger,
-            beforeKeyPublicationAsync: null)
+            beforeKeyPublicationAsync: null,
+            candidateFileOperations: null)
     {
     }
 
@@ -31,11 +33,14 @@ public sealed class WindowsDatabaseEncryptionKeyService :
     internal WindowsDatabaseEncryptionKeyService(
         DeskVaultDataPaths dataPaths,
         ILogger<WindowsDatabaseEncryptionKeyService> logger,
-        Func<CancellationToken, Task>? beforeKeyPublicationAsync)
+        Func<CancellationToken, Task>? beforeKeyPublicationAsync,
+        IKeyCandidateFileOperations? candidateFileOperations = null)
     {
         _dataPaths = dataPaths;
         _logger = logger;
         _beforeKeyPublicationAsync = beforeKeyPublicationAsync;
+        _candidateFileOperations =
+            candidateFileOperations ?? new KeyCandidateFileOperations();
     }
 
     public async Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
@@ -44,6 +49,7 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         cancellationToken.ThrowIfCancellationRequested();
 
         string? temporaryKeyFilePath = null;
+        bool ownsTemporaryKeyFile = false;
         byte[]? candidateKey = null;
         byte[]? keyPayload = null;
         byte[]? protectedKey = null;
@@ -90,19 +96,17 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                     DataProtectionScope.CurrentUser);
 
             temporaryKeyFilePath =
-                Path.Combine(
+                _candidateFileOperations.GetCandidateFilePath(
                     securityDirectory,
-                    $"{KeyFileName}.{Guid.NewGuid():N}.tmp");
+                    KeyFileName);
 
             await using (var temporaryKeyFile =
-                new FileStream(
-                    temporaryKeyFilePath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    bufferSize: 4096,
-                    useAsync: true))
+                _candidateFileOperations.CreateCandidateFile(
+                    temporaryKeyFilePath))
             {
+                // Exclusive creation succeeded; this operation owns the candidate.
+                ownsTemporaryKeyFile = true;
+
                 await temporaryKeyFile.WriteAsync(
                     protectedKey,
                     cancellationToken);
@@ -110,8 +114,8 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                 await temporaryKeyFile.FlushAsync(
                     cancellationToken);
 
-                temporaryKeyFile.Flush(
-                    flushToDisk: true);
+                _candidateFileOperations.FlushCandidateFileToDisk(
+                    temporaryKeyFile);
             }
 
             if (_beforeKeyPublicationAsync is not null)
@@ -124,9 +128,13 @@ public sealed class WindowsDatabaseEncryptionKeyService :
             {
                 // Publish the complete protected key without overwriting
                 // an existing canonical database.key file.
-                File.Move(
+                _candidateFileOperations.PublishCandidateFile(
                     temporaryKeyFilePath,
                     keyFilePath);
+
+                // Publication succeeded; the temporary path is no longer owned.
+                ownsTemporaryKeyFile = false;
+                temporaryKeyFilePath = null;
             }
             catch (IOException) when (File.Exists(keyFilePath))
             {
@@ -188,20 +196,17 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                     protectedKey);
             }
 
-            if (temporaryKeyFilePath is not null)
+            if (ownsTemporaryKeyFile &&
+                temporaryKeyFilePath is not null)
             {
                 try
                 {
-                    File.Delete(
+                    _candidateFileOperations.DeleteCandidateFile(
                         temporaryKeyFilePath);
                 }
-                catch (IOException)
+                catch (Exception)
                 {
-                    _logger.LogWarning(
-                        LogMessages.DatabaseEncryptionKeyTemporaryFileCleanupFailed);
-                }
-                catch (UnauthorizedAccessException)
-                {
+                    // Cleanup must not replace the provisioning outcome.
                     _logger.LogWarning(
                         LogMessages.DatabaseEncryptionKeyTemporaryFileCleanupFailed);
                 }

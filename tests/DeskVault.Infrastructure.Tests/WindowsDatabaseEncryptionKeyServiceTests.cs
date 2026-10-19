@@ -1328,6 +1328,593 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
     }
 
     [Fact]
+    public async Task GetOrCreateKeyAsync_WhenCleanupFailsAfterWriteFailure_PreservesPrimaryException()
+    {
+        // Arrange
+        string rootDirectory = CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths = new DeskVaultDataPaths(rootDirectory);
+
+            var operations = new FaultInjectingKeyCandidateFileOperations
+            {
+                FailAfterPartialWrite = true,
+                FailDelete = true
+            };
+
+            var service = new WindowsDatabaseEncryptionKeyService(
+                dataPaths,
+                NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                beforeKeyPublicationAsync: null,
+                candidateFileOperations: operations);
+
+            // Act
+            IOException exception = await Assert.ThrowsAsync<IOException>(
+                () => service.GetOrCreateKeyAsync());
+
+            // Assert
+            Assert.Equal(
+                "Injected partial candidate write failure.",
+                exception.Message);
+
+            Assert.NotNull(operations.LastCandidateFilePath);
+
+            Assert.True(
+                File.Exists(operations.LastCandidateFilePath));
+
+            Assert.False(
+                File.Exists(GetDatabaseKeyFilePath(dataPaths)));
+
+            Assert.Equal(1, operations.DeleteCallCount);
+            Assert.Equal(0, operations.PublishCallCount);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenCleanupFailsAfterCancellation_PreservesCancellation()
+    {
+        // Arrange
+        string rootDirectory = CreateTemporaryDirectory();
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        try
+        {
+            var dataPaths = new DeskVaultDataPaths(rootDirectory);
+
+            var operations = new FaultInjectingKeyCandidateFileOperations
+            {
+                FailDelete = true
+            };
+
+            Func<CancellationToken, Task> cancelBeforePublication = _ =>
+            {
+                cancellationTokenSource.Cancel();
+
+                return Task.FromCanceled(
+                    cancellationTokenSource.Token);
+            };
+
+            var service = new WindowsDatabaseEncryptionKeyService(
+                dataPaths,
+                NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                beforeKeyPublicationAsync: cancelBeforePublication,
+                candidateFileOperations: operations);
+
+            // Act
+            OperationCanceledException exception =
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    () => service.GetOrCreateKeyAsync(
+                        cancellationTokenSource.Token));
+
+            // Assert
+            Assert.Equal(
+                cancellationTokenSource.Token,
+                exception.CancellationToken);
+
+            Assert.NotNull(operations.LastCandidateFilePath);
+
+            Assert.True(
+                File.Exists(operations.LastCandidateFilePath));
+
+            Assert.False(
+                File.Exists(GetDatabaseKeyFilePath(dataPaths)));
+
+            Assert.Equal(1, operations.DeleteCallCount);
+            Assert.Equal(0, operations.PublishCallCount);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenAbandonedCandidateExists_DoesNotPromoteOrDeleteIt()
+    {
+        // Arrange
+        string rootDirectory = CreateTemporaryDirectory();
+
+        EncryptionKeyMaterial? createdKeyMaterial = null;
+        EncryptionKeyMaterial? loadedKeyMaterial = null;
+        byte[]? persistedKeyFileContents = null;
+
+        byte[] abandonedCandidateContents =
+        {
+        0x44, 0x56, 0x41, 0x42, 0x41, 0x4E, 0x44, 0x4F, 0x4E, 0x45
+        };
+
+        try
+        {
+            var dataPaths = new DeskVaultDataPaths(rootDirectory);
+
+            Directory.CreateDirectory(
+                dataPaths.SecurityDirectory);
+
+            string abandonedCandidatePath = Path.Combine(
+                dataPaths.SecurityDirectory,
+                "database.key.0123456789abcdef0123456789abcdef.tmp");
+
+            string canonicalKeyFilePath =
+                GetDatabaseKeyFilePath(dataPaths);
+
+            await File.WriteAllBytesAsync(
+                abandonedCandidatePath,
+                abandonedCandidateContents);
+
+            // Act
+            createdKeyMaterial = await CreateService(dataPaths)
+                .GetOrCreateKeyAsync();
+
+            // Assert: create a valid canonical key and preserve the abandoned file.
+            Assert.True(File.Exists(canonicalKeyFilePath));
+            Assert.True(File.Exists(abandonedCandidatePath));
+
+            byte[] preservedCandidateContents =
+                await File.ReadAllBytesAsync(abandonedCandidatePath);
+
+            Assert.True(
+                abandonedCandidateContents.SequenceEqual(
+                    preservedCandidateContents));
+
+            persistedKeyFileContents =
+                await File.ReadAllBytesAsync(canonicalKeyFilePath);
+
+            Assert.False(
+                abandonedCandidateContents.SequenceEqual(
+                    persistedKeyFileContents));
+
+            Assert.Equal(
+                2,
+                Directory.GetFiles(dataPaths.SecurityDirectory).Length);
+
+            // Verify that subsequent retrieval uses the canonical key.
+            loadedKeyMaterial = await CreateService(dataPaths)
+                .GetOrCreateKeyAsync();
+
+            Assert.True(
+                createdKeyMaterial.KeyBytes.SequenceEqual(
+                    loadedKeyMaterial.KeyBytes));
+        }
+        finally
+        {
+            if (createdKeyMaterial is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    createdKeyMaterial.KeyBytes);
+            }
+
+            if (loadedKeyMaterial is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    loadedKeyMaterial.KeyBytes);
+            }
+
+            if (persistedKeyFileContents is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedKeyFileContents);
+            }
+
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenCandidateCreationCollides_DoesNotDeletePreExistingFile()
+    {
+        // Arrange
+        string rootDirectory = CreateTemporaryDirectory();
+
+        byte[] preExistingContents = [0x10, 0x20, 0x30, 0x40];
+        byte[]? actualContents = null;
+
+        try
+        {
+            var dataPaths = new DeskVaultDataPaths(rootDirectory);
+
+            Directory.CreateDirectory(dataPaths.SecurityDirectory);
+
+            string candidatePath = Path.Combine(
+                dataPaths.SecurityDirectory,
+                "database.key.preexisting.tmp");
+
+            await File.WriteAllBytesAsync(
+                candidatePath,
+                preExistingContents);
+
+            var operations = new FaultInjectingKeyCandidateFileOperations
+            {
+                CandidateFilePathOverride = candidatePath
+            };
+
+            var service = new WindowsDatabaseEncryptionKeyService(
+                dataPaths,
+                NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                beforeKeyPublicationAsync: null,
+                candidateFileOperations: operations);
+
+            // Act
+            await Assert.ThrowsAsync<IOException>(
+                () => service.GetOrCreateKeyAsync());
+
+            actualContents = await File.ReadAllBytesAsync(candidatePath);
+
+            // Assert
+            Assert.Equal(preExistingContents, actualContents);
+            Assert.False(File.Exists(GetDatabaseKeyFilePath(dataPaths)));
+            Assert.Equal(0, operations.DeleteCallCount);
+            Assert.Equal(0, operations.PublishCallCount);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(preExistingContents);
+
+            if (actualContents is not null)
+            {
+                CryptographicOperations.ZeroMemory(actualContents);
+            }
+
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenCandidateWriteFailsAfterPartialWrite_CleansOwnedCandidate()
+    {
+        // Arrange
+        string rootDirectory = CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths = new DeskVaultDataPaths(rootDirectory);
+
+            var operations = new FaultInjectingKeyCandidateFileOperations
+            {
+                FailAfterPartialWrite = true
+            };
+
+            var service = new WindowsDatabaseEncryptionKeyService(
+                dataPaths,
+                NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                beforeKeyPublicationAsync: null,
+                candidateFileOperations: operations);
+
+            // Act
+            await Assert.ThrowsAsync<IOException>(
+                () => service.GetOrCreateKeyAsync());
+
+            // Assert
+            Assert.NotNull(operations.LastCandidateFilePath);
+
+            Assert.False(
+                File.Exists(operations.LastCandidateFilePath));
+
+            Assert.False(
+                File.Exists(GetDatabaseKeyFilePath(dataPaths)));
+
+            Assert.Equal(1, operations.DeleteCallCount);
+            Assert.Equal(0, operations.PublishCallCount);
+
+            Assert.Empty(
+                Directory.GetFiles(dataPaths.SecurityDirectory));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenDurableCandidateFlushFails_CleansOwnedCandidate()
+    {
+        // Arrange
+        string rootDirectory = CreateTemporaryDirectory();
+
+        try
+        {
+            var dataPaths = new DeskVaultDataPaths(rootDirectory);
+
+            var operations = new FaultInjectingKeyCandidateFileOperations
+            {
+                FailDurableFlush = true
+            };
+
+            var service = new WindowsDatabaseEncryptionKeyService(
+                dataPaths,
+                NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                beforeKeyPublicationAsync: null,
+                candidateFileOperations: operations);
+
+            // Act
+            await Assert.ThrowsAsync<IOException>(
+                () => service.GetOrCreateKeyAsync());
+
+            // Assert
+            Assert.NotNull(operations.LastCandidateFilePath);
+
+            Assert.False(
+                File.Exists(operations.LastCandidateFilePath));
+
+            Assert.False(
+                File.Exists(GetDatabaseKeyFilePath(dataPaths)));
+
+            Assert.Equal(1, operations.DeleteCallCount);
+            Assert.Equal(0, operations.PublishCallCount);
+
+            Assert.Empty(
+                Directory.GetFiles(dataPaths.SecurityDirectory));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenCancelledAfterCandidateCreation_CleansOwnedCandidate()
+    {
+        // Arrange
+        string rootDirectory = CreateTemporaryDirectory();
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        try
+        {
+            var dataPaths = new DeskVaultDataPaths(rootDirectory);
+
+            var operations = new FaultInjectingKeyCandidateFileOperations();
+
+            Func<CancellationToken, Task> cancelBeforePublication = _ =>
+            {
+                cancellationTokenSource.Cancel();
+
+                return Task.FromCanceled(
+                    cancellationTokenSource.Token);
+            };
+
+            var service = new WindowsDatabaseEncryptionKeyService(
+                dataPaths,
+                NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                beforeKeyPublicationAsync: cancelBeforePublication,
+                candidateFileOperations: operations);
+
+            // Act
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => service.GetOrCreateKeyAsync(
+                    cancellationTokenSource.Token));
+
+            // Assert
+            Assert.NotNull(operations.LastCandidateFilePath);
+
+            Assert.False(
+                File.Exists(operations.LastCandidateFilePath));
+
+            Assert.False(
+                File.Exists(GetDatabaseKeyFilePath(dataPaths)));
+
+            Assert.Equal(1, operations.DeleteCallCount);
+            Assert.Equal(0, operations.PublishCallCount);
+
+            Assert.Empty(
+                Directory.GetFiles(dataPaths.SecurityDirectory));
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenLosingCandidateCleanupFails_ReturnsPersistedAuthoritativeKey()
+    {
+        // Arrange
+        string rootDirectory = CreateTemporaryDirectory();
+
+        const int participantCount = 2;
+
+        var publicationBarrier =
+            new KeyPublicationBarrier(participantCount);
+
+        Task<EncryptionKeyMaterial>[]? initializationTasks = null;
+        EncryptionKeyMaterial[]? keyMaterials = null;
+        EncryptionKeyMaterial? persistedMaterial = null;
+
+        byte[]? persistedProtectedKey = null;
+        byte[]? unprotectedPayload = null;
+
+        try
+        {
+            var dataPaths = new DeskVaultDataPaths(rootDirectory);
+
+            var operations = Enumerable
+                .Range(0, participantCount)
+                .Select(
+                    _ => new FaultInjectingKeyCandidateFileOperations
+                    {
+                        FailDelete = true
+                    })
+                .ToArray();
+
+            WindowsDatabaseEncryptionKeyService[] services = Enumerable
+                .Range(0, participantCount)
+                .Select(
+                    index => new WindowsDatabaseEncryptionKeyService(
+                        dataPaths,
+                        NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                        publicationBarrier.WaitAtPublicationAsync,
+                        operations[index]))
+                .ToArray();
+
+            initializationTasks = services
+                .Select(service => service.GetOrCreateKeyAsync())
+                .ToArray();
+
+            // Wait until both candidates exist before releasing publication.
+            await publicationBarrier.WaitForAllArrivalsAsync(
+                TimeSpan.FromSeconds(15));
+
+            Assert.Equal(
+                participantCount,
+                publicationBarrier.ArrivalCount);
+
+            string keyFilePath = GetDatabaseKeyFilePath(dataPaths);
+
+            Assert.False(File.Exists(keyFilePath));
+
+            Assert.Equal(
+                participantCount,
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "database.key.*.tmp").Length);
+
+            // Act
+            publicationBarrier.Release();
+
+            keyMaterials = await Task.WhenAll(initializationTasks);
+
+            // Assert: both initializers return the authoritative key.
+            Assert.Equal(participantCount, keyMaterials.Length);
+
+            EncryptionKeyMaterial expectedMaterial = keyMaterials[0];
+
+            Assert.All(
+                keyMaterials,
+                keyMaterial =>
+                {
+                    Assert.True(
+                        CryptographicOperations.FixedTimeEquals(
+                            expectedMaterial.KeyBytes,
+                            keyMaterial.KeyBytes),
+                        "Concurrent initializers returned different key bytes.");
+
+                    Assert.Equal(expectedMaterial.KeyId, keyMaterial.KeyId);
+                    Assert.Equal(expectedMaterial.KeyVersion, keyMaterial.KeyVersion);
+                });
+
+            Assert.True(File.Exists(keyFilePath));
+
+            // The winning candidate was published. The losing candidate remains
+            // because cleanup of that candidate was deliberately made to fail.
+            Assert.Single(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "database.key.*.tmp"));
+
+            Assert.Equal(
+                1,
+                operations.Sum(operation => operation.DeleteCallCount));
+
+            persistedProtectedKey = await File.ReadAllBytesAsync(keyFilePath);
+
+            unprotectedPayload = ProtectedData.Unprotect(
+                persistedProtectedKey,
+                null,
+                DataProtectionScope.CurrentUser);
+
+            persistedMaterial = ProtectedEncryptionKeyPayload.Decode(
+                unprotectedPayload,
+                persistedProtectedKey,
+                EncryptionKeyPurpose.Database);
+
+            Assert.True(
+                CryptographicOperations.FixedTimeEquals(
+                    expectedMaterial.KeyBytes,
+                    persistedMaterial.KeyBytes),
+                "The canonical key differs from the authoritative returned key.");
+
+            Assert.Equal(expectedMaterial.KeyId, persistedMaterial.KeyId);
+            Assert.Equal(expectedMaterial.KeyVersion, persistedMaterial.KeyVersion);
+        }
+        finally
+        {
+            // Release any participant left waiting if an assertion fails.
+            publicationBarrier.Release();
+
+            if (keyMaterials is null &&
+                initializationTasks is not null)
+            {
+                try
+                {
+                    keyMaterials = await Task.WhenAll(initializationTasks);
+                }
+                catch
+                {
+                    // Preserve the original test failure.
+                }
+            }
+
+            if (keyMaterials is not null)
+            {
+                foreach (EncryptionKeyMaterial keyMaterial in keyMaterials)
+                {
+                    CryptographicOperations.ZeroMemory(keyMaterial.KeyBytes);
+                }
+            }
+            else if (initializationTasks is not null)
+            {
+                foreach (Task<EncryptionKeyMaterial> task in initializationTasks)
+                {
+                    try
+                    {
+                        EncryptionKeyMaterial keyMaterial = await task;
+
+                        CryptographicOperations.ZeroMemory(keyMaterial.KeyBytes);
+                    }
+                    catch
+                    {
+                        // Preserve the original test failure.
+                    }
+                }
+            }
+
+            if (persistedMaterial is not null)
+            {
+                CryptographicOperations.ZeroMemory(persistedMaterial.KeyBytes);
+            }
+
+            if (unprotectedPayload is not null)
+            {
+                CryptographicOperations.ZeroMemory(unprotectedPayload);
+            }
+
+            if (persistedProtectedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(persistedProtectedKey);
+            }
+
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task GetOrCreateKeyAsync_WhenKeyPublicationFails_CleansTemporaryProtectedKeyFile()
     {
         string rootDirectory =
