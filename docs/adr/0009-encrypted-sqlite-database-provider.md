@@ -220,10 +220,31 @@ This ensures that callers completing concurrent first-time provisioning
 converge on the same persisted database key.
 
 Temporary protected-key files are cleanup artifacts, not authoritative
-key storage. The provisioning operation attempts to remove its temporary
-file after success, failure, or cancellation. Failure to clean up a
-temporary file is logged through a dedicated non-secret diagnostic
-message; key material must not be included in that diagnostic.
+key storage. Candidate ownership begins only after exclusive create-new
+file creation succeeds; generating or assigning a candidate path alone
+does not establish ownership. If exclusive creation fails, the operation
+must not delete or modify a pre-existing file at that path.
+
+The provisioning operation attempts best-effort deletion only for its own
+candidate while ownership remains established. Once non-overwriting
+publication moves the candidate to the canonical `database.key` path,
+temporary-candidate ownership is relinquished and no subsequent cleanup
+may act on the canonical key path. On publication conflict, the losing
+initializer retrieves the winner's canonical key and cleans up only its
+own candidate.
+
+A candidate left by abrupt process termination remains non-authoritative.
+Subsequent initialization must not promote or reuse abandoned candidates,
+and must not automatically delete them based only on age, filename,
+canonical-key absence, or presumed inactivity. Since ownership or absence
+of a live contender cannot be established safely, abandoned candidates
+are preserved.
+
+Cleanup failure is reported only through the existing generic, non-secret
+diagnostic. It must not expose key material, mask a primary provisioning
+exception or cancellation, change canonical-key authority, or turn
+successful retrieval of a key published by another initializer into a
+provisioning failure.
 
 Transient key buffers that are no longer needed are cleared. This
 includes rejected candidate keys, protected-key buffers, and protected
@@ -245,18 +266,31 @@ change canonical key state, or fall back to an unencrypted database.
 Cancellation remains cancellation and must not be converted into a key-failure
 result.
 
-Atomic provisioning does not introduce another encryption hierarchy. The shared key identity/version payload is defined by ADR-0004 and its use for the database key is documented in the following subsection. Intentional key replacement and rotation are unsupported by the current runtime. The shared policy boundary is described by ADR-0004; operational recovery remains separate and must restore the established key identity/version rather than inventing a new lineage.
+Atomic provisioning does not introduce another encryption hierarchy.
+The shared key identity/version payload is defined by ADR-0004 and its use for the
+database key is documented in the following subsection.
+Intentional key replacement and rotation are unsupported by the current runtime.
+The shared policy boundary is described by ADR-0004; operational recovery remains separate
+and must restore the established key identity/version rather than inventing a new lineage.
 
 ### Database Key Identity and Version Semantics
 
-The database key uses the shared DPAPI-protected `DVKP` payload contract described in ADR-0004, including the payload format version, non-secret `KeyId`, lifecycle `KeyVersion`, and purpose marker. The purpose value for a database key is `2`. Newly provisioned database keys receive a new `KeyId` and begin at key version `1`; repeated retrieval returns the persisted metadata without changing the canonical `database.key` artifact.
+The database key uses the shared DPAPI-protected `DVKP` payload contract described in ADR-0004,
+including the payload format version, non-secret `KeyId`, lifecycle `KeyVersion`, and purpose marker. The purpose value for a database key is `2`.
+Newly provisioned database keys receive a new `KeyId` and begin at key version `1`; repeated retrieval returns the persisted metadata without changing the canonical `database.key` artifact.
 
-Legacy `database.key` artifacts that contain only a DPAPI-protected raw 32-byte key are decoded as key version `0`. Their deterministic legacy identity is derived from the expected database purpose and exact persisted protected artifact. Retrieval does not rewrite or re-protect the legacy artifact. Because the legacy payload contains no purpose marker, its intended purpose cannot be proven from the payload itself; this compatibility limitation is documented in ADR-0004.
+Legacy `database.key` artifacts that contain only a DPAPI-protected raw 32-byte key are decoded as key version `0`. Their deterministic legacy identity is derived from the expected database
+purpose and exact persisted protected artifact. Retrieval does not rewrite or re-protect the legacy artifact. Because the legacy payload contains no purpose marker, its intended purpose cannot
+be proven from the payload itself; this compatibility limitation is documented in ADR-0004.
 
-The database encryption provider continues to receive the actual key bytes as its SQLite encryption password. `KeyId` and `KeyVersion` are not embedded in the SQLite database file and this decision does not change the encrypted database format or trigger database re-encryption. Instead, the identity/version metadata is protected together with the key in the canonical DPAPI-protected key artifact. Missing or invalid key state fails through strict retrieval; it must not cause implicit key replacement or fallback to an unencrypted database.
+The database encryption provider continues to receive the actual key bytes as its SQLite encryption password. `KeyId` and `KeyVersion` are not embedded in the SQLite database file and this decision
+does not change the encrypted database format or trigger database re-encryption. Instead, the identity/version metadata is protected together with the key in the canonical DPAPI-protected key artifact.
+Missing or invalid key state fails through strict retrieval; it must not cause implicit key replacement or fallback to an unencrypted database.
 
-Intentional key replacement and rotation are unsupported by the current runtime. For a future authorized rotation within an established lineage, `KeyId` must remain stable and `KeyVersion` must increase with the new concrete key. A future intentional replacement that starts a new lineage must use a new `KeyId` and version `1`. Any such operation requires an explicit authorization boundary, an end-to-end database re-encryption or data-transition procedure, verification before the new key becomes authoritative, and a recoverable failure path.
-Normal retrieval never infers rotation or replacement from missing, unreadable, invalid, or unprotectable key material. The shared key lifecycle policy is defined by ADR-0004.
+Intentional key replacement and rotation are unsupported by the current runtime. For a future authorized rotation within an established lineage, `KeyId` must remain stable and `KeyVersion` must increase
+with the new concrete key. A future intentional replacement that starts a new lineage must use a new `KeyId` and version `1`. Any such operation requires an explicit authorization boundary, an end-to-end
+database re-encryption or data-transition procedure, verification before the new key becomes authoritative, and a recoverable failure path. Normal retrieval never infers rotation or replacement from missing,
+unreadable, invalid, or unprotectable key material. The shared key lifecycle policy is defined by ADR-0004.
 
 ### Database Initialization
 
@@ -465,8 +499,13 @@ published first, rather than overwriting the canonical artifact with
 competing candidates.
 
 A temporary protected-key file may exist while provisioning is in
-progress. It is treated as transient state and is cleaned up after the
-operation. Cleanup failures are logged without exposing key material.
+progress. Cleanup is attempted only for a candidate the operation
+successfully created and still owns. Successful publication relinquishes
+that ownership, so cleanup does not act on the canonical key. An
+abandoned candidate left by abrupt process termination remains
+non-authoritative and is preserved when safe ownership cannot be
+established. Cleanup failures are logged without exposing key material
+and do not mask the primary provisioning outcome.
 
 Strict existing-key retrieval remains separate from provisioning.
 Missing or invalid existing keys result in controlled failure rather
@@ -576,7 +615,10 @@ The provider-level migration spike established the following behavior:
   key through the registered Infrastructure service, successful database
   initialization through `DatabaseInitializer`, and database
   connectivity through `IDbContextFactory<DeskVaultDbContext>`.
-- Key identity/version regression tests verify version `1` metadata for new database keys, stable identity/version across repeated reads, rejection of a document-purpose payload by the database-key service without modifying either key artifact, and legacy raw-key compatibility at version `0` without rewriting the canonical artifact.
+- Key identity/version regression tests verify version `1` metadata for new database keys,
+  stable identity/version across repeated reads, rejection of a document-purpose payload by
+  the database-key service without modifying either key artifact, and legacy raw-key compatibility
+  at version `0` without rewriting the canonical artifact.
 - Production-path integration tests verify that concurrent
   initialization of an existing plaintext vault converges on a single
   encrypted canonical database with migration artifacts cleaned up and

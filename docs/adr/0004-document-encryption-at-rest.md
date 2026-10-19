@@ -63,9 +63,18 @@ Publication uses a same-directory file move that does not overwrite an existing 
 The canonical `master.key` file is the source of truth after publication. A temporary candidate is never an alternative authoritative key. Concurrent initialization attempts must therefore converge on the same persisted key,
 or fail without silently replacing an existing canonical key.
 
-The implementation must preserve existing-key retrieval and must not log key material. Temporary protected data and unpublished in-memory key candidates are cleared when practical, and temporary files are cleaned up on normal completion or failure.
+The implementation must preserve existing-key retrieval and must not log key material. Temporary protected data and unpublished in-memory key candidates are cleared when practical.
 
-This section addresses atomic initial master-key provisioning. Strict existing-key retrieval and the provisioning authorization boundary are defined in the following section. The shared key identity/version contract is defined in the following subsection. Database-provider behavior is described by ADR-0009, while encrypted-record format and compatibility requirements are defined in the Encrypted Document Record Format and Integrity section below. Intentional key replacement and rotation are unsupported by the current runtime. Missing or unusable key material is never evidence of authorization to start a new key lineage.
+Candidate ownership begins only after exclusive create-new file creation succeeds; generating or assigning a candidate path alone does not establish ownership. If exclusive creation fails, the operation must not delete or modify a pre-existing file at that path.
+The owning operation attempts best-effort cleanup only for its own candidate while ownership remains established. Once the non-overwriting move publishes the candidate as `master.key`, temporary-candidate ownership is relinquished and no subsequent cleanup may act
+on the canonical key path. A losing initializer retrieves the canonical key persisted by the winner and cleans up only its own candidate.
+
+A candidate left by abrupt process termination remains non-authoritative. Subsequent initialization does not promote or reuse it, and does not automatically delete it based only on its age, filename, the absence of `master.key`, or presumed inactivity.
+Since the runtime cannot establish that an abandoned candidate is unowned by a live contender, such candidates are preserved. Cleanup failures use the existing generic, non-secret diagnostic and must not disclose key material, replace a primary provisioning exception or cancellation,
+or turn successful retrieval of an authoritative key into a provisioning failure.
+
+This section addresses atomic initial master-key provisioning. Strict existing-key retrieval and the provisioning authorization boundary are defined in the following section. The shared key identity/version contract is defined in the following subsection. Database-provider behavior is described by ADR-0009,
+while encrypted-record format and compatibility requirements are defined in the Encrypted Document Record Format and Integrity section below. Intentional key replacement and rotation are unsupported by the current runtime. Missing or unusable key material is never evidence of authorization to start a new key lineage.
 
 The stored file will continue to use an application-generated identifier rather than the original filename.
 
@@ -79,7 +88,9 @@ Strict retrieval must read the canonical `master.key`, unprotect it under the cu
 
 A failed retrieval must not create the security directory as a side effect of retrieval, generate a candidate key, create a replacement `master.key`, overwrite protected key material, or delete or otherwise modify stored key state. File-access failures remain failures and must not be converted into permission to provision another key.
 
-`IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` is a provisioning-capable operation, not a replacement, rotation, repair, or recovery API. Callers may invoke it only from a lifecycle context that has explicitly established authorization for initial provisioning. The retrieval-only `IEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit or expose provisioning capability. `DatabaseInitializer` owns the supported provisioning contexts: initial vault setup before document data exists, and compatibility initialization of an existing empty database when there is no document metadata and no managed document artifact. Ordinary document encryption and normal document decryption must use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. If the expected key is missing or unusable, a document write or read fails; ordinary document operations must not provision a new key.
+`IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` is a provisioning-capable operation, not a replacement, rotation, repair, or recovery API. Callers may invoke it only from a lifecycle context that has explicitly established authorization for initial provisioning. The retrieval-only `IEncryptionKeyService` exposes only `GetKeyAsync()`
+and does not inherit or expose provisioning capability. `DatabaseInitializer` owns the supported provisioning contexts: initial vault setup before document data exists, and compatibility initialization of an existing empty database when there is no document metadata and no managed document artifact. Ordinary document encryption and normal document
+decryption must use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. If the expected key is missing or unusable, a document write or read fails; ordinary document operations must not provision a new key.
 
 Key-related failure diagnostics must not disclose plaintext key bytes, protected key blobs, decrypted document content, or credentials. Failures are surfaced through the existing Infrastructure exception and logging boundary without silent key recovery.
 
@@ -98,10 +109,12 @@ The current plaintext payload layout (after DPAPI unprotection) is 58 bytes:
 | 22 | 4 bytes | Positive, little-endian signed 32-bit key lifecycle version |
 | 26 | 32 bytes | AES-256 key bytes |
 
-The payload format version, key lifecycle version, and encrypted-document record version are separate concepts. New `.dvault` writes use record format version `3`. The reader continues to support format version `2` under the explicit legacy compatibility contract below. Neither record format version is the key lifecycle version, and changing the document-record framing does not change the DPAPI key metadata payload.
+The payload format version, key lifecycle version, and encrypted-document record version are separate concepts. New `.dvault` writes use record format version `3`. The reader continues to support format version `2` under the explicit legacy compatibility contract below.
+Neither record format version is the key lifecycle version, and changing the document-record framing does not change the DPAPI key metadata payload.
 
-`KeyId` identifies a logical key lineage, while `KeyVersion` identifies a concrete key within that lineage. Newly provisioned keys receive a new non-empty `KeyId` and start at key version `1`. Normal retrieval preserves the persisted identity and version; it does not generate or rewrite lifecycle metadata. `GetKeyAsync()` is strictly non-provisioning and fails when the expected key is missing, unreadable, invalid,
-unprotectable, or has a purpose marker that does not match the retrieving service. `IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` provisions only when the expected canonical key artifact is absent; it does not silently replace an unusable existing artifact. The caller must still establish that initial provisioning is authorized by the owning lifecycle context.
+`KeyId` identifies a logical key lineage, while `KeyVersion` identifies a concrete key within that lineage. Newly provisioned keys receive a new non-empty `KeyId` and start at key version `1`. Normal retrieval preserves the persisted identity and version; it does not generate or rewrite lifecycle metadata.
+`GetKeyAsync()` is strictly non-provisioning and fails when the expected key is missing, unreadable, invalid, unprotectable, or has a purpose marker that does not match the retrieving service. `IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` provisions only when the expected canonical key artifact is absent;
+it does not silently replace an unusable existing artifact. The caller must still establish that initial provisioning is authorized by the owning lifecycle context.
 
 The lifecycle distinction for future operations is:
 
@@ -114,7 +127,8 @@ transition and verify all dependent encrypted data before the new key becomes th
 
 #### Legacy Pre-Versioned Key Artifacts
 
-Legacy `master.key` and `database.key` artifacts contain only the raw 32-byte key within their DPAPI-protected payload and have no embedded identity, version, or purpose marker. The decoder represents these artifacts using key version `0` and derives a deterministic non-secret `KeyId` from a domain-separated SHA-256 digest using `DeskVault.LegacyProtectedKeyIdentity.v1`, the expected purpose, and the exact persisted protected artifact. This preserves repeatable identity for repeated reads without persisting plaintext metadata, rewriting the artifact, replacing key bytes, or requiring existing encrypted data to be re-encrypted.
+Legacy `master.key` and `database.key` artifacts contain only the raw 32-byte key within their DPAPI-protected payload and have no embedded identity, version, or purpose marker. The decoder represents these artifacts using key version `0` and derives a deterministic non-secret `KeyId` from a domain-separated SHA-256 digest using `DeskVault.LegacyProtectedKeyIdentity.v1`, the expected purpose, and the exact persisted protected artifact.
+This preserves repeatable identity for repeated reads without persisting plaintext metadata, rewriting the artifact, replacing key bytes, or requiring existing encrypted data to be re-encrypted.
 
 Because a legacy payload has no embedded purpose marker, its purpose is inferred from the canonical key service/path that reads it. The decoder therefore cannot prove from a legacy artifact alone that a blob copied between the document and database key paths was originally created for the receiving purpose. New metadata-bearing payloads include an explicit purpose marker and mismatched purpose is rejected.
 
@@ -122,7 +136,8 @@ A legacy `KeyId` is derived from the exact protected artifact. Re-protecting the
 
 #### Binding Document Ciphertext to Key Lineage
 
-For version-2 records using versioned key material (key version greater than `0`), `DocumentEncryptionService` supplies AES-GCM associated data consisting of the `DeskVault.DocumentEncryption.KeyLineage.v1` domain separator, `KeyId`, and the little-endian key version. This authenticates the document ciphertext against the key identity/version returned by the key service without placing key bytes or lifecycle metadata in ordinary logs or plaintext configuration.
+For version-2 records using versioned key material (key version greater than `0`), `DocumentEncryptionService` supplies AES-GCM associated data consisting of the `DeskVault.DocumentEncryption.KeyLineage.v1` domain separator, `KeyId`, and the little-endian key version. This authenticates the document ciphertext against the key identity/version returned by the key service without placing key bytes or lifecycle metadata in ordinary logs
+or plaintext configuration.
 
 For version-2 records using key version `0`, associated data remains empty so existing encrypted documents created before key identity/version support remain decryptable. Consequently, the legacy version-2 document format does not authenticate a derived legacy identity/version against ciphertext.
 
@@ -440,7 +455,8 @@ not publish the canonical file discards its own candidate and retrieves the pers
 This atomic publication rule covers initial master-key provisioning only.
 It does not introduce a replacement-key hierarchy or define key rotation policy.
 
-Vault initialization provisions the document key through `IEncryptionKeyProvisioningService`, which is injected into the authorized `DatabaseInitializer` lifecycle boundary. Ordinary document encryption and document decryption use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. The retrieval-only `IEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit provisioning capability. Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state. The initializer permits document-key provisioning for a new vault before existing document data is present, and for an existing empty database only when document metadata and managed document artifacts are both absent. An established vault with document metadata or stored artifacts cannot be treated as an initial-provisioning context.
+Vault initialization provisions the document key through `IEncryptionKeyProvisioningService`, which is injected into the authorized `DatabaseInitializer` lifecycle boundary. Ordinary document encryption and document decryption use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. The retrieval-only `IEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit provisioning capability.
+Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state. The initializer permits document-key provisioning for a new vault before existing document data is present, and for an existing empty database only when document metadata and managed document artifacts are both absent. An established vault with document metadata or stored artifacts cannot be treated as an initial-provisioning context.
 
 New master-key artifacts store `KeyId`, key version, and the document-purpose marker within the DPAPI-protected `DVKP` payload described above. New key artifacts start at version `1`. Existing raw-key artifacts are read as legacy version `0` with a deterministic identity derived from the exact protected artifact and are not rewritten during retrieval.
 
@@ -471,7 +487,8 @@ A malformed record, authentication failure, unsupported format, invalid final re
 
 Ordinary document opening and lifecycle operations do not trust the persisted physical `StoredFilePath` as the authoritative artifact selector. Reconciliation may inspect that persisted value as evidence, but ownership is validated against the canonical document-owned path.
 
-Artifact reconciliation validates content identity through the document reader's persisted-hash verification contract. The reader computes the SHA-256 hash of the complete plaintext and compares it with the persisted document's `Sha256Hash` before returning a stream. Reconciliation does not calculate the hash again; it maps `DocumentContentIntegrityException` to a content-mismatch finding. A readable artifact whose content hash differs is classified as a content mismatch and is preserved rather than treated as a valid match.
+Artifact reconciliation validates content identity through the document reader's persisted-hash verification contract. The reader computes the SHA-256 hash of the complete plaintext and compares it with the persisted document's `Sha256Hash` before returning a stream. Reconciliation does not calculate the hash again;
+it maps `DocumentContentIntegrityException` to a content-mismatch finding. A readable artifact whose content hash differs is classified as a content mismatch and is preserved rather than treated as a valid match.
 
 Recovery is implemented as a separate Application command over reconciliation
 findings. It may clean up a confirmed orphan only when the artifact identity is
