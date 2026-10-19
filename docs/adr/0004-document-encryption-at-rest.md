@@ -79,7 +79,7 @@ Strict retrieval must read the canonical `master.key`, unprotect it under the cu
 
 A failed retrieval must not create the security directory as a side effect of retrieval, generate a candidate key, create a replacement `master.key`, overwrite protected key material, or delete or otherwise modify stored key state. File-access failures remain failures and must not be converted into permission to provision another key.
 
-`IEncryptionKeyService.GetOrCreateKeyAsync()` is a provisioning-capable operation, not a replacement, rotation, repair, or recovery API. Callers may invoke it only from a lifecycle context that has explicitly established authorization for initial provisioning. `DatabaseInitializer` owns the supported provisioning contexts: initial vault setup before document data exists, and compatibility initialization of an existing empty database when there is no document metadata and no managed document artifact. Ordinary document encryption and normal document decryption must use `GetKeyAsync()` to retrieve the established key. If the expected key is missing or unusable, a document write or read fails; ordinary document operations must not provision a new key.
+`IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` is a provisioning-capable operation, not a replacement, rotation, repair, or recovery API. Callers may invoke it only from a lifecycle context that has explicitly established authorization for initial provisioning. The retrieval-only `IEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit or expose provisioning capability. `DatabaseInitializer` owns the supported provisioning contexts: initial vault setup before document data exists, and compatibility initialization of an existing empty database when there is no document metadata and no managed document artifact. Ordinary document encryption and normal document decryption must use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. If the expected key is missing or unusable, a document write or read fails; ordinary document operations must not provision a new key.
 
 Key-related failure diagnostics must not disclose plaintext key bytes, protected key blobs, decrypted document content, or credentials. Failures are surfaced through the existing Infrastructure exception and logging boundary without silent key recovery.
 
@@ -101,7 +101,7 @@ The current plaintext payload layout (after DPAPI unprotection) is 58 bytes:
 The payload format version, key lifecycle version, and encrypted-document record version are separate concepts. New `.dvault` writes use record format version `3`. The reader continues to support format version `2` under the explicit legacy compatibility contract below. Neither record format version is the key lifecycle version, and changing the document-record framing does not change the DPAPI key metadata payload.
 
 `KeyId` identifies a logical key lineage, while `KeyVersion` identifies a concrete key within that lineage. Newly provisioned keys receive a new non-empty `KeyId` and start at key version `1`. Normal retrieval preserves the persisted identity and version; it does not generate or rewrite lifecycle metadata. `GetKeyAsync()` is strictly non-provisioning and fails when the expected key is missing, unreadable, invalid,
-unprotectable, or has a purpose marker that does not match the retrieving service. `GetOrCreateKeyAsync()` provisions only when the expected canonical key artifact is absent; it does not silently replace an unusable existing artifact. The caller must still establish that initial provisioning is authorized by the owning lifecycle context.
+unprotectable, or has a purpose marker that does not match the retrieving service. `IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` provisions only when the expected canonical key artifact is absent; it does not silently replace an unusable existing artifact. The caller must still establish that initial provisioning is authorized by the owning lifecycle context.
 
 The lifecycle distinction for future operations is:
 
@@ -361,7 +361,7 @@ Recovery must not expose document contents or cryptographic material through log
 
 - The canonical `master.key` file must not be silently replaced by a competing initializer.
 - Initial document-key provisioning is owned by `DatabaseInitializer` and is permitted for a new vault before document data exists, or for an existing empty database when both document metadata and managed document artifacts are absent.
-- The provisioning-capable key-service method must not be used as an automatic fallback for normal document writes or for an established vault with missing expected key material.
+- `IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` must not be used as an automatic fallback for normal document writes or for an established vault with missing expected key material.
 - A candidate key must be protected before it is written to a temporary file.
 - Publication of a complete candidate must not overwrite an existing canonical key.
 - A losing initializer must use the authoritative persisted key, not return its own unpublished candidate.
@@ -376,7 +376,8 @@ Recovery must not expose document contents or cryptographic material through log
 - Ordinary document encryption and normal document decryption must retrieve the established master key through `IEncryptionKeyService.GetKeyAsync()`.
 - Strict retrieval must not create a replacement `master.key` or modify existing protected key material.
 - A missing, invalid, unreadable, or unavailable expected key must result in explicit failure rather than fallback to provisioning.
-- Explicit initial provisioning is owned by `DatabaseInitializer` and is limited to authorized first-use/empty-vault contexts. `GetOrCreateKeyAsync()` is not a fallback for ordinary document writes or for an established vault with missing key material.
+- Explicit initial provisioning is owned by `DatabaseInitializer` and is limited to authorized first-use/empty-vault contexts. `IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` is not a fallback for ordinary document writes or for an established vault with missing key material.
+- The retrieval-only `IEncryptionKeyService` does not expose or inherit provisioning capability.
 - Key-related logs must not contain plaintext key bytes, protected key blobs, decrypted document content, or credentials.
 - Cancellation remains cancellation and must not be converted into a cryptographic key-failure result.
 
@@ -439,7 +440,7 @@ not publish the canonical file discards its own candidate and retrieves the pers
 This atomic publication rule covers initial master-key provisioning only.
 It does not introduce a replacement-key hierarchy or define key rotation policy.
 
-Vault initialization provisions the document key through the authorized `DatabaseInitializer` lifecycle boundary. Ordinary document encryption and document decryption use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state. The initializer permits document-key provisioning for a new vault before existing document data is present, and for an existing empty database only when document metadata and managed document artifacts are both absent. An established vault with document metadata or stored artifacts cannot be treated as an initial-provisioning context.
+Vault initialization provisions the document key through `IEncryptionKeyProvisioningService`, which is injected into the authorized `DatabaseInitializer` lifecycle boundary. Ordinary document encryption and document decryption use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. The retrieval-only `IEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit provisioning capability. Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state. The initializer permits document-key provisioning for a new vault before existing document data is present, and for an existing empty database only when document metadata and managed document artifacts are both absent. An established vault with document metadata or stored artifacts cannot be treated as an initial-provisioning context.
 
 New master-key artifacts store `KeyId`, key version, and the document-purpose marker within the DPAPI-protected `DVKP` payload described above. New key artifacts start at version `1`. Existing raw-key artifacts are read as legacy version `0` with a deterministic identity derived from the exact protected artifact and are not rewritten during retrieval.
 

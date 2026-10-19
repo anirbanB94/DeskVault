@@ -177,16 +177,7 @@ user-facing exceptions, or stored as plaintext application configuration.
 
 ### Atomic Database Encryption Key Provisioning
 
-`IDatabaseEncryptionKeyService.GetOrCreateKeyAsync` is the provisioning-capable
-operation for the database encryption key, not a replacement, rotation,
-repair, or recovery API. `DatabaseInitializer` may use it only when the
-initialization lifecycle has explicitly authorized provisioning for a new
-database or for an existing plaintext database undergoing migration to the
-encrypted format. When the canonical `Security\database.key` artifact already
-exists, the service retrieves and validates the existing key rather than
-generating a replacement. An existing encrypted database must use strict
-retrieval of its established key; a missing, unreadable, invalid, or
-unprotectable key must fail startup without provisioning a new database key.
+`IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync` is the provisioning-capable operation for the database encryption key, not a replacement, rotation, repair, or recovery API. `DatabaseInitializer` may use this capability only when the initialization lifecycle has explicitly authorized provisioning for a new database or for an existing plaintext database undergoing migration to the encrypted format. The retrieval-only `IDatabaseEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit or expose provisioning capability. When the canonical `Security\database.key` artifact already exists, the provisioning service retrieves and validates the existing key rather than generating a replacement. An existing encrypted database must use strict retrieval of its established key; a missing, unreadable, invalid, or unprotectable key must fail startup without provisioning a new database key.
 
 When the canonical key is absent, provisioning follows an atomic
 publication strategy:
@@ -243,9 +234,13 @@ its consumer remains responsible for clearing the returned key buffer
 after use.
 
 Strict retrieval through `IDatabaseEncryptionKeyService.GetKeyAsync`
-remains distinct from provisioning. It must retrieve and validate the
-existing canonical key or fail when the key is missing, unreadable, invalid,
-or cannot be unprotected. It must not create a replacement key as a fallback,
+remains distinct from provisioning. The retrieval-only
+`IDatabaseEncryptionKeyService` exposes only `GetKeyAsync()` and does not
+inherit or expose provisioning capability. The authorized initialization
+boundary uses `IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync()`
+for provisioning. Strict retrieval must read and validate the existing
+canonical key or fail when the key is missing, unreadable, invalid, or
+cannot be unprotected. It must not create a replacement key as a fallback,
 change canonical key state, or fall back to an unencrypted database.
 Cancellation remains cancellation and must not be converted into a key-failure
 result.

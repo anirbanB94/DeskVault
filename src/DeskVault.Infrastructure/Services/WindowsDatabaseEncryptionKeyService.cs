@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace DeskVault.Infrastructure.Services;
 
 public sealed class WindowsDatabaseEncryptionKeyService :
-    IDatabaseEncryptionKeyService
+    IDatabaseEncryptionKeyService,
+    IDatabaseEncryptionKeyProvisioningService
 {
     private const string KeyFileName = "database.key";
     private const int KeySize = 32;

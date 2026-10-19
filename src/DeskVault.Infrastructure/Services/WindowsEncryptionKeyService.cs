@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace DeskVault.Infrastructure.Services;
 
 public sealed class WindowsEncryptionKeyService :
-    IEncryptionKeyService
+    IEncryptionKeyService,
+    IEncryptionKeyProvisioningService
 {
     private const string KeyFileName = "master.key";
     private const int KeySize = 32;

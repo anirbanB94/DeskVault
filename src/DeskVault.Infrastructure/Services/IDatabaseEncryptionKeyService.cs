@@ -13,20 +13,4 @@ public interface IDatabaseEncryptionKeyService
     /// </remarks>
     Task<EncryptionKeyMaterial> GetKeyAsync(
         CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Retrieves the existing database-encryption key or provisions an initial
-    /// key when the caller's lifecycle context explicitly permits provisioning.
-    /// </summary>
-    /// <remarks>
-    /// This method is provisioning-capable; it is not a key-replacement,
-    /// rotation, or recovery API. Callers must establish that initial
-    /// provisioning is authorized before invoking it. Absence of a key in an
-    /// existing vault does not itself authorize replacement. If the canonical
-    /// key artifact exists, it must be retrieved and validated; an unusable
-    /// existing artifact must cause failure rather than being overwritten
-    /// or repaired.
-    /// </remarks>
-    Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
-        CancellationToken cancellationToken = default);
 }

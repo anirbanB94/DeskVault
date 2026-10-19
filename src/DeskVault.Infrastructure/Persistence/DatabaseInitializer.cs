@@ -18,8 +18,8 @@ public sealed class DatabaseInitializer
     private readonly IDbContextFactory<DeskVaultDbContext> _dbContextFactory;
     private readonly DeskVaultDataPaths _dataPaths;
     private readonly IDatabaseFormatDetector _databaseFormatDetector;
-    private readonly IDatabaseEncryptionKeyService _databaseEncryptionKeyService;
-    private readonly IEncryptionKeyService _encryptionKeyService;
+    private readonly IDatabaseEncryptionKeyProvisioningService _databaseEncryptionKeyService;
+    private readonly IEncryptionKeyProvisioningService _encryptionKeyService;
     private readonly IDatabaseEncryptionMigrator _databaseEncryptionMigrator;
     private readonly DocumentChunkIdentityBackfill _documentChunkIdentityBackfill;
     private readonly DocumentLifecycleStateBackfill _documentLifecycleStateBackfill;
@@ -30,8 +30,8 @@ public sealed class DatabaseInitializer
         IDbContextFactory<DeskVaultDbContext> dbContextFactory,
         DeskVaultDataPaths dataPaths,
         IDatabaseFormatDetector databaseFormatDetector,
-        IDatabaseEncryptionKeyService databaseEncryptionKeyService,
-        IEncryptionKeyService encryptionKeyService,
+        IDatabaseEncryptionKeyProvisioningService databaseEncryptionKeyService,
+        IEncryptionKeyProvisioningService encryptionKeyService,
         IDatabaseEncryptionMigrator databaseEncryptionMigrator,
         DocumentChunkIdentityBackfill documentChunkIdentityBackfill,
         DocumentLifecycleStateBackfill documentLifecycleStateBackfill,
