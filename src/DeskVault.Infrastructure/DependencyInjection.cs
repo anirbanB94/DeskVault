@@ -36,9 +36,25 @@ public static class DependencyInjection
 
         services.AddSingleton<IHashService, Sha256HashService>();
 
-        services.AddSingleton<IEncryptionKeyService, WindowsEncryptionKeyService>();
+        services.AddSingleton<WindowsEncryptionKeyService>();
 
-        services.AddSingleton<IDatabaseEncryptionKeyService, WindowsDatabaseEncryptionKeyService>();
+        services.AddSingleton<IEncryptionKeyService>(
+            serviceProvider =>
+                serviceProvider.GetRequiredService<WindowsEncryptionKeyService>());
+
+        services.AddSingleton<IEncryptionKeyProvisioningService>(
+            serviceProvider =>
+                serviceProvider.GetRequiredService<WindowsEncryptionKeyService>());
+
+        services.AddSingleton<WindowsDatabaseEncryptionKeyService>();
+
+        services.AddSingleton<IDatabaseEncryptionKeyService>(
+            serviceProvider =>
+                serviceProvider.GetRequiredService<WindowsDatabaseEncryptionKeyService>());
+
+        services.AddSingleton<IDatabaseEncryptionKeyProvisioningService>(
+            serviceProvider =>
+                serviceProvider.GetRequiredService<WindowsDatabaseEncryptionKeyService>());
 
         services.AddSingleton<IDatabaseFormatDetector, SqliteDatabaseFormatDetector>();
 

@@ -664,9 +664,15 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         services.AddInfrastructure(
             configuration);
 
-        services.AddSingleton<IDatabaseEncryptionKeyService>(
+        var testDatabaseEncryptionKeyService =
             new TestDatabaseEncryptionKeyService(
-                databaseKey));
+                databaseKey);
+
+        services.AddSingleton<IDatabaseEncryptionKeyService>(
+            testDatabaseEncryptionKeyService);
+
+        services.AddSingleton<IDatabaseEncryptionKeyProvisioningService>(
+            testDatabaseEncryptionKeyService);
 
         return services.BuildServiceProvider();
     }
@@ -841,8 +847,9 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         }
     }
 
-    private sealed class TestDatabaseEncryptionKeyService
-        : IDatabaseEncryptionKeyService
+    private sealed class TestDatabaseEncryptionKeyService :
+        IDatabaseEncryptionKeyService,
+        IDatabaseEncryptionKeyProvisioningService
     {
         private readonly byte[] _key;
         private readonly Guid _keyId = Guid.NewGuid();

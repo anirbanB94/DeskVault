@@ -11,7 +11,6 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Infrastructure.Services;
-using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -5785,15 +5784,6 @@ public sealed class DocumentImportIntegrationTests
             byte[] key)
         {
             _key = key;
-        }
-
-        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return Task.FromResult(
-                CreateMaterial());
         }
 
         public Task<EncryptionKeyMaterial> GetKeyAsync(

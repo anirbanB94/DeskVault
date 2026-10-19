@@ -750,15 +750,6 @@ public sealed class FileSystemStorageServiceTests
             _key = key;
         }
 
-        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return Task.FromResult(
-                CreateMaterial());
-        }
-
         public Task<EncryptionKeyMaterial> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {

@@ -1502,15 +1502,6 @@ public sealed class DocumentEncryptionServiceTests
                 CreateMaterial());
         }
 
-        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            throw new InvalidOperationException(
-                "Document decryption must not provision an encryption key.");
-        }
-
         private EncryptionKeyMaterial CreateMaterial()
         {
             return new EncryptionKeyMaterial(
@@ -1532,15 +1523,6 @@ public sealed class DocumentEncryptionServiceTests
         {
             _key = key;
             _keyId = keyId ?? Guid.NewGuid();
-        }
-
-        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return Task.FromResult(
-                CreateMaterial());
         }
 
         public Task<EncryptionKeyMaterial> GetKeyAsync(

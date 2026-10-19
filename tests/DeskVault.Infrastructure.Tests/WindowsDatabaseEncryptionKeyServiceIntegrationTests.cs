@@ -717,6 +717,10 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             await using ServiceProvider serviceProvider =
                 services.BuildServiceProvider();
 
+            var databaseKeyProvisioningService =
+                serviceProvider.GetRequiredService<
+                    IDatabaseEncryptionKeyProvisioningService>();
+
             var databaseKeyService =
                 serviceProvider.GetRequiredService<
                     IDatabaseEncryptionKeyService>();
@@ -731,7 +735,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
 
             // Arrange: create an encrypted database using the current key.
             provisionedKey =
-                await databaseKeyService.GetOrCreateKeyAsync();
+                await databaseKeyProvisioningService.GetOrCreateKeyAsync();
 
             await initializer.InitializeAsync();
 

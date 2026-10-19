@@ -2277,9 +2277,15 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
         services.AddInfrastructure(
             configuration);
 
-        services.AddSingleton<IDatabaseEncryptionKeyService>(
+        var testDatabaseEncryptionKeyService =
             new TestDatabaseEncryptionKeyService(
-                databaseKey));
+                databaseKey);
+
+        services.AddSingleton<IDatabaseEncryptionKeyService>(
+            testDatabaseEncryptionKeyService);
+
+        services.AddSingleton<IDatabaseEncryptionKeyProvisioningService>(
+            testDatabaseEncryptionKeyService);
 
         return services.BuildServiceProvider();
     }
@@ -2347,15 +2353,6 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
             _key = key.ToArray();
         }
 
-        public Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return Task.FromResult(
-                CreateMaterial());
-        }
-
         public Task<EncryptionKeyMaterial> GetKeyAsync(
             CancellationToken cancellationToken = default)
         {
@@ -2374,8 +2371,9 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
         }
     }
 
-    private sealed class TestDatabaseEncryptionKeyService
-        : IDatabaseEncryptionKeyService
+    private sealed class TestDatabaseEncryptionKeyService :
+        IDatabaseEncryptionKeyService,
+        IDatabaseEncryptionKeyProvisioningService
     {
         private readonly byte[] _key;
         private readonly Guid _keyId = Guid.NewGuid();
