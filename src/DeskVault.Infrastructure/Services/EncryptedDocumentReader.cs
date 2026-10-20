@@ -14,6 +14,12 @@ public sealed class EncryptedDocumentReader : IDocumentReader
 
     private readonly ILogger<EncryptedDocumentReader> _logger;
 
+    internal Func<MemoryStream>? DecryptedStagingStreamFactoryForTesting
+    {
+        get;
+        set;
+    }
+
     public EncryptedDocumentReader(
         DocumentEncryptionService encryptionService,
         DocumentArtifactPathResolver artifactPathResolver,
@@ -53,7 +59,8 @@ public sealed class EncryptedDocumentReader : IDocumentReader
                     useAsync: true);
 
             var decryptedStream =
-                new MemoryStream();
+                DecryptedStagingStreamFactoryForTesting?.Invoke()
+                ?? new ZeroingMemoryStream();
 
             try
             {
@@ -92,6 +99,16 @@ public sealed class EncryptedDocumentReader : IDocumentReader
             }
             catch
             {
+                if (decryptedStream.TryGetBuffer(
+                        out ArraySegment<byte> buffer) &&
+                    buffer.Array is not null)
+                {
+                    // Clear the complete current backing array, including
+                    // unused capacity, before disposing the failed staging stream.
+                    CryptographicOperations.ZeroMemory(
+                        buffer.Array.AsSpan());
+                }
+
                 await decryptedStream.DisposeAsync();
 
                 throw;
