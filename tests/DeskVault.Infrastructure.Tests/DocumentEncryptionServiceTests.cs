@@ -44,6 +44,704 @@ public sealed class DocumentEncryptionServiceTests
     }
 
     [Fact]
+    public async Task EncryptAsync_ClearsReturnedKeyBufferAfterSuccessfulEncryption()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        Guid keyId = Guid.NewGuid();
+
+        var keyService = new TrackingEncryptionKeyService(
+            key,
+            keyId);
+
+        byte[] expectedBackingKey = [.. keyService.BackingKey];
+
+        try
+        {
+            var service = new DocumentEncryptionService(
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            byte[] plaintext = Encoding.UTF8.GetBytes(
+                "Verify operation-owned encryption key cleanup.");
+
+            await using var source = new MemoryStream(plaintext);
+            await using var encrypted = new MemoryStream();
+
+            await service.EncryptLegacyVersion2Async(
+                source,
+                encrypted);
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(keyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(keyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in keyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(keyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsReturnedKeyBufferWhenDestinationWriteFails()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        Guid keyId = Guid.NewGuid();
+
+        var decryptionKeyService = new TrackingEncryptionKeyService(
+            key,
+            keyId);
+
+        byte[] expectedBackingKey =
+            [.. decryptionKeyService.BackingKey];
+
+        byte[] plaintext = Encoding.UTF8.GetBytes(
+            "Verify cleanup when the decryption destination fails.");
+
+        byte[]? encryptedBytes = null;
+
+        try
+        {
+            var encryptionService = new DocumentEncryptionService(
+                new TestEncryptionKeyService(key, keyId),
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using (var source = new MemoryStream(plaintext))
+            await using (var encrypted = new MemoryStream())
+            {
+                await encryptionService.EncryptLegacyVersion2Async(
+                    source,
+                    encrypted);
+
+                encryptedBytes = encrypted.ToArray();
+            }
+
+            var decryptionService = new DocumentEncryptionService(
+                decryptionKeyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var sourceForDecryption =
+                new MemoryStream(encryptedBytes);
+
+            await using var destination =
+                new FailingDocumentWriteStream(
+                    successfulWritesBeforeFailure: 0);
+
+            await Assert.ThrowsAsync<IOException>(
+                () => decryptionService.DecryptAsync(
+                    sourceForDecryption,
+                    destination));
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(decryptionKeyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared after a destination-write failure.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(
+                    decryptionKeyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in decryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(decryptionKeyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(plaintext);
+
+            if (encryptedBytes is not null)
+            {
+                CryptographicOperations.ZeroMemory(encryptedBytes);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsReturnedKeyBufferWhenEncryptedHeaderIsInvalid()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        var keyService = new TrackingEncryptionKeyService(
+            key,
+            Guid.NewGuid());
+
+        byte[] expectedBackingKey = [.. keyService.BackingKey];
+
+        byte[] malformedHeader = new byte[8];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            malformedHeader.AsSpan(0, sizeof(uint)),
+            0x44564C54);
+
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            malformedHeader.AsSpan(sizeof(uint), sizeof(uint)),
+            99);
+
+        try
+        {
+            var service = new DocumentEncryptionService(
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source = new MemoryStream(malformedHeader);
+            await using var destination = new MemoryStream();
+
+            await Assert.ThrowsAnyAsync<CryptographicException>(
+                () => service.DecryptAsync(source, destination));
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(keyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared after header validation failed.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(keyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in keyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(keyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(malformedHeader);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsReturnedKeyBufferAfterSuccessfulDecryption()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        Guid keyId = Guid.NewGuid();
+
+        var encryptionKeyService = new TrackingEncryptionKeyService(
+            key,
+            keyId);
+
+        var decryptionKeyService = new TrackingEncryptionKeyService(
+            key,
+            keyId);
+
+        byte[] expectedBackingKey =
+            [.. decryptionKeyService.BackingKey];
+
+        try
+        {
+            var encryptionService = new DocumentEncryptionService(
+                encryptionKeyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            byte[] plaintext = Encoding.UTF8.GetBytes(
+                "Verify operation-owned decryption key cleanup.");
+
+            await using var source = new MemoryStream(plaintext);
+            await using var encrypted = new MemoryStream();
+
+            await encryptionService.EncryptLegacyVersion2Async(
+                source,
+                encrypted);
+
+            // The encryption setup is not the subject of this test.
+            // Clear its returned buffer before testing decryption.
+            foreach (byte[] buffer in encryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            encrypted.Position = 0;
+
+            var decryptionService = new DocumentEncryptionService(
+                decryptionKeyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var decrypted = new MemoryStream();
+
+            await decryptionService.DecryptAsync(
+                encrypted,
+                decrypted);
+
+            Assert.Equal(plaintext, decrypted.ToArray());
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(decryptionKeyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(
+                    decryptionKeyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in encryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            foreach (byte[] buffer in decryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(encryptionKeyService.BackingKey);
+            CryptographicOperations.ZeroMemory(decryptionKeyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsReturnedKeyBufferWhenSourceReadFails()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        var keyService = new TrackingEncryptionKeyService(
+            key,
+            Guid.NewGuid());
+
+        byte[] expectedBackingKey = [.. keyService.BackingKey];
+
+        try
+        {
+            var service = new DocumentEncryptionService(
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source = new FailingDocumentReadStream();
+            await using var destination = new MemoryStream();
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.DecryptAsync(source, destination));
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(keyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared after a read failure.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(keyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in keyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(keyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsReturnedKeyBufferWhenAuthenticationFails()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        Guid keyId = Guid.NewGuid();
+
+        var encryptionKeyService = new TrackingEncryptionKeyService(
+            key,
+            keyId);
+
+        var decryptionKeyService = new TrackingEncryptionKeyService(
+            key,
+            keyId);
+
+        byte[] expectedBackingKey =
+            [.. decryptionKeyService.BackingKey];
+
+        try
+        {
+            var encryptionService = new DocumentEncryptionService(
+                encryptionKeyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            byte[] plaintext = Encoding.UTF8.GetBytes(
+                "Verify key cleanup after authentication failure.");
+
+            byte[] encryptedBytes;
+
+            try
+            {
+                await using var source = new MemoryStream(plaintext);
+                await using var encrypted = new MemoryStream();
+
+                await encryptionService.EncryptLegacyVersion2Async(
+                    source,
+                    encrypted);
+
+                encryptedBytes = encrypted.ToArray();
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(plaintext);
+
+                foreach (byte[] buffer in encryptionKeyService.ReturnedKeyBuffers)
+                {
+                    CryptographicOperations.ZeroMemory(buffer);
+                }
+            }
+
+            // Corrupt the encrypted payload to force GCM authentication failure.
+            encryptedBytes[^1] ^= 0x01;
+
+            try
+            {
+                var decryptionService = new DocumentEncryptionService(
+                    decryptionKeyService,
+                    NullLogger<DocumentEncryptionService>.Instance);
+
+                await using var source = new MemoryStream(encryptedBytes);
+                await using var destination = new MemoryStream();
+
+                await Assert.ThrowsAnyAsync<CryptographicException>(
+                    () => decryptionService.DecryptAsync(
+                        source,
+                        destination));
+
+                byte[] returnedKeyBuffer =
+                    Assert.Single(decryptionKeyService.ReturnedKeyBuffers);
+
+                Assert.True(
+                    returnedKeyBuffer.All(value => value == 0),
+                    "The returned key buffer was not cleared after authentication failure.");
+
+                Assert.True(
+                    expectedBackingKey.SequenceEqual(
+                        decryptionKeyService.BackingKey),
+                    "The key-service backing buffer was modified.");
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(encryptedBytes);
+            }
+        }
+        finally
+        {
+            foreach (byte[] buffer in encryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            foreach (byte[] buffer in decryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(encryptionKeyService.BackingKey);
+            CryptographicOperations.ZeroMemory(decryptionKeyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsReturnedKeyBufferWhenCancellationOccursAfterKeyAcquisition()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        Guid keyId = Guid.NewGuid();
+
+        var encryptionKeyService = new TrackingEncryptionKeyService(
+            key,
+            keyId);
+
+        var decryptionKeyService = new TrackingEncryptionKeyService(
+            key,
+            keyId);
+
+        byte[] expectedBackingKey =
+            [.. decryptionKeyService.BackingKey];
+
+        byte[] plaintext = new byte[2 * 1024 * 1024];
+        Array.Fill(plaintext, (byte)'A');
+
+        try
+        {
+            var encryptionService = new DocumentEncryptionService(
+                encryptionKeyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source = new MemoryStream(plaintext);
+            await using var encrypted = new MemoryStream();
+
+            await encryptionService.EncryptLegacyVersion2Async(
+                source,
+                encrypted);
+
+            foreach (byte[] buffer in encryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            encrypted.Position = 0;
+
+            using var cancellationTokenSource =
+                new CancellationTokenSource();
+
+            var decryptionService = new DocumentEncryptionService(
+                decryptionKeyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var destination = new MemoryStream();
+
+            await using var cancellingSource = new CancellingReadStream(
+                encrypted,
+                cancellationTokenSource);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => decryptionService.DecryptAsync(
+                    cancellingSource,
+                    destination,
+                    cancellationTokenSource.Token,
+                    maximumPlaintextBytes: plaintext.Length));
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(decryptionKeyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared after cancellation.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(
+                    decryptionKeyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in encryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            foreach (byte[] buffer in decryptionKeyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(encryptionKeyService.BackingKey);
+            CryptographicOperations.ZeroMemory(decryptionKeyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    [Fact]
+    public async Task EncryptAsync_ClearsReturnedKeyBufferWhenSourceReadFails()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        var keyService = new TrackingEncryptionKeyService(
+            key,
+            Guid.NewGuid());
+
+        byte[] expectedBackingKey = [.. keyService.BackingKey];
+
+        try
+        {
+            var service = new DocumentEncryptionService(
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source = new FailingDocumentReadStream();
+            await using var destination = new MemoryStream();
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.EncryptLegacyVersion2Async(
+                    source,
+                    destination));
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(keyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared after a read failure.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(keyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in keyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(keyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [Fact]
+    public async Task EncryptAsync_ClearsReturnedKeyBufferWhenDestinationWriteFails()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        var keyService = new TrackingEncryptionKeyService(
+            key,
+            Guid.NewGuid());
+
+        byte[] expectedBackingKey = [.. keyService.BackingKey];
+        byte[] plaintext = Encoding.UTF8.GetBytes(
+            "Verify cleanup when the encryption destination fails.");
+
+        try
+        {
+            var service = new DocumentEncryptionService(
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source = new MemoryStream(plaintext);
+            await using var destination =
+                new FailingDocumentWriteStream(
+                    successfulWritesBeforeFailure: 1);
+
+            await Assert.ThrowsAsync<IOException>(
+                () => service.EncryptLegacyVersion2Async(
+                    source,
+                    destination));
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(keyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared after a destination-write failure.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(keyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in keyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(keyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    [Fact]
+    public async Task EncryptAsync_ClearsReturnedKeyBufferWhenCancellationOccursAfterKeyAcquisition()
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        var keyService = new TrackingEncryptionKeyService(
+            key,
+            Guid.NewGuid());
+
+        byte[] expectedBackingKey = [.. keyService.BackingKey];
+        byte[] plaintext = new byte[3 * 1024 * 1024];
+
+        Array.Fill(plaintext, (byte)'A');
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        try
+        {
+            var service = new DocumentEncryptionService(
+                keyService,
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var innerSource = new MemoryStream(plaintext);
+
+            await using var source = new CancellingReadStream(
+                innerSource,
+                cancellationTokenSource);
+
+            await using var destination = new MemoryStream();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => service.EncryptAsync(
+                    source,
+                    destination,
+                    Guid.NewGuid(),
+                    cancellationTokenSource.Token));
+
+            byte[] returnedKeyBuffer =
+                Assert.Single(keyService.ReturnedKeyBuffers);
+
+            Assert.True(
+                returnedKeyBuffer.All(value => value == 0),
+                "The returned key buffer was not cleared after cancellation.");
+
+            Assert.True(
+                expectedBackingKey.SequenceEqual(keyService.BackingKey),
+                "The key-service backing buffer was modified.");
+        }
+        finally
+        {
+            foreach (byte[] buffer in keyService.ReturnedKeyBuffers)
+            {
+                CryptographicOperations.ZeroMemory(buffer);
+            }
+
+            CryptographicOperations.ZeroMemory(keyService.BackingKey);
+            CryptographicOperations.ZeroMemory(expectedBackingKey);
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    [Fact]
     public async Task DecryptAsync_UsesExistingKeyWithoutProvisioning()
     {
         byte[] originalContent =
@@ -1372,6 +2070,145 @@ public sealed class DocumentEncryptionServiceTests
                 documentId));
     }
 
+    private sealed class FailingDocumentWriteStream : Stream
+    {
+        private readonly int _successfulWritesBeforeFailure;
+        private int _successfulWrites;
+
+        public FailingDocumentWriteStream(
+            int successfulWritesBeforeFailure)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(
+                successfulWritesBeforeFailure);
+
+            _successfulWritesBeforeFailure =
+                successfulWritesBeforeFailure;
+        }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+
+        public override long Length =>
+            throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(
+            byte[] buffer,
+            int offset,
+            int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(
+            long offset,
+            SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(
+            byte[] buffer,
+            int offset,
+            int count)
+        {
+            RecordWrite();
+        }
+
+        public override Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RecordWrite();
+
+            return Task.CompletedTask;
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RecordWrite();
+
+            return ValueTask.CompletedTask;
+        }
+
+        private void RecordWrite()
+        {
+            if (_successfulWrites >= _successfulWritesBeforeFailure)
+            {
+                throw new IOException(
+                    "Simulated document destination-write failure.");
+            }
+
+            _successfulWrites++;
+        }
+    }
+
+    private sealed class FailingDocumentReadStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+
+        public override long Length =>
+            throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(
+            byte[] buffer,
+            int offset,
+            int count)
+        {
+            throw new InvalidOperationException(
+                "Simulated document read failure.");
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException(
+                "Simulated document read failure.");
+        }
+
+        public override long Seek(
+            long offset,
+            SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(
+            byte[] buffer,
+            int offset,
+            int count) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class CancellingReadStream
         : Stream
     {
@@ -1474,6 +2311,41 @@ public sealed class DocumentEncryptionServiceTests
         return new DocumentEncryptionService(
             new TestEncryptionKeyService(key),
             NullLogger<DocumentEncryptionService>.Instance);
+    }
+
+    private sealed class TrackingEncryptionKeyService
+        : IEncryptionKeyService
+    {
+        private readonly byte[] _backingKey;
+        private readonly Guid _keyId;
+
+        public TrackingEncryptionKeyService(
+            byte[] key,
+            Guid keyId)
+        {
+            _backingKey = [.. key];
+            _keyId = keyId;
+        }
+
+        public byte[] BackingKey => _backingKey;
+
+        public List<byte[]> ReturnedKeyBuffers { get; } = [];
+
+        public Task<EncryptionKeyMaterial> GetKeyAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            byte[] returnedKeyBuffer = [.. _backingKey];
+
+            ReturnedKeyBuffers.Add(returnedKeyBuffer);
+
+            return Task.FromResult(
+                new EncryptionKeyMaterial(
+                    returnedKeyBuffer,
+                    _keyId,
+                    keyVersion: 1));
+        }
     }
 
     private sealed class ExistingKeyOnlyTestEncryptionKeyService

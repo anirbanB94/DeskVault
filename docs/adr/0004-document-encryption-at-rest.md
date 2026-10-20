@@ -396,6 +396,16 @@ Recovery must not expose document contents or cryptographic material through log
 - Key-related logs must not contain plaintext key bytes, protected key blobs, decrypted document content, or credentials.
 - Cancellation remains cancellation and must not be converted into a cryptographic key-failure result.
 
+### Consumer-Owned Document-Key Buffer Cleanup Invariants
+
+- `EncryptionKeyMaterial.KeyBytes` is owned by the caller, which must clear the returned buffer after use.
+- `DocumentEncryptionService` must clear the exact key buffer acquired for each encryption or decryption operation using `CryptographicOperations.ZeroMemory`, including successful completion and exception or cancellation exits after acquisition.
+- The `AesGcm` instance must be disposed before its operation's key buffer is cleared.
+- Cleanup must target only the buffer owned by the current operation. It must not clear key-service backing state, another operation's buffer, or a buffer that remains owned elsewhere.
+- Clearing the operation-owned buffer does not guarantee erasure of copies held internally by `AesGcm`, the cryptographic provider, or the runtime.
+- Key-buffer cleanup must not change strict key retrieval, persisted key state, key identity/version metadata, encrypted-record framing, or legacy compatibility.
+- Cleanup must not expose key bytes through logs and must preserve the original operation's exception and cancellation behavior.
+
 ### Recovery Safety Invariants
 
 The following invariants apply to document-artifact recovery:
@@ -457,6 +467,14 @@ It does not introduce a replacement-key hierarchy or define key rotation policy.
 
 Vault initialization provisions the document key through `IEncryptionKeyProvisioningService`, which is injected into the authorized `DatabaseInitializer` lifecycle boundary. Ordinary document encryption and document decryption use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. The retrieval-only `IEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit provisioning capability.
 Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state. The initializer permits document-key provisioning for a new vault before existing document data is present, and for an existing empty database only when document metadata and managed document artifacts are both absent. An established vault with document metadata or stored artifacts cannot be treated as an initial-provisioning context.
+
+### Operation-Owned Document-Key Buffer Cleanup
+
+`EncryptionKeyMaterial.KeyBytes` is caller-owned. `DocumentEncryptionService` must clear the exact key buffer returned by `IEncryptionKeyService.GetKeyAsync()` after each encryption and decryption operation, including success, exceptions, stream failures, authentication failures, and cancellation after acquisition.
+
+The cleanup must run after the operation's `AesGcm` instance has been disposed. It applies only to the key buffer owned by that operation and must not clear shared key-service backing state, another operation's buffer, or a buffer that remains owned by another component. It does not guarantee erasure of copies that may exist internally in `AesGcm`, a cryptographic provider, or the runtime.
+
+This cleanup responsibility does not change strict key retrieval, persisted key state, key identity/version metadata, encrypted-record framing, or version-2 compatibility. It must preserve the original exception and cancellation behavior and must not disclose key material through diagnostics.
 
 New master-key artifacts store `KeyId`, key version, and the document-purpose marker within the DPAPI-protected `DVKP` payload described above. New key artifacts start at version `1`. Existing raw-key artifacts are read as legacy version `0` with a deterministic identity derived from the exact protected artifact and are not rewritten during retrieval.
 

@@ -90,6 +90,8 @@ public sealed class DocumentEncryptionService
         _logger.LogInformation(
             LogMessages.DocumentEncryptionStarted);
 
+        byte[]? acquiredKeyBuffer = null;
+
         try
         {
             EncryptionKeyMaterial keyMaterial =
@@ -97,6 +99,7 @@ public sealed class DocumentEncryptionService
                     cancellationToken);
 
             byte[] key = keyMaterial.KeyBytes;
+            acquiredKeyBuffer = key;
 
             byte[]? legacyAssociatedData =
                 formatVersion == LegacyFormatVersion
@@ -204,6 +207,14 @@ public sealed class DocumentEncryptionService
 
             throw;
         }
+        finally
+        {
+            if (acquiredKeyBuffer is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    acquiredKeyBuffer);
+            }
+        }
     }
 
     /// <summary>
@@ -273,6 +284,8 @@ public sealed class DocumentEncryptionService
         _logger.LogInformation(
             LogMessages.DocumentDecryptionStarted);
 
+        byte[]? acquiredKeyBuffer = null;
+
         try
         {
             EncryptionKeyMaterial keyMaterial =
@@ -280,6 +293,7 @@ public sealed class DocumentEncryptionService
                     cancellationToken);
 
             byte[] key = keyMaterial.KeyBytes;
+            acquiredKeyBuffer = key;
 
             uint formatVersion =
                 await ReadAndValidateHeaderAsync(
@@ -443,6 +457,14 @@ public sealed class DocumentEncryptionService
                 LogMessages.DocumentDecryptionFailed);
 
             throw;
+        }
+        finally
+        {
+            if (acquiredKeyBuffer is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    acquiredKeyBuffer);
+            }
         }
     }
 
