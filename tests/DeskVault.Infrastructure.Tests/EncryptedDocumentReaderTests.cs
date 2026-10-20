@@ -44,15 +44,111 @@ public sealed class EncryptedDocumentReaderTests
             0,
             result.Position);
 
-        using var memory =
-            new MemoryStream();
+        Assert.True(
+            result.CanRead,
+            "The successfully returned document stream must remain readable.");
 
-        await result.CopyToAsync(
-            memory);
+        byte[] returnedContent =
+            new byte[originalContent.Length];
 
-        Assert.Equal(
-            originalContent,
-            memory.ToArray());
+        try
+        {
+            int totalRead = 0;
+
+            while (totalRead < returnedContent.Length)
+            {
+                int bytesRead = await result.ReadAsync(
+                    returnedContent.AsMemory(totalRead));
+
+                if (bytesRead == 0)
+                {
+                    break;
+                }
+
+                totalRead += bytesRead;
+            }
+
+            Assert.Equal(
+                originalContent.Length,
+                totalRead);
+
+            Assert.Equal(
+                originalContent,
+                returnedContent);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                returnedContent);
+        }
+    }
+
+    [Fact]
+    public async Task OpenReadAsync_WhenMaximumIsExceededAfterStagingMultipleChunks_ClearsCurrentAndRetiredBuffers()
+    {
+        using var context = CreateTestContext();
+
+        const int chunkSize = 1024 * 1024;
+        const long maximumPlaintextBytes = 2L * chunkSize;
+
+        byte[] originalContent = new byte[(2 * chunkSize) + 37];
+        RandomNumberGenerator.Fill(originalContent);
+
+        Guid documentId = Guid.NewGuid();
+
+        string artifactPath = context.PathResolver.GetPath(documentId);
+
+        ZeroingMemoryStream? observedStagingStream = null;
+
+        try
+        {
+            await CreateEncryptedFileAsync(
+                artifactPath,
+                documentId,
+                originalContent,
+                context.EncryptionService);
+
+            context.Reader.DecryptedStagingStreamFactoryForTesting =
+                () => observedStagingStream =
+                    new ZeroingMemoryStream(
+                        trackRetiredBuffersForTesting: true);
+
+            ResourceLimitExceededException exception =
+                await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                    () => context.Reader.OpenReadAsync(
+                        documentId,
+                        ComputeSha256Hash(originalContent),
+                        maximumPlaintextBytes: maximumPlaintextBytes));
+
+            Assert.Equal(
+                maximumPlaintextBytes,
+                exception.LimitBytes);
+
+            Assert.Equal(
+                originalContent.Length,
+                exception.AttemptedBytes);
+
+            Assert.NotNull(observedStagingStream);
+
+            // The current backing array must be clear after failure and disposal.
+            AssertStagingBufferCleared(observedStagingStream);
+
+            // Growth must have retired at least one buffer large enough to have
+            // held a complete plaintext chunk, and all retired arrays must be zero.
+            Assert.Contains(
+                observedStagingStream!.RetiredBuffersForTesting,
+                buffer => buffer.Length >= chunkSize);
+
+            Assert.All(
+                observedStagingStream.RetiredBuffersForTesting,
+                buffer => Assert.True(
+                    buffer.All(value => value == 0),
+                    "A superseded plaintext staging buffer was not cleared."));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(originalContent);
+        }
     }
 
     [Fact]
@@ -139,12 +235,19 @@ public sealed class EncryptedDocumentReaderTests
             artifactPath,
             encryptedContent);
 
+        MemoryStream? observedStagingStream = null;
+
+        context.Reader.DecryptedStagingStreamFactoryForTesting =
+            () => observedStagingStream = new MemoryStream();
+
         // Act & Assert
         await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
             () =>
                 context.Reader.OpenReadAsync(
                     documentId,
                     ComputeSha256Hash(originalContent)));
+
+        AssertStagingBufferCleared(observedStagingStream);
     }
 
     [Fact]
@@ -163,6 +266,49 @@ public sealed class EncryptedDocumentReaderTests
                 context.Reader.OpenReadAsync(
                     documentId,
                     ComputeSha256Hash(Array.Empty<byte>())));
+    }
+
+    [Fact]
+    public async Task OpenReadAsync_WhenCancellationOccursAfterPlaintextStaging_ClearsStagingBuffer()
+    {
+        using var context = CreateTestContext();
+
+        byte[] originalContent = Encoding.UTF8.GetBytes(
+            "Verify staged plaintext is cleared when decryption is cancelled.");
+
+        Guid documentId = Guid.NewGuid();
+
+        string artifactPath = context.PathResolver.GetPath(documentId);
+
+        await CreateEncryptedFileAsync(
+            artifactPath,
+            documentId,
+            originalContent,
+            context.EncryptionService);
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        CancellingMemoryStream? observedStagingStream = null;
+
+        context.Reader.DecryptedStagingStreamFactoryForTesting =
+            () => observedStagingStream =
+                new CancellingMemoryStream(cancellationTokenSource);
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => context.Reader.OpenReadAsync(
+                    documentId,
+                    ComputeSha256Hash(originalContent),
+                    cancellationTokenSource.Token));
+
+            AssertStagingBufferCleared(observedStagingStream);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(originalContent);
+        }
     }
 
     [Fact]
@@ -341,12 +487,19 @@ public sealed class EncryptedDocumentReaderTests
             ComputeSha256Hash(
                 differentContent);
 
+        MemoryStream? observedStagingStream = null;
+
+        context.Reader.DecryptedStagingStreamFactoryForTesting =
+            () => observedStagingStream = new MemoryStream();
+
         // Act & Assert
         await Assert.ThrowsAsync<DocumentContentIntegrityException>(
             () =>
                 context.Reader.OpenReadAsync(
                     documentId,
                     expectedSha256Hash));
+
+        AssertStagingBufferCleared(observedStagingStream);
     }
 
     [Fact]
@@ -652,6 +805,31 @@ public sealed class EncryptedDocumentReaderTests
         }
     }
 
+    private sealed class CancellingMemoryStream : MemoryStream
+    {
+        private readonly CancellationTokenSource _cancellationTokenSource;
+
+        public CancellingMemoryStream(
+            CancellationTokenSource cancellationTokenSource)
+        {
+            _cancellationTokenSource = cancellationTokenSource;
+        }
+
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            await base.WriteAsync(buffer, cancellationToken);
+
+            if (!buffer.IsEmpty)
+            {
+                // Cancel after plaintext has been written to the private
+                // staging stream. The next decryption read should observe it.
+                _cancellationTokenSource.Cancel();
+            }
+        }
+    }
+
     private sealed class TestContext : IDisposable
     {
         public string RootDirectory { get; }
@@ -795,5 +973,19 @@ public sealed class EncryptedDocumentReaderTests
             {
             }
         }
+    }
+
+    private static void AssertStagingBufferCleared(
+        MemoryStream? stagingStream)
+    {
+        Assert.NotNull(stagingStream);
+
+        byte[] buffer = stagingStream!.GetBuffer();
+
+        Assert.NotEmpty(buffer);
+
+        Assert.True(
+            buffer.All(value => value == 0),
+            "The failed plaintext staging buffer was not cleared.");
     }
 }

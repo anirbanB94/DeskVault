@@ -2,6 +2,7 @@ using DeskVault.Application.Documents.Processing;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -41,6 +42,340 @@ public sealed class DocumentEncryptionServiceTests
         Assert.Equal(
             originalContent,
             decrypted.ToArray());
+    }
+
+    [Fact]
+    public async Task EncryptLegacyVersion2Async_ClearsPlaintextInputBufferAfterSuccessfulEncryption()
+    {
+        await AssertEncryptionInputBufferIsClearedAsync(
+            PlaintextReadTermination.EndOfStream);
+    }
+
+    [Fact]
+    public async Task EncryptLegacyVersion2Async_ClearsPlaintextInputBufferWhenSourceReadFails()
+    {
+        await AssertEncryptionInputBufferIsClearedAsync(
+            PlaintextReadTermination.ThrowAfterContent);
+    }
+
+    [Fact]
+    public async Task EncryptLegacyVersion2Async_ClearsPlaintextInputBufferWhenDestinationWriteFails()
+    {
+        await AssertEncryptionInputBufferIsClearedAsync(
+            PlaintextReadTermination.EndOfStream,
+            failDestinationWrite: true);
+    }
+
+    [Fact]
+    public async Task EncryptLegacyVersion2Async_ClearsPlaintextInputBufferWhenCancellationOccursAfterRead()
+    {
+        await AssertEncryptionInputBufferIsClearedAsync(
+            PlaintextReadTermination.CancelAfterContent);
+    }
+
+    [Fact]
+    public async Task EncryptLegacyVersion2Async_ClearsReusablePlaintextInputBufferAcrossMultipleChunks()
+    {
+        await AssertEncryptionInputBufferIsClearedAsync(
+            PlaintextReadTermination.EndOfStream,
+            plaintextLength: (2 * 1024 * 1024) + 37);
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsPlaintextChunkBufferAfterSuccessfulWrite()
+    {
+        var testData = await CreateEncryptedTestPayloadAsync();
+        var observedBuffers = new List<byte[]>();
+
+        try
+        {
+            var service = CreateDecryptionService(
+                testData.Key,
+                testData.KeyId,
+                observedBuffers);
+
+            await using var source =
+                new MemoryStream(testData.EncryptedBytes);
+
+            await using var destination = new MemoryStream();
+
+            await service.DecryptAsync(source, destination);
+
+            Assert.Equal(
+                testData.Plaintext,
+                destination.ToArray());
+
+            AssertSingleClearedPlaintextBuffer(observedBuffers);
+        }
+        finally
+        {
+            ClearDecryptionTestPayload(testData, observedBuffers);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsPlaintextChunkBufferWhenDestinationWriteFails()
+    {
+        var testData = await CreateEncryptedTestPayloadAsync();
+        var observedBuffers = new List<byte[]>();
+
+        try
+        {
+            var service = CreateDecryptionService(
+                testData.Key,
+                testData.KeyId,
+                observedBuffers);
+
+            await using var source =
+                new MemoryStream(testData.EncryptedBytes);
+
+            await using var destination =
+                new FailingDocumentWriteStream(
+                    successfulWritesBeforeFailure: 0);
+
+            await Assert.ThrowsAsync<IOException>(
+                () => service.DecryptAsync(source, destination));
+
+            AssertSingleClearedPlaintextBuffer(observedBuffers);
+        }
+        finally
+        {
+            ClearDecryptionTestPayload(testData, observedBuffers);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsPlaintextChunkBufferWhenAuthenticationFails()
+    {
+        var testData = await CreateEncryptedTestPayloadAsync();
+        var observedBuffers = new List<byte[]>();
+
+        try
+        {
+            // Corrupt the encrypted payload to force AES-GCM authentication failure.
+            testData.EncryptedBytes[^1] ^= 0xFF;
+
+            var service = CreateDecryptionService(
+                testData.Key,
+                testData.KeyId,
+                observedBuffers);
+
+            await using var source =
+                new MemoryStream(testData.EncryptedBytes);
+
+            await using var destination = new MemoryStream();
+
+            await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
+                () => service.DecryptAsync(source, destination));
+
+            Assert.Equal(0, destination.Length);
+            AssertSingleClearedPlaintextBuffer(observedBuffers);
+        }
+        finally
+        {
+            ClearDecryptionTestPayload(testData, observedBuffers);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsPlaintextChunkBufferWhenEncryptedRecordIsTruncated()
+    {
+        var testData = await CreateEncryptedTestPayloadAsync();
+        var observedBuffers = new List<byte[]>();
+
+        try
+        {
+            var service = CreateDecryptionService(
+                testData.Key,
+                testData.KeyId,
+                observedBuffers);
+
+            // Truncate the final ciphertext byte, after the chunk's
+            // plaintext buffer has been allocated but before authentication.
+            await using var source = new MemoryStream(
+                testData.EncryptedBytes[..^1]);
+
+            await using var destination = new MemoryStream();
+
+            await Assert.ThrowsAsync<CryptographicException>(
+                () => service.DecryptAsync(source, destination));
+
+            Assert.Equal(0, destination.Length);
+            AssertSingleClearedPlaintextBuffer(observedBuffers);
+        }
+        finally
+        {
+            ClearDecryptionTestPayload(testData, observedBuffers);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsPlaintextChunkBufferWhenSourceReadFails()
+    {
+        var testData = await CreateEncryptedTestPayloadAsync();
+        var observedBuffers = new List<byte[]>();
+
+        try
+        {
+            var service = CreateDecryptionService(
+                testData.Key,
+                testData.KeyId,
+                observedBuffers);
+
+            // Legacy v2 has an 8-byte header followed by a 4-byte length,
+            // 12-byte nonce, and 16-byte authentication tag.
+            // Fail halfway through reading the ciphertext, after allocation.
+            int bytesBeforeFailure =
+                sizeof(uint) * 2
+                + sizeof(int)
+                + 12
+                + 16
+                + testData.Plaintext.Length / 2;
+
+            await using var source =
+                new FailingAfterByteLimitReadStream(
+                    testData.EncryptedBytes,
+                    bytesBeforeFailure);
+
+            await using var destination = new MemoryStream();
+
+            await Assert.ThrowsAsync<IOException>(
+                () => service.DecryptAsync(source, destination));
+
+            Assert.Equal(0, destination.Length);
+            AssertSingleClearedPlaintextBuffer(observedBuffers);
+        }
+        finally
+        {
+            ClearDecryptionTestPayload(testData, observedBuffers);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsPlaintextChunkBufferWhenDestinationWriteIsCancelled()
+    {
+        var testData = await CreateEncryptedTestPayloadAsync();
+        var observedBuffers = new List<byte[]>();
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        try
+        {
+            var service = CreateDecryptionService(
+                testData.Key,
+                testData.KeyId,
+                observedBuffers);
+
+            await using var source =
+                new MemoryStream(testData.EncryptedBytes);
+
+            await using var destination =
+                new CancellingDocumentWriteStream(
+                    cancellationTokenSource);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => service.DecryptAsync(
+                    source,
+                    destination,
+                    cancellationTokenSource.Token));
+
+            AssertSingleClearedPlaintextBuffer(observedBuffers);
+        }
+        finally
+        {
+            ClearDecryptionTestPayload(testData, observedBuffers);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsEachPlaintextChunkBufferWhenSecondDestinationWriteFails()
+    {
+        var testData = await CreateEncryptedTestPayloadAsync(
+            plaintextLength: (2 * 1024 * 1024) + 37);
+
+        var observedBuffers = new List<byte[]>();
+
+        try
+        {
+            var service = CreateDecryptionService(
+                testData.Key,
+                testData.KeyId,
+                observedBuffers);
+
+            await using var source =
+                new MemoryStream(testData.EncryptedBytes);
+
+            await using var destination =
+                new FailingDocumentWriteStream(
+                    successfulWritesBeforeFailure: 1);
+
+            await Assert.ThrowsAsync<IOException>(
+                () => service.DecryptAsync(
+                    source,
+                    destination));
+
+            // The first plaintext chunk was consumed successfully.
+            // The second chunk's destination write fails.
+            // Both operation-owned plaintext buffers must be cleared.
+            AssertClearedPlaintextBuffers(
+                observedBuffers,
+                expectedCount: 2);
+        }
+        finally
+        {
+            ClearDecryptionTestPayload(
+                testData,
+                observedBuffers);
+        }
+    }
+
+    [Fact]
+    public async Task DecryptAsync_ClearsEachPlaintextChunkBufferAfterSuccessfulMultiChunkWrite()
+    {
+        var testData = await CreateEncryptedTestPayloadAsync(
+            plaintextLength: (2 * 1024 * 1024) + 37);
+
+        var observedBuffers = new List<byte[]>();
+
+        try
+        {
+            var service = CreateDecryptionService(
+                testData.Key,
+                testData.KeyId,
+                observedBuffers);
+
+            await using var source =
+                new MemoryStream(testData.EncryptedBytes);
+
+            await using var destination = new MemoryStream();
+
+            await service.DecryptAsync(
+                source,
+                destination);
+
+            Assert.Equal(
+                testData.Plaintext,
+                destination.ToArray());
+
+            Assert.True(
+                source.CanRead,
+                "Decryption must not dispose the caller-owned source stream.");
+
+            Assert.True(
+                destination.CanWrite,
+                "Decryption must not dispose the caller-owned destination stream.");
+
+            AssertClearedPlaintextBuffers(
+                observedBuffers,
+                expectedCount: 3);
+        }
+        finally
+        {
+            ClearDecryptionTestPayload(
+                testData,
+                observedBuffers);
+        }
     }
 
     [Fact]
@@ -2070,6 +2405,145 @@ public sealed class DocumentEncryptionServiceTests
                 documentId));
     }
 
+    private sealed class ObservingPlaintextReadStream : Stream
+    {
+        private readonly byte[] _content;
+        private readonly PlaintextReadTermination _termination;
+        private readonly CancellationTokenSource _cancellationTokenSource;
+
+        private int _position;
+        private bool _hasObservedSubsequentRead;
+        private bool _bufferWasClearedBeforeNextRead = true;
+
+        public byte[]? ObservedBuffer { get; private set; }
+
+        public bool BufferWasClearedBeforeNextRead =>
+            _hasObservedSubsequentRead &&
+            _bufferWasClearedBeforeNextRead;
+
+        public ObservingPlaintextReadStream(
+            byte[] content,
+            PlaintextReadTermination termination,
+            CancellationTokenSource cancellationTokenSource)
+        {
+            _content = content;
+            _termination = termination;
+            _cancellationTokenSource = cancellationTokenSource;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+
+        public override long Length =>
+            throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (!MemoryMarshal.TryGetArray(
+                    (ReadOnlyMemory<byte>)buffer,
+                    out ArraySegment<byte> segment) ||
+                segment.Array is null)
+            {
+                throw new InvalidOperationException(
+                    "The plaintext read buffer was not array-backed.");
+            }
+
+            ObservedBuffer ??= segment.Array;
+
+            if (!ReferenceEquals(
+                    ObservedBuffer,
+                    segment.Array))
+            {
+                throw new InvalidOperationException(
+                    "The encryption operation changed its reusable input buffer.");
+            }
+
+            if (_position > 0)
+            {
+                bool wasCleared =
+                    ObservedBuffer.All(value => value == 0);
+
+                _bufferWasClearedBeforeNextRead =
+                    _hasObservedSubsequentRead
+                        ? _bufferWasClearedBeforeNextRead && wasCleared
+                        : wasCleared;
+
+                _hasObservedSubsequentRead = true;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (_position < _content.Length)
+            {
+                int bytesToCopy = Math.Min(
+                    buffer.Length,
+                    _content.Length - _position);
+
+                _content.AsMemory(
+                    _position,
+                    bytesToCopy).CopyTo(buffer);
+
+                _position += bytesToCopy;
+
+                return ValueTask.FromResult(bytesToCopy);
+            }
+
+            switch (_termination)
+            {
+                case PlaintextReadTermination.EndOfStream:
+                    return ValueTask.FromResult(0);
+
+                case PlaintextReadTermination.ThrowAfterContent:
+                    throw new IOException(
+                        "Simulated source-read failure after returning plaintext.");
+
+                case PlaintextReadTermination.CancelAfterContent:
+                    _cancellationTokenSource.Cancel();
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    throw new InvalidOperationException(
+                        "Expected cancellation to interrupt the read.");
+
+                default:
+                    throw new InvalidOperationException(
+                        "Unsupported plaintext-read termination mode.");
+            }
+        }
+
+        public override int Read(
+            byte[] buffer,
+            int offset,
+            int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(
+            long offset,
+            SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(
+            byte[] buffer,
+            int offset,
+            int count) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class FailingDocumentWriteStream : Stream
     {
         private readonly int _successfulWritesBeforeFailure;
@@ -2155,6 +2629,153 @@ public sealed class DocumentEncryptionServiceTests
             }
 
             _successfulWrites++;
+        }
+    }
+
+    private sealed class FailingAfterByteLimitReadStream : Stream
+    {
+        private readonly byte[] _content;
+        private readonly int _byteLimit;
+        private int _position;
+
+        public FailingAfterByteLimitReadStream(
+            byte[] content,
+            int byteLimit)
+        {
+            ArgumentNullException.ThrowIfNull(content);
+
+            if (byteLimit < 0 || byteLimit > content.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(byteLimit));
+            }
+
+            _content = content;
+            _byteLimit = byteLimit;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+
+        public override long Length =>
+            throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (buffer.IsEmpty)
+            {
+                return ValueTask.FromResult(0);
+            }
+
+            if (_position >= _byteLimit)
+            {
+                throw new IOException(
+                    "Simulated encrypted-source read failure.");
+            }
+
+            int bytesToCopy = Math.Min(
+                buffer.Length,
+                _byteLimit - _position);
+
+            _content.AsMemory(
+                _position,
+                bytesToCopy).CopyTo(buffer);
+
+            _position += bytesToCopy;
+
+            return ValueTask.FromResult(bytesToCopy);
+        }
+
+        public override int Read(
+            byte[] buffer,
+            int offset,
+            int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(
+            long offset,
+            SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(
+            byte[] buffer,
+            int offset,
+            int count) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class CancellingDocumentWriteStream : Stream
+    {
+        private readonly CancellationTokenSource _cancellationTokenSource;
+
+        public CancellingDocumentWriteStream(
+            CancellationTokenSource cancellationTokenSource)
+        {
+            _cancellationTokenSource = cancellationTokenSource;
+        }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+
+        public override long Length =>
+            throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(
+            byte[] buffer,
+            int offset,
+            int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(
+            long offset,
+            SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(
+            byte[] buffer,
+            int offset,
+            int count) =>
+            throw new NotSupportedException();
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            _cancellationTokenSource.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return ValueTask.CompletedTask;
         }
     }
 
@@ -2413,5 +3034,237 @@ public sealed class DocumentEncryptionServiceTests
                 _keyId,
                 keyVersion: 1);
         }
+    }
+
+    private static async Task AssertEncryptionInputBufferIsClearedAsync(
+        PlaintextReadTermination termination,
+        bool failDestinationWrite = false,
+        int plaintextLength = 128)
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        byte[] plaintext = new byte[plaintextLength];
+
+        Array.Fill(
+            plaintext,
+            (byte)'P');
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        await using var source =
+            new ObservingPlaintextReadStream(
+                plaintext,
+                termination,
+                cancellationTokenSource);
+
+        await using Stream destination =
+            failDestinationWrite
+                ? new FailingDocumentWriteStream(
+                    successfulWritesBeforeFailure: 1)
+                : new MemoryStream();
+
+        try
+        {
+            var service = new DocumentEncryptionService(
+                new TestEncryptionKeyService(key),
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            if (failDestinationWrite)
+            {
+                await Assert.ThrowsAsync<IOException>(
+                    () => service.EncryptLegacyVersion2Async(
+                        source,
+                        destination,
+                        cancellationTokenSource.Token));
+            }
+            else
+            {
+                switch (termination)
+                {
+                    case PlaintextReadTermination.EndOfStream:
+                        await service.EncryptLegacyVersion2Async(
+                            source,
+                            destination,
+                            cancellationTokenSource.Token);
+                        break;
+
+                    case PlaintextReadTermination.ThrowAfterContent:
+                        await Assert.ThrowsAsync<IOException>(
+                            () => service.EncryptLegacyVersion2Async(
+                                source,
+                                destination,
+                                cancellationTokenSource.Token));
+                        break;
+
+                    case PlaintextReadTermination.CancelAfterContent:
+                        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                            () => service.EncryptLegacyVersion2Async(
+                                source,
+                                destination,
+                                cancellationTokenSource.Token));
+                        break;
+
+                    default:
+                        throw new InvalidOperationException(
+                            "Unsupported plaintext-read termination mode.");
+                }
+            }
+
+            Assert.NotNull(source.ObservedBuffer);
+
+            Assert.True(
+                source.ObservedBuffer!.All(value => value == 0),
+                "The plaintext input buffer was not cleared when encryption ended.");
+
+            if (!failDestinationWrite)
+            {
+                Assert.True(
+                    source.BufferWasClearedBeforeNextRead,
+                    "The plaintext input buffer was not cleared before the next source read.");
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+            CryptographicOperations.ZeroMemory(key);
+
+            if (source.ObservedBuffer is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    source.ObservedBuffer);
+            }
+        }
+    }
+
+    private enum PlaintextReadTermination
+    {
+        EndOfStream,
+        ThrowAfterContent,
+        CancelAfterContent
+    }
+
+    private static async Task<(
+        byte[] Key,
+        Guid KeyId,
+        byte[] Plaintext,
+        byte[] EncryptedBytes)> CreateEncryptedTestPayloadAsync(
+            int plaintextLength = 0)
+    {
+        byte[] key = RandomNumberGenerator.GetBytes(
+            EncryptionKeyMaterial.KeySizeBytes);
+
+        Guid keyId = Guid.NewGuid();
+
+        if (plaintextLength < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(plaintextLength));
+        }
+
+        byte[] plaintext;
+
+        if (plaintextLength == 0)
+        {
+            plaintext = Encoding.UTF8.GetBytes(
+                "Verify operation-owned decryption plaintext cleanup.");
+        }
+        else
+        {
+            plaintext = new byte[plaintextLength];
+
+            RandomNumberGenerator.Fill(plaintext);
+        }
+
+        try
+        {
+            var service = new DocumentEncryptionService(
+                new TestEncryptionKeyService(key, keyId),
+                NullLogger<DocumentEncryptionService>.Instance);
+
+            await using var source = new MemoryStream(plaintext);
+            await using var encrypted = new MemoryStream();
+
+            await service.EncryptLegacyVersion2Async(
+                source,
+                encrypted);
+
+            return (
+                key,
+                keyId,
+                plaintext,
+                encrypted.ToArray());
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(plaintext);
+            throw;
+        }
+    }
+
+    private static DocumentEncryptionService CreateDecryptionService(
+        byte[] key,
+        Guid keyId,
+        List<byte[]> observedBuffers)
+    {
+        var service = new DocumentEncryptionService(
+            new TestEncryptionKeyService(key, keyId),
+            NullLogger<DocumentEncryptionService>.Instance);
+
+        service.DecryptedPlaintextBufferFactoryForTesting = length =>
+        {
+            byte[] buffer = new byte[length];
+
+            observedBuffers.Add(buffer);
+
+            return buffer;
+        };
+
+        return service;
+    }
+
+    private static void AssertSingleClearedPlaintextBuffer(
+        List<byte[]> observedBuffers)
+    {
+        byte[] buffer = Assert.Single(observedBuffers);
+
+        Assert.True(
+            buffer.All(value => value == 0),
+            "The operation-owned decryption plaintext buffer was not cleared.");
+    }
+
+    private static void AssertClearedPlaintextBuffers(
+        List<byte[]> observedBuffers,
+        int expectedCount)
+    {
+        Assert.Equal(
+            expectedCount,
+            observedBuffers.Count);
+
+        Assert.All(
+            observedBuffers,
+            buffer => Assert.True(
+                buffer.All(value => value == 0),
+                "An operation-owned decryption plaintext buffer was not cleared."));
+    }
+
+    private static void ClearDecryptionTestPayload(
+        (
+            byte[] Key,
+            Guid KeyId,
+            byte[] Plaintext,
+            byte[] EncryptedBytes) testData,
+        IEnumerable<byte[]> observedBuffers)
+    {
+        foreach (byte[] buffer in observedBuffers)
+        {
+            CryptographicOperations.ZeroMemory(buffer);
+        }
+
+        CryptographicOperations.ZeroMemory(testData.Key);
+        CryptographicOperations.ZeroMemory(testData.Plaintext);
+        CryptographicOperations.ZeroMemory(testData.EncryptedBytes);
     }
 }

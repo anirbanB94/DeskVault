@@ -231,7 +231,7 @@ Compatibility must not silently claim the stronger guarantees of version 3. The 
 
 `Document.Sha256Hash` is the persisted identity of the complete original document content. The encrypted-record reader must not return plaintext as a successfully verified document until all encrypted content has been decrypted and the SHA-256 hash of the complete plaintext has been compared with the expected persisted hash.
 
-The `IDocumentReader` contract requires callers to supply the persisted expected SHA-256 value. The Infrastructure implementation performs decryption into a private, non-returned buffer, hashes the complete plaintext, and compares the result with the expected value before returning the stream. The buffer must be disposed and the read must fail if decryption, authentication, hashing, cancellation, or content-identity verification fails.
+The `IDocumentReader` contract requires callers to supply the persisted expected SHA-256 value. The Infrastructure implementation performs decryption into a private, non-returned buffer, hashes the complete plaintext, and compares the result with the expected value before returning the stream. If decryption, authentication, hashing, cancellation, or content-identity verification fails, the reader must explicitly overwrite the available backing array of its operation-owned plaintext staging `MemoryStream` with `CryptographicOperations.ZeroMemory` before disposing it, and the read must fail. The reader must also clear superseded staging backing arrays when stream growth replaces them. These guarantees apply to staging arrays owned by the stream and do not guarantee erasure of copies maintained by the runtime or cryptographic provider.
 
 The hash comparison must be case-insensitive for its hexadecimal representation. The implementation must not expose the calculated hash, expected hash, plaintext, key material, or authentication data through exception messages or diagnostics.
 
@@ -406,6 +406,16 @@ Recovery must not expose document contents or cryptographic material through log
 - Key-buffer cleanup must not change strict key retrieval, persisted key state, key identity/version metadata, encrypted-record framing, or legacy compatibility.
 - Cleanup must not expose key bytes through logs and must preserve the original operation's exception and cancellation behavior.
 
+### Operation-Owned Transient Plaintext Buffer Cleanup Invariants
+
+- `DocumentEncryptionService.EncryptCoreAsync` must clear its reusable operation-owned plaintext input buffer after each chunk has been consumed and when the operation exits through an exception or cancellation after allocation.
+- `DocumentEncryptionService.DecryptCoreAsync` must clear each operation-owned plaintext chunk buffer after consumption, including when ciphertext reads, authenticated decryption, destination writes, record validation, or cancellation fail after allocation.
+- `EncryptedDocumentReader.OpenReadAsync` must not return its private staging stream until all record authentication and completeness checks and the complete plaintext SHA-256 comparison succeed. When decryption, authentication, hashing, cancellation, or content-identity verification fails, it must use `CryptographicOperations.ZeroMemory` to overwrite the available backing array of its operation-owned staging `MemoryStream` before disposing it.
+- `ZeroingMemoryStream` must clear each operation-owned staging backing array when stream growth replaces it, and clear its current backing array on disposal. The failed reader path explicitly clears the available current backing array before disposal. These guarantees do not extend to copies maintained independently by the runtime or cryptographic provider.
+- Cleanup targets only buffers owned by the operation. It must not clear caller-owned streams or buffers, shared key-service state, or plaintext storage before it has been successfully returned to a caller.
+- Explicit clearing reduces avoidable plaintext retention but does not guarantee erasure of copies maintained by the runtime or cryptographic provider.
+- Cleanup preserves encrypted-record framing, authentication and completeness checks, persisted whole-document SHA-256 verification, document identity binding, resource limits, stream ownership, and exception/cancellation semantics.
+
 ### Recovery Safety Invariants
 
 The following invariants apply to document-artifact recovery:
@@ -501,7 +511,7 @@ Readable document stream
 ```
 
 The reader decrypts into a private buffer and verifies the complete plaintext against the caller-supplied persisted document hash before returning that buffer as a readable stream.
-A malformed record, authentication failure, unsupported format, invalid final record, truncated content that fails the persisted hash check, or hash mismatch must prevent a successful read. The private plaintext buffer is disposed when validation fails.
+A malformed record, authentication failure, unsupported format, invalid final record, truncated content that fails the persisted hash check, or hash mismatch must prevent a successful read. On failure, the reader clears the available backing array of its operation-owned plaintext staging stream with `CryptographicOperations.ZeroMemory` before disposal. `ZeroingMemoryStream` also clears superseded backing arrays when stream growth replaces them. Successful returns retain the staged plaintext for the caller. These guarantees cover the stream-owned arrays, not copies maintained independently by the runtime or cryptographic provider.
 
 Ordinary document opening and lifecycle operations do not trust the persisted physical `StoredFilePath` as the authoritative artifact selector. Reconciliation may inspect that persisted value as evidence, but ownership is validated against the canonical document-owned path.
 

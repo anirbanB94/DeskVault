@@ -29,6 +29,14 @@ public sealed class DocumentEncryptionService
     private readonly IEncryptionKeyService _keyService;
     private readonly ILogger<DocumentEncryptionService> _logger;
 
+    // Allows tests to retain references to operation-owned plaintext buffers
+    // at allocation time without participating in the cleanup path.
+    internal Func<int, byte[]>? DecryptedPlaintextBufferFactoryForTesting
+    {
+        get;
+        set;
+    }
+
     public DocumentEncryptionService(
         IEncryptionKeyService keyService,
         ILogger<DocumentEncryptionService> logger)
@@ -91,6 +99,7 @@ public sealed class DocumentEncryptionService
             LogMessages.DocumentEncryptionStarted);
 
         byte[]? acquiredKeyBuffer = null;
+        byte[]? plaintextBuffer = null;
 
         try
         {
@@ -112,72 +121,85 @@ public sealed class DocumentEncryptionService
                 cancellationToken);
 
             byte[] buffer = new byte[ChunkSize];
+            plaintextBuffer = buffer;
 
             using var aes = new AesGcm(key, TagSize);
 
             long chunkIndex = 0;
             long totalPlaintextBytes = 0;
 
-            int bytesRead;
-
-            while ((bytesRead = await source.ReadAsync(
-                buffer.AsMemory(0, buffer.Length),
-                cancellationToken)) > 0)
+            while (true)
             {
-                if (formatVersion == FormatVersion &&
-                    (chunkIndex == long.MaxValue ||
-                     totalPlaintextBytes > long.MaxValue - bytesRead))
+                try
                 {
-                    throw new CryptographicException(
-                        "The encrypted document exceeds supported record limits.");
-                }
+                    int bytesRead = await source.ReadAsync(
+                        buffer.AsMemory(0, buffer.Length),
+                        cancellationToken);
 
-                byte[] nonce = RandomNumberGenerator.GetBytes(
-                    NonceSize);
+                    if (bytesRead == 0)
+                    {
+                        break;
+                    }
 
-                byte[] ciphertext = new byte[bytesRead];
-                byte[] tag = new byte[TagSize];
+                    if (formatVersion == FormatVersion &&
+                        (chunkIndex == long.MaxValue ||
+                         totalPlaintextBytes > long.MaxValue - bytesRead))
+                    {
+                        throw new CryptographicException(
+                            "The encrypted document exceeds supported record limits.");
+                    }
 
-                byte[] associatedData =
-                    legacyAssociatedData ??
-                    CreateRecordAssociatedData(
-                        keyMaterial,
-                        documentId!.Value,
-                        ChunkRecordType,
-                        chunkIndex,
+                    byte[] nonce = RandomNumberGenerator.GetBytes(
+                        NonceSize);
+
+                    byte[] ciphertext = new byte[bytesRead];
+                    byte[] tag = new byte[TagSize];
+
+                    byte[] associatedData =
+                        legacyAssociatedData ??
+                        CreateRecordAssociatedData(
+                            keyMaterial,
+                            documentId!.Value,
+                            ChunkRecordType,
+                            chunkIndex,
+                            bytesRead);
+
+                    aes.Encrypt(
+                        nonce,
+                        buffer.AsSpan(0, bytesRead),
+                        ciphertext,
+                        tag,
+                        associatedData);
+
+                    byte[] length = new byte[sizeof(int)];
+
+                    BinaryPrimitives.WriteInt32LittleEndian(
+                        length,
                         bytesRead);
 
-                aes.Encrypt(
-                    nonce,
-                    buffer.AsSpan(0, bytesRead),
-                    ciphertext,
-                    tag,
-                    associatedData);
+                    await destination.WriteAsync(
+                        length,
+                        cancellationToken);
 
-                byte[] length = new byte[sizeof(int)];
+                    await destination.WriteAsync(
+                        nonce,
+                        cancellationToken);
 
-                BinaryPrimitives.WriteInt32LittleEndian(
-                    length,
-                    bytesRead);
+                    await destination.WriteAsync(
+                        tag,
+                        cancellationToken);
 
-                await destination.WriteAsync(
-                    length,
-                    cancellationToken);
+                    await destination.WriteAsync(
+                        ciphertext,
+                        cancellationToken);
 
-                await destination.WriteAsync(
-                    nonce,
-                    cancellationToken);
-
-                await destination.WriteAsync(
-                    tag,
-                    cancellationToken);
-
-                await destination.WriteAsync(
-                    ciphertext,
-                    cancellationToken);
-
-                totalPlaintextBytes += bytesRead;
-                chunkIndex++;
+                    totalPlaintextBytes += bytesRead;
+                    chunkIndex++;
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(buffer);
+                }
             }
 
             if (formatVersion == FormatVersion)
@@ -209,6 +231,12 @@ public sealed class DocumentEncryptionService
         }
         finally
         {
+            if (plaintextBuffer is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    plaintextBuffer);
+            }
+
             if (acquiredKeyBuffer is not null)
             {
                 CryptographicOperations.ZeroMemory(
@@ -403,37 +431,58 @@ public sealed class DocumentEncryptionService
                     cancellationToken);
 
                 byte[] ciphertext = new byte[ciphertextLength];
-                byte[] plaintext = new byte[ciphertextLength];
+                byte[]? plaintext = null;
 
-                await ReadExactlyAsync(
-                    source,
-                    ciphertext,
-                    cancellationToken);
+                try
+                {
+                    plaintext =
+                        DecryptedPlaintextBufferFactoryForTesting?.Invoke(
+                            ciphertextLength)
+                        ?? new byte[ciphertextLength];
 
-                byte[] associatedData =
-                    legacyAssociatedData ??
-                    CreateRecordAssociatedData(
-                        keyMaterial,
-                        documentId!.Value,
-                        ChunkRecordType,
-                        chunkIndex,
-                        ciphertextLength);
+                    if (plaintext.Length != ciphertextLength)
+                    {
+                        throw new InvalidOperationException(
+                            "The decryption plaintext buffer has an unexpected length.");
+                    }
 
-                // Plaintext is produced only after this chunk's GCM
-                // authentication succeeds.
-                aes.Decrypt(
-                    nonce,
-                    ciphertext,
-                    tag,
-                    plaintext,
-                    associatedData);
+                    await ReadExactlyAsync(
+                        source,
+                        ciphertext,
+                        cancellationToken);
 
-                await destination.WriteAsync(
-                    plaintext,
-                    cancellationToken);
+                    byte[] associatedData =
+                        legacyAssociatedData ??
+                        CreateRecordAssociatedData(
+                            keyMaterial,
+                            documentId!.Value,
+                            ChunkRecordType,
+                            chunkIndex,
+                            ciphertextLength);
 
-                totalPlaintextBytes += ciphertextLength;
-                chunkIndex++;
+                    // Plaintext is produced only after this chunk's GCM
+                    // authentication succeeds.
+                    aes.Decrypt(
+                        nonce,
+                        ciphertext,
+                        tag,
+                        plaintext,
+                        associatedData);
+
+                    await destination.WriteAsync(
+                        plaintext,
+                        cancellationToken);
+
+                    totalPlaintextBytes += ciphertextLength;
+                    chunkIndex++;
+                }
+                finally
+                {
+                    if (plaintext is not null)
+                    {
+                        CryptographicOperations.ZeroMemory(plaintext);
+                    }
+                }
             }
 
             if (formatVersion == FormatVersion &&
