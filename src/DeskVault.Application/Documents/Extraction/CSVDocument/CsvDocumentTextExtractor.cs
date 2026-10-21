@@ -30,13 +30,10 @@ public sealed class CsvDocumentTextExtractor
     public string RuleVersion =>
         RuleVersionValue;
 
-    public bool CanExtract(
-        string fileName)
+    public bool CanExtract(string fileName)
     {
-        return string.Equals(
-            Path.GetExtension(fileName),
-            ".csv",
-            StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetTextExtractionKind(fileName)
+            == DocumentTextExtractionKind.Csv;
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

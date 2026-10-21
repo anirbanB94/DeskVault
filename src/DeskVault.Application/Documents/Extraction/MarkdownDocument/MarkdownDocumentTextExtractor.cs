@@ -31,10 +31,8 @@ public sealed class MarkdownDocumentTextExtractor
 
     public bool CanExtract(string fileName)
     {
-        return string.Equals(
-            Path.GetExtension(fileName),
-            ".md",
-            StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetTextExtractionKind(fileName)
+            == DocumentTextExtractionKind.Markdown;
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

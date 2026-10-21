@@ -9,7 +9,6 @@ namespace DeskVault.Application.Documents.Extraction.IniDocument;
 public sealed class IniDocumentTextExtractor
     : IDocumentTextExtractor
 {
-
     private const string RuleVersionValue =
         "ini-extractor-v1";
 
@@ -31,13 +30,10 @@ public sealed class IniDocumentTextExtractor
 
     public string RuleVersion => RuleVersionValue;
 
-    public bool CanExtract(
-        string fileName)
+    public bool CanExtract(string fileName)
     {
-        return Path.GetExtension(fileName)
-            .Equals(
-                ".ini",
-                StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetTextExtractionKind(fileName)
+            == DocumentTextExtractionKind.Ini;
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

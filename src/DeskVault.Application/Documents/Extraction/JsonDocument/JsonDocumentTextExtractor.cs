@@ -11,8 +11,6 @@ public sealed class JsonDocumentTextExtractor
     private const string RuleVersionValue =
         "json-extractor-v1";
 
-    private const string SupportedExtension = ".json";
-
     private readonly long _maxProcessedTextBytes;
 
     public JsonDocumentTextExtractor()
@@ -31,13 +29,10 @@ public sealed class JsonDocumentTextExtractor
 
     public string RuleVersion => RuleVersionValue;
 
-    public bool CanExtract(
-        string fileName)
+    public bool CanExtract(string fileName)
     {
-        return Path.GetExtension(fileName)
-            .Equals(
-                SupportedExtension,
-                StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetTextExtractionKind(fileName)
+            == DocumentTextExtractionKind.Json;
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

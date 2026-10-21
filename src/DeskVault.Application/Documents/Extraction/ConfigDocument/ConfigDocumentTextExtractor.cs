@@ -9,8 +9,6 @@ namespace DeskVault.Application.Documents.Extraction.ConfigDocument;
 public sealed class ConfigDocumentTextExtractor
     : IDocumentTextExtractor
 {
-    private const string SupportedExtension = ".config";
-
     private const string RuleVersionValue =
         "config-content-dispatch-v1";
 
@@ -43,13 +41,10 @@ public sealed class ConfigDocumentTextExtractor
         $"|xml={_xmlExtractor.RuleVersion}" +
         $"|ini={_iniExtractor.RuleVersion}";
 
-    public bool CanExtract(
-        string fileName)
+    public bool CanExtract(string fileName)
     {
-        return Path.GetExtension(fileName)
-            .Equals(
-                SupportedExtension,
-                StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetTextExtractionKind(fileName)
+            == DocumentTextExtractionKind.Config;
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.OpenDocument;
@@ -300,6 +301,14 @@ public sealed class DocumentWorkspacePresenterTests
         var view =
             new Mock<IDocumentWorkspaceView>();
 
+        view
+        .Setup(x => x.ShowDocumentAsync(
+            It.IsAny<Stream>(),
+            document.FileName,
+            It.IsAny<CancellationToken>()))
+        .ThrowsAsync(
+            new NotSupportedException());
+
         var documentViewer =
             new Mock<IDocumentViewer>();
 
@@ -314,6 +323,28 @@ public sealed class DocumentWorkspacePresenterTests
             CreateDocumentStream();
 
         await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
+
+        view.Verify(
+            x => x.ShowUnsupportedPreview(
+                UiMessages.UnsupportedDocumentPreviewMessage),
+            Times.Once);
+
+        DocumentFormatCapability capability =
+            SupportedFileTypes.GetForExtension(
+                Path.GetExtension(fileName))
+            ?? throw new InvalidOperationException(
+                $"No capability declaration exists for '{fileName}'.");
+
+        Assert.Equal(
+            DocumentTextExtractionKind.None,
+            capability.TextExtraction);
+
+        Assert.Equal(
+            DocumentInAppPreviewKind.None,
+            capability.InAppPreview);
+
+        Assert.True(
+            capability.SupportsExternalViewFallback);
 
         stream.Position =
             stream.Length;

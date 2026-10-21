@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Extraction;
 using Markdig;
 using Microsoft.Extensions.Options;
@@ -38,10 +39,8 @@ public sealed class MarkdownDocumentContentRenderer
 
     public bool CanRender(string fileName)
     {
-        return string.Equals(
-            Path.GetExtension(fileName),
-            ".md",
-            StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetInAppPreviewKind(fileName)
+            == DocumentInAppPreviewKind.Markdown;
     }
 
     public async Task RenderAsync(

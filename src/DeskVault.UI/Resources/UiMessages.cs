@@ -1,3 +1,5 @@
+using DeskVault.Application.Documents;
+
 namespace DeskVault.UI.Resources;
 
 public static class UiMessages
@@ -53,12 +55,14 @@ public static class UiMessages
     public const string SelectDocumentToImportTitle =
         "Select a document to import";
 
-    public const string SupportedDocumentsFilter =
+    public static string SupportedDocumentsFilter =>
         "Supported Documents|" +
-        "*.pdf;*.docx;*.txt;*.md;*.csv;" +
-        "*.json;*.xml;*.yaml;*.yml;*.ini;*.config;*.log;" +
-        "*.c;*.cpp;*.h;*.hpp;*.cs;*.java;*.py;*.js;*.ts;*.css;*.sql;*.ps1;" +
-        "*.html;*.htm|";
+        string.Join(
+            ";",
+            SupportedFileTypes
+                .GetImportPickerExtensions()
+                .Select(extension => $"*{extension}")) +
+        "|";
 
     public const string AllFilesFilter =
         "All Files|*.*";

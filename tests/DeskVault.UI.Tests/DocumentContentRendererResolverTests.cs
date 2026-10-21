@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
@@ -287,6 +288,75 @@ public sealed class DocumentContentRendererResolverTests
         Assert.Same(
             highPriorityRenderer.Object,
             renderer);
+    }
+
+    [Fact]
+    public void RendererCapabilities_MatchDeclaredInAppPreviewCapabilities()
+    {
+        IDocumentContentRenderer[] renderers =
+        [
+            CreateTextRenderer(),
+            CreateMarkdownRenderer(),
+            CreateCsvRenderer()
+        ];
+
+        DocumentContentRendererResolver resolver =
+            CreateResolver(renderers);
+
+        foreach (string extension in SupportedFileTypes.GetAll())
+        {
+            DocumentFormatCapability capability =
+                SupportedFileTypes.GetForExtension(extension)
+                ?? throw new InvalidOperationException(
+                    $"No capability declaration exists for '{extension}'.");
+
+            string fileName = $"document{extension}";
+            string uppercaseFileName =
+                $"document{extension.ToUpperInvariant()}";
+
+            if (capability.InAppPreview == DocumentInAppPreviewKind.None)
+            {
+                Assert.Throws<NotSupportedException>(
+                    () => resolver.Resolve(fileName));
+
+                Assert.Throws<NotSupportedException>(
+                    () => resolver.Resolve(uppercaseFileName));
+
+                continue;
+            }
+
+            Type expectedRendererType =
+                GetExpectedRendererType(capability.InAppPreview);
+
+            Assert.Equal(
+                expectedRendererType,
+                resolver.Resolve(fileName).GetType());
+
+            Assert.Equal(
+                expectedRendererType,
+                resolver.Resolve(uppercaseFileName).GetType());
+        }
+    }
+
+    private static Type GetExpectedRendererType(
+        DocumentInAppPreviewKind previewKind)
+    {
+        return previewKind switch
+        {
+            DocumentInAppPreviewKind.Text =>
+                typeof(TextDocumentContentRenderer),
+
+            DocumentInAppPreviewKind.Markdown =>
+                typeof(MarkdownDocumentContentRenderer),
+
+            DocumentInAppPreviewKind.Csv =>
+                typeof(CsvDocumentContentRenderer),
+
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(previewKind),
+                previewKind,
+                "The preview kind does not identify a renderer.")
+        };
     }
 
     private static DocumentContentRendererResolver CreateResolver(
