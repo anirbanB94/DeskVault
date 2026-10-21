@@ -165,6 +165,40 @@ DeskVault will not force every document format into a single lowest-common-denom
 
 Extraction and parsing exist to establish application-consumable meaning. They do not need to produce the exact visual representation shown to the user.
 
+### Content-Based Configuration Format Selection
+
+The `.config` extension does not uniquely identify the syntax or semantics of a document. A `.config` file may contain XML-based configuration content or INI-style configuration content.
+
+The configuration extraction boundary must identify the supported syntax from the source content and delegate to the corresponding existing extraction semantics:
+
+```text
+.config source
+      ↓
+Content Syntax Detection
+      ├── XML syntax
+      │       ↓
+      │   XML extraction semantics
+      │
+      └── INI syntax
+              ↓
+          INI extraction semantics
+```
+
+The file extension determines that the configuration extraction capability is applicable. It does not, by itself, determine whether the content should be interpreted as XML or INI.
+
+The following rules apply:
+
+- XML-based `.config` content must be interpreted using XML extraction semantics.
+- INI-style `.config` content must retain INI extraction semantics.
+- Malformed XML must fail XML extraction rather than being reinterpreted as INI.
+- Malformed INI must fail INI extraction rather than being reported as successfully extracted content.
+- Content that cannot be identified as either supported syntax must fail extraction explicitly. It must not be reported as successful knowledge merely because a parser returns an empty or permissive result.
+- The syntax-selection policy must remain deterministic and independently identifiable in the document-processing rule version because a change in that policy can change the derived knowledge representation.
+
+This rule establishes the semantics used for document processing. It does not introduce a second processing pipeline or make configuration parsing a responsibility of the renderer.
+
+Imported configuration content remains untrusted document data. Parsing or displaying a configuration file must never execute, apply, or otherwise treat that content as DeskVault runtime configuration.
+
 ## Structured Representation
 
 A structured document representation should preserve information that can materially affect interpretation.
@@ -300,7 +334,7 @@ native YAML source presentation
 ```
 
 ```text
-INI / CONFIG
+INI files and INI-style .config files
     ↓
 native INI-style source presentation
 ```
@@ -310,6 +344,8 @@ C# / Python / Java / C / C++ / JavaScript / TypeScript / SQL / PowerShell
     ↓
 native source-code presentation
 ```
+
+XML-based `.config` files use XML source presentation, consistent with their XML content semantics.
 
 The renderer should preserve recognizable source syntax, structure, ordering, indentation, delimiters, and other characteristics that make the document visually identifiable as its native format.
 
