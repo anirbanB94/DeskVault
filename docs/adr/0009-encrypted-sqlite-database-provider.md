@@ -175,6 +175,32 @@ the buffer is cleared after use.
 The database encryption key must not be logged, exposed through
 user-facing exceptions, or stored as plaintext application configuration.
 
+### Database-key Handling During Context Creation
+
+`EncryptedDeskVaultDbContextFactory` retrieves the established database key through strict
+`IDatabaseEncryptionKeyService.GetKeyAsync()` retrieval. The factory owns the operation's
+returned `EncryptionKeyMaterial.KeyBytes` buffer for the context-creation operation and clears
+that exact buffer with `CryptographicOperations.ZeroMemory` in a `finally` block. Cleanup
+therefore runs after successful context construction and when connection configuration or
+context construction throws. Clearing this buffer does not clear independent key-service
+backing state or guarantee erasure of copies made by a provider or runtime.
+
+The factory minimizes avoidable key-bearing string representations by encoding the key bytes
+directly into the final password-bearing SQLite connection string using
+`Convert.TryToBase64Chars`. It does not first create a separate Base64 password string with
+`Convert.ToBase64String`. The current SQLite and Entity Framework Core connection-configuration
+path still requires a managed connection string containing the Base64 password. The final
+connection string, EF Core options, SQLite connection/provider, or runtime may retain
+references or copies of that string. Managed immutable strings and provider/runtime-owned
+copies cannot be assumed to be reliably zeroable.
+
+The factory must not explicitly log the key or password-bearing connection string, and
+connection-configuration or context-construction failures must not disclose key material
+through avoidable diagnostic output. Regression tests cover both synchronous and asynchronous
+factory creation, checking key-buffer cleanup on success and construction failure, preserving
+independent key-service state, confirming successful database connectivity, and checking that
+the tested construction exception does not contain the Base64-encoded key.
+
 ### Atomic Database Encryption Key Provisioning
 
 `IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync` is the provisioning-capable operation for the database encryption key, not a replacement, rotation, repair, or recovery API. `DatabaseInitializer` may use this capability only when the initialization lifecycle has explicitly authorized provisioning for a new database or for an existing plaintext database undergoing migration to the encrypted format. The retrieval-only `IDatabaseEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit or expose provisioning capability. When the canonical `Security\database.key` artifact already exists, the provisioning service retrieves and validates the existing key rather than generating a replacement. An existing encrypted database must use strict retrieval of its established key; a missing, unreadable, invalid, or unprotectable key must fail startup without provisioning a new database key.
@@ -515,6 +541,11 @@ Incorrect or unavailable database keys result in controlled database
 initialization failure rather than silently falling back to an unencrypted
 database.
 
+Database context creation avoids a separate intermediate Base64 password string by encoding
+the key bytes directly into the final connection string. The operation-owned key buffer is
+cleared on success and context-construction failure, while the final immutable connection
+string and provider/runtime-owned copies are explicitly not guaranteed to be erasable.
+
 Plaintext-to-encrypted migration now has an explicit recovery-safe
 lifecycle based on staging, verification, promotion, and delayed cleanup.
 
@@ -587,6 +618,13 @@ The provider-level migration spike established the following behavior:
   `DataProtectionScope.CurrentUser`.
 - Database encryption key material is kept separate from the
   document-file encryption key.
+- Factory regression tests verify synchronous and asynchronous context
+  creation clears the acquired database-key byte buffer, preserves
+  independent key-service backing state, and retains connectivity to a
+  valid encrypted database.
+- Factory regression tests verify that invalid connection-string
+  configuration does not bypass key-buffer cleanup and that the tested
+  construction exception does not include the Base64-encoded key.
 - Database initialization establishes the encrypted database access path
   before EF Core migrations.
 - SQLite runtime artifacts are checked to ensure persisted plaintext
