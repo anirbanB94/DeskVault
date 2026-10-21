@@ -34,15 +34,10 @@ public sealed class IniDocumentTextExtractor
     public bool CanExtract(
         string fileName)
     {
-        string extension =
-            Path.GetExtension(fileName);
-
-        return extension.Equals(
-                   ".ini",
-                   StringComparison.OrdinalIgnoreCase)
-               || extension.Equals(
-                   ".config",
-                   StringComparison.OrdinalIgnoreCase);
+        return Path.GetExtension(fileName)
+            .Equals(
+                ".ini",
+                StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

@@ -67,6 +67,18 @@ public sealed class ExpandedDocumentFormatIntegrationTests
         2026-09-11 10:00:01 INFO Enterprise knowledge search initialized.
         """,
         "enterprise knowledge search")]
+    [InlineData(
+        "integration-test.config",
+        """
+        <?xml version="1.0"?>
+        <configuration>
+          <appSettings>
+            <name>DeskVault</name>
+            <purpose>enterprise knowledge search</purpose>
+          </appSettings>
+        </configuration>
+        """,
+        "enterprise knowledge search")]
     public async Task ImportDocument_WhenExpandedTextFormatIsValid_CompletesProcessingAndMakesDocumentSearchable(
         string fileName,
         string sourceText,
@@ -558,6 +570,122 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             await Assert.ThrowsAnyAsync<Exception>(
                 () =>
                     harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
+
+            Document? failedDocument =
+                await harness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(
+                failedDocument);
+
+            Assert.Equal(
+                DocumentStatus.Failed,
+                failedDocument.Status);
+
+            Assert.True(
+                File.Exists(
+                    failedDocument.StoredFilePath));
+
+            List<DocumentChunkEntity> chunks =
+                await harness.GetChunksAsync(
+                    documentId);
+
+            Assert.Empty(
+                chunks);
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(
+        "malformed-xml",
+        "<configuration><appSettings></configuration>")]
+    [InlineData(
+        "malformed-ini",
+        "[database\nprovider=SQLite")]
+    [InlineData(
+        "unrecognized",
+        "This content is neither XML nor INI.")]
+    public async Task ImportDocument_WhenConfigContentIsMalformedOrUnrecognized_PersistsFailedStatusAndKeepsStoredFile(
+        string scenario,
+        string sourceText)
+    {
+        string rootDirectory =
+            Path.Combine(
+                Path.GetTempPath(),
+                "DeskVaultIntegrationTests",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        byte[] encryptionKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        try
+        {
+            string sourceFilePath =
+                Path.Combine(
+                    rootDirectory,
+                    $"{scenario}.config");
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                Encoding.UTF8,
+                TestContext.Current.CancellationToken);
+
+            await using var harness =
+                new DocumentPipelineTestHarness(
+                    rootDirectory,
+                    databasePath,
+                    encryptionKey);
+
+            ImportDocumentResult importResult =
+                await harness.ImportHandler.HandleAsync(
+                    new ImportDocumentCommand(
+                        sourceFilePath,
+                        "Invalid Config Integration Document"),
+                    TestContext.Current.CancellationToken);
+
+            Assert.Equal(
+                ImportDocumentResultStatus.Success,
+                importResult.Status);
+
+            Assert.NotNull(
+                importResult.DocumentId);
+
+            Guid documentId =
+                importResult.DocumentId.Value;
+
+            Document? importedDocument =
+                await harness.GetDocumentAsync(
+                    documentId);
+
+            Assert.NotNull(
+                importedDocument);
+
+            Assert.Equal(
+                DocumentStatus.Imported,
+                importedDocument.Status);
+
+            await Assert.ThrowsAnyAsync<Exception>(
+                () =>
+                    harness.ProcessingService.ProcessAsync(
+                        documentId,
+                        TestContext.Current.CancellationToken));
 
             Document? failedDocument =
                 await harness.GetDocumentAsync(

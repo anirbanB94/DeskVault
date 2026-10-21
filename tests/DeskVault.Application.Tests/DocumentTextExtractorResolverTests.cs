@@ -1,5 +1,7 @@
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Extraction.ConfigDocument;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
+using DeskVault.Application.Documents.Extraction.IniDocument;
 using DeskVault.Application.Documents.Extraction.JsonDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
@@ -18,6 +20,8 @@ public sealed class DocumentTextExtractorResolverTests
                 new MarkdownDocumentTextExtractor(),
                 new CsvDocumentTextExtractor(),
                 new JsonDocumentTextExtractor(),
+                new ConfigDocumentTextExtractor(),
+                new IniDocumentTextExtractor(),
                 new XmlDocumentTextExtractor()
             });
     }
@@ -82,6 +86,33 @@ public sealed class DocumentTextExtractorResolverTests
             CreateResolver().Resolve("document.xml");
 
         Assert.IsType<XmlDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Theory]
+    [InlineData("document.config")]
+    [InlineData("document.CONFIG")]
+    [InlineData("document.Config")]
+    public void Resolve_ConfigFile_ReturnsConfigExtractor(
+        string fileName)
+    {
+        IDocumentTextExtractor extractor =
+            CreateResolver().Resolve(fileName);
+
+        Assert.IsType<ConfigDocumentTextExtractor>(
+            extractor);
+    }
+
+    [Theory]
+    [InlineData("document.ini")]
+    [InlineData("document.INI")]
+    public void Resolve_IniFile_ReturnsIniExtractor(
+        string fileName)
+    {
+        IDocumentTextExtractor extractor =
+            CreateResolver().Resolve(fileName);
+
+        Assert.IsType<IniDocumentTextExtractor>(
             extractor);
     }
 

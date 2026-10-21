@@ -5,6 +5,7 @@ using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Extraction.ConfigDocument;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.IniDocument;
 using DeskVault.Application.Documents.Extraction.JsonDocument;
@@ -96,6 +97,11 @@ public static class DependencyInjection
         services.AddSingleton<IDocumentTextExtractor>(
             serviceProvider =>
                 new IniDocumentTextExtractor(
+                    serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
+
+        services.AddSingleton<IDocumentTextExtractor>(
+            serviceProvider =>
+                new ConfigDocumentTextExtractor(
                     serviceProvider.GetRequiredService<DocumentProcessingOptions>()));
 
         services.AddSingleton<DocumentTextExtractorResolver>();

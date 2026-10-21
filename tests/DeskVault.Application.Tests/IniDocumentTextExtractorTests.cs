@@ -52,25 +52,10 @@ public sealed class IniDocumentTextExtractorTests
     [InlineData("document.config")]
     [InlineData("document.CONFIG")]
     [InlineData("document.Config")]
-    public void CanExtract_WhenFileIsConfig_ReturnsTrue(
-        string fileName)
-    {
-        // Arrange
-        IniDocumentTextExtractor extractor = new();
-
-        // Act
-        bool result =
-            extractor.CanExtract(fileName);
-
-        // Assert
-        Assert.True(result);
-    }
-
-    [Theory]
     [InlineData("document.txt")]
     [InlineData("document.json")]
     [InlineData("document.ini.txt")]
-    public void CanExtract_WhenFileIsNotIniOrConfig_ReturnsFalse(
+    public void CanExtract_WhenFileIsNotIni_ReturnsFalse(
         string fileName)
     {
         // Arrange

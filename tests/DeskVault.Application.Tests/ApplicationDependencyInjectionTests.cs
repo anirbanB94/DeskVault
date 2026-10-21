@@ -2,6 +2,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Extraction.ConfigDocument;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.IniDocument;
 using DeskVault.Application.Documents.Extraction.JsonDocument;
@@ -96,7 +97,7 @@ public sealed class ApplicationDependencyInjectionTests
                 .ToList();
 
         Assert.Equal(
-            7,
+            8,
             extractors.Count);
 
         Assert.Contains(
@@ -126,6 +127,10 @@ public sealed class ApplicationDependencyInjectionTests
         Assert.Contains(
             extractors,
             extractor => extractor is IniDocumentTextExtractor);
+
+        Assert.Contains(
+            extractors,
+            extractor => extractor is ConfigDocumentTextExtractor);
     }
 
     [Fact]
@@ -220,7 +225,10 @@ public sealed class ApplicationDependencyInjectionTests
                     ("document.yaml", "name: DeskVault"),
 
                 [typeof(IniDocumentTextExtractor)] =
-                    ("document.ini", "[General]\nName=DeskVault")
+                    ("document.ini", "[General]\nName=DeskVault"),
+
+                [typeof(ConfigDocumentTextExtractor)] =
+                    ("document.config", "[General]\nName=DeskVault")
             };
 
         foreach (IDocumentTextExtractor extractor in extractors)
