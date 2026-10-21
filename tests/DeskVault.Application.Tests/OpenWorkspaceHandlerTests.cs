@@ -24,8 +24,7 @@ public sealed class OpenWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new OpenWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new OpenWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             OpenWorkspaceResultStatus.AlreadyActive,
@@ -60,8 +59,7 @@ public sealed class OpenWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new OpenWorkspaceCommand(workspaceId));
+        var result = await handler.HandleAsync(new OpenWorkspaceCommand(workspaceId), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             OpenWorkspaceResultStatus.WorkspaceNotFound,
@@ -114,8 +112,7 @@ public sealed class OpenWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new OpenWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new OpenWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             OpenWorkspaceResultStatus.Activated,
@@ -191,8 +188,7 @@ public sealed class OpenWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new OpenWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new OpenWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             OpenWorkspaceResultStatus.Activated,
@@ -267,8 +263,7 @@ public sealed class OpenWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new OpenWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new OpenWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             OpenWorkspaceResultStatus.Activated,
@@ -327,8 +322,7 @@ public sealed class OpenWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new OpenWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new OpenWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             OpenWorkspaceResultStatus.Activated,

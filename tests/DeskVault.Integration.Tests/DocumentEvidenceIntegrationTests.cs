@@ -41,10 +41,7 @@ public sealed class DocumentEvidenceIntegrationTests
                 Gamma paragraph verifies repeated processing remains deterministic.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             var processingOptions =
                 new DocumentProcessingOptions
@@ -69,8 +66,7 @@ public sealed class DocumentEvidenceIntegrationTests
                         sourceFilePath,
                         "Deterministic Evidence Integration Document");
 
-                await harness.ProcessingService.ProcessAsync(
-                    documentId);
+                await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? firstDocument =
                     await harness.GetDocumentAsync(
@@ -124,17 +120,15 @@ public sealed class DocumentEvidenceIntegrationTests
                         firstChunks);
 
                 SearchDocumentsPage firstSearchPage =
-                    await harness.SearchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "stable processing search content"));
+                    await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "stable processing search content"), TestContext.Current.CancellationToken);
 
                 AssertSearchResult(
                     firstSearchPage,
                     documentId,
                     "stable processing search content");
 
-                await harness.ProcessingService.ProcessAsync(
-                    documentId);
+                await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? secondDocument =
                     await harness.GetDocumentAsync(
@@ -200,9 +194,8 @@ public sealed class DocumentEvidenceIntegrationTests
                         .Count());
 
                 SearchDocumentsPage secondSearchPage =
-                    await harness.SearchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "stable processing search content"));
+                    await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "stable processing search content"), TestContext.Current.CancellationToken);
 
                 AssertSearchResult(
                     secondSearchPage,
@@ -255,9 +248,7 @@ public sealed class DocumentEvidenceIntegrationTests
                         rootDirectory,
                         fileName);
 
-                await File.WriteAllTextAsync(
-                    sourceFilePath,
-                    $"This document contains the security term for deterministic pagination: {displayName}.");
+                await File.WriteAllTextAsync(sourceFilePath, $"This document contains the security term for deterministic pagination: {displayName}.", TestContext.Current.CancellationToken);
 
                 Guid documentId =
                     await ImportDocumentAsync(
@@ -265,8 +256,7 @@ public sealed class DocumentEvidenceIntegrationTests
                         sourceFilePath,
                         displayName);
 
-                await harness.ProcessingService.ProcessAsync(
-                    documentId);
+                await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
             }
 
             SearchDocumentsQuery fullQuery =
@@ -281,26 +271,22 @@ public sealed class DocumentEvidenceIntegrationTests
 
             // Act
             SearchDocumentsPage fullPage =
-                await harness.SearchHandler.HandleAsync(
-                    fullQuery);
+                await harness.SearchHandler.HandleAsync(fullQuery, TestContext.Current.CancellationToken);
 
             SearchDocumentsPage firstPage =
-                await harness.SearchHandler.HandleAsync(
-                    firstPageQuery);
+                await harness.SearchHandler.HandleAsync(firstPageQuery, TestContext.Current.CancellationToken);
 
             SearchDocumentsPage secondPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
                         "security",
                         Continuation: firstPage.Continuation,
-                        Limit: 1));
+                        Limit: 1), TestContext.Current.CancellationToken);
 
             SearchDocumentsPage thirdPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
                         "security",
                         Continuation: secondPage.Continuation,
-                        Limit: 5));
+                        Limit: 5), TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(
@@ -426,9 +412,7 @@ public sealed class DocumentEvidenceIntegrationTests
                     rootDirectory,
                     "bounded-page-size.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                $"This document contains the {searchText}.");
+            await File.WriteAllTextAsync(sourceFilePath, $"This document contains the {searchText}.", TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -442,8 +426,7 @@ public sealed class DocumentEvidenceIntegrationTests
                     sourceFilePath,
                     "Bounded Page Size Integration Document");
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             SearchDocumentsQuery maximumSizeQuery =
                 new(
@@ -452,8 +435,7 @@ public sealed class DocumentEvidenceIntegrationTests
 
             // Act: the maximum supported page size is accepted.
             SearchDocumentsPage page =
-                await harness.SearchHandler.HandleAsync(
-                    maximumSizeQuery);
+                await harness.SearchHandler.HandleAsync(maximumSizeQuery, TestContext.Current.CancellationToken);
 
             // Assert: existing keyword-search behavior is preserved.
             AssertSearchResult(
@@ -525,10 +507,7 @@ public sealed class DocumentEvidenceIntegrationTests
                         index =>
                             $"needle match {index:D2} context"));
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             var processingOptions =
                 new DocumentProcessingOptions
@@ -550,8 +529,7 @@ public sealed class DocumentEvidenceIntegrationTests
                     sourceFilePath,
                     "Evidence Retention Integration Document");
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             List<DocumentChunkEntity> chunks =
                 await harness.GetChunksAsync(
@@ -563,8 +541,7 @@ public sealed class DocumentEvidenceIntegrationTests
 
             // Act
             SearchDocumentsPage page =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery("needle"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery("needle"), TestContext.Current.CancellationToken);
 
             // Assert
             SearchDocumentsResult result =
@@ -643,10 +620,7 @@ public sealed class DocumentEvidenceIntegrationTests
                 Gamma paragraph remains searchable after reprocessing.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -671,8 +645,7 @@ public sealed class DocumentEvidenceIntegrationTests
                         sourceFilePath,
                         "Configuration Evidence Integration Document");
 
-                await firstHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await firstHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? document =
                     await firstHarness.GetDocumentAsync(
@@ -740,8 +713,7 @@ public sealed class DocumentEvidenceIntegrationTests
                         encryptionKey,
                         processingOptions: configurationB))
             {
-                await secondHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await secondHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? document =
                     await secondHarness.GetDocumentAsync(
@@ -807,9 +779,8 @@ public sealed class DocumentEvidenceIntegrationTests
                         chunks);
 
                 SearchDocumentsPage searchPage =
-                    await secondHarness.SearchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "configurable boundary marker"));
+                    await secondHarness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "configurable boundary marker"), TestContext.Current.CancellationToken);
 
                 AssertSearchResult(
                     searchPage,
@@ -825,8 +796,7 @@ public sealed class DocumentEvidenceIntegrationTests
                         encryptionKey,
                         processingOptions: configurationB))
             {
-                await thirdHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await thirdHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? document =
                     await thirdHarness.GetDocumentAsync(
@@ -873,9 +843,8 @@ public sealed class DocumentEvidenceIntegrationTests
                         .Count());
 
                 SearchDocumentsPage searchPage =
-                    await thirdHarness.SearchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "configurable boundary marker"));
+                    await thirdHarness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "configurable boundary marker"), TestContext.Current.CancellationToken);
 
                 AssertSearchResult(
                     searchPage,
@@ -918,10 +887,7 @@ public sealed class DocumentEvidenceIntegrationTests
                 Evidence Pipeline,deterministic structured processing
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -935,8 +901,7 @@ public sealed class DocumentEvidenceIntegrationTests
                     sourceFilePath,
                     "Structured Evidence Integration Document");
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -986,9 +951,8 @@ public sealed class DocumentEvidenceIntegrationTests
                 StringComparison.Ordinal);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "enterprise knowledge search"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        "enterprise knowledge search"), TestContext.Current.CancellationToken);
 
             AssertSearchResult(
                 searchPage,
@@ -1032,10 +996,7 @@ public sealed class DocumentEvidenceIntegrationTests
                 Third source paragraph verifies all emitted chunks retain applicable lines.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             var processingOptions =
                 new DocumentProcessingOptions
@@ -1057,8 +1018,7 @@ public sealed class DocumentEvidenceIntegrationTests
                     sourceFilePath,
                     "Provenance Evidence Integration Document");
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             List<DocumentChunkEntity> chunks =
                 await harness.GetChunksAsync(
@@ -1134,10 +1094,7 @@ public sealed class DocumentEvidenceIntegrationTests
                 Evidence Pipeline,structured processing
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -1151,8 +1108,7 @@ public sealed class DocumentEvidenceIntegrationTests
                     sourceFilePath,
                     "Unmapped Provenance Integration Document");
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             List<DocumentChunkEntity> chunks =
                 await harness.GetChunksAsync(
@@ -1208,10 +1164,7 @@ public sealed class DocumentEvidenceIntegrationTests
                         "oversized evidence content remains bounded and searchable",
                         8));
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             const int maxChunkSize = 40;
 
@@ -1235,8 +1188,7 @@ public sealed class DocumentEvidenceIntegrationTests
                     sourceFilePath,
                     "Oversized Evidence Integration Document");
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -1284,9 +1236,8 @@ public sealed class DocumentEvidenceIntegrationTests
                 processingOptions);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "OVERSIZED_SEARCH_TARGET"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        "OVERSIZED_SEARCH_TARGET"), TestContext.Current.CancellationToken);
 
             AssertSearchResult(
                 searchPage,

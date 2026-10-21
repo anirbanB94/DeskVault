@@ -30,8 +30,7 @@ public sealed class VaultInitializationCoordinatorTests
                 CreateCompletionSource();
 
             Task firstOperation =
-                firstCoordinator.ExecuteAsync(
-                    async cancellationToken =>
+                firstCoordinator.ExecuteAsync(async cancellationToken =>
                     {
                         // Arrange
                         firstOperationEntered.SetResult(true);
@@ -41,25 +40,23 @@ public sealed class VaultInitializationCoordinatorTests
 
                         // Assert
                         cancellationToken.ThrowIfCancellationRequested();
-                    });
+                    }, TestContext.Current.CancellationToken);
 
             await firstOperationEntered.Task;
 
             Task secondOperation =
-                secondCoordinator.ExecuteAsync(
-                    _ =>
+                secondCoordinator.ExecuteAsync(_ =>
                     {
                         // Arrange
                         secondOperationEntered.SetResult(true);
 
                         // Act / Assert
                         return Task.CompletedTask;
-                    });
+                    }, TestContext.Current.CancellationToken);
 
             await Assert.ThrowsAsync<TimeoutException>(
                 () =>
-                    secondOperationEntered.Task.WaitAsync(
-                        TimeSpan.FromMilliseconds(500)));
+                    secondOperationEntered.Task.WaitAsync(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken));
 
             Assert.False(
                 secondOperation.IsCompleted);
@@ -98,23 +95,21 @@ public sealed class VaultInitializationCoordinatorTests
             // Act
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    firstCoordinator.ExecuteAsync(
-                        _ =>
+                    firstCoordinator.ExecuteAsync(_ =>
                             Task.FromException(
                                 new InvalidOperationException(
-                                    "Initialization failed."))));
+                                    "Initialization failed.")), TestContext.Current.CancellationToken));
 
             bool secondOperationExecuted = false;
 
-            await secondCoordinator.ExecuteAsync(
-                _ =>
+            await secondCoordinator.ExecuteAsync(_ =>
                 {
                     // Arrange
                     secondOperationExecuted = true;
 
                     // Act / Assert
                     return Task.CompletedTask;
-                });
+                }, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.True(
@@ -145,15 +140,14 @@ public sealed class VaultInitializationCoordinatorTests
             bool operationExecuted = false;
 
             // Act
-            await coordinator.ExecuteAsync(
-                _ =>
+            await coordinator.ExecuteAsync(_ =>
                 {
                     // Arrange
                     operationExecuted = true;
 
                     // Act / Assert
                     return Task.CompletedTask;
-                });
+                }, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.True(
@@ -192,8 +186,7 @@ public sealed class VaultInitializationCoordinatorTests
                 CreateCompletionSource();
 
             Task firstOperation =
-                firstCoordinator.ExecuteAsync(
-                    async _ =>
+                firstCoordinator.ExecuteAsync(async _ =>
                     {
                         // Arrange
                         firstOperationEntered.SetResult(true);
@@ -202,7 +195,7 @@ public sealed class VaultInitializationCoordinatorTests
                         await releaseFirstOperation.Task;
 
                         // Assert
-                    });
+                    }, TestContext.Current.CancellationToken);
 
             await firstOperationEntered.Task;
 
@@ -268,8 +261,7 @@ public sealed class VaultInitializationCoordinatorTests
                 CreateCompletionSource();
 
             Task firstOperation =
-                firstCoordinator.ExecuteAsync(
-                    async _ =>
+                firstCoordinator.ExecuteAsync(async _ =>
                     {
                         // Arrange
                         firstOperationEntered.SetResult(true);
@@ -278,22 +270,21 @@ public sealed class VaultInitializationCoordinatorTests
                         await releaseFirstOperation.Task;
 
                         // Assert
-                    });
+                    }, TestContext.Current.CancellationToken);
 
             await firstOperationEntered.Task;
 
             bool secondOperationExecuted = false;
 
             // Act
-            await secondCoordinator.ExecuteAsync(
-                _ =>
+            await secondCoordinator.ExecuteAsync(_ =>
                 {
                     // Arrange
                     secondOperationExecuted = true;
 
                     // Act / Assert
                     return Task.CompletedTask;
-                });
+                }, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.True(

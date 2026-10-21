@@ -19,15 +19,12 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "integration-test.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "DeskVault reconciliation integration test.");
+        await File.WriteAllTextAsync(sourceFilePath, "DeskVault reconciliation integration test.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     sourceFilePath,
-                    "Reconciliation Integration Test Document"));
+                    "Reconciliation Integration Test Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -38,8 +35,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         DocumentArtifactReconciliationResult finding =
@@ -70,15 +66,12 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "repeated-reconciliation.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "DeskVault repeated reconciliation integration test.");
+        await File.WriteAllTextAsync(sourceFilePath, "DeskVault repeated reconciliation integration test.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     sourceFilePath,
-                    "Repeated Reconciliation Test Document"));
+                    "Repeated Reconciliation Test Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -102,20 +95,17 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 documentBeforeReconciliation.StoredFilePath);
 
         byte[] artifactBeforeReconciliation =
-            await File.ReadAllBytesAsync(
-                artifactPath);
+            await File.ReadAllBytesAsync(artifactPath, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(
             artifactBeforeReconciliation);
 
         // Act
         ReconcileDocumentArtifactsResult firstResult =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         ReconcileDocumentArtifactsResult secondResult =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         DocumentArtifactReconciliationResult firstFinding =
@@ -165,8 +155,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 artifactPath));
 
         byte[] artifactAfterReconciliation =
-            await File.ReadAllBytesAsync(
-                artifactPath);
+            await File.ReadAllBytesAsync(artifactPath, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             artifactBeforeReconciliation,
@@ -207,15 +196,12 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "integration-test.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "DeskVault reconciliation integration test.");
+        await File.WriteAllTextAsync(sourceFilePath, "DeskVault reconciliation integration test.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     sourceFilePath,
-                    "Reconciliation Integration Test Document"));
+                    "Reconciliation Integration Test Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -234,8 +220,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         DocumentArtifactReconciliationResult finding =
@@ -271,15 +256,12 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "integration-test.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "DeskVault reconciliation integration test.");
+        await File.WriteAllTextAsync(sourceFilePath, "DeskVault reconciliation integration test.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     sourceFilePath,
-                    "Reconciliation Integration Test Document"));
+                    "Reconciliation Integration Test Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -292,9 +274,8 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
             importResult.DocumentId.Value;
 
         RemoveDocumentResult removeResult =
-            await environment.Harness.RemoveHandler.HandleAsync(
-                new RemoveDocumentCommand(
-                    documentId));
+            await environment.Harness.RemoveHandler.HandleAsync(new RemoveDocumentCommand(
+                    documentId), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RemoveDocumentResultStatus.Success,
@@ -305,13 +286,9 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "orphan.txt");
 
-        await File.WriteAllTextAsync(
-            orphanSourceFilePath,
-            "Orphaned encrypted artifact.");
+        await File.WriteAllTextAsync(orphanSourceFilePath, "Orphaned encrypted artifact.", TestContext.Current.CancellationToken);
 
-        await environment.Harness.StoreArtifactAsync(
-            orphanSourceFilePath,
-            documentId);
+        await environment.Harness.StoreArtifactAsync(orphanSourceFilePath, documentId, TestContext.Current.CancellationToken);
 
         string artifactPath =
             Path.Combine(
@@ -320,8 +297,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         DocumentArtifactReconciliationResult finding =
@@ -357,15 +333,12 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "integration-test.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "DeskVault reconciliation integration test.");
+        await File.WriteAllTextAsync(sourceFilePath, "DeskVault reconciliation integration test.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     sourceFilePath,
-                    "Reconciliation Integration Test Document"));
+                    "Reconciliation Integration Test Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -383,22 +356,18 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 $"{documentId}.dvault");
 
         byte[] artifactBytes =
-            await File.ReadAllBytesAsync(
-                artifactPath);
+            await File.ReadAllBytesAsync(artifactPath, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(
             artifactBytes);
 
         artifactBytes[^1] ^= 0xFF;
 
-        await File.WriteAllBytesAsync(
-            artifactPath,
-            artifactBytes);
+        await File.WriteAllBytesAsync(artifactPath, artifactBytes, TestContext.Current.CancellationToken);
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         DocumentArtifactReconciliationResult finding =
@@ -438,15 +407,12 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "valid-document.txt");
 
-        await File.WriteAllTextAsync(
-            validSourceFilePath,
-            "Valid document content.");
+        await File.WriteAllTextAsync(validSourceFilePath, "Valid document content.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult validImportResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     validSourceFilePath,
-                    "Valid Reconciliation Document"));
+                    "Valid Reconciliation Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -478,15 +444,12 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "unreadable-document.txt");
 
-        await File.WriteAllTextAsync(
-            unreadableSourceFilePath,
-            "Unreadable document content.");
+        await File.WriteAllTextAsync(unreadableSourceFilePath, "Unreadable document content.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult unreadableImportResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     unreadableSourceFilePath,
-                    "Unreadable Reconciliation Document"));
+                    "Unreadable Reconciliation Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -510,22 +473,18 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 unreadableDocumentBeforeReconciliation.StoredFilePath);
 
         byte[] unreadableArtifactBytes =
-            await File.ReadAllBytesAsync(
-                unreadableArtifactPath);
+            await File.ReadAllBytesAsync(unreadableArtifactPath, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(
             unreadableArtifactBytes);
 
         unreadableArtifactBytes[^1] ^= 0xFF;
 
-        await File.WriteAllBytesAsync(
-            unreadableArtifactPath,
-            unreadableArtifactBytes);
+        await File.WriteAllBytesAsync(unreadableArtifactPath, unreadableArtifactBytes, TestContext.Current.CancellationToken);
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         DocumentArtifactReconciliationResult unreadableFinding =
@@ -616,15 +575,12 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "original-content.txt");
 
-        await File.WriteAllTextAsync(
-            originalSourceFilePath,
-            "Original document content.");
+        await File.WriteAllTextAsync(originalSourceFilePath, "Original document content.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     originalSourceFilePath,
-                    "Content Mismatch Integration Test Document"));
+                    "Content Mismatch Integration Test Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -651,9 +607,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "replacement-content.txt");
 
-        await File.WriteAllTextAsync(
-            replacementSourceFilePath,
-            "Different readable document content.");
+        await File.WriteAllTextAsync(replacementSourceFilePath, "Different readable document content.", TestContext.Current.CancellationToken);
 
         string artifactPath =
             Path.Combine(
@@ -671,9 +625,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
             File.Exists(
                 artifactPath));
 
-        await environment.Harness.StoreArtifactAsync(
-            replacementSourceFilePath,
-            documentId);
+        await environment.Harness.StoreArtifactAsync(replacementSourceFilePath, documentId, TestContext.Current.CancellationToken);
 
         Assert.True(
             File.Exists(
@@ -685,8 +637,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         DocumentArtifactReconciliationResult finding =
@@ -763,18 +714,13 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "mismatched-artifact-source.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "Mismatched artifact.");
+        await File.WriteAllTextAsync(sourceFilePath, "Mismatched artifact.", TestContext.Current.CancellationToken);
 
-        await environment.Harness.StoreArtifactAsync(
-            sourceFilePath,
-            differentArtifactId);
+        await environment.Harness.StoreArtifactAsync(sourceFilePath, differentArtifactId, TestContext.Current.CancellationToken);
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -837,13 +783,9 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
                 environment.RootDirectory,
                 "outside-boundary-source.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "Outside boundary reconciliation test.");
+        await File.WriteAllTextAsync(sourceFilePath, "Outside boundary reconciliation test.", TestContext.Current.CancellationToken);
 
-        await environment.Harness.StoreArtifactAsync(
-            sourceFilePath,
-            documentId);
+        await environment.Harness.StoreArtifactAsync(sourceFilePath, documentId, TestContext.Current.CancellationToken);
 
         string canonicalArtifactPath =
             Path.Combine(
@@ -880,8 +822,7 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await environment.Harness.ReconciliationHandler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await environment.Harness.ReconciliationHandler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         DocumentArtifactReconciliationResult finding =

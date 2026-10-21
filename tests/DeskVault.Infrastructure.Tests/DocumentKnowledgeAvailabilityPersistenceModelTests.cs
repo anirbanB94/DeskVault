@@ -14,7 +14,7 @@ public sealed class DocumentKnowledgeAvailabilityPersistenceModelTests
             new(
                 "Data Source=:memory:");
 
-        await connection.OpenAsync();
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
 
         DbContextOptions<DeskVaultDbContext> options =
             new DbContextOptionsBuilder<DeskVaultDbContext>()
@@ -24,13 +24,12 @@ public sealed class DocumentKnowledgeAvailabilityPersistenceModelTests
         await using (DeskVaultDbContext setupContext =
             new(options))
         {
-            await setupContext.Database.EnsureCreatedAsync();
+            await setupContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
 
             Guid documentId =
                 Guid.NewGuid();
 
-            await setupContext.Documents.AddAsync(
-                new DocumentEntity
+            await setupContext.Documents.AddAsync(new DocumentEntity
                 {
                     Id = documentId,
                     FileName = "historical.txt",
@@ -45,18 +44,17 @@ public sealed class DocumentKnowledgeAvailabilityPersistenceModelTests
                     ProcessingGeneration = 0L,
                     LastSuccessfulProcessingGeneration = 0L,
                     LastSuccessfulProcessingRuleVersion = null
-                });
+                }, TestContext.Current.CancellationToken);
 
-            await setupContext.DocumentKnowledgeAvailabilities.AddAsync(
-                new DocumentKnowledgeAvailabilityEntity
+            await setupContext.DocumentKnowledgeAvailabilities.AddAsync(new DocumentKnowledgeAvailabilityEntity
                 {
                     DocumentId = documentId,
                     Representation = 0,
                     State = 1,
                     LastAvailableProcessingGeneration = 0L
-                });
+                }, TestContext.Current.CancellationToken);
 
-            await setupContext.SaveChangesAsync();
+            await setupContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         await using (DeskVaultDbContext verificationContext =
@@ -66,7 +64,7 @@ public sealed class DocumentKnowledgeAvailabilityPersistenceModelTests
                 await verificationContext
                     .DocumentKnowledgeAvailabilities
                     .AsNoTracking()
-                    .SingleAsync();
+                    .SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 0,
@@ -89,7 +87,7 @@ public sealed class DocumentKnowledgeAvailabilityPersistenceModelTests
             new(
                 "Data Source=:memory:");
 
-        await connection.OpenAsync();
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
 
         DbContextOptions<DeskVaultDbContext> options =
             new DbContextOptionsBuilder<DeskVaultDbContext>()
@@ -99,13 +97,12 @@ public sealed class DocumentKnowledgeAvailabilityPersistenceModelTests
         await using DeskVaultDbContext context =
             new(options);
 
-        await context.Database.EnsureCreatedAsync();
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
 
         Guid documentId =
             Guid.NewGuid();
 
-        await context.Documents.AddAsync(
-            new DocumentEntity
+        await context.Documents.AddAsync(new DocumentEntity
             {
                 Id = documentId,
                 FileName = "invalid.txt",
@@ -119,21 +116,20 @@ public sealed class DocumentKnowledgeAvailabilityPersistenceModelTests
                 StoredFilePath = "invalid.dvault",
                 ProcessingGeneration = 0L,
                 LastSuccessfulProcessingGeneration = 0L
-            });
+            }, TestContext.Current.CancellationToken);
 
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        await context.DocumentKnowledgeAvailabilities.AddAsync(
-            new DocumentKnowledgeAvailabilityEntity
+        await context.DocumentKnowledgeAvailabilities.AddAsync(new DocumentKnowledgeAvailabilityEntity
             {
                 DocumentId = documentId,
                 Representation = 0,
                 State = 1,
                 LastAvailableProcessingGeneration = -1L
-            });
+            }, TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<DbUpdateException>(
             () =>
-                context.SaveChangesAsync());
+                context.SaveChangesAsync(TestContext.Current.CancellationToken));
     }
 }

@@ -24,7 +24,7 @@ public sealed class CsvDocumentParserTests
             """;
 
         CsvDocument document =
-            await ParseAsync(csv);
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(3, document.Columns.Count);
         Assert.Equal(
@@ -58,7 +58,7 @@ public sealed class CsvDocumentParserTests
             """;
 
         CsvDocument document =
-            await ParseAsync(csv);
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(3, document.Columns.Count);
         Assert.Equal(2, document.Rows.Count);
@@ -92,7 +92,7 @@ public sealed class CsvDocumentParserTests
             """;
 
         CsvDocument document =
-            await ParseAsync(csv);
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(4, document.Columns.Count);
         Assert.Equal(3, document.Rows.Count);
@@ -116,7 +116,7 @@ public sealed class CsvDocumentParserTests
             """;
 
         CsvDocument document =
-            await ParseAsync(csv);
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(4, document.Columns.Count);
         Assert.Equal(2, document.Rows.Count);
@@ -145,7 +145,7 @@ public sealed class CsvDocumentParserTests
             """;
 
         CsvDocument document =
-            await ParseAsync(csv);
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(4, document.Columns.Count);
         Assert.Equal(
@@ -183,7 +183,7 @@ public sealed class CsvDocumentParserTests
             """;
 
         CsvDocument document =
-            await ParseAsync(csv);
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(5, document.Columns.Count);
         Assert.Equal(4, document.Rows.Count);
@@ -220,7 +220,7 @@ public sealed class CsvDocumentParserTests
             """;
 
         CsvDocument document =
-            await ParseAsync(csv);
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(3, document.Columns.Count);
         Assert.Equal(
@@ -241,7 +241,7 @@ public sealed class CsvDocumentParserTests
     public async Task ParseAsync_EmptyDocument_ReturnsEmptyDocument()
     {
         CsvDocument document =
-            await ParseAsync(string.Empty);
+            await ParseAsync(string.Empty, TestContext.Current.CancellationToken);
 
         Assert.Empty(document.Columns);
         Assert.Empty(document.Rows);

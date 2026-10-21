@@ -89,9 +89,8 @@ public sealed class ProcessDocumentHandlerTests
             CreateProcessingContext(repository);
 
         ProcessDocumentResult result =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    Guid.NewGuid()));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    Guid.NewGuid()), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ProcessDocumentResultStatus.NotFound,
@@ -148,9 +147,8 @@ public sealed class ProcessDocumentHandlerTests
 
         // Act
         ProcessDocumentResult result =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    document.Id));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -292,9 +290,8 @@ public sealed class ProcessDocumentHandlerTests
 
         // Act
         ProcessDocumentResult result =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    document.Id));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -337,9 +334,8 @@ public sealed class ProcessDocumentHandlerTests
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(
             () =>
-                processingContext.Handler.HandleAsync(
-                    new ProcessDocumentCommand(
-                        document.Id)));
+                processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                        document.Id), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.True(
@@ -414,9 +410,8 @@ public sealed class ProcessDocumentHandlerTests
         // Act
         await Assert.ThrowsAsync<DocumentContentIntegrityException>(
             () =>
-                processingContext.Handler.HandleAsync(
-                    new ProcessDocumentCommand(
-                        document.Id)));
+                processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                        document.Id), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.True(
@@ -497,9 +492,8 @@ public sealed class ProcessDocumentHandlerTests
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
-                    processingContext.Handler.HandleAsync(
-                        new ProcessDocumentCommand(
-                            document.Id)));
+                    processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                            document.Id), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Equal(
@@ -594,9 +588,8 @@ public sealed class ProcessDocumentHandlerTests
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
-                    processingContext.Handler.HandleAsync(
-                        new ProcessDocumentCommand(
-                            document.Id)));
+                    processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                            document.Id), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Equal(
@@ -679,9 +672,8 @@ public sealed class ProcessDocumentHandlerTests
                 processingOptions: processingOptions);
 
         ProcessDocumentResult result =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    document.Id));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ProcessDocumentResultStatus.Success,
@@ -820,9 +812,8 @@ public sealed class ProcessDocumentHandlerTests
         // Act
         await Assert.ThrowsAsync<NotSupportedException>(
             () =>
-                processingContext.Handler.HandleAsync(
-                    new ProcessDocumentCommand(
-                        document.Id)));
+                processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                        document.Id), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.False(
@@ -893,9 +884,8 @@ public sealed class ProcessDocumentHandlerTests
                 maxChunkSize: 17);
 
         ProcessDocumentResult result =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    document.Id));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ProcessDocumentResultStatus.Success,
@@ -968,9 +958,8 @@ public sealed class ProcessDocumentHandlerTests
             DocumentSourceLocationMappingKind.DirectText;
 
         ProcessDocumentResult result =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    document.Id));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ProcessDocumentResultStatus.Success,
@@ -1021,9 +1010,8 @@ public sealed class ProcessDocumentHandlerTests
             DocumentSourceLocationMappingKind.Unknown;
 
         ProcessDocumentResult result =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    document.Id));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ProcessDocumentResultStatus.Success,
@@ -1193,14 +1181,12 @@ public sealed class ProcessDocumentHandlerTests
             CreateProcessingContext(repository);
 
         ProcessDocumentResult firstResult =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    document.Id));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         ProcessDocumentResult secondResult =
-            await processingContext.Handler.HandleAsync(
-                new ProcessDocumentCommand(
-                    document.Id));
+            await processingContext.Handler.HandleAsync(new ProcessDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ProcessDocumentResultStatus.Success,
@@ -1284,8 +1270,7 @@ public sealed class ProcessDocumentHandlerTests
             new DocumentProcessingService(
                 processingContext.Handler);
 
-        await service.ProcessAsync(
-            document.Id);
+        await service.ProcessAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             document.Id,
@@ -1339,8 +1324,7 @@ public sealed class ProcessDocumentHandlerTests
 
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>
-                service.ProcessAsync(
-                    Guid.NewGuid()));
+                service.ProcessAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
 
         Assert.Equal(
             0L,

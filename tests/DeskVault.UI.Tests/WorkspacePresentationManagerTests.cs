@@ -282,8 +282,7 @@ public sealed class WorkspacePresentationManagerTests
                 null,
                 null);
 
-        await presentation.SetWorkspaceDocumentsAsync(
-            []);
+        await presentation.SetWorkspaceDocumentsAsync([], TestContext.Current.CancellationToken);
 
         var factory =
             new Mock<IWorkspacePresentationFactory>();

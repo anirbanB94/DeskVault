@@ -111,9 +111,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -144,9 +142,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -177,9 +173,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -216,9 +210,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -247,9 +239,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -282,9 +272,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -307,9 +295,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -336,9 +322,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -376,9 +360,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -403,14 +385,10 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult first =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         DocumentTextExtractionResult second =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -434,9 +412,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                yaml);
+            ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         await Assert.ThrowsAnyAsync<YamlDotNet.Core.YamlException>(
@@ -492,9 +468,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                yaml);
+            ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         ResourceLimitExceededException exception =
@@ -539,9 +513,7 @@ public sealed class YamlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                yaml);
+            await ExtractAsync(extractor, yaml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

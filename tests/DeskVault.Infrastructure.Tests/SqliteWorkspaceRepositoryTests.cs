@@ -24,12 +24,10 @@ public sealed class SqliteWorkspaceRepositoryTests
                 Guid.NewGuid(),
                 "Research");
 
-        await repository.AddAsync(
-            workspace);
+        await repository.AddAsync(workspace, TestContext.Current.CancellationToken);
 
         Workspace? result =
-            await repository.GetByIdAsync(
-                workspace.Id);
+            await repository.GetByIdAsync(workspace.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Equal(workspace.Id, result.Id);
@@ -72,10 +70,10 @@ public sealed class SqliteWorkspaceRepositoryTests
         workspace.AddDocument(firstDocument.Id);
         workspace.AddDocument(secondDocument.Id);
 
-        await repository.AddAsync(workspace);
+        await repository.AddAsync(workspace, TestContext.Current.CancellationToken);
 
         Workspace? result =
-            await repository.GetByIdAsync(workspace.Id);
+            await repository.GetByIdAsync(workspace.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -132,14 +130,14 @@ public sealed class SqliteWorkspaceRepositoryTests
         firstWorkspace.AddDocument(document.Id);
         secondWorkspace.AddDocument(document.Id);
 
-        await repository.AddAsync(firstWorkspace);
-        await repository.AddAsync(secondWorkspace);
+        await repository.AddAsync(firstWorkspace, TestContext.Current.CancellationToken);
+        await repository.AddAsync(secondWorkspace, TestContext.Current.CancellationToken);
 
         Workspace? firstResult =
-            await repository.GetByIdAsync(firstWorkspace.Id);
+            await repository.GetByIdAsync(firstWorkspace.Id, TestContext.Current.CancellationToken);
 
         Workspace? secondResult =
-            await repository.GetByIdAsync(secondWorkspace.Id);
+            await repository.GetByIdAsync(secondWorkspace.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(firstResult);
         Assert.NotNull(secondResult);
@@ -179,10 +177,10 @@ public sealed class SqliteWorkspaceRepositoryTests
         workspace.AddDocument(document.Id);
         workspace.SetLastActiveDocument(document.Id);
 
-        await repository.AddAsync(workspace);
+        await repository.AddAsync(workspace, TestContext.Current.CancellationToken);
 
         Workspace? result =
-            await repository.GetByIdAsync(workspace.Id);
+            await repository.GetByIdAsync(workspace.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Equal(
@@ -205,20 +203,18 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () =>
-                repository.AddAsync(workspace));
+                repository.AddAsync(workspace, TestContext.Current.CancellationToken));
 
         await using var context =
             CreateContext(connection);
 
         Assert.False(
-            await context.Workspaces.AnyAsync(
-                existing =>
-                    existing.Id == workspace.Id));
+            await context.Workspaces.AnyAsync(existing =>
+                    existing.Id == workspace.Id, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.False(
-            await context.WorkspaceDocumentMemberships.AnyAsync(
-                membership =>
-                    membership.WorkspaceId == workspace.Id));
+            await context.WorkspaceDocumentMemberships.AnyAsync(membership =>
+                    membership.WorkspaceId == workspace.Id, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -251,16 +247,16 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         workspace.AddDocument(firstDocument.Id);
 
-        await repository.AddAsync(workspace);
+        await repository.AddAsync(workspace, TestContext.Current.CancellationToken);
 
         workspace.Rename("Renamed");
         workspace.AddDocument(secondDocument.Id);
         workspace.SetLastActiveDocument(secondDocument.Id);
 
-        await repository.UpdateAsync(workspace);
+        await repository.UpdateAsync(workspace, TestContext.Current.CancellationToken);
 
         Workspace? result =
-            await repository.GetByIdAsync(workspace.Id);
+            await repository.GetByIdAsync(workspace.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Equal("Renamed", result.Name);
@@ -319,8 +315,7 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         persistentWorkspace.AddDocument(document.Id);
 
-        await repository.AddAsync(
-            persistentWorkspace);
+        await repository.AddAsync(persistentWorkspace, TestContext.Current.CancellationToken);
 
         Workspace temporaryWorkspace =
             Workspace.CreateTemporary(
@@ -328,12 +323,10 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () =>
-                repository.UpdateAsync(
-                    temporaryWorkspace));
+                repository.UpdateAsync(temporaryWorkspace, TestContext.Current.CancellationToken));
 
         Workspace? result =
-            await repository.GetByIdAsync(
-                workspaceId);
+            await repository.GetByIdAsync(workspaceId, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Equal(
@@ -373,14 +366,14 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         workspace.AddDocument(document.Id);
 
-        await repository.AddAsync(workspace);
+        await repository.AddAsync(workspace, TestContext.Current.CancellationToken);
 
         workspace.RemoveDocument(document.Id);
 
-        await repository.UpdateAsync(workspace);
+        await repository.UpdateAsync(workspace, TestContext.Current.CancellationToken);
 
         Workspace? workspaceResult =
-            await repository.GetByIdAsync(workspace.Id);
+            await repository.GetByIdAsync(workspace.Id, TestContext.Current.CancellationToken);
 
         Document? documentResult =
             await GetDocumentAsync(
@@ -415,12 +408,12 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         workspace.AddDocument(document.Id);
 
-        await repository.AddAsync(workspace);
+        await repository.AddAsync(workspace, TestContext.Current.CancellationToken);
 
-        await repository.DeleteAsync(workspace.Id);
+        await repository.DeleteAsync(workspace.Id, TestContext.Current.CancellationToken);
 
         Workspace? workspaceResult =
-            await repository.GetByIdAsync(workspace.Id);
+            await repository.GetByIdAsync(workspace.Id, TestContext.Current.CancellationToken);
 
         Document? documentResult =
             await GetDocumentAsync(
@@ -454,14 +447,14 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         workspace.AddDocument(document.Id);
 
-        await repository.AddAsync(workspace);
+        await repository.AddAsync(workspace, TestContext.Current.CancellationToken);
 
         await DeleteDocumentAsync(
             connection,
             document.Id);
 
         Workspace? result =
-            await repository.GetByIdAsync(workspace.Id);
+            await repository.GetByIdAsync(workspace.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Empty(result.Memberships);
@@ -505,19 +498,16 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         secondWorkspace.AddDocument(firstDocument.Id);
 
-        await repository.AddAsync(firstWorkspace);
-        await repository.AddAsync(secondWorkspace);
+        await repository.AddAsync(firstWorkspace, TestContext.Current.CancellationToken);
+        await repository.AddAsync(secondWorkspace, TestContext.Current.CancellationToken);
 
-        await repository.RemoveDocumentFromAllWorkspacesAsync(
-            firstDocument.Id);
+        await repository.RemoveDocumentFromAllWorkspacesAsync(firstDocument.Id, TestContext.Current.CancellationToken);
 
         Workspace? firstResult =
-            await repository.GetByIdAsync(
-                firstWorkspace.Id);
+            await repository.GetByIdAsync(firstWorkspace.Id, TestContext.Current.CancellationToken);
 
         Workspace? secondResult =
-            await repository.GetByIdAsync(
-                secondWorkspace.Id);
+            await repository.GetByIdAsync(secondWorkspace.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(firstResult);
         Assert.NotNull(secondResult);
@@ -587,11 +577,11 @@ public sealed class SqliteWorkspaceRepositoryTests
         firstWorkspace.AddDocument(firstDocument.Id);
         secondWorkspace.AddDocument(secondDocument.Id);
 
-        await repository.AddAsync(firstWorkspace);
-        await repository.AddAsync(secondWorkspace);
+        await repository.AddAsync(firstWorkspace, TestContext.Current.CancellationToken);
+        await repository.AddAsync(secondWorkspace, TestContext.Current.CancellationToken);
 
         IReadOnlyList<Workspace> results =
-            await repository.GetAllAsync();
+            await repository.GetAllAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, results.Count);
 
@@ -641,7 +631,7 @@ public sealed class SqliteWorkspaceRepositoryTests
 
         workspace.AddDocument(document.Id);
 
-        await repository.AddAsync(workspace);
+        await repository.AddAsync(workspace, TestContext.Current.CancellationToken);
 
         await using var context =
             CreateContext(connection);
@@ -649,15 +639,14 @@ public sealed class SqliteWorkspaceRepositoryTests
         await Assert.ThrowsAnyAsync<DbUpdateException>(
             async () =>
             {
-                await context.WorkspaceDocumentMemberships.AddAsync(
-                    new WorkspaceDocumentMembershipEntity
+                await context.WorkspaceDocumentMemberships.AddAsync(new WorkspaceDocumentMembershipEntity
                     {
                         WorkspaceId = workspace.Id,
                         DocumentId = document.Id,
                         Order = 0
-                    });
+                    }, TestContext.Current.CancellationToken);
 
-                await context.SaveChangesAsync();
+                await context.SaveChangesAsync(TestContext.Current.CancellationToken);
             });
     }
 

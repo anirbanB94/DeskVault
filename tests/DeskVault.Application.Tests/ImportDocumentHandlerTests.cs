@@ -48,7 +48,7 @@ public sealed class ImportDocumentHandlerTests
 
         // Act
         ImportDocumentResult result =
-            await handler.HandleAsync(command);
+            await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -131,7 +131,7 @@ public sealed class ImportDocumentHandlerTests
 
         // Act
         ImportDocumentResult result =
-            await handler.HandleAsync(command);
+            await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -232,7 +232,7 @@ public sealed class ImportDocumentHandlerTests
 
         // Act
         ImportDocumentResult result =
-            await handler.HandleAsync(command);
+            await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -366,7 +366,7 @@ public sealed class ImportDocumentHandlerTests
 
         // Act
         ImportDocumentResult result =
-            await handler.HandleAsync(command);
+            await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -476,7 +476,7 @@ public sealed class ImportDocumentHandlerTests
 
         // Act
         ImportDocumentResult result =
-            await handler.HandleAsync(command);
+            await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -591,7 +591,7 @@ public sealed class ImportDocumentHandlerTests
         var exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    handler.HandleAsync(command));
+                    handler.HandleAsync(command, TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Same(
@@ -825,7 +825,7 @@ public sealed class ImportDocumentHandlerTests
         var exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    handler.HandleAsync(command));
+                    handler.HandleAsync(command, TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Same(
@@ -911,7 +911,7 @@ public sealed class ImportDocumentHandlerTests
 
         // Act
         ImportDocumentResult result =
-            await handler.HandleAsync(command);
+            await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -994,7 +994,7 @@ public sealed class ImportDocumentHandlerTests
 
         // Act
         ImportDocumentResult result =
-            await handler.HandleAsync(command);
+            await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

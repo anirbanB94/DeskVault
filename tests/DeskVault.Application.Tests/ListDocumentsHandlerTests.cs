@@ -39,8 +39,7 @@ public sealed class ListDocumentsHandlerTests
             CreateHandler(repository);
 
         IReadOnlyList<Document> result =
-            await handler.HandleAsync(
-                new ListDocumentsQuery());
+            await handler.HandleAsync(new ListDocumentsQuery(), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expected,

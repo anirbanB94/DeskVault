@@ -235,9 +235,7 @@ public sealed class ApplicationDependencyInjectionTests
             ResourceLimitExceededException exception =
                 await Assert.ThrowsAsync<ResourceLimitExceededException>(
                     () =>
-                        extractor.ExtractAsync(
-                            stream,
-                            fileName));
+                        extractor.ExtractAsync(stream, fileName, TestContext.Current.CancellationToken));
 
             Assert.Equal(
                 configuredLimit,

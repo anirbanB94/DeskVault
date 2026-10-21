@@ -29,10 +29,7 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, [
                 new DocumentChunk(
                 0,
                 "This is the introduction."),
@@ -44,17 +41,14 @@ public sealed class SqliteDocumentSearchStoreTests
             new DocumentChunk(
                 2,
                 "This is the conclusion.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "searchable"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "searchable"), null, 20, TestContext.Current.CancellationToken);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -127,20 +121,14 @@ public sealed class SqliteDocumentSearchStoreTests
                         $"needle in matching content chunk {index:D2}."))
                 .ToArray();
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            chunks);
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, chunks, TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         // Act
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery("needle"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery("needle"), null, 20, TestContext.Current.CancellationToken);
 
         // Assert
         SearchDocumentsResult result =
@@ -199,11 +187,8 @@ public sealed class SqliteDocumentSearchStoreTests
         const int pageSize = 5;
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "bulk-search"),
-                null,
-                pageSize);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "bulk-search"), null, pageSize, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             pageSize + 1,
@@ -269,24 +254,18 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, [
                 new DocumentChunk(
                 0,
                 "The cafe\u0301 receipt.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         // Act
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(searchText),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(searchText), null, 20, TestContext.Current.CancellationToken);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -337,14 +316,11 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, [
                 new DocumentChunk(
                 0,
                 "The cafe\u0301 receipt.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         string canonicalSearchText =
             SearchTextCanonicalizer.CanonicalizeSearchText(
@@ -357,12 +333,11 @@ public sealed class SqliteDocumentSearchStoreTests
         bool result =
             await context.DocumentChunks
                 .AsNoTracking()
-                .AnyAsync(
-                    chunk =>
+                .AnyAsync(chunk =>
                         chunk.DocumentId == document.Id
                         && SqliteSearchFunctions.ContainsCanonicalized(
                             chunk.Text,
-                            canonicalSearchText));
+                            canonicalSearchText), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(
@@ -385,24 +360,18 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Security policy content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "SECURITY"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "SECURITY"), null, 20, TestContext.Current.CancellationToken);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -442,24 +411,18 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "This document contains ordinary content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "does-not-exist"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "does-not-exist"), null, 20, TestContext.Current.CancellationToken);
 
         Assert.Empty(
             results);
@@ -481,48 +444,35 @@ public sealed class SqliteDocumentSearchStoreTests
             CreateProcessingStore(connection);
 
         long firstGeneration =
-            await processingStore.AcquireProcessingGenerationAsync(
-                document.Id);
+            await processingStore.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             1L,
             firstGeneration);
 
-        await processingStore.PublishSuccessfulProcessingAsync(
-            document.Id,
-            firstGeneration,
-            new DocumentProcessingRuleVersion("processing-v1"),
-            [
+        await processingStore.PublishSuccessfulProcessingAsync(document.Id, firstGeneration, new DocumentProcessingRuleVersion("processing-v1"), [
                 new DocumentChunk(
             0,
             "The authoritative-search-term is current content.",
             ChunkingRuleVersion:
                 new DocumentChunkingRuleVersion("chunking-v1"))
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         long secondGeneration =
-            await processingStore.AcquireProcessingGenerationAsync(
-                document.Id);
+            await processingStore.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2L,
             secondGeneration);
 
-        await processingStore.PublishSuccessfulProcessingAsync(
-            document.Id,
-            secondGeneration,
-            new DocumentProcessingRuleVersion("processing-v1"),
-            []);
+        await processingStore.PublishSuccessfulProcessingAsync(document.Id, secondGeneration, new DocumentProcessingRuleVersion("processing-v1"), [], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> staleResults =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "authoritative-search-term"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "authoritative-search-term"), null, 20, TestContext.Current.CancellationToken);
 
         Assert.Empty(
             staleResults);
@@ -549,39 +499,32 @@ public sealed class SqliteDocumentSearchStoreTests
         {
             DocumentKnowledgeAvailabilityEntity availability =
                 await context.DocumentKnowledgeAvailabilities
-                    .SingleAsync(
-                        item =>
+                    .SingleAsync(item =>
                             item.DocumentId == document.Id &&
                             item.Representation ==
-                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch);
+                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch, cancellationToken: TestContext.Current.CancellationToken);
 
             availability.State =
                 (int)availabilityState;
 
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "availability-gated searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "availability-gated"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "availability-gated"), null, 20, TestContext.Current.CancellationToken);
 
         Assert.Empty(
             results);
@@ -603,30 +546,24 @@ public sealed class SqliteDocumentSearchStoreTests
             CreateProcessingStore(connection);
 
         long processingGeneration =
-            await processingStore.AcquireProcessingGenerationAsync(
-                document.Id);
+            await processingStore.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await processingStore.PublishSuccessfulProcessingAsync(
-            document.Id,
-            processingGeneration,
-            new DocumentProcessingRuleVersion(
-                "processing-v1"),
-            [
+        await processingStore.PublishSuccessfulProcessingAsync(document.Id, processingGeneration, new DocumentProcessingRuleVersion(
+                "processing-v1"), [
                 new DocumentChunk(
                 0,
                 "generation-gated-content-search-target.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         await using (DeskVaultDbContext context =
             CreateContext(connection))
         {
             DocumentKnowledgeAvailabilityEntity availability =
                 await context.DocumentKnowledgeAvailabilities
-                    .SingleAsync(
-                        item =>
+                    .SingleAsync(item =>
                             item.DocumentId == document.Id &&
                             item.Representation ==
-                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch);
+                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch, cancellationToken: TestContext.Current.CancellationToken);
 
             availability.State =
                 (int)DocumentKnowledgeAvailabilityState.Available;
@@ -634,18 +571,15 @@ public sealed class SqliteDocumentSearchStoreTests
             availability.LastAvailableProcessingGeneration =
                 0L;
 
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "generation-gated-content-search-target"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "generation-gated-content-search-target"), null, 20, TestContext.Current.CancellationToken);
 
         Assert.Empty(
             results);
@@ -668,11 +602,10 @@ public sealed class SqliteDocumentSearchStoreTests
         {
             DocumentKnowledgeAvailabilityEntity availability =
                 await context.DocumentKnowledgeAvailabilities
-                    .SingleAsync(
-                        item =>
+                    .SingleAsync(item =>
                             item.DocumentId == document.Id &&
                             item.Representation ==
-                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch);
+                            (int)DocumentKnowledgeRepresentationKind.KeywordSearch, cancellationToken: TestContext.Current.CancellationToken);
 
             availability.State =
                 (int)DocumentKnowledgeAvailabilityState.Unavailable;
@@ -680,18 +613,15 @@ public sealed class SqliteDocumentSearchStoreTests
             availability.LastAvailableProcessingGeneration =
                 null;
 
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "metadata-only"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "metadata-only"), null, 20, TestContext.Current.CancellationToken);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -728,10 +658,7 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            secondDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(secondDocument.Id, 0L, [
                 new DocumentChunk(
                     1,
                     "Beta matching content second."),
@@ -739,12 +666,9 @@ public sealed class SqliteDocumentSearchStoreTests
                 new DocumentChunk(
                     0,
                     "Beta matching content first.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            firstDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(firstDocument.Id, 0L, [
                 new DocumentChunk(
                     1,
                     "Alpha matching content second."),
@@ -752,17 +676,14 @@ public sealed class SqliteDocumentSearchStoreTests
                 new DocumentChunk(
                     0,
                     "Alpha matching content first.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "matching"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "matching"), null, 20, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2,
@@ -806,33 +727,24 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            matchingDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(matchingDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Completion reached 100%.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            nonMatchingDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(nonMatchingDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Completion reached 100 percent.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "100%"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "100%"), null, 20, TestContext.Current.CancellationToken);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -874,33 +786,24 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            matchingDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(matchingDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "The value is file_name.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            nonMatchingDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(nonMatchingDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "The value is filename.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "file_name"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "file_name"), null, 20, TestContext.Current.CancellationToken);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -942,34 +845,25 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            textDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(textDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Shared searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            markdownDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(markdownDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Shared searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
                     "searchable",
-                    [".txt"]),
-                null,
-                20);
+                    [".txt"]), null, 20, TestContext.Current.CancellationToken);
 
         SearchDocumentsResult result =
             Assert.Single(results);
@@ -1010,43 +904,31 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            textDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(textDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Shared searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            markdownDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(markdownDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Shared searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            csvDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(csvDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Shared searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
                     "searchable",
-                    ["TXT", ".MD"]),
-                null,
-                20);
+                    ["TXT", ".MD"]), null, 20, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2,
@@ -1082,33 +964,24 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            textDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(textDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Shared searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            markdownDocument.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(markdownDocument.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Shared searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
-                    "searchable"),
-                null,
-                20);
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
+                    "searchable"), null, 20, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2,
@@ -1138,25 +1011,19 @@ public sealed class SqliteDocumentSearchStoreTests
         var processingStore =
             CreateProcessingStore(connection);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            [
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, [
                 new DocumentChunk(
                     0,
                     "Searchable content.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         var searchStore =
             CreateSearchStore(connection);
 
         IReadOnlyList<SearchDocumentsResult> results =
-            await searchStore.SearchAsync(
-                new SearchDocumentsQuery(
+            await searchStore.SearchAsync(new SearchDocumentsQuery(
                     "searchable",
-                    [".unsupported"]),
-                null,
-                20);
+                    [".unsupported"]), null, 20, TestContext.Current.CancellationToken);
 
         Assert.Empty(
             results);
@@ -1173,11 +1040,8 @@ public sealed class SqliteDocumentSearchStoreTests
 
         await Assert.ThrowsAsync<ArgumentException>(
             () =>
-                searchStore.SearchAsync(
-                    new SearchDocumentsQuery(
-                        "   "),
-                null,
-                20));
+                searchStore.SearchAsync(new SearchDocumentsQuery(
+                        "   "), null, 20, TestContext.Current.CancellationToken));
     }
 
     [Fact]

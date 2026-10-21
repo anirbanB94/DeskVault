@@ -24,8 +24,7 @@ public sealed class DocumentTextNormalizerStructuredContentTests
 
         // Act
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(
@@ -82,8 +81,7 @@ public sealed class DocumentTextNormalizerStructuredContentTests
 
         // Act
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(
@@ -116,8 +114,7 @@ public sealed class DocumentTextNormalizerStructuredContentTests
 
         // Act
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(
@@ -146,8 +143,7 @@ public sealed class DocumentTextNormalizerStructuredContentTests
 
         // Act
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

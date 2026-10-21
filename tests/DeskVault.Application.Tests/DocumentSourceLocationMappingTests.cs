@@ -73,9 +73,7 @@ public sealed class DocumentSourceLocationMappingTests
                     sourceText));
 
         DocumentTextExtractionResult result =
-            await extractor.ExtractAsync(
-                stream,
-                fileName);
+            await extractor.ExtractAsync(stream, fileName, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.Unknown,

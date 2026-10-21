@@ -43,8 +43,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             "José",
@@ -66,8 +65,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             "First\nSecond\nThird",
@@ -85,8 +83,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             "First\nSecond\nThird",
@@ -107,8 +104,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             text,
@@ -129,8 +125,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             text,
@@ -151,8 +146,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             text,
@@ -173,8 +167,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             text,
@@ -192,8 +185,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             string.Empty,
@@ -211,13 +203,11 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult first =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         DocumentTextNormalizationResult second =
-            await normalizer.NormalizeAsync(
-                new DocumentTextExtractionResult(
-                    first.Text));
+            await normalizer.NormalizeAsync(new DocumentTextExtractionResult(
+                    first.Text), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             first.Text,
@@ -268,8 +258,7 @@ public sealed class DocumentTextNormalizerTests
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
-                    normalizer.NormalizeAsync(
-                        extractionResult));
+                    normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken));
 
         Assert.Equal(
             3,
@@ -301,8 +290,7 @@ public sealed class DocumentTextNormalizerTests
                 options);
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expected,
@@ -336,8 +324,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.DirectText,
@@ -356,8 +343,7 @@ public sealed class DocumentTextNormalizerTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult result =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.Unknown,

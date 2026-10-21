@@ -34,9 +34,7 @@ public sealed class DocumentViewFormTests
         NotSupportedException exception =
             await Assert.ThrowsAsync<NotSupportedException>(
                 () =>
-                    form.ShowDocumentAsync(
-                        stream,
-                        fileName));
+                    form.ShowDocumentAsync(stream, fileName, TestContext.Current.CancellationToken));
 
         Assert.Equal(
             expectedMessage,
@@ -70,9 +68,7 @@ public sealed class DocumentViewFormTests
         using var stream =
             CreateDocumentStream();
 
-        await form.ShowDocumentAsync(
-            stream,
-            fileName);
+        await form.ShowDocumentAsync(stream, fileName, TestContext.Current.CancellationToken);
 
         resolver.Verify(
             x => x.Resolve(fileName),

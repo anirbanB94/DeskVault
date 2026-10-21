@@ -122,9 +122,7 @@ public sealed class TextDocumentTextExtractorTests
                     expectedText));
 
         DocumentTextExtractionResult result =
-            await _extractor.ExtractAsync(
-                stream,
-                "notes.txt");
+            await _extractor.ExtractAsync(stream, "notes.txt", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expectedText,
@@ -151,9 +149,7 @@ public sealed class TextDocumentTextExtractorTests
                     expectedText));
 
         DocumentTextExtractionResult result =
-            await _extractor.ExtractAsync(
-                stream,
-                "Example.cs");
+            await _extractor.ExtractAsync(stream, "Example.cs", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expectedText,
@@ -176,9 +172,7 @@ public sealed class TextDocumentTextExtractorTests
                     expectedText));
 
         DocumentTextExtractionResult result =
-            await _extractor.ExtractAsync(
-                stream,
-                "application.log");
+            await _extractor.ExtractAsync(stream, "application.log", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expectedText,
@@ -202,9 +196,7 @@ public sealed class TextDocumentTextExtractorTests
                     expectedText));
 
         DocumentTextExtractionResult result =
-            await _extractor.ExtractAsync(
-                stream,
-                "notes.txt");
+            await _extractor.ExtractAsync(stream, "notes.txt", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expectedText,
@@ -222,9 +214,7 @@ public sealed class TextDocumentTextExtractorTests
                 Encoding.UTF8.GetBytes(
                     text));
 
-        await _extractor.ExtractAsync(
-            stream,
-            "notes.txt");
+        await _extractor.ExtractAsync(stream, "notes.txt", TestContext.Current.CancellationToken);
 
         Assert.True(
             stream.CanRead);
@@ -260,9 +250,7 @@ public sealed class TextDocumentTextExtractorTests
         InvalidOperationException exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    _extractor.ExtractAsync(
-                        stream,
-                        "notes.txt"));
+                    _extractor.ExtractAsync(stream, "notes.txt", TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "Simulated document read failure.",
@@ -286,9 +274,7 @@ public sealed class TextDocumentTextExtractorTests
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
-                    extractor.ExtractAsync(
-                        stream,
-                        "document.txt"));
+                    extractor.ExtractAsync(stream, "document.txt", TestContext.Current.CancellationToken));
 
         Assert.Equal(
             5,
@@ -318,9 +304,7 @@ public sealed class TextDocumentTextExtractorTests
                 Encoding.UTF8.GetBytes(expectedText));
 
         DocumentTextExtractionResult result =
-            await extractor.ExtractAsync(
-                stream,
-                "document.txt");
+            await extractor.ExtractAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expectedText,
@@ -339,9 +323,7 @@ public sealed class TextDocumentTextExtractorTests
                     expectedText));
 
         DocumentTextExtractionResult result =
-            await _extractor.ExtractAsync(
-                stream,
-                "notes.txt");
+            await _extractor.ExtractAsync(stream, "notes.txt", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.DirectText,

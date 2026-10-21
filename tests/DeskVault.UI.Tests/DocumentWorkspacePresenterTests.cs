@@ -48,10 +48,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         view.Verify(
             x => x.ShowDocumentAsync(
@@ -103,10 +100,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         view.Verify(
             x => x.ShowUnsupportedPreview(
@@ -217,10 +211,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         view.Verify(
             x => x.ShowError(
@@ -263,10 +254,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         stream.Position =
             stream.Length;
@@ -325,10 +313,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         stream.Position =
             stream.Length;
@@ -427,10 +412,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         view.Raise(
             x => x.OpenExternallyRequested += null,
@@ -484,10 +466,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         view.Raise(
             x => x.RemoveDocumentRequested += null,
@@ -577,10 +556,7 @@ public sealed class DocumentWorkspacePresenterTests
         var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         view.Raise(
             x => x.RemoveDocumentRequested += null,
@@ -659,10 +635,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         // Act
         view.Raise(
@@ -729,10 +702,7 @@ public sealed class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(
-            documentId,
-            stream,
-            document.FileName);
+        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
 
         view.Raise(
             x => x.DocumentInformationRequested += null,

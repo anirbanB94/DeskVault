@@ -23,7 +23,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         // Act
         CreateWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -64,7 +64,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         // Act
         CreateWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -122,7 +122,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         // Act
         CreateWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -173,7 +173,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         // Act
         CreateWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -219,7 +219,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         // Act
         CreateWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -262,7 +262,7 @@ public sealed class CreateWorkspaceHandlerTests
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => context.Handler.HandleAsync(command));
+            () => context.Handler.HandleAsync(command, TestContext.Current.CancellationToken));
 
         // Assert
         context.Registry.Verify(

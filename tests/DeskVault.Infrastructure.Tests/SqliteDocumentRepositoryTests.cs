@@ -22,12 +22,10 @@ public sealed class SqliteDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -80,12 +78,10 @@ public sealed class SqliteDocumentRepositoryTests
                 DocumentStatus.Processing,
                 7);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -115,12 +111,10 @@ public sealed class SqliteDocumentRepositoryTests
                 7,
                 5);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -158,12 +152,10 @@ public sealed class SqliteDocumentRepositoryTests
                 5,
                 expectedVersion);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -208,14 +200,12 @@ public sealed class SqliteDocumentRepositoryTests
                 duplicateHash,
                 "second.dvault");
 
-        await repository.AddAsync(
-            firstDocument);
+        await repository.AddAsync(firstDocument, TestContext.Current.CancellationToken);
 
         DocumentHashConflictException exception =
             await Assert.ThrowsAsync<DocumentHashConflictException>(
                 () =>
-                    repository.AddAsync(
-                        secondDocument));
+                    repository.AddAsync(secondDocument, TestContext.Current.CancellationToken));
 
         Assert.IsType<DbUpdateException>(
             exception.InnerException);
@@ -224,7 +214,7 @@ public sealed class SqliteDocumentRepositoryTests
             exception.InnerException!.InnerException);
 
         IReadOnlyList<Document> documents =
-            await repository.GetAllAsync();
+            await repository.GetAllAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(documents);
 
@@ -265,14 +255,12 @@ public sealed class SqliteDocumentRepositoryTests
                 "second-hash",
                 "second.dvault");
 
-        await repository.AddAsync(
-            firstDocument);
+        await repository.AddAsync(firstDocument, TestContext.Current.CancellationToken);
 
         DbUpdateException exception =
             await Assert.ThrowsAsync<DbUpdateException>(
                 () =>
-                    repository.AddAsync(
-                        secondDocument));
+                    repository.AddAsync(secondDocument, TestContext.Current.CancellationToken));
 
         Assert.IsType<SqliteException>(
             exception.InnerException);
@@ -290,12 +278,10 @@ public sealed class SqliteDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         bool exists =
-            await repository.ExistsByHashAsync(
-                document.Sha256Hash);
+            await repository.ExistsByHashAsync(document.Sha256Hash, TestContext.Current.CancellationToken);
 
         Assert.True(
             exists);
@@ -311,8 +297,7 @@ public sealed class SqliteDocumentRepositoryTests
             CreateRepository(connection);
 
         bool exists =
-            await repository.ExistsByHashAsync(
-                "missing-hash");
+            await repository.ExistsByHashAsync("missing-hash", TestContext.Current.CancellationToken);
 
         Assert.False(
             exists);
@@ -350,14 +335,12 @@ public sealed class SqliteDocumentRepositoryTests
                 importedAt,
                 DocumentStatus.Imported);
 
-        await repository.AddAsync(
-            older);
+        await repository.AddAsync(older, TestContext.Current.CancellationToken);
 
-        await repository.AddAsync(
-            newer);
+        await repository.AddAsync(newer, TestContext.Current.CancellationToken);
 
         IReadOnlyList<Document> documents =
-            await repository.GetAllAsync();
+            await repository.GetAllAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2,
@@ -384,15 +367,12 @@ public sealed class SqliteDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
-        await repository.DeleteAsync(
-            document.Id);
+        await repository.DeleteAsync(document.Id, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Null(
             result);
@@ -407,8 +387,7 @@ public sealed class SqliteDocumentRepositoryTests
         var repository =
             CreateRepository(connection);
 
-        await repository.DeleteAsync(
-            Guid.NewGuid());
+        await repository.DeleteAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -423,17 +402,14 @@ public sealed class SqliteDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         document.MarkProcessing();
 
-        await repository.UpdateAsync(
-            document);
+        await repository.UpdateAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -475,12 +451,10 @@ public sealed class SqliteDocumentRepositoryTests
                         lastSuccessfulProcessingGeneration)
                 ]);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -552,17 +526,14 @@ public sealed class SqliteDocumentRepositoryTests
                         lastSuccessfulProcessingGeneration)
                 ]);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         document.MarkAvailable();
 
-        await repository.UpdateAsync(
-            document);
+        await repository.UpdateAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -611,20 +582,17 @@ public sealed class SqliteDocumentRepositoryTests
                         processingGeneration)
                 ]);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         document.SetKnowledgeAvailability(
             DocumentKnowledgeRepresentationKind.KeywordSearch,
             DocumentKnowledgeAvailabilityState.Stale,
             processingGeneration);
 
-        await repository.UpdateAsync(
-            document);
+        await repository.UpdateAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -678,17 +646,14 @@ public sealed class SqliteDocumentRepositoryTests
                         lastSuccessfulProcessingGeneration)
                 ]);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         document.MarkProcessing();
 
-        await repository.UpdateAsync(
-            document);
+        await repository.UpdateAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -744,13 +709,11 @@ public sealed class SqliteDocumentRepositoryTests
                         lastSuccessfulProcessingGeneration)
                 ]);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         document.MarkAvailable();
 
-        await repository.UpdateAsync(
-            document);
+        await repository.UpdateAsync(document, TestContext.Current.CancellationToken);
 
         await using DeskVaultDbContext context =
             CreateContext(connection);
@@ -769,7 +732,7 @@ public sealed class SqliteDocumentRepositoryTests
                             entity.LastSuccessfulProcessingGeneration,
                             entity.LastSuccessfulProcessingRuleVersion
                         })
-                .SingleAsync();
+                .SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             processingGeneration,

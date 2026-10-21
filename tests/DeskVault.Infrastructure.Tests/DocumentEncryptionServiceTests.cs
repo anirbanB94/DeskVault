@@ -1,4 +1,4 @@
-using DeskVault.Application.Documents.Processing;
+﻿using DeskVault.Application.Documents.Processing;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Buffers.Binary;
@@ -26,18 +26,14 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         encrypted.Position = 0;
 
         await using var decrypted =
             new MemoryStream();
 
-        await service.DecryptAsync(
-            encrypted,
-            decrypted);
+        await service.DecryptAsync(encrypted, decrypted, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             originalContent,
@@ -99,7 +95,7 @@ public sealed class DocumentEncryptionServiceTests
 
             await using var destination = new MemoryStream();
 
-            await service.DecryptAsync(source, destination);
+            await service.DecryptAsync(source, destination, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 testData.Plaintext,
@@ -134,7 +130,7 @@ public sealed class DocumentEncryptionServiceTests
                     successfulWritesBeforeFailure: 0);
 
             await Assert.ThrowsAsync<IOException>(
-                () => service.DecryptAsync(source, destination));
+                () => service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
 
             AssertSingleClearedPlaintextBuffer(observedBuffers);
         }
@@ -166,7 +162,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var destination = new MemoryStream();
 
             await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
-                () => service.DecryptAsync(source, destination));
+                () => service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
 
             Assert.Equal(0, destination.Length);
             AssertSingleClearedPlaintextBuffer(observedBuffers);
@@ -198,7 +194,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var destination = new MemoryStream();
 
             await Assert.ThrowsAsync<CryptographicException>(
-                () => service.DecryptAsync(source, destination));
+                () => service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
 
             Assert.Equal(0, destination.Length);
             AssertSingleClearedPlaintextBuffer(observedBuffers);
@@ -240,7 +236,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var destination = new MemoryStream();
 
             await Assert.ThrowsAsync<IOException>(
-                () => service.DecryptAsync(source, destination));
+                () => service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
 
             Assert.Equal(0, destination.Length);
             AssertSingleClearedPlaintextBuffer(observedBuffers);
@@ -311,9 +307,7 @@ public sealed class DocumentEncryptionServiceTests
                     successfulWritesBeforeFailure: 1);
 
             await Assert.ThrowsAsync<IOException>(
-                () => service.DecryptAsync(
-                    source,
-                    destination));
+                () => service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
 
             // The first plaintext chunk was consumed successfully.
             // The second chunk's destination write fails.
@@ -350,9 +344,7 @@ public sealed class DocumentEncryptionServiceTests
 
             await using var destination = new MemoryStream();
 
-            await service.DecryptAsync(
-                source,
-                destination);
+            await service.DecryptAsync(source, destination, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 testData.Plaintext,
@@ -404,9 +396,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var source = new MemoryStream(plaintext);
             await using var encrypted = new MemoryStream();
 
-            await service.EncryptLegacyVersion2Async(
-                source,
-                encrypted);
+            await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
             byte[] returnedKeyBuffer =
                 Assert.Single(keyService.ReturnedKeyBuffers);
@@ -461,9 +451,7 @@ public sealed class DocumentEncryptionServiceTests
             await using (var source = new MemoryStream(plaintext))
             await using (var encrypted = new MemoryStream())
             {
-                await encryptionService.EncryptLegacyVersion2Async(
-                    source,
-                    encrypted);
+                await encryptionService.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
                 encryptedBytes = encrypted.ToArray();
             }
@@ -480,9 +468,7 @@ public sealed class DocumentEncryptionServiceTests
                     successfulWritesBeforeFailure: 0);
 
             await Assert.ThrowsAsync<IOException>(
-                () => decryptionService.DecryptAsync(
-                    sourceForDecryption,
-                    destination));
+                () => decryptionService.DecryptAsync(sourceForDecryption, destination, TestContext.Current.CancellationToken));
 
             byte[] returnedKeyBuffer =
                 Assert.Single(decryptionKeyService.ReturnedKeyBuffers);
@@ -547,7 +533,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var destination = new MemoryStream();
 
             await Assert.ThrowsAnyAsync<CryptographicException>(
-                () => service.DecryptAsync(source, destination));
+                () => service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
 
             byte[] returnedKeyBuffer =
                 Assert.Single(keyService.ReturnedKeyBuffers);
@@ -605,9 +591,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var source = new MemoryStream(plaintext);
             await using var encrypted = new MemoryStream();
 
-            await encryptionService.EncryptLegacyVersion2Async(
-                source,
-                encrypted);
+            await encryptionService.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
             // The encryption setup is not the subject of this test.
             // Clear its returned buffer before testing decryption.
@@ -624,9 +608,7 @@ public sealed class DocumentEncryptionServiceTests
 
             await using var decrypted = new MemoryStream();
 
-            await decryptionService.DecryptAsync(
-                encrypted,
-                decrypted);
+            await decryptionService.DecryptAsync(encrypted, decrypted, TestContext.Current.CancellationToken);
 
             Assert.Equal(plaintext, decrypted.ToArray());
 
@@ -683,7 +665,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var destination = new MemoryStream();
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.DecryptAsync(source, destination));
+                () => service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
 
             byte[] returnedKeyBuffer =
                 Assert.Single(keyService.ReturnedKeyBuffers);
@@ -744,9 +726,7 @@ public sealed class DocumentEncryptionServiceTests
                 await using var source = new MemoryStream(plaintext);
                 await using var encrypted = new MemoryStream();
 
-                await encryptionService.EncryptLegacyVersion2Async(
-                    source,
-                    encrypted);
+                await encryptionService.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
                 encryptedBytes = encrypted.ToArray();
             }
@@ -773,9 +753,7 @@ public sealed class DocumentEncryptionServiceTests
                 await using var destination = new MemoryStream();
 
                 await Assert.ThrowsAnyAsync<CryptographicException>(
-                    () => decryptionService.DecryptAsync(
-                        source,
-                        destination));
+                    () => decryptionService.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
 
                 byte[] returnedKeyBuffer =
                     Assert.Single(decryptionKeyService.ReturnedKeyBuffers);
@@ -844,9 +822,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var source = new MemoryStream(plaintext);
             await using var encrypted = new MemoryStream();
 
-            await encryptionService.EncryptLegacyVersion2Async(
-                source,
-                encrypted);
+            await encryptionService.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
             foreach (byte[] buffer in encryptionKeyService.ReturnedKeyBuffers)
             {
@@ -929,9 +905,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var destination = new MemoryStream();
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => service.EncryptLegacyVersion2Async(
-                    source,
-                    destination));
+                () => service.EncryptLegacyVersion2Async(source, destination, TestContext.Current.CancellationToken));
 
             byte[] returnedKeyBuffer =
                 Assert.Single(keyService.ReturnedKeyBuffers);
@@ -983,9 +957,7 @@ public sealed class DocumentEncryptionServiceTests
                     successfulWritesBeforeFailure: 1);
 
             await Assert.ThrowsAsync<IOException>(
-                () => service.EncryptLegacyVersion2Async(
-                    source,
-                    destination));
+                () => service.EncryptLegacyVersion2Async(source, destination, TestContext.Current.CancellationToken));
 
             byte[] returnedKeyBuffer =
                 Assert.Single(keyService.ReturnedKeyBuffers);
@@ -1101,9 +1073,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var encrypted =
                 new MemoryStream();
 
-            await encryptionService.EncryptLegacyVersion2Async(
-                source,
-                encrypted);
+            await encryptionService.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
             encrypted.Position = 0;
 
@@ -1115,9 +1085,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var decrypted =
                 new MemoryStream();
 
-            await decryptionService.DecryptAsync(
-                encrypted,
-                decrypted);
+            await decryptionService.DecryptAsync(encrypted, decrypted, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 originalContent,
@@ -1213,9 +1181,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var destination =
                 new MemoryStream();
 
-            await service.DecryptAsync(
-                source,
-                destination);
+            await service.DecryptAsync(source, destination, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 originalContent,
@@ -1264,9 +1230,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var encrypted =
                 new MemoryStream();
 
-            await encryptionService.EncryptLegacyVersion2Async(
-                source,
-                encrypted);
+            await encryptionService.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
             encrypted.Position = 0;
 
@@ -1282,9 +1246,7 @@ public sealed class DocumentEncryptionServiceTests
                 new MemoryStream();
 
             await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
-                () => decryptionService.DecryptAsync(
-                    encrypted,
-                    destination));
+                () => decryptionService.DecryptAsync(encrypted, destination, TestContext.Current.CancellationToken));
         }
         finally
         {
@@ -1322,9 +1284,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var encrypted =
                 new MemoryStream();
 
-            await encryptionService.EncryptLegacyVersion2Async(
-                source,
-                encrypted);
+            await encryptionService.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
             encrypted.Position = 0;
 
@@ -1340,9 +1300,7 @@ public sealed class DocumentEncryptionServiceTests
                 new MemoryStream();
 
             await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
-                () => decryptionService.DecryptAsync(
-                    encrypted,
-                    destination));
+                () => decryptionService.DecryptAsync(encrypted, destination, TestContext.Current.CancellationToken));
         }
         finally
         {
@@ -1365,18 +1323,14 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         encrypted.Position = 0;
 
         await using var decrypted =
             new MemoryStream();
 
-        await service.DecryptAsync(
-            encrypted,
-            decrypted);
+        await service.DecryptAsync(encrypted, decrypted, TestContext.Current.CancellationToken);
 
         Assert.Empty(
             decrypted.ToArray());
@@ -1395,9 +1349,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         byte[] result =
             encrypted.ToArray();
@@ -1448,9 +1400,7 @@ public sealed class DocumentEncryptionServiceTests
 
         await Assert.ThrowsAsync<CryptographicException>(
             () =>
-                service.DecryptAsync(
-                    source,
-                    destination));
+                service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1474,9 +1424,7 @@ public sealed class DocumentEncryptionServiceTests
 
         await Assert.ThrowsAsync<CryptographicException>(
             () =>
-                service.DecryptAsync(
-                    source,
-                    destination));
+                service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1495,9 +1443,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes =
             encrypted.ToArray();
@@ -1515,9 +1461,7 @@ public sealed class DocumentEncryptionServiceTests
 
         await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
             () =>
-                service.DecryptAsync(
-                    tamperedSource,
-                    destination));
+                service.DecryptAsync(tamperedSource, destination, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1536,9 +1480,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes =
             encrypted.ToArray();
@@ -1558,9 +1500,7 @@ public sealed class DocumentEncryptionServiceTests
 
         await Assert.ThrowsAsync<CryptographicException>(
             () =>
-                service.DecryptAsync(
-                    truncatedSource,
-                    destination));
+                service.DecryptAsync(truncatedSource, destination, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1579,9 +1519,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         encrypted.Position = 0;
 
@@ -1594,10 +1532,7 @@ public sealed class DocumentEncryptionServiceTests
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
-                    service.DecryptAsync(
-                        encrypted,
-                        destination,
-                        maximumPlaintextBytes: maximumPlaintextBytes));
+                    service.DecryptAsync(encrypted, destination, maximumPlaintextBytes: maximumPlaintextBytes, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             maximumPlaintextBytes,
@@ -1630,9 +1565,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         encrypted.Position = 0;
 
@@ -1645,10 +1578,7 @@ public sealed class DocumentEncryptionServiceTests
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
-                    service.DecryptAsync(
-                        encrypted,
-                        destination,
-                        maximumPlaintextBytes: maximumPlaintextBytes));
+                    service.DecryptAsync(encrypted, destination, maximumPlaintextBytes: maximumPlaintextBytes, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             maximumPlaintextBytes,
@@ -1682,19 +1612,14 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         encrypted.Position = 0;
 
         await using var destination =
             new MemoryStream();
 
-        await service.DecryptAsync(
-            encrypted,
-            destination,
-            maximumPlaintextBytes: originalContent.Length);
+        await service.DecryptAsync(encrypted, destination, maximumPlaintextBytes: originalContent.Length, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             originalContent,
@@ -1723,10 +1648,7 @@ public sealed class DocumentEncryptionServiceTests
         ArgumentOutOfRangeException exception =
             await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
                 () =>
-                    service.DecryptAsync(
-                        source,
-                        destination,
-                        maximumPlaintextBytes: maximumPlaintextBytes));
+                    service.DecryptAsync(source, destination, maximumPlaintextBytes: maximumPlaintextBytes, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "maximumPlaintextBytes",
@@ -1756,9 +1678,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         encrypted.Position = 0;
 
@@ -1823,9 +1743,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         encrypted.Position = 0;
 
@@ -1862,10 +1780,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
-            source,
-            encrypted,
-            documentId);
+        await service.EncryptAsync(source, encrypted, documentId, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes = encrypted.ToArray();
 
@@ -1879,10 +1794,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var decrypted =
             new MemoryStream();
 
-        await service.DecryptAsync(
-            encrypted,
-            decrypted,
-            documentId);
+        await service.DecryptAsync(encrypted, decrypted, documentId, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             originalContent,
@@ -1903,10 +1815,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var source = new MemoryStream(originalContent);
         await using var encrypted = new MemoryStream();
 
-        await service.EncryptAsync(
-            source,
-            encrypted,
-            documentId);
+        await service.EncryptAsync(source, encrypted, documentId, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes = encrypted.ToArray();
 
@@ -1919,10 +1828,7 @@ public sealed class DocumentEncryptionServiceTests
 
         await using var decrypted = new MemoryStream();
 
-        await service.DecryptAsync(
-            encrypted,
-            decrypted,
-            documentId);
+        await service.DecryptAsync(encrypted, decrypted, documentId, TestContext.Current.CancellationToken);
 
         Assert.Equal(originalContent, decrypted.ToArray());
     }
@@ -1939,10 +1845,7 @@ public sealed class DocumentEncryptionServiceTests
 
         await using var encrypted = new MemoryStream();
 
-        await service.EncryptAsync(
-            source,
-            encrypted,
-            documentId);
+        await service.EncryptAsync(source, encrypted, documentId, TestContext.Current.CancellationToken);
 
         byte[] recordWithTrailingData = encrypted.ToArray();
 
@@ -1958,10 +1861,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var destination = new MemoryStream();
 
         await Assert.ThrowsAsync<CryptographicException>(
-            () => service.DecryptAsync(
-                tamperedSource,
-                destination,
-                documentId));
+            () => service.DecryptAsync(tamperedSource, destination, documentId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -1985,15 +1885,9 @@ public sealed class DocumentEncryptionServiceTests
         await using var firstEncrypted = new MemoryStream();
         await using var secondEncrypted = new MemoryStream();
 
-        await service.EncryptAsync(
-            firstSource,
-            firstEncrypted,
-            firstDocumentId);
+        await service.EncryptAsync(firstSource, firstEncrypted, firstDocumentId, TestContext.Current.CancellationToken);
 
-        await service.EncryptAsync(
-            secondSource,
-            secondEncrypted,
-            secondDocumentId);
+        await service.EncryptAsync(secondSource, secondEncrypted, secondDocumentId, TestContext.Current.CancellationToken);
 
         byte[] firstRecord = firstEncrypted.ToArray();
         byte[] secondRecord = secondEncrypted.ToArray();
@@ -2019,10 +1913,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var destination = new MemoryStream();
 
         await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
-            () => service.DecryptAsync(
-                substitutedSource,
-                destination,
-                firstDocumentId));
+            () => service.DecryptAsync(substitutedSource, destination, firstDocumentId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -2037,9 +1928,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted = new MemoryStream();
 
         // The legacy overload intentionally creates a format-2 test fixture.
-        await service.EncryptLegacyVersion2Async(
-            source,
-            encrypted);
+        await service.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes = encrypted.ToArray();
 
@@ -2061,9 +1950,7 @@ public sealed class DocumentEncryptionServiceTests
             await using var destination = new MemoryStream();
 
             await Assert.ThrowsAsync<CryptographicException>(
-                () => service.DecryptAsync(
-                    truncatedSource,
-                    destination));
+                () => service.DecryptAsync(truncatedSource, destination, TestContext.Current.CancellationToken));
         }
     }
 
@@ -2080,10 +1967,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
-            source,
-            encrypted,
-            documentId);
+        await service.EncryptAsync(source, encrypted, documentId, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes = encrypted.ToArray();
 
@@ -2103,10 +1987,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var decrypted =
             new MemoryStream();
 
-        await service.DecryptAsync(
-            encrypted,
-            decrypted,
-            documentId);
+        await service.DecryptAsync(encrypted, decrypted, documentId, TestContext.Current.CancellationToken);
 
         Assert.Empty(decrypted.ToArray());
     }
@@ -2127,10 +2008,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
-            source,
-            encrypted,
-            encryptionDocumentId);
+        await service.EncryptAsync(source, encrypted, encryptionDocumentId, TestContext.Current.CancellationToken);
 
         encrypted.Position = 0;
 
@@ -2138,10 +2016,7 @@ public sealed class DocumentEncryptionServiceTests
             new MemoryStream();
 
         await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
-            () => service.DecryptAsync(
-                encrypted,
-                destination,
-                decryptionDocumentId));
+            () => service.DecryptAsync(encrypted, destination, decryptionDocumentId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -2159,10 +2034,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
-            source,
-            encrypted,
-            documentId);
+        await service.EncryptAsync(source, encrypted, documentId, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes = encrypted.ToArray();
 
@@ -2180,10 +2052,7 @@ public sealed class DocumentEncryptionServiceTests
                 new MemoryStream();
 
             await Assert.ThrowsAsync<CryptographicException>(
-                () => service.DecryptAsync(
-                    truncatedSource,
-                    destination,
-                    documentId));
+                () => service.DecryptAsync(truncatedSource, destination, documentId, TestContext.Current.CancellationToken));
         }
     }
 
@@ -2208,10 +2077,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
-            source,
-            encrypted,
-            documentId);
+        await service.EncryptAsync(source, encrypted, documentId, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes = encrypted.ToArray();
 
@@ -2227,10 +2093,7 @@ public sealed class DocumentEncryptionServiceTests
             new MemoryStream();
 
         await Assert.ThrowsAsync<CryptographicException>(
-            () => service.DecryptAsync(
-                truncatedSource,
-                destination,
-                documentId));
+            () => service.DecryptAsync(truncatedSource, destination, documentId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -2266,10 +2129,7 @@ public sealed class DocumentEncryptionServiceTests
         await using var encrypted =
             new MemoryStream();
 
-        await service.EncryptAsync(
-            source,
-            encrypted,
-            documentId);
+        await service.EncryptAsync(source, encrypted, documentId, TestContext.Current.CancellationToken);
 
         byte[] encryptedBytes = encrypted.ToArray();
 
@@ -2325,10 +2185,7 @@ public sealed class DocumentEncryptionServiceTests
             new MemoryStream();
 
         await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
-            () => service.DecryptAsync(
-                reorderedSource,
-                destination,
-                documentId));
+            () => service.DecryptAsync(reorderedSource, destination, documentId, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -2362,9 +2219,7 @@ public sealed class DocumentEncryptionServiceTests
             new MemoryStream();
 
         await Assert.ThrowsAsync<CryptographicException>(
-            () => service.DecryptAsync(
-                source,
-                destination));
+            () => service.DecryptAsync(source, destination, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -2399,10 +2254,7 @@ public sealed class DocumentEncryptionServiceTests
             new MemoryStream();
 
         await Assert.ThrowsAsync<CryptographicException>(
-            () => service.DecryptAsync(
-                source,
-                destination,
-                documentId));
+            () => service.DecryptAsync(source, destination, documentId, TestContext.Current.CancellationToken));
     }
 
     private sealed class ObservingPlaintextReadStream : Stream

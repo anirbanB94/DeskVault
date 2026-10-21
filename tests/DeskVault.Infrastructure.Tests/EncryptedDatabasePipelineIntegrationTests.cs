@@ -38,10 +38,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 This document contains searchable enterprise architecture content.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -55,7 +52,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 var initializer =
                     serviceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
                 var importHandler =
                     serviceProvider.GetRequiredService<ImportDocumentHandler>();
@@ -67,10 +64,9 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     serviceProvider.GetRequiredService<SearchDocumentsHandler>();
 
                 ImportDocumentResult importResult =
-                    await importHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await importHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Encrypted Database Integration Test"));
+                            "Encrypted Database Integration Test"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -86,8 +82,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     serviceProvider.GetRequiredService<IDocumentRepository>();
 
                 Document? importedDocument =
-                    await repository.GetByIdAsync(
-                        documentId);
+                    await repository.GetByIdAsync(documentId, TestContext.Current.CancellationToken);
 
                 Assert.NotNull(
                     importedDocument);
@@ -117,12 +112,10 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     importedDocument.StoredFilePath,
                     StringComparison.OrdinalIgnoreCase);
 
-                await processingService.ProcessAsync(
-                    documentId);
+                await processingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? processedDocument =
-                    await repository.GetByIdAsync(
-                        documentId);
+                    await repository.GetByIdAsync(documentId, TestContext.Current.CancellationToken);
 
                 Assert.NotNull(
                     processedDocument);
@@ -132,9 +125,8 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     processedDocument.Status);
 
                 SearchDocumentsPage searchPage =
-                    await searchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "ENTERPRISE ARCHITECTURE"));
+                    await searchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "ENTERPRISE ARCHITECTURE"), TestContext.Current.CancellationToken);
 
                 IReadOnlyList<SearchDocumentsResult> searchResults =
                     searchPage.Results;
@@ -191,8 +183,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     secondServiceProvider.GetRequiredService<SearchDocumentsHandler>();
 
                 Document? restoredDocument =
-                    await repository.GetByIdAsync(
-                        documentId);
+                    await repository.GetByIdAsync(documentId, TestContext.Current.CancellationToken);
 
                 Assert.NotNull(
                     restoredDocument);
@@ -218,9 +209,8 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                         restoredDocument.StoredFilePath));
 
                 SearchDocumentsPage restoredSearchPage =
-                    await searchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "encrypted database"));
+                    await searchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "encrypted database"), TestContext.Current.CancellationToken);
 
                 IReadOnlyList<SearchDocumentsResult> restoredSearchResults =
                     restoredSearchPage.Results;
@@ -293,7 +283,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 var initializer =
                     serviceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
                 var repository =
                     serviceProvider.GetRequiredService<IDocumentRepository>();
@@ -309,8 +299,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                             "Documents",
                             "sidecar-test.dvault"));
 
-                await repository.AddAsync(
-                    document);
+                await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
                 await AssertNoPlaintextMarkerInRuntimeArtifactsAsync(
                     rootDirectory,
@@ -370,7 +359,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 var initializer =
                     serviceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
             }
 
             ServiceProvider wrongKeyServiceProvider =
@@ -386,7 +375,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 Exception exception =
                     await Assert.ThrowsAnyAsync<Exception>(
                         () =>
-                            initializer.InitializeAsync());
+                            initializer.InitializeAsync(TestContext.Current.CancellationToken));
 
                 string exceptionText =
                     exception.ToString();
@@ -434,7 +423,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 var initializer =
                     firstServiceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
             }
 
             string databaseKeyFilePath =
@@ -448,8 +437,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                     databaseKeyFilePath));
 
             byte[] originalProtectedKey =
-                await File.ReadAllBytesAsync(
-                    databaseKeyFilePath);
+                await File.ReadAllBytesAsync(databaseKeyFilePath, TestContext.Current.CancellationToken);
 
             Assert.NotEmpty(
                 originalProtectedKey);
@@ -473,7 +461,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 Exception exception =
                     await Assert.ThrowsAnyAsync<Exception>(
                         () =>
-                            initializer.InitializeAsync());
+                            initializer.InitializeAsync(TestContext.Current.CancellationToken));
 
                 string exceptionText =
                     exception.ToString();
@@ -516,10 +504,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
             const string sourceText =
                 "The cafe\u0301 receipt contains searchable Unicode content.";
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using ServiceProvider serviceProvider =
                 BuildServiceProvider(
@@ -529,7 +514,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
             var initializer =
                 serviceProvider.GetRequiredService<DatabaseInitializer>();
 
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             var importHandler =
                 serviceProvider.GetRequiredService<ImportDocumentHandler>();
@@ -541,10 +526,9 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                 serviceProvider.GetRequiredService<SearchDocumentsHandler>();
 
             ImportDocumentResult importResult =
-                await importHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await importHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "CAFÉ Unicode Receipt"));
+                        "CAFÉ Unicode Receipt"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -556,8 +540,7 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await processingService.ProcessAsync(
-                documentId);
+            await processingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             string[] searchTexts =
             [
@@ -574,9 +557,8 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
             foreach (string searchText in searchTexts)
             {
                 SearchDocumentsPage page =
-                    await searchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            searchText));
+                    await searchHandler.HandleAsync(new SearchDocumentsQuery(
+                            searchText), TestContext.Current.CancellationToken);
 
                 searchPages.Add(
                     page);

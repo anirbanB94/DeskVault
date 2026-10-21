@@ -79,9 +79,7 @@ public sealed class MarkdownDocumentTextExtractorTests
                     markdown));
 
         DocumentTextExtractionResult result =
-            await _extractor.ExtractAsync(
-                stream,
-                "README.md");
+            await _extractor.ExtractAsync(stream, "README.md", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             markdown,
@@ -102,9 +100,7 @@ public sealed class MarkdownDocumentTextExtractorTests
                     markdown));
 
         DocumentTextExtractionResult result =
-            await _extractor.ExtractAsync(
-                stream,
-                "document.md");
+            await _extractor.ExtractAsync(stream, "document.md", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             markdown,
@@ -144,9 +140,7 @@ public sealed class MarkdownDocumentTextExtractorTests
                 Encoding.UTF8.GetBytes(
                     markdown));
 
-        await _extractor.ExtractAsync(
-            stream,
-            "document.md");
+        await _extractor.ExtractAsync(stream, "document.md", TestContext.Current.CancellationToken);
 
         Assert.True(
             stream.CanRead);
@@ -161,9 +155,7 @@ public sealed class MarkdownDocumentTextExtractorTests
         InvalidOperationException exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    _extractor.ExtractAsync(
-                        stream,
-                        "document.md"));
+                    _extractor.ExtractAsync(stream, "document.md", TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "Simulated document read failure.",
@@ -187,9 +179,7 @@ public sealed class MarkdownDocumentTextExtractorTests
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
-                    extractor.ExtractAsync(
-                        stream,
-                        "document.md"));
+                    extractor.ExtractAsync(stream, "document.md", TestContext.Current.CancellationToken));
 
         Assert.Equal(
             5,
@@ -219,9 +209,7 @@ public sealed class MarkdownDocumentTextExtractorTests
                 Encoding.UTF8.GetBytes(expectedMarkdown));
 
         DocumentTextExtractionResult result =
-            await extractor.ExtractAsync(
-                stream,
-                "document.md");
+            await extractor.ExtractAsync(stream, "document.md", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expectedMarkdown,
@@ -241,9 +229,7 @@ public sealed class MarkdownDocumentTextExtractorTests
                     markdown));
 
         DocumentTextExtractionResult result =
-            await _extractor.ExtractAsync(
-                stream,
-                "README.md");
+            await _extractor.ExtractAsync(stream, "README.md", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.DirectText,

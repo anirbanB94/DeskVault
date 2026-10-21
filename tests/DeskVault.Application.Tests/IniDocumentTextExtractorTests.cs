@@ -107,9 +107,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                ini);
+            await ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -145,9 +143,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                ini);
+            await ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -188,9 +184,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                ini);
+            await ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -219,9 +213,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                ini);
+            await ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -252,9 +244,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                ini);
+            await ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -278,14 +268,10 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult first =
-            await ExtractAsync(
-                extractor,
-                ini);
+            await ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         DocumentTextExtractionResult second =
-            await ExtractAsync(
-                extractor,
-                ini);
+            await ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -309,9 +295,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                ini);
+            ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         await Assert.ThrowsAnyAsync<ParsingException>(
@@ -336,9 +320,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                ini);
+            ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         await Assert.ThrowsAnyAsync<ParsingException>(
@@ -360,9 +342,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                ini);
+            ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         await Assert.ThrowsAnyAsync<ParsingException>(
@@ -419,9 +399,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                ini);
+            ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         ResourceLimitExceededException exception =
@@ -464,9 +442,7 @@ public sealed class IniDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                ini);
+            await ExtractAsync(extractor, ini, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

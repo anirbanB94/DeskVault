@@ -24,8 +24,7 @@ public sealed class Sha256HashServiceTests
         try
         {
             string hash =
-                await _service.ComputeSha256Async(
-                    filePath);
+                await _service.ComputeSha256Async(filePath, TestContext.Current.CancellationToken);
 
             byte[] expectedBytes =
                 SHA256.HashData(
@@ -58,8 +57,7 @@ public sealed class Sha256HashServiceTests
         try
         {
             string hash =
-                await _service.ComputeSha256Async(
-                    filePath);
+                await _service.ComputeSha256Async(filePath, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -82,8 +80,7 @@ public sealed class Sha256HashServiceTests
 
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>
-                _service.ComputeSha256Async(
-                    filePath));
+                _service.ComputeSha256Async(filePath, TestContext.Current.CancellationToken));
     }
 
     private static string CreateTemporaryFile(

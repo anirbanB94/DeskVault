@@ -25,7 +25,7 @@ public sealed class DocumentArtifactEnumeratorTests
 
             // Act
             IReadOnlyList<string> result =
-                await enumerator.EnumerateAsync();
+                await enumerator.EnumerateAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Empty(result);
@@ -75,17 +75,11 @@ public sealed class DocumentArtifactEnumeratorTests
                     dataPaths.DocumentsDirectory,
                     "not-an-artifact.txt");
 
-            await File.WriteAllTextAsync(
-                firstArtifactPath,
-                "artifact");
+            await File.WriteAllTextAsync(firstArtifactPath, "artifact", TestContext.Current.CancellationToken);
 
-            await File.WriteAllTextAsync(
-                secondArtifactPath,
-                "artifact");
+            await File.WriteAllTextAsync(secondArtifactPath, "artifact", TestContext.Current.CancellationToken);
 
-            await File.WriteAllTextAsync(
-                unrelatedFilePath,
-                "unrelated");
+            await File.WriteAllTextAsync(unrelatedFilePath, "unrelated", TestContext.Current.CancellationToken);
 
             var enumerator =
                 new DocumentArtifactEnumerator(
@@ -93,7 +87,7 @@ public sealed class DocumentArtifactEnumeratorTests
 
             // Act
             IReadOnlyList<string> result =
-                await enumerator.EnumerateAsync();
+                await enumerator.EnumerateAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(
@@ -155,9 +149,7 @@ public sealed class DocumentArtifactEnumeratorTests
                     nestedDirectory,
                     $"{Guid.NewGuid()}.dvault");
 
-            await File.WriteAllTextAsync(
-                nestedArtifactPath,
-                "artifact");
+            await File.WriteAllTextAsync(nestedArtifactPath, "artifact", TestContext.Current.CancellationToken);
 
             var enumerator =
                 new DocumentArtifactEnumerator(
@@ -165,7 +157,7 @@ public sealed class DocumentArtifactEnumeratorTests
 
             // Act
             IReadOnlyList<string> result =
-                await enumerator.EnumerateAsync();
+                await enumerator.EnumerateAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Empty(result);

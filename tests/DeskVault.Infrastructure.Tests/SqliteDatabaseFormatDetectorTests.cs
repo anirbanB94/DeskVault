@@ -18,16 +18,13 @@ public sealed class SqliteDatabaseFormatDetectorTests
                     rootDirectory,
                     "DeskVault.db");
 
-            await File.WriteAllBytesAsync(
-                databasePath,
-                "SQLite format 3\0"u8.ToArray());
+            await File.WriteAllBytesAsync(databasePath, "SQLite format 3\0"u8.ToArray(), TestContext.Current.CancellationToken);
 
             var detector =
                 new SqliteDatabaseFormatDetector();
 
             bool result =
-                await detector.IsPlaintextSqliteAsync(
-                    databasePath);
+                await detector.IsPlaintextSqliteAsync(databasePath, TestContext.Current.CancellationToken);
 
             Assert.True(result);
         }
@@ -55,16 +52,13 @@ public sealed class SqliteDatabaseFormatDetectorTests
                 Convert.FromHexString(
                     "9FF1BF14E94BB43B10544519F71E62E7");
 
-            await File.WriteAllBytesAsync(
-                databasePath,
-                encryptedHeader);
+            await File.WriteAllBytesAsync(databasePath, encryptedHeader, TestContext.Current.CancellationToken);
 
             var detector =
                 new SqliteDatabaseFormatDetector();
 
             bool result =
-                await detector.IsPlaintextSqliteAsync(
-                    databasePath);
+                await detector.IsPlaintextSqliteAsync(databasePath, TestContext.Current.CancellationToken);
 
             Assert.False(result);
         }
@@ -92,8 +86,7 @@ public sealed class SqliteDatabaseFormatDetectorTests
                 new SqliteDatabaseFormatDetector();
 
             bool result =
-                await detector.IsPlaintextSqliteAsync(
-                    databasePath);
+                await detector.IsPlaintextSqliteAsync(databasePath, TestContext.Current.CancellationToken);
 
             Assert.False(result);
         }
@@ -117,17 +110,14 @@ public sealed class SqliteDatabaseFormatDetectorTests
                     rootDirectory,
                     "DeskVault.db");
 
-            await File.WriteAllBytesAsync(
-                databasePath,
-                Encoding.ASCII.GetBytes(
-                    "SQLite format"));
+            await File.WriteAllBytesAsync(databasePath, Encoding.ASCII.GetBytes(
+                    "SQLite format"), TestContext.Current.CancellationToken);
 
             var detector =
                 new SqliteDatabaseFormatDetector();
 
             bool result =
-                await detector.IsPlaintextSqliteAsync(
-                    databasePath);
+                await detector.IsPlaintextSqliteAsync(databasePath, TestContext.Current.CancellationToken);
 
             Assert.False(result);
         }
@@ -151,9 +141,7 @@ public sealed class SqliteDatabaseFormatDetectorTests
                     rootDirectory,
                     "DeskVault.db");
 
-            await File.WriteAllBytesAsync(
-                databasePath,
-                "SQLite format 3\0"u8.ToArray());
+            await File.WriteAllBytesAsync(databasePath, "SQLite format 3\0"u8.ToArray(), TestContext.Current.CancellationToken);
 
             var detector =
                 new SqliteDatabaseFormatDetector();

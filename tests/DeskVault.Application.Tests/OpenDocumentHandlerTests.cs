@@ -55,9 +55,8 @@ public sealed class OpenDocumentHandlerTests
 
         // Act
         OpenDocumentResult result =
-            await handler.HandleAsync(
-                new OpenDocumentQuery(
-                    documentId));
+            await handler.HandleAsync(new OpenDocumentQuery(
+                    documentId), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Same(
@@ -105,9 +104,8 @@ public sealed class OpenDocumentHandlerTests
         // Act & Assert
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>
-                handler.HandleAsync(
-                    new OpenDocumentQuery(
-                        documentId)));
+                handler.HandleAsync(new OpenDocumentQuery(
+                        documentId), TestContext.Current.CancellationToken));
 
         documentReader.Verify(
             x => x.OpenReadAsync(

@@ -15,8 +15,7 @@ public sealed class CloseWorkspaceHandlerTests
 
         var workspaceId = Guid.NewGuid();
 
-        var result = await handler.HandleAsync(
-            new CloseWorkspaceCommand(workspaceId));
+        var result = await handler.HandleAsync(new CloseWorkspaceCommand(workspaceId), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             CloseWorkspaceResultStatus.WorkspaceNotFound,
@@ -35,8 +34,7 @@ public sealed class CloseWorkspaceHandlerTests
 
         var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
-        var result = await handler.HandleAsync(
-            new CloseWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new CloseWorkspaceCommand(workspace.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             CloseWorkspaceResultStatus.Success,
@@ -57,8 +55,7 @@ public sealed class CloseWorkspaceHandlerTests
 
         var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
-        var result = await handler.HandleAsync(
-            new CloseWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new CloseWorkspaceCommand(workspace.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             CloseWorkspaceResultStatus.Success,
@@ -83,8 +80,7 @@ public sealed class CloseWorkspaceHandlerTests
 
         var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
-        var result = await handler.HandleAsync(
-            new CloseWorkspaceCommand(firstWorkspace.Id));
+        var result = await handler.HandleAsync(new CloseWorkspaceCommand(firstWorkspace.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             CloseWorkspaceResultStatus.Success,
@@ -116,11 +112,9 @@ public sealed class CloseWorkspaceHandlerTests
 
         var handler = new CloseWorkspaceHandler(registry, NullLogger<CloseWorkspaceHandler>.Instance);
 
-        var firstResult = await handler.HandleAsync(
-            new CloseWorkspaceCommand(firstWorkspace.Id));
+        var firstResult = await handler.HandleAsync(new CloseWorkspaceCommand(firstWorkspace.Id), TestContext.Current.CancellationToken);
 
-        var secondResult = await handler.HandleAsync(
-            new CloseWorkspaceCommand(secondWorkspace.Id));
+        var secondResult = await handler.HandleAsync(new CloseWorkspaceCommand(secondWorkspace.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             CloseWorkspaceResultStatus.Success,

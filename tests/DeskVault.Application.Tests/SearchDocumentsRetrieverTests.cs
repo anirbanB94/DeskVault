@@ -88,8 +88,7 @@ public sealed class SearchDocumentsRetrieverTests
 
         // Act
         SearchDocumentsPage page =
-            await retriever.RetrieveAsync(
-                query);
+            await retriever.RetrieveAsync(query, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -210,8 +209,7 @@ public sealed class SearchDocumentsRetrieverTests
 
         // Act
         SearchDocumentsPage page =
-            await retriever.RetrieveAsync(
-                query);
+            await retriever.RetrieveAsync(query, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -323,8 +321,7 @@ public sealed class SearchDocumentsRetrieverTests
 
         // Act
         SearchDocumentsPage page =
-            await retriever.RetrieveAsync(
-                query);
+            await retriever.RetrieveAsync(query, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(
@@ -433,8 +430,7 @@ public sealed class SearchDocumentsRetrieverTests
 
         // Act
         SearchDocumentsPage page =
-            await retriever.RetrieveAsync(
-                query);
+            await retriever.RetrieveAsync(query, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(
@@ -669,8 +665,7 @@ public sealed class SearchDocumentsRetrieverTests
 
         // Act
         SearchDocumentsPage page =
-            await retriever.RetrieveAsync(
-                query);
+            await retriever.RetrieveAsync(query, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(page.Results);
@@ -865,8 +860,7 @@ public sealed class SearchDocumentsRetrieverTests
 
         // Act
         SearchDocumentsPage page =
-            await retriever.RetrieveAsync(
-                query);
+            await retriever.RetrieveAsync(query, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

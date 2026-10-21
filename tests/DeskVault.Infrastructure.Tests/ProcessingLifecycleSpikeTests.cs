@@ -23,35 +23,30 @@ public sealed class ProcessingLifecycleSpikeTests
         Document original =
             CreateDocument();
 
-        await repository.AddAsync(
-            original);
+        await repository.AddAsync(original, TestContext.Current.CancellationToken);
 
         Document attemptA =
-            (await repository.GetByIdAsync(original.Id))!;
+            (await repository.GetByIdAsync(original.Id, TestContext.Current.CancellationToken))!;
 
         Document attemptB =
-            (await repository.GetByIdAsync(original.Id))!;
+            (await repository.GetByIdAsync(original.Id, TestContext.Current.CancellationToken))!;
 
         attemptA.MarkProcessing();
 
-        await repository.UpdateAsync(
-            attemptA);
+        await repository.UpdateAsync(attemptA, TestContext.Current.CancellationToken);
 
         attemptB.MarkProcessing();
         attemptB.MarkIndexed();
         attemptB.MarkAvailable();
 
-        await repository.UpdateAsync(
-            attemptB);
+        await repository.UpdateAsync(attemptB, TestContext.Current.CancellationToken);
 
         attemptA.MarkFailed();
 
-        await repository.UpdateAsync(
-            attemptA);
+        await repository.UpdateAsync(attemptA, TestContext.Current.CancellationToken);
 
         Document? finalDocument =
-            await repository.GetByIdAsync(
-                original.Id);
+            await repository.GetByIdAsync(original.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(finalDocument);
 
@@ -72,8 +67,7 @@ public sealed class ProcessingLifecycleSpikeTests
         var repository =
             CreateRepository(connection);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         var processingStore =
             CreateProcessingStore(connection);
@@ -92,15 +86,9 @@ public sealed class ProcessingLifecycleSpikeTests
                 "OLDER RESULT")
         ];
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            newerChunks);
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, newerChunks, TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            olderChunks);
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, olderChunks, TestContext.Current.CancellationToken);
 
         IReadOnlyList<DocumentChunkEntity> persistedChunks =
             await ReadChunksAsync(
@@ -128,8 +116,7 @@ public sealed class ProcessingLifecycleSpikeTests
         var repository =
             CreateRepository(connection);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         var processingStore =
             CreateProcessingStore(connection);
@@ -173,8 +160,7 @@ public sealed class ProcessingLifecycleSpikeTests
         var repository =
             CreateRepository(connection);
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         var processingStore =
             CreateProcessingStore(connection);
@@ -201,15 +187,9 @@ public sealed class ProcessingLifecycleSpikeTests
                 "SECOND")
         ];
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            firstResult);
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, firstResult, TestContext.Current.CancellationToken);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            0L,
-            repeatedResult);
+        await processingStore.ReplaceChunksAsync(document.Id, 0L, repeatedResult, TestContext.Current.CancellationToken);
 
         IReadOnlyList<DocumentChunkEntity> persistedChunks =
             await ReadChunksAsync(

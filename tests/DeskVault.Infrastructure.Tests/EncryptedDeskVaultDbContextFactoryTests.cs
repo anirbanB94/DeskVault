@@ -27,14 +27,13 @@ public sealed class EncryptedDeskVaultDbContextFactoryTests
         // Act
         await using DeskVaultDbContext dbContext =
             useAsyncFactory
-                ? await fixture.Factory.CreateDbContextAsync()
-                : fixture.Factory.CreateDbContext();
+                ? await fixture.Factory.CreateDbContextAsync(TestContext.Current.CancellationToken) : fixture.Factory.CreateDbContext();
 
         // Assert
         fixture.AssertKeyBufferWasCleared();
 
         Assert.True(
-            await dbContext.Database.CanConnectAsync());
+            await dbContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
 
         await dbContext.Database.CloseConnectionAsync();
     }
@@ -57,7 +56,7 @@ public sealed class EncryptedDeskVaultDbContextFactoryTests
         {
             exception =
                 await Assert.ThrowsAsync<ArgumentException>(
-                    () => fixture.Factory.CreateDbContextAsync());
+                    () => fixture.Factory.CreateDbContextAsync(TestContext.Current.CancellationToken));
         }
         else
         {
