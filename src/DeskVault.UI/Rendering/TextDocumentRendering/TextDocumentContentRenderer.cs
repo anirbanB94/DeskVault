@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents;
 using System.Text;
 
 namespace DeskVault.UI.Rendering.TextDocumentRendering;
@@ -5,31 +6,6 @@ namespace DeskVault.UI.Rendering.TextDocumentRendering;
 public sealed class TextDocumentContentRenderer
     : IDocumentContentRenderer
 {
-    private static readonly HashSet<string> SupportedExtensions =
-        new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".txt",
-        ".json",
-        ".xml",
-        ".yaml",
-        ".yml",
-        ".ini",
-        ".config",
-        ".log",
-        ".c",
-        ".cpp",
-        ".h",
-        ".hpp",
-        ".cs",
-        ".java",
-        ".py",
-        ".js",
-        ".ts",
-        ".css",
-        ".sql",
-        ".ps1"
-    };
-
     public int Priority => 0;
 
     public TextDocumentContentRenderer()
@@ -38,8 +14,8 @@ public sealed class TextDocumentContentRenderer
 
     public bool CanRender(string fileName)
     {
-        return SupportedExtensions.Contains(
-            Path.GetExtension(fileName));
+        return SupportedFileTypes.GetInAppPreviewKind(fileName)
+            == DocumentInAppPreviewKind.Text;
     }
 
     public async Task RenderAsync(

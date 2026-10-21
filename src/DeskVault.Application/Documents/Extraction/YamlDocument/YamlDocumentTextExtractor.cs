@@ -9,8 +9,6 @@ namespace DeskVault.Application.Documents.Extraction.YamlDocument;
 public sealed class YamlDocumentTextExtractor
     : IDocumentTextExtractor
 {
-    private const string SupportedYamlExtension = ".yaml";
-    private const string SupportedYmlExtension = ".yml";
     private const string RuleVersionValue =
         "yaml-extractor-v1";
 
@@ -32,18 +30,10 @@ public sealed class YamlDocumentTextExtractor
 
     public string RuleVersion => RuleVersionValue;
 
-    public bool CanExtract(
-        string fileName)
+    public bool CanExtract(string fileName)
     {
-        string extension =
-            Path.GetExtension(fileName);
-
-        return extension.Equals(
-                   SupportedYamlExtension,
-                   StringComparison.OrdinalIgnoreCase)
-               || extension.Equals(
-                   SupportedYmlExtension,
-                   StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetTextExtractionKind(fileName)
+            == DocumentTextExtractionKind.Yaml;
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

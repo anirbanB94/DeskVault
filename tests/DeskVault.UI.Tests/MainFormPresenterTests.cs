@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
@@ -1750,11 +1751,16 @@ public sealed class MainFormPresenterTests
             Times.Once);
     }
 
-    [Fact]
-    public async Task ImportRequested_WhenNoExtractorIsAvailable_SkipsProcessingAndRefreshesDocuments()
+    [Theory]
+    [MemberData(nameof(ImportableFormatsWithoutExtractors))]
+    public async Task ImportRequested_WhenNoExtractorIsAvailable_SkipsProcessingAndRefreshesDocuments(
+        string extension)
     {
-        const string filePath =
-            @"C:\Documents\document.pdf";
+        string filePath =
+            $@"C:\Documents\document{extension}";
+
+        string fileName =
+            $"document{extension}";
 
         const string hash =
             "unsupported-format-hash";
@@ -1805,7 +1811,7 @@ public sealed class MainFormPresenterTests
                 [
                     Document.Restore(
                     documentId,
-                    "document.pdf",
+                    fileName,
                     "document",
                     hash,
                     "document.dvault",
@@ -1859,7 +1865,7 @@ public sealed class MainFormPresenterTests
                 It.Is<Document>(
                     document =>
                         document.Id == importedDocumentId &&
-                        document.FileName == "document.pdf" &&
+                        document.FileName == fileName &&
                         document.DisplayName == "document"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -1881,7 +1887,7 @@ public sealed class MainFormPresenterTests
                     documents =>
                         documents.Count == 1 &&
                         documents[0].Id == importedDocumentId &&
-                        documents[0].FileName == "document.pdf")),
+                        documents[0].FileName == fileName)),
             Times.Once);
 
         view.Verify(
@@ -2470,5 +2476,22 @@ public sealed class MainFormPresenterTests
     private static async Task WaitForBackgroundOperationAsync()
     {
         await Task.Delay(100);
+    }
+
+    public static IEnumerable<object[]> ImportableFormatsWithoutExtractors()
+    {
+        foreach (string extension in SupportedFileTypes.GetAll())
+        {
+            DocumentFormatCapability capability =
+                SupportedFileTypes.GetForExtension(extension)
+                ?? throw new InvalidOperationException(
+                    $"No capability declaration exists for '{extension}'.");
+
+            if (capability.TextExtraction
+                == DocumentTextExtractionKind.None)
+            {
+                yield return new object[] { extension };
+            }
+        }
     }
 }

@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 
 namespace DeskVault.Application.Tests;
@@ -84,31 +85,8 @@ public sealed class ImportDocumentValidatorTests
     }
 
     [Theory]
-    [InlineData(".txt")]
-    [InlineData(".md")]
-    [InlineData(".csv")]
-    [InlineData(".json")]
-    [InlineData(".xml")]
-    [InlineData(".yaml")]
-    [InlineData(".yml")]
-    [InlineData(".ini")]
-    [InlineData(".config")]
-    [InlineData(".log")]
-    [InlineData(".c")]
-    [InlineData(".cpp")]
-    [InlineData(".h")]
-    [InlineData(".hpp")]
-    [InlineData(".cs")]
-    [InlineData(".java")]
-    [InlineData(".py")]
-    [InlineData(".js")]
-    [InlineData(".ts")]
-    [InlineData(".css")]
-    [InlineData(".sql")]
-    [InlineData(".ps1")]
-    [InlineData(".html")]
-    [InlineData(".htm")]
-    public void Validate_WhenMvpSupportedFileIsNonEmpty_ReturnsSuccess(
+    [MemberData(nameof(SupportedFileTypeExtensions))]
+    public void Validate_WhenSupportedFileIsNonEmpty_ReturnsSuccess(
         string extension)
     {
         string filePath =
@@ -176,37 +154,11 @@ public sealed class ImportDocumentValidatorTests
         }
     }
 
-    [Fact]
-    public void Validate_WhenSupportedFileIsNonEmpty_ReturnsSuccess()
+    public static IEnumerable<object[]> SupportedFileTypeExtensions()
     {
-        string filePath =
-            CreateTemporaryFilePath(".txt");
-
-        try
+        foreach (string extension in SupportedFileTypes.GetAll())
         {
-            File.WriteAllText(
-                filePath,
-                "DeskVault test document");
-
-            ImportDocumentCommand command =
-                new(
-                    filePath,
-                    null);
-
-            ImportDocumentResult result =
-                _validator.Validate(command);
-
-            Assert.Equal(
-                ImportDocumentResultStatus.Success,
-                result.Status);
-
-            Assert.Equal(
-                "Validation successful.",
-                result.Description);
-        }
-        finally
-        {
-            DeleteFileIfExists(filePath);
+            yield return new object[] { extension };
         }
     }
 

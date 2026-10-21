@@ -50,8 +50,8 @@ public sealed class TextDocumentTextExtractor
 
     public bool CanExtract(string fileName)
     {
-        return SupportedExtensions.Contains(
-            Path.GetExtension(fileName));
+        return SupportedFileTypes.GetTextExtractionKind(fileName)
+            == DocumentTextExtractionKind.PlainText;
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

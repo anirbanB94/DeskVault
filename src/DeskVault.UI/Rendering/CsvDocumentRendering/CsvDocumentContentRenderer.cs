@@ -1,3 +1,4 @@
+using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Parsing.Csv;
 
 namespace DeskVault.UI.Rendering.CsvDocumentRendering;
@@ -17,10 +18,8 @@ public sealed class CsvDocumentContentRenderer
 
     public bool CanRender(string fileName)
     {
-        return string.Equals(
-            Path.GetExtension(fileName),
-            ".csv",
-            StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetInAppPreviewKind(fileName)
+            == DocumentInAppPreviewKind.Csv;
     }
 
     public async Task RenderAsync(

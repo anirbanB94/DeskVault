@@ -7,8 +7,6 @@ namespace DeskVault.Application.Documents.Extraction.XmlDocument;
 public sealed class XmlDocumentTextExtractor
     : IDocumentTextExtractor
 {
-    private const string SupportedExtension = ".xml";
-
     private const string RuleVersionValue =
         "xml-extractor-v1";
 
@@ -30,13 +28,10 @@ public sealed class XmlDocumentTextExtractor
 
     public string RuleVersion => RuleVersionValue;
 
-    public bool CanExtract(
-        string fileName)
+    public bool CanExtract(string fileName)
     {
-        return Path.GetExtension(fileName)
-            .Equals(
-                SupportedExtension,
-                StringComparison.OrdinalIgnoreCase);
+        return SupportedFileTypes.GetTextExtractionKind(fileName)
+            == DocumentTextExtractionKind.Xml;
     }
 
     public async Task<DocumentTextExtractionResult> ExtractAsync(

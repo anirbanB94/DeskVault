@@ -1,3 +1,5 @@
+using DeskVault.Application.Configurations;
+using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Extraction.ConfigDocument;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
@@ -6,6 +8,8 @@ using DeskVault.Application.Documents.Extraction.JsonDocument;
 using DeskVault.Application.Documents.Extraction.MarkdownDocument;
 using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Extraction.XmlDocument;
+using DeskVault.Application.Documents.Extraction.YamlDocument;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DeskVault.Application.Tests;
 
@@ -200,5 +204,101 @@ public sealed class DocumentTextExtractorResolverTests
 
         Assert.IsType<TextDocumentTextExtractor>(
             extractor);
+    }
+
+    [Fact]
+    public void RegisteredExtractors_MatchDeclaredExtractionCapabilities()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSingleton(new DocumentProcessingOptions());
+        services.AddApplication();
+
+        using ServiceProvider provider =
+            services.BuildServiceProvider();
+
+        DocumentTextExtractorResolver resolver =
+            provider.GetRequiredService<DocumentTextExtractorResolver>();
+
+        foreach (string extension in SupportedFileTypes.GetAll())
+        {
+            DocumentFormatCapability capability =
+                SupportedFileTypes.GetForExtension(extension)
+                ?? throw new InvalidOperationException(
+                    $"No capability declaration exists for '{extension}'.");
+
+            string fileName = $"document{extension}";
+            string uppercaseFileName =
+                $"document{extension.ToUpperInvariant()}";
+
+            if (capability.TextExtraction
+                == DocumentTextExtractionKind.None)
+            {
+                Assert.False(
+                    resolver.CanResolve(fileName),
+                    $"'{extension}' declares no extractor but one can resolve.");
+
+                Assert.False(
+                    resolver.CanResolve(uppercaseFileName),
+                    $"Uppercase '{extension}' unexpectedly resolves an extractor.");
+
+                continue;
+            }
+
+            Type expectedExtractorType =
+                GetExpectedExtractorType(capability.TextExtraction);
+
+            Assert.True(
+                resolver.CanResolve(fileName),
+                $"'{extension}' declares extraction but no extractor resolves.");
+
+            Assert.Equal(
+                expectedExtractorType,
+                resolver.Resolve(fileName).GetType());
+
+            Assert.True(
+                resolver.CanResolve(uppercaseFileName),
+                $"Uppercase '{extension}' should resolve an extractor.");
+
+            Assert.Equal(
+                expectedExtractorType,
+                resolver.Resolve(uppercaseFileName).GetType());
+        }
+    }
+
+    private static Type GetExpectedExtractorType(
+        DocumentTextExtractionKind extractionKind)
+    {
+        return extractionKind switch
+        {
+            DocumentTextExtractionKind.PlainText =>
+                typeof(TextDocumentTextExtractor),
+
+            DocumentTextExtractionKind.Markdown =>
+                typeof(MarkdownDocumentTextExtractor),
+
+            DocumentTextExtractionKind.Csv =>
+                typeof(CsvDocumentTextExtractor),
+
+            DocumentTextExtractionKind.Json =>
+                typeof(JsonDocumentTextExtractor),
+
+            DocumentTextExtractionKind.Xml =>
+                typeof(XmlDocumentTextExtractor),
+
+            DocumentTextExtractionKind.Yaml =>
+                typeof(YamlDocumentTextExtractor),
+
+            DocumentTextExtractionKind.Ini =>
+                typeof(IniDocumentTextExtractor),
+
+            DocumentTextExtractionKind.Config =>
+                typeof(ConfigDocumentTextExtractor),
+
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(extractionKind),
+                extractionKind,
+                "The extraction kind does not identify an extractor.")
+        };
     }
 }
