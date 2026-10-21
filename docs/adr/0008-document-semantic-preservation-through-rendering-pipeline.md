@@ -119,6 +119,24 @@ The representation must preserve information required by downstream consumers.
 
 Rendering is therefore a consumer of document semantics, not the authority that defines them.
 
+## Document Format Capability Contract
+
+DeskVault must define each supported document format once in an Application-layer capability declaration. Import validation, the Supported Documents picker, extractors, and UI renderers must consume this declaration rather than maintain independent extension lists.
+
+The capability model distinguishes the following concerns:
+
+- **Importability** is determined by membership in the supported-format declaration and is enforced by import validation.
+- **Picker visibility** specifies whether an importable format is offered by the current Supported Documents picker; it is not a separate definition of import acceptance.
+- **Text extraction** identifies the declared extraction strategy, or that text extraction is unavailable.
+- **In-app preview** identifies the declared renderer capability, or that in-app preview is unavailable.
+- **External-view fallback** is the explicit user-controlled workspace path for a format without in-app preview. It expresses DeskVault's fallback behavior, not a guarantee that the operating system has an associated application.
+
+These capabilities must not be conflated. Import establishes the stored source document and does not imply that its content can be extracted, searched, or previewed in-app. An importable format without a declared extractor remains importable but must not be treated as successfully processed or routed through an unrelated extractor. Conversely, extraction support does not imply in-app preview support. External viewing remains a separate, explicit user action and follows the workspace lifecycle established by ADR-0006 and ADR-0007.
+
+Picker configuration, import validation, extractor capability checks, and renderer capability checks must derive their extension decisions from the authoritative declaration. Automated contract tests must detect divergence between picker entries, import acceptance, expected extractor behavior, and registered renderer behavior. Adding format support must not introduce a parallel processing pipeline or make renderer composition and failure handling part of this contract.
+
+The declaration is extension-level capability and routing metadata; it does not replace content-specific parsing rules. Where an extension can contain more than one syntax, such as XML-based and INI-style `.config` content, extraction policy must identify and process the supported syntax. Imported configuration remains untrusted content and must never be executed or applied as DeskVault runtime configuration.
+
 ## Parsing / Extraction Boundary
 
 Each supported document format will have a parsing or extraction boundary responsible for turning source content into an application-consumable representation.
