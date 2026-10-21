@@ -53,6 +53,9 @@ public sealed class XmlDocumentTextExtractorTests
     [InlineData("document.txt")]
     [InlineData("document.json")]
     [InlineData("document.xml.txt")]
+    [InlineData("document.config")]
+    [InlineData("document.CONFIG")]
+    [InlineData("document.Config")]
     public void CanExtract_WhenFileIsNotXml_ReturnsFalse(
         string fileName)
     {

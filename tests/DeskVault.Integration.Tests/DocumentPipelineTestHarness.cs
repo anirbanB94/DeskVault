@@ -5,6 +5,7 @@ using DeskVault.Application.Documents.Commands.ProcessDocument;
 using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Extraction;
+using DeskVault.Application.Documents.Extraction.ConfigDocument;
 using DeskVault.Application.Documents.Extraction.CSVDocument;
 using DeskVault.Application.Documents.Extraction.IniDocument;
 using DeskVault.Application.Documents.Extraction.JsonDocument;
@@ -138,7 +139,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     new JsonDocumentTextExtractor(),
                     new XmlDocumentTextExtractor(),
                     new YamlDocumentTextExtractor(),
-                    new IniDocumentTextExtractor()
+                    new IniDocumentTextExtractor(),
+                    new ConfigDocumentTextExtractor()
                 ]);
 
         var processHandler =
