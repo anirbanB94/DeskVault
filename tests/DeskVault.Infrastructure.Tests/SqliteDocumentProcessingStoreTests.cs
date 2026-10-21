@@ -25,8 +25,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long generation =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             1L,
@@ -55,12 +54,10 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long firstGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             1L,
@@ -95,8 +92,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         InvalidOperationException exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    store.AcquireProcessingGenerationAsync(
-                        documentId));
+                    store.AcquireProcessingGenerationAsync(documentId, TestContext.Current.CancellationToken));
 
         Assert.Contains(
             documentId.ToString(),
@@ -168,12 +164,10 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(secondConnection);
 
         Task<long> firstTask =
-            firstStore.AcquireProcessingGenerationAsync(
-                document.Id);
+            firstStore.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         Task<long> secondTask =
-            secondStore.AcquireProcessingGenerationAsync(
-                document.Id);
+            secondStore.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         long[] generations =
             await Task.WhenAll(
@@ -215,13 +209,9 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long generation =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            generation,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, generation, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         DocumentStatus persistedStatus =
             await GetDocumentStatusAsync(
@@ -255,34 +245,23 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long firstGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            firstGeneration,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, firstGeneration, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2L,
             secondGeneration);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            secondGeneration,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, secondGeneration, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         StaleProcessingGenerationException exception =
             await Assert.ThrowsAsync<StaleProcessingGenerationException>(
                 () =>
-                    store.PublishProcessingStateAsync(
-                        document.Id,
-                        firstGeneration,
-                        DocumentProcessingState.Failed));
+                    store.PublishProcessingStateAsync(document.Id, firstGeneration, DocumentProcessingState.Failed, TestContext.Current.CancellationToken));
 
         Assert.Equal(
             document.Id,
@@ -330,10 +309,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         InvalidOperationException exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    store.PublishProcessingStateAsync(
-                        documentId,
-                        1L,
-                        DocumentProcessingState.Processing));
+                    store.PublishProcessingStateAsync(documentId, 1L, DocumentProcessingState.Processing, TestContext.Current.CancellationToken));
 
         Assert.Contains(
             documentId.ToString(),
@@ -353,8 +329,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long generation =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -402,20 +377,16 @@ public sealed class SqliteDocumentProcessingStoreTests
                     LastAvailableProcessingGeneration = 0L
                 });
 
-            await setupContext.SaveChangesAsync();
+            await setupContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var store =
             CreateStore(connection);
 
         long processingGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            processingGeneration,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, processingGeneration, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         DocumentKnowledgeAvailabilityEntity? availability =
             await GetKnowledgeAvailabilityAsync(
@@ -448,31 +419,22 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long firstGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishSuccessfulProcessingAsync(
-            document.Id,
-            firstGeneration,
-            new DocumentProcessingRuleVersion(
-                "processing-v1"),
-            [
+        await store.PublishSuccessfulProcessingAsync(document.Id, firstGeneration, new DocumentProcessingRuleVersion(
+                "processing-v1"), [
                 new DocumentChunk(
                 0,
                 "Established searchable content.",
                 ChunkingRuleVersion:
                     new DocumentChunkingRuleVersion(
                         "chunking-v1"))
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            secondGeneration,
-            DocumentProcessingState.Failed);
+        await store.PublishProcessingStateAsync(document.Id, secondGeneration, DocumentProcessingState.Failed, TestContext.Current.CancellationToken);
 
         DocumentKnowledgeAvailabilityEntity? availability =
             await GetKnowledgeAvailabilityAsync(
@@ -523,8 +485,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long generation =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         DocumentProcessingRuleVersion processingRuleVersion =
             new("processing-v1");
@@ -540,11 +501,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 ChunkingRuleVersion: chunkingRuleVersion)
         ];
 
-        await store.PublishSuccessfulProcessingAsync(
-            document.Id,
-            generation,
-            processingRuleVersion,
-            chunks);
+        await store.PublishSuccessfulProcessingAsync(document.Id, generation, processingRuleVersion, chunks, TestContext.Current.CancellationToken);
 
         DocumentStatus persistedStatus =
             await GetDocumentStatusAsync(
@@ -620,23 +577,17 @@ public sealed class SqliteDocumentProcessingStoreTests
             new("chunking-v1");
 
         long firstGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishSuccessfulProcessingAsync(
-            document.Id,
-            firstGeneration,
-            processingRuleVersion,
-            [
+        await store.PublishSuccessfulProcessingAsync(document.Id, firstGeneration, processingRuleVersion, [
                 new DocumentChunk(
                     0,
                     "FIRST SUCCESSFUL RESULT.",
                     ChunkingRuleVersion: chunkingRuleVersion)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2L,
@@ -645,16 +596,12 @@ public sealed class SqliteDocumentProcessingStoreTests
         StaleProcessingGenerationException exception =
             await Assert.ThrowsAsync<StaleProcessingGenerationException>(
                 () =>
-                    store.PublishSuccessfulProcessingAsync(
-                        document.Id,
-                        firstGeneration,
-                        processingRuleVersion,
-                        [
+                    store.PublishSuccessfulProcessingAsync(document.Id, firstGeneration, processingRuleVersion, [
                             new DocumentChunk(
                                 0,
                                 "STALE RESULT.",
                                 ChunkingRuleVersion: chunkingRuleVersion)
-                        ]));
+                        ], TestContext.Current.CancellationToken));
 
         Assert.Equal(
             document.Id,
@@ -728,24 +675,16 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long processingGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            processingGeneration,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, processingGeneration, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
-        await store.PublishSuccessfulProcessingAsync(
-            document.Id,
-            processingGeneration,
-            new DocumentProcessingRuleVersion(
-                "processing-v1"),
-            [
+        await store.PublishSuccessfulProcessingAsync(document.Id, processingGeneration, new DocumentProcessingRuleVersion(
+                "processing-v1"), [
                 new DocumentChunk(
                     0,
                     "Successful processing result.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentProcessingState persistedProcessingState =
             await GetDocumentProcessingStateAsync(
@@ -819,26 +758,21 @@ public sealed class SqliteDocumentProcessingStoreTests
                     LastAvailableProcessingGeneration = 0L
                 });
 
-            await setupContext.SaveChangesAsync();
+            await setupContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var store =
             CreateStore(connection);
 
         long processingGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishSuccessfulProcessingAsync(
-            document.Id,
-            processingGeneration,
-            new DocumentProcessingRuleVersion(
-                "processing-v1"),
-            [
+        await store.PublishSuccessfulProcessingAsync(document.Id, processingGeneration, new DocumentProcessingRuleVersion(
+                "processing-v1"), [
                 new DocumentChunk(
                     0,
                     "Successful processing result.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentKnowledgeAvailabilityEntity? availability =
             await GetKnowledgeAvailabilityAsync(
@@ -871,8 +805,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long generation =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         DocumentProcessingRuleVersion processingRuleVersion =
             new("processing-v1");
@@ -945,13 +878,9 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long generation =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            generation,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, generation, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         await store.RecoverCancelledProcessingAsync(
             document.Id,
@@ -996,28 +925,19 @@ public sealed class SqliteDocumentProcessingStoreTests
             new("chunking-v1");
 
         long firstGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishSuccessfulProcessingAsync(
-            document.Id,
-            firstGeneration,
-            processingRuleVersion,
-            [
+        await store.PublishSuccessfulProcessingAsync(document.Id, firstGeneration, processingRuleVersion, [
                 new DocumentChunk(
                     0,
                     "PREVIOUS SUCCESSFUL RESULT.",
                     ChunkingRuleVersion: chunkingRuleVersion)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            secondGeneration,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, secondGeneration, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         await store.RecoverCancelledProcessingAsync(
             document.Id,
@@ -1093,22 +1013,14 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long firstGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            firstGeneration,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, firstGeneration, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            secondGeneration,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, secondGeneration, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         StaleProcessingGenerationException exception =
             await Assert.ThrowsAsync<StaleProcessingGenerationException>(
@@ -1162,13 +1074,9 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long generation =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            generation,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, generation, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -1214,17 +1122,11 @@ public sealed class SqliteDocumentProcessingStoreTests
             CreateStore(connection);
 
         long processingGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.PublishProcessingStateAsync(
-            document.Id,
-            processingGeneration,
-            DocumentProcessingState.Processing);
+        await store.PublishProcessingStateAsync(document.Id, processingGeneration, DocumentProcessingState.Processing, TestContext.Current.CancellationToken);
 
-        await store.RecoverCancelledProcessingAsync(
-            document.Id,
-            processingGeneration);
+        await store.RecoverCancelledProcessingAsync(document.Id, processingGeneration, TestContext.Current.CancellationToken);
 
         DocumentProcessingState persistedProcessingState =
             await GetDocumentProcessingStateAsync(
@@ -1266,10 +1168,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         var store =
             CreateStore(connection);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     "First chunk."),
@@ -1277,7 +1176,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 new DocumentChunk(
                     1,
                     "Second chunk.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(connection);
@@ -1323,21 +1222,16 @@ public sealed class SqliteDocumentProcessingStoreTests
         var store =
             CreateStore(connection);
 
-        await store.AcquireProcessingGenerationAsync(
-            document.Id);
+        await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            1L,
-            [
+        await store.ReplaceChunksAsync(document.Id, 1L, [
                 new DocumentChunk(
                     0,
                     "CURRENT RESULT")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         long newerGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2L,
@@ -1345,14 +1239,11 @@ public sealed class SqliteDocumentProcessingStoreTests
 
         await Assert.ThrowsAsync<StaleProcessingGenerationException>(
             () =>
-                store.ReplaceChunksAsync(
-                    document.Id,
-                    1L,
-                    [
+                store.ReplaceChunksAsync(document.Id, 1L, [
                         new DocumentChunk(
                             0,
                             "STALE RESULT")
-                    ]));
+                    ], TestContext.Current.CancellationToken));
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(connection);
@@ -1377,10 +1268,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         var store =
             CreateStore(connection);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     "Old first chunk."),
@@ -1388,12 +1276,9 @@ public sealed class SqliteDocumentProcessingStoreTests
                 new DocumentChunk(
                     1,
                     "Old second chunk.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     "New first chunk."),
@@ -1405,7 +1290,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 new DocumentChunk(
                     2,
                     "New third chunk.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(connection);
@@ -1461,10 +1346,7 @@ public sealed class SqliteDocumentProcessingStoreTests
         var store =
             CreateStore(connection);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     "Original first chunk."),
@@ -1472,14 +1354,11 @@ public sealed class SqliteDocumentProcessingStoreTests
                 new DocumentChunk(
                     1,
                     "Original second chunk.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAnyAsync<Exception>(
             () =>
-                store.ReplaceChunksAsync(
-                    document.Id,
-                    document.ProcessingGeneration,
-                    [
+                store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                         new DocumentChunk(
                             0,
                             "Replacement chunk."),
@@ -1487,7 +1366,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                         new DocumentChunk(
                             0,
                             "Duplicate order chunk.")
-                    ]));
+                    ], TestContext.Current.CancellationToken));
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(connection);
@@ -1540,10 +1419,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 "Implementation details.")
         ];
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            expected);
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, expected, TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(connection);
@@ -1582,19 +1458,13 @@ public sealed class SqliteDocumentProcessingStoreTests
         var store =
             CreateStore(connection);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     "Existing chunk.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            []);
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [], TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(connection);
@@ -1650,10 +1520,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 CreateFactory(connection),
                 NullLogger<SqliteDocumentRepository>.Instance);
 
-        await processingStore.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await processingStore.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     "First chunk."),
@@ -1661,7 +1528,7 @@ public sealed class SqliteDocumentProcessingStoreTests
                 new DocumentChunk(
                     1,
                     "Second chunk.")
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> beforeDelete =
             await GetChunksAsync(connection);
@@ -1670,8 +1537,7 @@ public sealed class SqliteDocumentProcessingStoreTests
             2,
             beforeDelete.Count);
 
-        await documentRepository.DeleteAsync(
-            document.Id);
+        await documentRepository.DeleteAsync(document.Id, TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> afterDelete =
             await GetChunksAsync(connection);

@@ -37,7 +37,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
                     NullLogger<WindowsEncryptionKeyService>.Instance);
 
             initializedKey =
-                await keyService.GetOrCreateKeyAsync();
+                await keyService.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             DocumentEncryptionService firstEncryptionService =
                 CreateEncryptionService(dataPaths);
@@ -101,13 +101,9 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             await using var secondDecrypted =
                 new MemoryStream();
 
-            await firstDecryptionService.DecryptAsync(
-                firstEncrypted,
-                firstDecrypted);
+            await firstDecryptionService.DecryptAsync(firstEncrypted, firstDecrypted, TestContext.Current.CancellationToken);
 
-            await secondDecryptionService.DecryptAsync(
-                secondEncrypted,
-                secondDecrypted);
+            await secondDecryptionService.DecryptAsync(secondEncrypted, secondDecrypted, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.True(
@@ -162,7 +158,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
                     NullLogger<WindowsEncryptionKeyService>.Instance);
 
             initializedKey =
-                await keyService.GetOrCreateKeyAsync();
+                await keyService.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             DocumentEncryptionService encryptionService =
                 CreateEncryptionService(dataPaths);
@@ -173,9 +169,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             await using var encrypted =
                 new MemoryStream();
 
-            await encryptionService.EncryptLegacyVersion2Async(
-                source,
-                encrypted);
+            await encryptionService.EncryptLegacyVersion2Async(source, encrypted, TestContext.Current.CancellationToken);
 
             string keyFilePath =
                 Path.Combine(
@@ -197,9 +191,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
 
             await Assert.ThrowsAsync<CryptographicException>(
                 () =>
-                    decryptionService.DecryptAsync(
-                        encrypted,
-                        decrypted));
+                    decryptionService.DecryptAsync(encrypted, decrypted, TestContext.Current.CancellationToken));
 
             Assert.False(
                 File.Exists(keyFilePath));
@@ -275,13 +267,10 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
                     null,
                     DataProtectionScope.CurrentUser);
 
-            await File.WriteAllBytesAsync(
-                keyFilePath,
-                protectedLegacyArtifact);
+            await File.WriteAllBytesAsync(keyFilePath, protectedLegacyArtifact, TestContext.Current.CancellationToken);
 
             protectedArtifactBeforeRead =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             // Build an existing version-two encrypted document using
             // AES-GCM with no associated data, as legacy records did.
@@ -354,13 +343,10 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
                 new MemoryStream();
 
             // Act
-            await decryptionService.DecryptAsync(
-                source,
-                decrypted);
+            await decryptionService.DecryptAsync(source, decrypted, TestContext.Current.CancellationToken);
 
             protectedArtifactAfterRead =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             // Assert: legacy ciphertext remains readable.
             Assert.Equal(
@@ -457,7 +443,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
 
             // Arrange: provision the initial key before storing existing content.
             initializedKey =
-                await documentKeyService.GetOrCreateKeyAsync();
+                await documentKeyService.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             var pathResolver =
                 new DocumentArtifactPathResolver(
@@ -480,13 +466,9 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
                     rootDirectory,
                     "second-source.txt");
 
-            await File.WriteAllBytesAsync(
-                firstSourcePath,
-                firstContent);
+            await File.WriteAllBytesAsync(firstSourcePath, firstContent, TestContext.Current.CancellationToken);
 
-            await File.WriteAllBytesAsync(
-                secondSourcePath,
-                secondContent);
+            await File.WriteAllBytesAsync(secondSourcePath, secondContent, TestContext.Current.CancellationToken);
 
             Guid firstDocumentId =
                 Guid.NewGuid();
@@ -495,9 +477,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
                 Guid.NewGuid();
 
             string firstArtifactPath =
-                await storageService.StoreAsync(
-                    firstSourcePath,
-                    firstDocumentId);
+                await storageService.StoreAsync(firstSourcePath, firstDocumentId, TestContext.Current.CancellationToken);
 
             string keyFilePath =
                 Path.Combine(
@@ -508,8 +488,7 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
                 File.Exists(keyFilePath));
 
             firstArtifactBeforeFailure =
-                await File.ReadAllBytesAsync(
-                    firstArtifactPath);
+                await File.ReadAllBytesAsync(firstArtifactPath, TestContext.Current.CancellationToken);
 
             // Simulate an established vault whose expected key is missing.
             File.Delete(keyFilePath);
@@ -517,13 +496,10 @@ public sealed class WindowsEncryptionKeyServiceIntegrationTests
             // Act and assert: ordinary storage must not create a replacement key.
             await Assert.ThrowsAsync<CryptographicException>(
                 () =>
-                    storageService.StoreAsync(
-                        secondSourcePath,
-                        secondDocumentId));
+                    storageService.StoreAsync(secondSourcePath, secondDocumentId, TestContext.Current.CancellationToken));
 
             firstArtifactAfterFailure =
-                await File.ReadAllBytesAsync(
-                    firstArtifactPath);
+                await File.ReadAllBytesAsync(firstArtifactPath, TestContext.Current.CancellationToken);
 
             // The missing key and canonical document state must remain unchanged.
             Assert.False(

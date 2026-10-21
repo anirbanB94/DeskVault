@@ -93,9 +93,7 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                json);
+            await ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -129,9 +127,7 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                json);
+            await ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -165,9 +161,7 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                json);
+            await ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -211,9 +205,7 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                json);
+            await ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -242,9 +234,7 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                json);
+            await ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -272,14 +262,10 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult first =
-            await ExtractAsync(
-                extractor,
-                json);
+            await ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         DocumentTextExtractionResult second =
-            await ExtractAsync(
-                extractor,
-                json);
+            await ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -302,9 +288,7 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                json);
+            ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         await Assert.ThrowsAnyAsync<System.Text.Json.JsonException>(
@@ -362,9 +346,7 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                json);
+            ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         ResourceLimitExceededException exception =
@@ -411,9 +393,7 @@ public sealed class JsonDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                json);
+            await ExtractAsync(extractor, json, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

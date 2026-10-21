@@ -1,4 +1,4 @@
-using DeskVault.Application.Documents.Commands.ImportDocument;
+﻿using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Cryptography;
@@ -31,17 +31,13 @@ public sealed class FileSystemStorageServiceTests
             byte[] content =
                 "DeskVault integration test content."u8.ToArray();
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                content);
+            await File.WriteAllBytesAsync(sourceFilePath, content, TestContext.Current.CancellationToken);
 
             Guid documentId =
                 Guid.NewGuid();
 
             string storedFilePath =
-                await storageService.StoreAsync(
-                    sourceFilePath,
-                    documentId);
+                await storageService.StoreAsync(sourceFilePath, documentId, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 Path.Combine(
@@ -54,8 +50,7 @@ public sealed class FileSystemStorageServiceTests
 
             Assert.NotEqual(
                 content,
-                await File.ReadAllBytesAsync(
-                    storedFilePath));
+                await File.ReadAllBytesAsync(storedFilePath, TestContext.Current.CancellationToken));
         }
         finally
         {
@@ -92,17 +87,13 @@ public sealed class FileSystemStorageServiceTests
             byte[] originalContent =
                 "DeskVault encryption round-trip test."u8.ToArray();
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                originalContent);
+            await File.WriteAllBytesAsync(sourceFilePath, originalContent, TestContext.Current.CancellationToken);
 
             Guid documentId =
                 Guid.NewGuid();
 
             string storedFilePath =
-                await storageService.StoreAsync(
-                    sourceFilePath,
-                    documentId);
+                await storageService.StoreAsync(sourceFilePath, documentId, TestContext.Current.CancellationToken);
 
             await using var encryptedSource =
                 new FileStream(
@@ -114,10 +105,7 @@ public sealed class FileSystemStorageServiceTests
             using var decryptedDestination =
                 new MemoryStream();
 
-            await encryptionService.DecryptAsync(
-                encryptedSource,
-                decryptedDestination,
-                documentId);
+            await encryptionService.DecryptAsync(encryptedSource, decryptedDestination, documentId, TestContext.Current.CancellationToken);
 
             byte[] decryptedContent =
                 decryptedDestination.ToArray();
@@ -157,9 +145,7 @@ public sealed class FileSystemStorageServiceTests
             byte[] content =
                 "DeskVault hash verification test."u8.ToArray();
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                content);
+            await File.WriteAllBytesAsync(sourceFilePath, content, TestContext.Current.CancellationToken);
 
             string expectedHash =
                 Convert.ToHexString(
@@ -170,10 +156,7 @@ public sealed class FileSystemStorageServiceTests
                 Guid.NewGuid();
 
             string storedFilePath =
-                await storageService.StoreAsync(
-                    sourceFilePath,
-                    documentId,
-                    expectedSha256Hash: expectedHash);
+                await storageService.StoreAsync(sourceFilePath, documentId, expectedSha256Hash: expectedHash, cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.True(
                 File.Exists(
@@ -216,9 +199,7 @@ public sealed class FileSystemStorageServiceTests
             byte[] content =
                 "DeskVault hash mismatch test."u8.ToArray();
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                content);
+            await File.WriteAllBytesAsync(sourceFilePath, content, TestContext.Current.CancellationToken);
 
             string expectedHash =
                 Convert.ToHexString(
@@ -236,10 +217,7 @@ public sealed class FileSystemStorageServiceTests
 
             await Assert.ThrowsAsync<DocumentImportContentMismatchException>(
                 () =>
-                    storageService.StoreAsync(
-                        sourceFilePath,
-                        documentId,
-                        expectedSha256Hash: expectedHash));
+                    storageService.StoreAsync(sourceFilePath, documentId, expectedSha256Hash: expectedHash, cancellationToken: TestContext.Current.CancellationToken));
 
             Assert.False(
                 File.Exists(
@@ -273,17 +251,13 @@ public sealed class FileSystemStorageServiceTests
                     rootDirectory,
                     "source.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault");
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault", TestContext.Current.CancellationToken);
 
             Assert.False(
                 Directory.Exists(
                     dataPaths.DocumentsDirectory));
 
-            await storageService.StoreAsync(
-                sourceFilePath,
-                Guid.NewGuid());
+            await storageService.StoreAsync(sourceFilePath, Guid.NewGuid(), TestContext.Current.CancellationToken);
 
             Assert.True(
                 Directory.Exists(
@@ -327,9 +301,7 @@ public sealed class FileSystemStorageServiceTests
 
             await Assert.ThrowsAsync<FileNotFoundException>(
                 () =>
-                    storageService.StoreAsync(
-                        missingSource,
-                        documentId));
+                    storageService.StoreAsync(missingSource, documentId, TestContext.Current.CancellationToken));
 
             Assert.False(
                 File.Exists(
@@ -363,9 +335,7 @@ public sealed class FileSystemStorageServiceTests
                     rootDirectory,
                     "source.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault cancellation test.");
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault cancellation test.", TestContext.Current.CancellationToken);
 
             Guid documentId =
                 Guid.NewGuid();
@@ -419,9 +389,7 @@ public sealed class FileSystemStorageServiceTests
                     rootDirectory,
                     "source.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault source content.");
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault source content.", TestContext.Current.CancellationToken);
 
             Guid documentId =
                 Guid.NewGuid();
@@ -437,20 +405,15 @@ public sealed class FileSystemStorageServiceTests
             byte[] existingContent =
                 "Existing encrypted file."u8.ToArray();
 
-            await File.WriteAllBytesAsync(
-                storedFilePath,
-                existingContent);
+            await File.WriteAllBytesAsync(storedFilePath, existingContent, TestContext.Current.CancellationToken);
 
             await Assert.ThrowsAnyAsync<IOException>(
                 () =>
-                    storageService.StoreAsync(
-                        sourceFilePath,
-                        documentId));
+                    storageService.StoreAsync(sourceFilePath, documentId, TestContext.Current.CancellationToken));
 
             Assert.Equal(
                 existingContent,
-                await File.ReadAllBytesAsync(
-                    storedFilePath));
+                await File.ReadAllBytesAsync(storedFilePath, TestContext.Current.CancellationToken));
         }
         finally
         {
@@ -490,13 +453,10 @@ public sealed class FileSystemStorageServiceTests
             Directory.CreateDirectory(
                 dataPaths.DocumentsDirectory);
 
-            await File.WriteAllTextAsync(
-                storedFilePath,
-                "encrypted-content");
+            await File.WriteAllTextAsync(storedFilePath, "encrypted-content", TestContext.Current.CancellationToken);
 
             // Act
-            await storageService.DeleteAsync(
-                documentId);
+            await storageService.DeleteAsync(documentId, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.False(
@@ -530,8 +490,7 @@ public sealed class FileSystemStorageServiceTests
             ArgumentException exception =
                 await Assert.ThrowsAsync<ArgumentException>(
                     () =>
-                        storageService.DeleteAsync(
-                            Guid.Empty));
+                        storageService.DeleteAsync(Guid.Empty, TestContext.Current.CancellationToken));
 
             // Assert
             Assert.Equal(
@@ -602,8 +561,7 @@ public sealed class FileSystemStorageServiceTests
                 Guid.NewGuid();
 
             // Act
-            await storageService.DeleteAsync(
-                documentId);
+            await storageService.DeleteAsync(documentId, TestContext.Current.CancellationToken);
 
             // Assert
             string storedFilePath =
@@ -659,17 +617,12 @@ public sealed class FileSystemStorageServiceTests
             Directory.CreateDirectory(
                 dataPaths.DocumentsDirectory);
 
-            await File.WriteAllTextAsync(
-                firstArtifactPath,
-                "first-artifact");
+            await File.WriteAllTextAsync(firstArtifactPath, "first-artifact", TestContext.Current.CancellationToken);
 
-            await File.WriteAllTextAsync(
-                secondArtifactPath,
-                "second-artifact");
+            await File.WriteAllTextAsync(secondArtifactPath, "second-artifact", TestContext.Current.CancellationToken);
 
             // Act
-            await storageService.DeleteAsync(
-                firstDocumentId);
+            await storageService.DeleteAsync(firstDocumentId, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.False(
@@ -680,7 +633,7 @@ public sealed class FileSystemStorageServiceTests
 
             Assert.Equal(
                 "second-artifact",
-                await File.ReadAllTextAsync(secondArtifactPath));
+                await File.ReadAllTextAsync(secondArtifactPath, TestContext.Current.CancellationToken));
         }
         finally
         {

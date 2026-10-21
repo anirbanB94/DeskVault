@@ -23,8 +23,7 @@ public sealed class GetWorkspacesHandlerTests
             new GetWorkspacesHandler(
                 workspaceRepository.Object);
 
-        var result = await handler.HandleAsync(
-            new GetWorkspacesQuery());
+        var result = await handler.HandleAsync(new GetWorkspacesQuery(), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             GetWorkspacesResultStatus.Success,
@@ -60,8 +59,7 @@ public sealed class GetWorkspacesHandlerTests
             new GetWorkspacesHandler(
                 workspaceRepository.Object);
 
-        var result = await handler.HandleAsync(
-            new GetWorkspacesQuery());
+        var result = await handler.HandleAsync(new GetWorkspacesQuery(), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             GetWorkspacesResultStatus.Success,
@@ -104,8 +102,7 @@ public sealed class GetWorkspacesHandlerTests
             new GetWorkspacesHandler(
                 workspaceRepository.Object);
 
-        var result = await handler.HandleAsync(
-            new GetWorkspacesQuery());
+        var result = await handler.HandleAsync(new GetWorkspacesQuery(), TestContext.Current.CancellationToken);
 
         var restoredWorkspace =
             Assert.Single(result.Workspaces);
@@ -158,8 +155,7 @@ public sealed class GetWorkspacesHandlerTests
             new GetWorkspacesHandler(
                 workspaceRepository.Object);
 
-        await handler.HandleAsync(
-            new GetWorkspacesQuery());
+        await handler.HandleAsync(new GetWorkspacesQuery(), TestContext.Current.CancellationToken);
 
         activeWorkspaceRegistry.Verify(
             registry => registry.Add(

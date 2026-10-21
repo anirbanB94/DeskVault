@@ -19,15 +19,12 @@ public sealed class DocumentArtifactRecoveryIntegrationTests
                 environment.RootDirectory,
                 "valid-document.txt");
 
-        await File.WriteAllTextAsync(
-            validSourceFilePath,
-            "Valid persisted document content.");
+        await File.WriteAllTextAsync(validSourceFilePath, "Valid persisted document content.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     validSourceFilePath,
-                    "Valid Persisted Document"));
+                    "Valid Persisted Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -62,13 +59,9 @@ public sealed class DocumentArtifactRecoveryIntegrationTests
                 environment.RootDirectory,
                 "orphan-document.txt");
 
-        await File.WriteAllTextAsync(
-            orphanSourceFilePath,
-            "Orphaned encrypted artifact.");
+        await File.WriteAllTextAsync(orphanSourceFilePath, "Orphaned encrypted artifact.", TestContext.Current.CancellationToken);
 
-        await environment.Harness.StoreArtifactAsync(
-            orphanSourceFilePath,
-            orphanDocumentId);
+        await environment.Harness.StoreArtifactAsync(orphanSourceFilePath, orphanDocumentId, TestContext.Current.CancellationToken);
 
         string orphanArtifactPath =
             Path.Combine(
@@ -81,12 +74,10 @@ public sealed class DocumentArtifactRecoveryIntegrationTests
 
         // Act
         RecoverDocumentArtifactsResult firstResult =
-            await environment.Harness.RecoveryHandler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await environment.Harness.RecoveryHandler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         RecoverDocumentArtifactsResult retryResult =
-            await environment.Harness.RecoveryHandler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await environment.Harness.RecoveryHandler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

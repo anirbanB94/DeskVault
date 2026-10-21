@@ -58,7 +58,7 @@ public sealed class DocumentLifecycleStateBackfillTests
             CreateBackfill(
                 connection);
 
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentEntity availableDocument =
             await GetDocumentAsync(
@@ -172,7 +172,7 @@ public sealed class DocumentLifecycleStateBackfillTests
             CreateBackfill(
                 connection);
 
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentEntity importedDocument =
             await GetDocumentAsync(
@@ -387,7 +387,7 @@ public sealed class DocumentLifecycleStateBackfillTests
             CreateBackfill(
                 connection);
 
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentEntity processingDocument =
             await GetDocumentAsync(
@@ -510,7 +510,7 @@ public sealed class DocumentLifecycleStateBackfillTests
             CreateBackfill(
                 connection);
 
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentEntity firstDocument =
             await GetDocumentAsync(
@@ -522,7 +522,7 @@ public sealed class DocumentLifecycleStateBackfillTests
                 connection,
                 AvailableDocumentId);
 
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentEntity secondDocument =
             await GetDocumentAsync(
@@ -598,7 +598,7 @@ public sealed class DocumentLifecycleStateBackfillTests
             CreateBackfill(
                 connection);
 
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentEntity document =
             await GetDocumentAsync(
@@ -676,7 +676,7 @@ public sealed class DocumentLifecycleStateBackfillTests
         InvalidOperationException exception =
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    backfill.BackfillAsync());
+                    backfill.BackfillAsync(TestContext.Current.CancellationToken));
 
         Assert.Contains(
             "cannot be greater than last successful processing generation",
@@ -735,7 +735,7 @@ public sealed class DocumentLifecycleStateBackfillTests
         DbUpdateException exception =
             await Assert.ThrowsAsync<DbUpdateException>(
                 () =>
-                    backfill.BackfillAsync());
+                    backfill.BackfillAsync(TestContext.Current.CancellationToken));
 
         Assert.IsType<SqliteException>(
             exception.InnerException);
@@ -778,7 +778,7 @@ public sealed class DocumentLifecycleStateBackfillTests
         await DropBackfillInterruptionTriggerAsync(
             connection);
 
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentEntity retriedFirstDocument =
             await GetDocumentAsync(

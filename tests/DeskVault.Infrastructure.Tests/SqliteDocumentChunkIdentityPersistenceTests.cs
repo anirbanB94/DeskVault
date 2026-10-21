@@ -36,14 +36,11 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
             "Canonical chunk text.";
 
         // Act
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     order,
                     text)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity chunk =
             await GetSingleChunkAsync(
@@ -108,15 +105,12 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
                 15);
 
         // Act
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     order,
                     text,
                     sourceLocation)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity chunk =
             await GetSingleChunkAsync(
@@ -193,7 +187,7 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
         context.DocumentChunks.Add(
             chunk);
 
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Assert
         DocumentChunkEntity persistedChunk =
@@ -241,7 +235,7 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
         context.DocumentChunks.Add(
             chunk);
 
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Assert
         DocumentChunkEntity persistedChunk =
@@ -298,7 +292,7 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
 
         // Assert
         await Assert.ThrowsAsync<DbUpdateException>(
-            () => context.SaveChangesAsync());
+            () => context.SaveChangesAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -337,7 +331,7 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
 
         // Assert
         await Assert.ThrowsAsync<DbUpdateException>(
-            () => context.SaveChangesAsync());
+            () => context.SaveChangesAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -357,32 +351,25 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
         const string text =
             "Canonical chunk text.";
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     text)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity firstChunk =
             await GetSingleChunkAsync(
                 connection);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         // Act
-        await store.ReplaceChunksAsync(
-            document.Id,
-            secondGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, secondGeneration, [
                 new DocumentChunk(
                     0,
                     text)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity secondChunk =
             await GetSingleChunkAsync(
@@ -436,23 +423,19 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
                 10,
                 12);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     text,
                     firstSourceLocation)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity firstChunk =
             await GetSingleChunkAsync(
                 connection);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         var secondSourceLocation =
             new DocumentSourceLocation(
@@ -460,15 +443,12 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
                 24);
 
         // Act
-        await store.ReplaceChunksAsync(
-            document.Id,
-            secondGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, secondGeneration, [
                 new DocumentChunk(
                     0,
                     text,
                     secondSourceLocation)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity secondChunk =
             await GetSingleChunkAsync(
@@ -538,33 +518,26 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
                 10,
                 12);
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     text,
                     firstSourceLocation)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity firstChunk =
             await GetSingleChunkAsync(
                 connection);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         // Act
-        await store.ReplaceChunksAsync(
-            document.Id,
-            secondGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, secondGeneration, [
                 new DocumentChunk(
                     0,
                     text)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity secondChunk =
             await GetSingleChunkAsync(
@@ -622,32 +595,25 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
         const string secondText =
             "Changed canonical chunk text.";
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     firstText)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity firstChunk =
             await GetSingleChunkAsync(
                 connection);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         // Act
-        await store.ReplaceChunksAsync(
-            document.Id,
-            secondGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, secondGeneration, [
                 new DocumentChunk(
                     0,
                     secondText)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         DocumentChunkEntity secondChunk =
             await GetSingleChunkAsync(
@@ -701,17 +667,14 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
         const string secondText =
             "Second chunk.";
 
-        await store.ReplaceChunksAsync(
-            document.Id,
-            document.ProcessingGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, document.ProcessingGeneration, [
                 new DocumentChunk(
                     0,
                     firstText),
                 new DocumentChunk(
                     1,
                     secondText)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> firstChunks =
             await GetChunksAsync(
@@ -728,21 +691,17 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
                 chunk => chunk.Order == 1);
 
         long secondGeneration =
-            await store.AcquireProcessingGenerationAsync(
-                document.Id);
+            await store.AcquireProcessingGenerationAsync(document.Id, TestContext.Current.CancellationToken);
 
         // Act
-        await store.ReplaceChunksAsync(
-            document.Id,
-            secondGeneration,
-            [
+        await store.ReplaceChunksAsync(document.Id, secondGeneration, [
                 new DocumentChunk(
                     0,
                     secondText),
                 new DocumentChunk(
                     1,
                     firstText)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> secondChunks =
             await GetChunksAsync(
@@ -830,17 +789,14 @@ public sealed class SqliteDocumentChunkIdentityPersistenceTests
             document.ProcessingGeneration;
 
         // Act
-        await store.ReplaceChunksAsync(
-            document.Id,
-            generation,
-            [
+        await store.ReplaceChunksAsync(document.Id, generation, [
                 new DocumentChunk(
                     0,
                     firstText),
                 new DocumentChunk(
                     1,
                     secondText)
-            ]);
+            ], TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(

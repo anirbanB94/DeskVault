@@ -39,9 +39,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     dataPaths.DocumentsDirectory,
                     $"{documentId}.dvault");
 
-            await File.WriteAllBytesAsync(
-                documentArtifactPath,
-                existingArtifactContents);
+            await File.WriteAllBytesAsync(documentArtifactPath, existingArtifactContents, TestContext.Current.CancellationToken);
 
             var services =
                 new ServiceCollection();
@@ -66,11 +64,10 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             // must not be treated as a new vault.
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    initializer.InitializeAsync());
+                    initializer.InitializeAsync(TestContext.Current.CancellationToken));
 
             artifactContentsAfterInitialization =
-                await File.ReadAllBytesAsync(
-                    documentArtifactPath);
+                await File.ReadAllBytesAsync(documentArtifactPath, TestContext.Current.CancellationToken);
 
             // Assert: no database or replacement key is provisioned.
             Assert.False(
@@ -155,7 +152,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     DatabaseInitializer>();
 
             // Act: initialize a new vault through the production boundary.
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             string documentKeyPath =
                 Path.Combine(
@@ -191,10 +188,10 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     IDatabaseEncryptionKeyService>();
 
             documentKey =
-                await documentKeyService.GetKeyAsync();
+                await documentKeyService.GetKeyAsync(TestContext.Current.CancellationToken);
 
             databaseKey =
-                await databaseKeyService.GetKeyAsync();
+                await databaseKeyService.GetKeyAsync(TestContext.Current.CancellationToken);
 
             Assert.NotEqual(
                 Guid.Empty,
@@ -222,23 +219,19 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                 databaseKey.KeyId);
 
             documentArtifactBeforeRestart =
-                await File.ReadAllBytesAsync(
-                    documentKeyPath);
+                await File.ReadAllBytesAsync(documentKeyPath, TestContext.Current.CancellationToken);
 
             databaseArtifactBeforeRestart =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             // Repeated startup must reuse existing key state.
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             documentArtifactAfterRestart =
-                await File.ReadAllBytesAsync(
-                    documentKeyPath);
+                await File.ReadAllBytesAsync(documentKeyPath, TestContext.Current.CancellationToken);
 
             databaseArtifactAfterRestart =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 documentArtifactBeforeRestart,
@@ -320,7 +313,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     NullLogger<WindowsDatabaseEncryptionKeyService>.Instance);
 
             databaseKey =
-                await databaseKeyService.GetOrCreateKeyAsync();
+                await databaseKeyService.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             // Reproduce the valid legacy state: the encrypted database
             // already exists, but document-key provisioning has not occurred.
@@ -331,9 +324,9 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
 
             await using (
                 var dbContext =
-                    await existingDatabaseFactory.CreateDbContextAsync())
+                    await existingDatabaseFactory.CreateDbContextAsync(TestContext.Current.CancellationToken))
             {
-                await dbContext.Database.MigrateAsync();
+                await dbContext.Database.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             string documentKeyPath =
@@ -356,8 +349,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                 File.Exists(documentKeyPath));
 
             databaseArtifactBeforeInitialization =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             var services =
                 new ServiceCollection();
@@ -380,18 +372,17 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
 
             // Act: initialization must recognize this as an empty vault
             // without treating an unusable existing key as replaceable.
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             var documentKeyService =
                 serviceProvider.GetRequiredService<
                     IEncryptionKeyService>();
 
             documentKey =
-                await documentKeyService.GetKeyAsync();
+                await documentKeyService.GetKeyAsync(TestContext.Current.CancellationToken);
 
             databaseArtifactAfterInitialization =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             // Assert: the initial document key is now available.
             Assert.True(
@@ -510,8 +501,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                 File.Exists(databaseKeyPath));
 
             protectedKeyFromFile =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             unprotectedPayload =
                 ProtectedData.Unprotect(
@@ -583,7 +573,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     IDatabaseEncryptionKeyService>();
 
             retrievedKeyMaterial =
-                await databaseKeyService.GetKeyAsync();
+                await databaseKeyService.GetKeyAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 authoritativeKeyMaterial.KeyBytes,
@@ -601,7 +591,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                 serviceProvider.GetRequiredService<
                     DatabaseInitializer>();
 
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             Assert.True(
                 File.Exists(
@@ -621,23 +611,23 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     IDbContextFactory<DeskVaultDbContext>>();
 
             await using (var dbContext =
-                await factory.CreateDbContextAsync())
+                await factory.CreateDbContextAsync(TestContext.Current.CancellationToken))
             {
                 Assert.True(
-                    await dbContext.Database.CanConnectAsync());
+                    await dbContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
 
                 await dbContext.Database.CloseConnectionAsync();
             }
 
             // Verify that startup can reuse the existing encrypted database
             // and retrieve its already-persisted authoritative key.
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             await using var existingVaultDbContext =
-                await factory.CreateDbContextAsync();
+                await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
             Assert.True(
-                await existingVaultDbContext.Database.CanConnectAsync());
+                await existingVaultDbContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
 
             await existingVaultDbContext.Database.CloseConnectionAsync();
         }
@@ -735,15 +725,15 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
 
             // Arrange: create an encrypted database using the current key.
             provisionedKey =
-                await databaseKeyProvisioningService.GetOrCreateKeyAsync();
+                await databaseKeyProvisioningService.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             await using (var initialContext =
-                await factory.CreateDbContextAsync())
+                await factory.CreateDbContextAsync(TestContext.Current.CancellationToken))
             {
                 Assert.True(
-                    await initialContext.Database.CanConnectAsync());
+                    await initialContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
 
                 await initialContext.Database.CloseConnectionAsync();
             }
@@ -761,20 +751,17 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     null,
                     DataProtectionScope.CurrentUser);
 
-            await File.WriteAllBytesAsync(
-                databaseKeyPath,
-                legacyProtectedArtifact);
+            await File.WriteAllBytesAsync(databaseKeyPath, legacyProtectedArtifact, TestContext.Current.CancellationToken);
 
             artifactBeforeRetrieval =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             // Act: retrieve the legacy key twice without provisioning a new one.
             firstLegacyRead =
-                await databaseKeyService.GetKeyAsync();
+                await databaseKeyService.GetKeyAsync(TestContext.Current.CancellationToken);
 
             secondLegacyRead =
-                await databaseKeyService.GetKeyAsync();
+                await databaseKeyService.GetKeyAsync(TestContext.Current.CancellationToken);
 
             // Assert: legacy identity/version is stable across retrieval.
             Assert.Equal(
@@ -802,20 +789,19 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                 secondLegacyRead.KeyBytes);
 
             // The existing database must remain accessible with the legacy key.
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             await using (var existingContext =
-                await factory.CreateDbContextAsync())
+                await factory.CreateDbContextAsync(TestContext.Current.CancellationToken))
             {
                 Assert.True(
-                    await existingContext.Database.CanConnectAsync());
+                    await existingContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
 
                 await existingContext.Database.CloseConnectionAsync();
             }
 
             artifactAfterRetrieval =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             // Retrieval and initialization must not rewrite the legacy artifact.
             Assert.Equal(
@@ -905,7 +891,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                 serviceProvider.GetRequiredService<
                     DatabaseInitializer>();
 
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             string databaseKeyPath =
                 Path.Combine(
@@ -937,7 +923,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             // Act and assert: asynchronous access must fail without provisioning.
             await Assert.ThrowsAsync<CryptographicException>(
                 () =>
-                    factory.CreateDbContextAsync());
+                    factory.CreateDbContextAsync(TestContext.Current.CancellationToken));
 
             Assert.False(
                 File.Exists(databaseKeyPath));

@@ -32,8 +32,7 @@ public sealed class GetDocumentHandlerTests
 
         // Act
         GetDocumentResult result =
-            await handler.HandleAsync(
-                new GetDocumentQuery(documentId));
+            await handler.HandleAsync(new GetDocumentQuery(documentId), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -94,9 +93,8 @@ public sealed class GetDocumentHandlerTests
         // Act
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>
-                handler.HandleAsync(
-                    new GetDocumentQuery(
-                        Guid.NewGuid())));
+                handler.HandleAsync(new GetDocumentQuery(
+                        Guid.NewGuid()), TestContext.Current.CancellationToken));
 
         // Assert
         repository.Verify(

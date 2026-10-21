@@ -347,8 +347,7 @@ public sealed class WorkspacePresentationTests
                     documentPresentationFactory,
                 workspaceId: workspaceId);
 
-        await presentation.SetWorkspaceDocumentsAsync(
-            [documentId]);
+        await presentation.SetWorkspaceDocumentsAsync([documentId], TestContext.Current.CancellationToken);
 
         presentation.OpenDocument(documentId);
 
@@ -424,8 +423,7 @@ public sealed class WorkspacePresentationTests
                     documentPresentationFactory,
                 workspaceId: workspaceId);
 
-        await presentation.SetWorkspaceDocumentsAsync(
-            [documentId]);
+        await presentation.SetWorkspaceDocumentsAsync([documentId], TestContext.Current.CancellationToken);
 
         presentation.OpenDocument(documentId);
 
@@ -668,8 +666,7 @@ public sealed class WorkspacePresentationTests
                 workspaceId,
                 documentPresentationFactory);
 
-        await presentation.SetWorkspaceDocumentsAsync(
-            [documentId]);
+        await presentation.SetWorkspaceDocumentsAsync([documentId], TestContext.Current.CancellationToken);
 
         presentation.OpenDocument(
             documentId);
@@ -684,8 +681,7 @@ public sealed class WorkspacePresentationTests
             x => x.RemoveDocumentsRequested += null,
             EventArgs.Empty);
 
-        await updateCompleted.Task.WaitAsync(
-            TimeSpan.FromSeconds(5));
+        await updateCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain(
             documentId,
@@ -927,8 +923,7 @@ public sealed class WorkspacePresentationTests
                 view,
                 dialogService);
 
-        await presentation.SetWorkspaceDocumentsAsync(
-            [documentId]);
+        await presentation.SetWorkspaceDocumentsAsync([documentId], TestContext.Current.CancellationToken);
 
         view.View.Raise(
             x => x.RemoveDocumentsRequested += null,

@@ -27,9 +27,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
             new TextDocumentTextExtractor();
 
         DocumentTextExtractionResult extractionResult =
-            await extractor.ExtractAsync(
-                stream,
-                "document.txt");
+            await extractor.ExtractAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.DirectText,
@@ -39,8 +37,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult normalizationResult =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.DirectText,
@@ -51,8 +48,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
                 maxChunkSize: "Second paragraph.".Length);
 
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2,
@@ -87,9 +83,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
             new MarkdownDocumentTextExtractor();
 
         DocumentTextExtractionResult extractionResult =
-            await extractor.ExtractAsync(
-                stream,
-                "document.md");
+            await extractor.ExtractAsync(stream, "document.md", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.DirectText,
@@ -100,8 +94,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
                 new DocumentProcessingOptions());
 
         DocumentTextNormalizationResult normalizationResult =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.DirectText,
@@ -112,8 +105,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
                 maxChunkSize: sourceText.Length);
 
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         DocumentChunk chunk =
             Assert.Single(chunks);
@@ -145,9 +137,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
             new JsonDocumentTextExtractor();
 
         DocumentTextExtractionResult extractionResult =
-            await extractor.ExtractAsync(
-                stream,
-                "document.json");
+            await extractor.ExtractAsync(stream, "document.json", TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.Unknown,
@@ -157,8 +147,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult normalizationResult =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DocumentSourceLocationMappingKind.Unknown,
@@ -169,8 +158,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
                 maxChunkSize: 1000);
 
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(chunks);
 
@@ -198,16 +186,13 @@ public sealed class DocumentTextSourceLocationPipelineTests
             new TextDocumentTextExtractor();
 
         DocumentTextExtractionResult extractionResult =
-            await extractor.ExtractAsync(
-                stream,
-                "document.txt");
+            await extractor.ExtractAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         var normalizer =
             new DocumentTextNormalizer();
 
         DocumentTextNormalizationResult normalizationResult =
-            await normalizer.NormalizeAsync(
-                extractionResult);
+            await normalizer.NormalizeAsync(extractionResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             "First line.\nSecond line.\nThird line.",
@@ -222,8 +207,7 @@ public sealed class DocumentTextSourceLocationPipelineTests
                 maxChunkSize: 1000);
 
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         DocumentChunk chunk =
             Assert.Single(chunks);

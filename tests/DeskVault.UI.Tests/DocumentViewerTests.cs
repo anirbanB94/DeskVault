@@ -21,9 +21,7 @@ public sealed class DocumentViewerTests
                 "DeskVault document content.");
 
         // Act
-        await viewer.OpenAsync(
-            stream,
-            "document.txt");
+        await viewer.OpenAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(
@@ -54,9 +52,7 @@ public sealed class DocumentViewerTests
                 "DeskVault document content.");
 
         // Act
-        await viewer.OpenAsync(
-            stream,
-            "document.txt");
+        await viewer.OpenAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         string filePath =
             Assert.IsType<string>(
@@ -100,9 +96,7 @@ public sealed class DocumentViewerTests
                 "DeskVault document content.");
 
         // Act
-        await viewer.OpenAsync(
-            stream,
-            "document.txt");
+        await viewer.OpenAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         string filePath =
             Assert.IsType<string>(
@@ -142,9 +136,7 @@ public sealed class DocumentViewerTests
                 "DeskVault document content.");
 
         // Act
-        await viewer.OpenAsync(
-            stream,
-            "document.txt");
+        await viewer.OpenAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         // Assert
         string filePath =
@@ -192,9 +184,7 @@ public sealed class DocumentViewerTests
                 expectedContent);
 
         // Act
-        await viewer.OpenAsync(
-            stream,
-            "document.txt");
+        await viewer.OpenAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         string filePath =
             Assert.IsType<string>(
@@ -202,8 +192,7 @@ public sealed class DocumentViewerTests
 
         // Assert
         string actualContent =
-            await File.ReadAllTextAsync(
-                filePath);
+            await File.ReadAllTextAsync(filePath, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expectedContent,
@@ -299,9 +288,7 @@ public sealed class DocumentViewerTests
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(
             () =>
-                viewer.OpenAsync(
-                    stream,
-                    "document.txt"));
+                viewer.OpenAsync(stream, "document.txt", TestContext.Current.CancellationToken));
 
         // Assert
         Assert.NotNull(
@@ -328,9 +315,7 @@ public sealed class DocumentViewerTests
                 "DeskVault document content.");
 
         // Act
-        await viewer.OpenAsync(
-            stream,
-            "document.txt");
+        await viewer.OpenAsync(stream, "document.txt", TestContext.Current.CancellationToken);
 
         // Assert
         stream.Position = 0;

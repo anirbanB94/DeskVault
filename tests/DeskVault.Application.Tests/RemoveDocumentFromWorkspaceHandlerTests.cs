@@ -18,7 +18,7 @@ public sealed class RemoveDocumentFromWorkspaceHandlerTests
             Guid.NewGuid());
 
         RemoveDocumentFromWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RemoveDocumentFromWorkspaceResultStatus.WorkspaceNotFound,
@@ -43,7 +43,7 @@ public sealed class RemoveDocumentFromWorkspaceHandlerTests
             Guid.NewGuid());
 
         RemoveDocumentFromWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RemoveDocumentFromWorkspaceResultStatus.DocumentNotMember,
@@ -73,7 +73,7 @@ public sealed class RemoveDocumentFromWorkspaceHandlerTests
             documentId);
 
         RemoveDocumentFromWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RemoveDocumentFromWorkspaceResultStatus.Success,
@@ -104,7 +104,7 @@ public sealed class RemoveDocumentFromWorkspaceHandlerTests
             documentId);
 
         RemoveDocumentFromWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RemoveDocumentFromWorkspaceResultStatus.Success,
@@ -146,7 +146,7 @@ public sealed class RemoveDocumentFromWorkspaceHandlerTests
             documentToRemove);
 
         RemoveDocumentFromWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RemoveDocumentFromWorkspaceResultStatus.Success,
@@ -199,7 +199,7 @@ public sealed class RemoveDocumentFromWorkspaceHandlerTests
             documentId);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => context.Handler.HandleAsync(command));
+            () => context.Handler.HandleAsync(command, TestContext.Current.CancellationToken));
 
         Assert.Single(workspace.Memberships);
         Assert.Equal(

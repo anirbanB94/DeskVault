@@ -51,10 +51,7 @@ public sealed class DocumentImportIntegrationTests
                 This document contains searchable enterprise architecture content.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -76,10 +73,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await firstInstance.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await firstInstance.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Integration Test Document"));
+                            "Integration Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -109,8 +105,7 @@ public sealed class DocumentImportIntegrationTests
                     0L,
                     importedDocument.LastSuccessfulProcessingGeneration);
 
-                await firstInstance.ProcessingService.ProcessAsync(
-                    documentId);
+                await firstInstance.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? document =
                     await firstInstance.GetDocumentAsync(
@@ -171,9 +166,8 @@ public sealed class DocumentImportIntegrationTests
                     });
 
                 SearchDocumentsPage searchPage =
-                    await firstInstance.SearchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "ENTERPRISE ARCHITECTURE"));
+                    await firstInstance.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "ENTERPRISE ARCHITECTURE"), TestContext.Current.CancellationToken);
 
                 IReadOnlyList<SearchDocumentsResult> searchResults =
                     searchPage.Results;
@@ -200,8 +194,7 @@ public sealed class DocumentImportIntegrationTests
                             "enterprise architecture",
                             StringComparison.OrdinalIgnoreCase));
 
-                await firstInstance.ProcessingService.ProcessAsync(
-                    documentId);
+                await firstInstance.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? afterSecondProcessing =
                     await firstInstance.GetDocumentAsync(
@@ -329,9 +322,8 @@ public sealed class DocumentImportIntegrationTests
                     indexedText);
 
                 SearchDocumentsPage searchPage =
-                    await secondInstance.SearchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "ENTERPRISE ARCHITECTURE"));
+                    await secondInstance.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "ENTERPRISE ARCHITECTURE"), TestContext.Current.CancellationToken);
 
                 IReadOnlyList<SearchDocumentsResult> searchResults =
                     searchPage.Results;
@@ -406,10 +398,7 @@ public sealed class DocumentImportIntegrationTests
             const string sourceText =
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -427,10 +416,9 @@ public sealed class DocumentImportIntegrationTests
                         });
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Configured Chunking Test Document"));
+                        "Configured Chunking Test Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -442,8 +430,7 @@ public sealed class DocumentImportIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             List<DocumentChunkEntity> chunks =
                 await harness.GetChunksAsync(
@@ -536,10 +523,7 @@ public sealed class DocumentImportIntegrationTests
             This content remains searchable after the processing rule version changes.
             """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -582,10 +566,9 @@ public sealed class DocumentImportIntegrationTests
                             firstChunker))
             {
                 ImportDocumentResult importResult =
-                    await firstHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await firstHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Processing Version Change Test Document"));
+                            "Processing Version Change Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -597,8 +580,7 @@ public sealed class DocumentImportIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
-                await firstHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await firstHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? firstDocument =
                     await firstHarness.GetDocumentAsync(
@@ -680,8 +662,7 @@ public sealed class DocumentImportIntegrationTests
                         chunker:
                             secondChunker))
             {
-                await secondHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await secondHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? secondDocument =
                     await secondHarness.GetDocumentAsync(
@@ -731,9 +712,8 @@ public sealed class DocumentImportIntegrationTests
                     });
 
                 SearchDocumentsPage searchPage =
-                    await secondHarness.SearchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "PROCESSING VERSION EVOLUTION"));
+                    await secondHarness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "PROCESSING VERSION EVOLUTION"), TestContext.Current.CancellationToken);
 
                 SearchDocumentsResult matchingResult =
                     Assert.Single(
@@ -812,10 +792,7 @@ public sealed class DocumentImportIntegrationTests
             const string secondChunkingRuleVersion =
                 "test-chunker-v2";
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -851,10 +828,9 @@ public sealed class DocumentImportIntegrationTests
                             firstChunker))
             {
                 ImportDocumentResult importResult =
-                    await firstHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await firstHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Chunking Version Change Test Document"));
+                            "Chunking Version Change Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -875,8 +851,7 @@ public sealed class DocumentImportIntegrationTests
                     DocumentChunkIdentity.ComputeContentHash(
                         chunkText);
 
-                await firstHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await firstHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? firstDocument =
                     await firstHarness.GetDocumentAsync(
@@ -957,8 +932,7 @@ public sealed class DocumentImportIntegrationTests
                         chunker:
                             secondChunker))
             {
-                await secondHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await secondHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? secondDocument =
                     await secondHarness.GetDocumentAsync(
@@ -1072,10 +1046,7 @@ public sealed class DocumentImportIntegrationTests
             This document must exceed the configured processing boundary.
             """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -1092,10 +1063,9 @@ public sealed class DocumentImportIntegrationTests
                             }))
             {
                 ImportDocumentResult importResult =
-                    await limitedHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await limitedHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Resource Limit Test Document"));
+                            "Resource Limit Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -1111,8 +1081,7 @@ public sealed class DocumentImportIntegrationTests
                     await Assert.ThrowsAsync<
                         ResourceLimitExceededException>(
                         () =>
-                            limitedHarness.ProcessingService.ProcessAsync(
-                                documentId));
+                            limitedHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
                 Assert.Equal(
                     16L,
@@ -1155,8 +1124,7 @@ public sealed class DocumentImportIntegrationTests
                         databasePath,
                         encryptionKey))
             {
-                await retryHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await retryHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? retriedDocument =
                     await retryHarness.GetDocumentAsync(
@@ -1246,9 +1214,7 @@ public sealed class DocumentImportIntegrationTests
                 Encoding.UTF8.GetBytes(
                     sourceText);
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                sourceBytes);
+            await File.WriteAllBytesAsync(sourceFilePath, sourceBytes, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -1263,10 +1229,9 @@ public sealed class DocumentImportIntegrationTests
                         });
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Resource Limit Success Test Document"));
+                        "Resource Limit Success Test Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -1278,8 +1243,7 @@ public sealed class DocumentImportIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -1366,9 +1330,7 @@ public sealed class DocumentImportIntegrationTests
                 sourceBytes,
                 (byte)'A');
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                sourceBytes);
+            await File.WriteAllBytesAsync(sourceFilePath, sourceBytes, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -1383,10 +1345,9 @@ public sealed class DocumentImportIntegrationTests
                         });
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Large Resource Limit Test Document"));
+                        "Large Resource Limit Test Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -1402,8 +1363,7 @@ public sealed class DocumentImportIntegrationTests
                 await Assert.ThrowsAsync<
                     ResourceLimitExceededException>(
                     () =>
-                        harness.ProcessingService.ProcessAsync(
-                            documentId));
+                        harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
             Assert.Equal(
                 resourceLimitBytes,
@@ -1478,10 +1438,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "processing-failure-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault processing cancellation integration test.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault processing cancellation integration test.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             var cancellingExtractor =
                 new CancellingDocumentTextExtractor();
@@ -1494,10 +1451,9 @@ public sealed class DocumentImportIntegrationTests
                     [cancellingExtractor]);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Processing Cancellation Test Document"));
+                        "Processing Cancellation Test Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -1599,10 +1555,7 @@ public sealed class DocumentImportIntegrationTests
                 This content represents the previously successful indexed result.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
             string storedFilePath;
@@ -1617,10 +1570,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await initialHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await initialHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Reprocessing Cancellation Test Document"));
+                            "Reprocessing Cancellation Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -1632,8 +1584,7 @@ public sealed class DocumentImportIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
-                await initialHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await initialHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? successfulDocument =
                     await initialHarness.GetDocumentAsync(
@@ -1825,10 +1776,7 @@ public sealed class DocumentImportIntegrationTests
                 This content must remain available after a later processing failure.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
             string storedFilePath;
@@ -1844,10 +1792,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await initialHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await initialHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Reprocessing Failure Test Document"));
+                            "Reprocessing Failure Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -1859,8 +1806,7 @@ public sealed class DocumentImportIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
-                await initialHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await initialHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? successfulDocument =
                     await initialHarness.GetDocumentAsync(
@@ -1925,8 +1871,7 @@ public sealed class DocumentImportIntegrationTests
 
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    reprocessingHarness.ProcessingService.ProcessAsync(
-                        documentId));
+                    reprocessingHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
             Document? failedDocument =
                 await reprocessingHarness.GetDocumentAsync(
@@ -2032,10 +1977,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "failed-import-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault failed import cleanup integration test.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault failed import cleanup integration test.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             var persistenceException =
                 new InvalidOperationException(
@@ -2061,10 +2003,9 @@ public sealed class DocumentImportIntegrationTests
             var exception =
                 await Assert.ThrowsAsync<InvalidOperationException>(
                     () =>
-                        harness.ImportHandler.HandleAsync(
-                            new ImportDocumentCommand(
+                        harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                                 sourceFilePath,
-                                "Failed Import Test Document")));
+                                "Failed Import Test Document"), TestContext.Current.CancellationToken));
 
             Assert.Same(
                 persistenceException,
@@ -2132,10 +2073,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "cancelled-import-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault cancelled import cleanup integration test.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault cancelled import cleanup integration test.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             using var cancellationTokenSource =
                 new CancellationTokenSource();
@@ -2251,10 +2189,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "concurrent-processing-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "Original source content.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "Original source content.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -2266,10 +2201,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await setupHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await setupHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Concurrent Processing Test Document"));
+                            "Concurrent Processing Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -2332,14 +2266,12 @@ public sealed class DocumentImportIntegrationTests
                         secondChunker);
 
             Task firstProcessingTask =
-                firstHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                firstHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             await firstExtractor.WaitUntilExtractionStartedAsync();
 
             Task secondProcessingTask =
-                secondHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                secondHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             await secondProcessingTask;
 
@@ -2551,10 +2483,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "concurrent-cancellation-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "Original source content.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "Original source content.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -2566,10 +2495,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await setupHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await setupHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Concurrent Cancellation Test Document"));
+                            "Concurrent Cancellation Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -2642,8 +2570,7 @@ public sealed class DocumentImportIntegrationTests
             await firstExtractor.WaitUntilExtractionStartedAsync();
 
             Task secondProcessingTask =
-                secondHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                secondHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             await secondProcessingTask;
 
@@ -2840,10 +2767,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "concurrent-failure-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "Original source content.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "Original source content.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -2855,10 +2779,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await setupHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await setupHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Concurrent Failure Test Document"));
+                            "Concurrent Failure Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -2922,14 +2845,12 @@ public sealed class DocumentImportIntegrationTests
                         secondChunker);
 
             Task firstProcessingTask =
-                firstHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                firstHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             await firstExtractor.WaitUntilExtractionStartedAsync();
 
             Task secondProcessingTask =
-                secondHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                secondHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             await secondProcessingTask;
 
@@ -3109,10 +3030,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "concurrent-duplicate-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault concurrent duplicate import test.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault concurrent duplicate import test.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var firstHarness =
                 new DocumentPipelineTestHarness(
@@ -3137,16 +3055,14 @@ public sealed class DocumentImportIntegrationTests
                                 storageBarrier));
 
             Task<ImportDocumentResult> firstImportTask =
-                firstHarness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                firstHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "First Concurrent Document"));
+                        "First Concurrent Document"), TestContext.Current.CancellationToken);
 
             Task<ImportDocumentResult> secondImportTask =
-                secondHarness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                secondHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Second Concurrent Document"));
+                        "Second Concurrent Document"), TestContext.Current.CancellationToken);
 
             await storageBarrier.WaitUntilBothStoresCompleteAsync();
 
@@ -3218,8 +3134,7 @@ public sealed class DocumentImportIntegrationTests
             Assert.Equal(
                 Convert.ToHexString(
                     SHA256.HashData(
-                        await File.ReadAllBytesAsync(
-                            sourceFilePath)))
+                        await File.ReadAllBytesAsync(sourceFilePath, TestContext.Current.CancellationToken)))
                     .ToLowerInvariant(),
                 documents[0].Sha256Hash);
 
@@ -3282,15 +3197,9 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "concurrent-second.txt");
 
-            await File.WriteAllTextAsync(
-                firstSourceFilePath,
-                "First concurrent document content.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(firstSourceFilePath, "First concurrent document content.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
-            await File.WriteAllTextAsync(
-                secondSourceFilePath,
-                "Second concurrent document content.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(secondSourceFilePath, "Second concurrent document content.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var firstHarness =
                 new DocumentPipelineTestHarness(
@@ -3305,16 +3214,14 @@ public sealed class DocumentImportIntegrationTests
                     encryptionKey);
 
             Task<ImportDocumentResult> firstImportTask =
-                firstHarness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                firstHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         firstSourceFilePath,
-                        "First Concurrent Document"));
+                        "First Concurrent Document"), TestContext.Current.CancellationToken);
 
             Task<ImportDocumentResult> secondImportTask =
-                secondHarness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                secondHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         secondSourceFilePath,
-                        "Second Concurrent Document"));
+                        "Second Concurrent Document"), TestContext.Current.CancellationToken);
 
             ImportDocumentResult[] results =
                 await Task.WhenAll(
@@ -3403,9 +3310,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "duplicate-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault duplicate import integration test.");
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault duplicate import integration test.", TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -3414,10 +3319,9 @@ public sealed class DocumentImportIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult firstResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "First Document"));
+                        "First Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -3427,10 +3331,9 @@ public sealed class DocumentImportIntegrationTests
                 firstResult.DocumentId);
 
             ImportDocumentResult secondResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Second Document"));
+                        "Second Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Duplicate,
@@ -3490,12 +3393,10 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "remove-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                """
+            await File.WriteAllTextAsync(sourceFilePath, """
                 DeskVault removal integration testing verifies
                 complete document cleanup across storage and persistence.
-                """);
+                """, TestContext.Current.CancellationToken);
 
             Guid documentId;
             string storedFilePath;
@@ -3507,10 +3408,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey);
 
             ImportDocumentResult importResult =
-                await instance.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await instance.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Removal Integration Test Document"));
+                        "Removal Integration Test Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -3532,8 +3432,7 @@ public sealed class DocumentImportIntegrationTests
                 DocumentStatus.Imported,
                 importedDocument.Status);
 
-            await instance.ProcessingService.ProcessAsync(
-                documentId);
+            await instance.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await instance.GetDocumentAsync(
@@ -3555,9 +3454,8 @@ public sealed class DocumentImportIntegrationTests
             Assert.NotEmpty(chunks);
 
             RemoveDocumentResult removeResult =
-                await instance.RemoveHandler.HandleAsync(
-                    new RemoveDocumentCommand(
-                        documentId));
+                await instance.RemoveHandler.HandleAsync(new RemoveDocumentCommand(
+                        documentId), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 RemoveDocumentResultStatus.Success,
@@ -3619,9 +3517,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "processing-failure-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault processing failure integration test.");
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault processing failure integration test.", TestContext.Current.CancellationToken);
 
             var failingExtractor =
                 new FailingDocumentTextExtractor();
@@ -3634,10 +3530,9 @@ public sealed class DocumentImportIntegrationTests
                     [failingExtractor]);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Processing Failure Test Document"));
+                        "Processing Failure Test Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -3661,8 +3556,7 @@ public sealed class DocumentImportIntegrationTests
 
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    harness.ProcessingService.ProcessAsync(
-                        documentId));
+                    harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
             IReadOnlyList<Document> documents =
                 await harness.GetDocumentsAsync();
@@ -3732,10 +3626,7 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "processing-retry-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault processing retry integration test.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault processing retry integration test.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -3751,10 +3642,9 @@ public sealed class DocumentImportIntegrationTests
                         [failingExtractor]))
             {
                 ImportDocumentResult importResult =
-                    await failingHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await failingHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Processing Retry Test Document"));
+                            "Processing Retry Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -3768,8 +3658,7 @@ public sealed class DocumentImportIntegrationTests
 
                 await Assert.ThrowsAsync<InvalidOperationException>(
                     () =>
-                        failingHarness.ProcessingService.ProcessAsync(
-                            documentId));
+                        failingHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
                 Document? failedDocument =
                     await failingHarness.GetDocumentAsync(
@@ -3800,8 +3689,7 @@ public sealed class DocumentImportIntegrationTests
                     databasePath,
                     encryptionKey);
 
-            await retryHarness.ProcessingService.ProcessAsync(
-                documentId);
+            await retryHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? retriedDocument =
                 await retryHarness.GetDocumentAsync(
@@ -3879,10 +3767,7 @@ public sealed class DocumentImportIntegrationTests
                 This result must remain searchable after candidate publication fails.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
             string successfulIndexedText;
@@ -3895,10 +3780,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await initialHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await initialHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Candidate Failure Test Document"));
+                            "Candidate Failure Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -3910,8 +3794,7 @@ public sealed class DocumentImportIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
-                await initialHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await initialHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? successfulDocument =
                     await initialHarness.GetDocumentAsync(
@@ -3985,8 +3868,7 @@ public sealed class DocumentImportIntegrationTests
 
             await Assert.ThrowsAnyAsync<Exception>(
                 () =>
-                    failingHarness.ProcessingService.ProcessAsync(
-                        documentId));
+                    failingHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
             Assert.True(
                 failingChunker.WasCalled);
@@ -4107,10 +3989,7 @@ public sealed class DocumentImportIntegrationTests
             This result must remain available when candidate publication is cancelled.
             """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
             string successfulIndexedText;
@@ -4123,10 +4002,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await initialHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await initialHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Candidate Cancellation Test Document"));
+                            "Candidate Cancellation Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -4138,8 +4016,7 @@ public sealed class DocumentImportIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
-                await initialHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await initialHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? successfulDocument =
                     await initialHarness.GetDocumentAsync(
@@ -4337,14 +4214,11 @@ public sealed class DocumentImportIntegrationTests
                     rootDirectory,
                     "candidate-retry-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                """
+            await File.WriteAllTextAsync(sourceFilePath, """
             Previous successful processing result.
 
             This result must be replaced by the successful retry.
-            """,
-                Encoding.UTF8);
+            """, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
 
@@ -4356,10 +4230,9 @@ public sealed class DocumentImportIntegrationTests
                         encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await initialHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await initialHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Candidate Retry Test Document"));
+                            "Candidate Retry Test Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -4371,8 +4244,7 @@ public sealed class DocumentImportIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
-                await initialHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await initialHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? successfulDocument =
                     await initialHarness.GetDocumentAsync(
@@ -4435,8 +4307,7 @@ public sealed class DocumentImportIntegrationTests
             {
                 await Assert.ThrowsAnyAsync<Exception>(
                     () =>
-                        failingHarness.ProcessingService.ProcessAsync(
-                            documentId));
+                        failingHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
                 Document? failedDocument =
                     await failingHarness.GetDocumentAsync(
@@ -4524,8 +4395,7 @@ public sealed class DocumentImportIntegrationTests
                     chunker:
                         successfulRetryChunker);
 
-            await retryHarness.ProcessingService.ProcessAsync(
-                documentId);
+            await retryHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? retriedDocument =
                 await retryHarness.GetDocumentAsync(
@@ -4657,10 +4527,7 @@ public sealed class DocumentImportIntegrationTests
             1002,Bob Smith,Design
             """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -4669,10 +4536,9 @@ public sealed class DocumentImportIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Integration CSV Document"));
+                        "Integration CSV Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -4694,8 +4560,7 @@ public sealed class DocumentImportIntegrationTests
                 DocumentStatus.Imported,
                 importedDocument.Status);
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -4735,9 +4600,8 @@ public sealed class DocumentImportIntegrationTests
                 indexedText);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "Alice Johnson"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        "Alice Johnson"), TestContext.Current.CancellationToken);
 
             IReadOnlyList<SearchDocumentsResult> searchResults =
                 searchPage.Results;
@@ -4812,10 +4676,7 @@ public sealed class DocumentImportIntegrationTests
             Markdown syntax should remain preserved.
             """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -4824,10 +4685,9 @@ public sealed class DocumentImportIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Integration Markdown Document"));
+                        "Integration Markdown Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -4849,8 +4709,7 @@ public sealed class DocumentImportIntegrationTests
                 DocumentStatus.Imported,
                 importedDocument.Status);
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -4890,9 +4749,8 @@ public sealed class DocumentImportIntegrationTests
                 indexedText);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "markdown architecture"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        "markdown architecture"), TestContext.Current.CancellationToken);
 
             IReadOnlyList<SearchDocumentsResult> searchResults =
                 searchPage.Results;
@@ -4977,9 +4835,7 @@ public sealed class DocumentImportIntegrationTests
                 Encoding.UTF8.GetBytes(
                     sourceText);
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                originalBytes);
+            await File.WriteAllBytesAsync(sourceFilePath, originalBytes, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -4988,10 +4844,9 @@ public sealed class DocumentImportIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Source Preservation JSON"));
+                        "Source Preservation JSON"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -5011,15 +4866,12 @@ public sealed class DocumentImportIntegrationTests
                     document.StoredFilePath));
 
             await using Stream decryptedStream =
-                await harness.DocumentReader.OpenReadAsync(
-                    document.Id,
-                    document.Sha256Hash);
+                await harness.DocumentReader.OpenReadAsync(document.Id, document.Sha256Hash, TestContext.Current.CancellationToken);
 
             using var decryptedContent =
                 new MemoryStream();
 
-            await decryptedStream.CopyToAsync(
-                decryptedContent);
+            await decryptedStream.CopyToAsync(decryptedContent, TestContext.Current.CancellationToken);
 
             byte[] decryptedBytes =
                 decryptedContent.ToArray();
@@ -5082,9 +4934,7 @@ public sealed class DocumentImportIntegrationTests
             byte[] mutatedBytes =
                 "Mutated document content."u8.ToArray();
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                originalBytes);
+            await File.WriteAllBytesAsync(sourceFilePath, originalBytes, TestContext.Current.CancellationToken);
 
             var hashService =
                 new MutatingHashService(
@@ -5099,10 +4949,9 @@ public sealed class DocumentImportIntegrationTests
 
             await Assert.ThrowsAsync<DocumentImportContentMismatchException>(
                 () =>
-                    harness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Mutation Test Document")));
+                            "Mutation Test Document"), TestContext.Current.CancellationToken));
 
             IReadOnlyList<Document> documents =
                 await harness.GetDocumentsAsync();

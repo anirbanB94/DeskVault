@@ -41,7 +41,7 @@ public sealed class CsvDocumentTextExtractorTests
             """;
 
         DocumentTextExtractionResult result =
-            await ExtractAsync(csv);
+            await ExtractAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             """
@@ -67,7 +67,7 @@ public sealed class CsvDocumentTextExtractorTests
             """;
 
         DocumentTextExtractionResult result =
-            await ExtractAsync(csv);
+            await ExtractAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             """
@@ -94,7 +94,7 @@ public sealed class CsvDocumentTextExtractorTests
             """;
 
         DocumentTextExtractionResult result =
-            await ExtractAsync(csv);
+            await ExtractAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             """
@@ -116,7 +116,7 @@ public sealed class CsvDocumentTextExtractorTests
             """;
 
         DocumentTextExtractionResult result =
-            await ExtractAsync(csv);
+            await ExtractAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             """
@@ -143,7 +143,7 @@ public sealed class CsvDocumentTextExtractorTests
             """;
 
         DocumentTextExtractionResult result =
-            await ExtractAsync(csv);
+            await ExtractAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             """
@@ -166,7 +166,7 @@ public sealed class CsvDocumentTextExtractorTests
             """;
 
         DocumentTextExtractionResult result =
-            await ExtractAsync(csv);
+            await ExtractAsync(csv, TestContext.Current.CancellationToken);
 
         Assert.Contains(
             "Id: 1",
@@ -237,9 +237,7 @@ public sealed class CsvDocumentTextExtractorTests
             new MemoryStream(
                 Encoding.UTF8.GetBytes(csv));
 
-        await CreateExtractor().ExtractAsync(
-            stream,
-            DocumentFileName);
+        await CreateExtractor().ExtractAsync(stream, DocumentFileName, TestContext.Current.CancellationToken);
 
         Assert.True(
             stream.CanRead);
@@ -268,9 +266,7 @@ public sealed class CsvDocumentTextExtractorTests
         ResourceLimitExceededException exception =
             await Assert.ThrowsAsync<ResourceLimitExceededException>(
                 () =>
-                    extractor.ExtractAsync(
-                        stream,
-                        DocumentFileName));
+                    extractor.ExtractAsync(stream, DocumentFileName, TestContext.Current.CancellationToken));
 
         Assert.Equal(
             5,
@@ -308,9 +304,7 @@ public sealed class CsvDocumentTextExtractorTests
                 Encoding.UTF8.GetBytes(csv));
 
         DocumentTextExtractionResult result =
-            await extractor.ExtractAsync(
-                stream,
-                DocumentFileName);
+            await extractor.ExtractAsync(stream, DocumentFileName, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             expectedText,

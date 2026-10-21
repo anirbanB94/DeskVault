@@ -27,14 +27,13 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Act
             keyMaterial =
-                await service.GetOrCreateKeyAsync();
+                await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             string keyFilePath =
                 GetKeyFilePath(dataPaths);
 
             persistedKey =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(
@@ -99,10 +98,10 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Act
             firstKey =
-                await service.GetOrCreateKeyAsync();
+                await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             secondKey =
-                await service.GetOrCreateKeyAsync();
+                await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(
@@ -158,13 +157,13 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Act
             provisionedKey =
-                await service.GetOrCreateKeyAsync();
+                await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             retrievedKey =
-                await service.GetKeyAsync();
+                await service.GetKeyAsync(TestContext.Current.CancellationToken);
 
             secondRetrievedKey =
-                await service.GetKeyAsync();
+                await service.GetKeyAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(
@@ -242,7 +241,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                 CreateService(dataPaths);
 
             databaseKey =
-                await databaseService.GetOrCreateKeyAsync();
+                await databaseService.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             string databaseKeyPath =
                 Path.Combine(
@@ -253,30 +252,24 @@ public sealed class WindowsEncryptionKeyServiceTests
                 GetKeyFilePath(dataPaths);
 
             databaseArtifact =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             // Copy the protected database-key artifact to the document-key path.
-            await File.WriteAllBytesAsync(
-                documentKeyPath,
-                databaseArtifact);
+            await File.WriteAllBytesAsync(documentKeyPath, databaseArtifact, TestContext.Current.CancellationToken);
 
             documentArtifactBeforeRead =
-                await File.ReadAllBytesAsync(
-                    documentKeyPath);
+                await File.ReadAllBytesAsync(documentKeyPath, TestContext.Current.CancellationToken);
 
             // A document-key service must reject a database-purpose payload.
             await Assert.ThrowsAsync<CryptographicException>(
-                () => documentService.GetKeyAsync());
+                () => documentService.GetKeyAsync(TestContext.Current.CancellationToken));
 
             // Failed retrieval must not rewrite either artifact.
             documentArtifactAfterRead =
-                await File.ReadAllBytesAsync(
-                    documentKeyPath);
+                await File.ReadAllBytesAsync(documentKeyPath, TestContext.Current.CancellationToken);
 
             databaseArtifactAfterRead =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 documentArtifactBeforeRead,
@@ -347,7 +340,7 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             await Assert.ThrowsAsync<CryptographicException>(
                 () =>
-                    service.GetKeyAsync());
+                    service.GetKeyAsync(TestContext.Current.CancellationToken));
 
             Assert.False(
                 Directory.Exists(
@@ -387,24 +380,20 @@ public sealed class WindowsEncryptionKeyServiceTests
             string keyFilePath =
                 GetKeyFilePath(dataPaths);
 
-            await File.WriteAllBytesAsync(
-                keyFilePath,
-                invalidProtectedKey);
+            await File.WriteAllBytesAsync(keyFilePath, invalidProtectedKey, TestContext.Current.CancellationToken);
 
             storedBytesBeforeRead =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             var service =
                 CreateService(dataPaths);
 
             await Assert.ThrowsAsync<CryptographicException>(
                 () =>
-                    service.GetOrCreateKeyAsync());
+                    service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken));
 
             storedBytesAfterRead =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             Assert.True(
                 File.Exists(keyFilePath));
@@ -463,25 +452,21 @@ public sealed class WindowsEncryptionKeyServiceTests
             string keyFilePath =
                 GetKeyFilePath(dataPaths);
 
-            await File.WriteAllBytesAsync(
-                keyFilePath,
-                invalidProtectedKey);
+            await File.WriteAllBytesAsync(keyFilePath, invalidProtectedKey, TestContext.Current.CancellationToken);
 
             storedBytes =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             var service =
                 CreateService(dataPaths);
 
             await Assert.ThrowsAnyAsync<CryptographicException>(
                 () =>
-                    service.GetKeyAsync());
+                    service.GetKeyAsync(TestContext.Current.CancellationToken));
 
             Assert.Equal(
                 storedBytes,
-                await File.ReadAllBytesAsync(
-                    keyFilePath));
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken));
 
             Assert.Single(
                 Directory.GetFiles(
@@ -532,25 +517,21 @@ public sealed class WindowsEncryptionKeyServiceTests
             string keyFilePath =
                 GetKeyFilePath(dataPaths);
 
-            await File.WriteAllBytesAsync(
-                keyFilePath,
-                protectedKey);
+            await File.WriteAllBytesAsync(keyFilePath, protectedKey, TestContext.Current.CancellationToken);
 
             storedBytes =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             var service =
                 CreateService(dataPaths);
 
             await Assert.ThrowsAsync<CryptographicException>(
                 () =>
-                    service.GetKeyAsync());
+                    service.GetKeyAsync(TestContext.Current.CancellationToken));
 
             Assert.Equal(
                 storedBytes,
-                await File.ReadAllBytesAsync(
-                    keyFilePath));
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken));
 
             Assert.Single(
                 Directory.GetFiles(
@@ -595,14 +576,13 @@ public sealed class WindowsEncryptionKeyServiceTests
                 CreateService(dataPaths);
 
             provisionedKey =
-                await service.GetOrCreateKeyAsync();
+                await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             string keyFilePath =
                 GetKeyFilePath(dataPaths);
 
             storedBytesBeforeRead =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             // Act: hold an exclusive lock so retrieval cannot read the file.
             await using (
@@ -613,12 +593,11 @@ public sealed class WindowsEncryptionKeyServiceTests
                     FileShare.None))
             {
                 await Assert.ThrowsAsync<IOException>(
-                    () => service.GetKeyAsync());
+                    () => service.GetKeyAsync(TestContext.Current.CancellationToken));
             }
 
             storedBytesAfterRead =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             // Assert: failed strict retrieval leaves canonical state unchanged.
             Assert.True(
@@ -678,14 +657,13 @@ public sealed class WindowsEncryptionKeyServiceTests
                 CreateService(dataPaths);
 
             provisionedKey =
-                await service.GetOrCreateKeyAsync();
+                await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             string keyFilePath =
                 GetKeyFilePath(dataPaths);
 
             artifactBeforeCancellation =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             using var cancellationTokenSource =
                 new CancellationTokenSource();
@@ -698,8 +676,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                         cancellationTokenSource.Token));
 
             artifactAfterCancellation =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 artifactBeforeCancellation,
@@ -854,8 +831,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                 Path.GetFullPath(persistedFiles[0]));
 
             persistedProtectedKey =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             unprotectedPayload =
                 ProtectedData.Unprotect(
@@ -1054,8 +1030,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                 Path.GetFullPath(persistedFiles[0]));
 
             byte[] protectedKeyFromFile =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             byte[]? unprotectedPayload = null;
 
@@ -1141,7 +1116,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                 Directory.Exists(
                     dataPaths.SecurityDirectory));
 
-            await service.GetOrCreateKeyAsync();
+            await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             Assert.True(
                 Directory.Exists(
@@ -1206,7 +1181,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                 CreateService(dataPaths);
 
             firstKey =
-                await service.GetOrCreateKeyAsync();
+                await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             string keyFilePath =
                 GetKeyFilePath(dataPaths);
@@ -1215,7 +1190,7 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Act
             secondKey =
-                await service.GetOrCreateKeyAsync();
+                await service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(
@@ -1280,7 +1255,7 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Act
             IOException exception = await Assert.ThrowsAsync<IOException>(
-                () => service.GetOrCreateKeyAsync());
+                () => service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken));
 
             // Assert
             Assert.Equal(
@@ -1394,27 +1369,25 @@ public sealed class WindowsEncryptionKeyServiceTests
                 dataPaths.SecurityDirectory,
                 "master.key");
 
-            await File.WriteAllBytesAsync(
-                abandonedCandidatePath,
-                abandonedCandidateContents);
+            await File.WriteAllBytesAsync(abandonedCandidatePath, abandonedCandidateContents, TestContext.Current.CancellationToken);
 
             // Act
             createdKeyMaterial = await CreateService(dataPaths)
-                .GetOrCreateKeyAsync();
+                .GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             // Assert: create a valid canonical key and preserve the abandoned file.
             Assert.True(File.Exists(canonicalKeyFilePath));
             Assert.True(File.Exists(abandonedCandidatePath));
 
             byte[] preservedCandidateContents =
-                await File.ReadAllBytesAsync(abandonedCandidatePath);
+                await File.ReadAllBytesAsync(abandonedCandidatePath, TestContext.Current.CancellationToken);
 
             Assert.True(
                 abandonedCandidateContents.SequenceEqual(
                     preservedCandidateContents));
 
             persistedKeyFileContents =
-                await File.ReadAllBytesAsync(canonicalKeyFilePath);
+                await File.ReadAllBytesAsync(canonicalKeyFilePath, TestContext.Current.CancellationToken);
 
             Assert.False(
                 abandonedCandidateContents.SequenceEqual(
@@ -1426,7 +1399,7 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Verify that subsequent retrieval uses the canonical key.
             loadedKeyMaterial = await CreateService(dataPaths)
-                .GetOrCreateKeyAsync();
+                .GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
 
             Assert.True(
                 createdKeyMaterial.KeyBytes.SequenceEqual(
@@ -1475,9 +1448,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                 dataPaths.SecurityDirectory,
                 "master.key.preexisting.tmp");
 
-            await File.WriteAllBytesAsync(
-                candidatePath,
-                preExistingContents);
+            await File.WriteAllBytesAsync(candidatePath, preExistingContents, TestContext.Current.CancellationToken);
 
             var operations = new FaultInjectingKeyCandidateFileOperations
             {
@@ -1492,9 +1463,9 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Act
             await Assert.ThrowsAsync<IOException>(
-                () => service.GetOrCreateKeyAsync());
+                () => service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken));
 
-            actualContents = await File.ReadAllBytesAsync(candidatePath);
+            actualContents = await File.ReadAllBytesAsync(candidatePath, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(preExistingContents, actualContents);
@@ -1538,7 +1509,7 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Act
             await Assert.ThrowsAsync<IOException>(
-                () => service.GetOrCreateKeyAsync());
+                () => service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken));
 
             // Assert
             Assert.NotNull(operations.LastCandidateFilePath);
@@ -1584,7 +1555,7 @@ public sealed class WindowsEncryptionKeyServiceTests
 
             // Act
             await Assert.ThrowsAsync<IOException>(
-                () => service.GetOrCreateKeyAsync());
+                () => service.GetOrCreateKeyAsync(TestContext.Current.CancellationToken));
 
             // Assert
             Assert.NotNull(operations.LastCandidateFilePath);
@@ -1762,7 +1733,7 @@ public sealed class WindowsEncryptionKeyServiceTests
                 1,
                 operations.Sum(operation => operation.DeleteCallCount));
 
-            persistedProtectedKey = await File.ReadAllBytesAsync(keyFilePath);
+            persistedProtectedKey = await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             unprotectedPayload = ProtectedData.Unprotect(
                 persistedProtectedKey,
@@ -1969,19 +1940,16 @@ public sealed class WindowsEncryptionKeyServiceTests
             string keyFilePath =
                 GetKeyFilePath(dataPaths);
 
-            await File.WriteAllBytesAsync(
-                keyFilePath,
-                protectedLegacyArtifact);
+            await File.WriteAllBytesAsync(keyFilePath, protectedLegacyArtifact, TestContext.Current.CancellationToken);
 
             var service = CreateService(dataPaths);
 
             // Act
             retrievedKey =
-                await service.GetKeyAsync();
+                await service.GetKeyAsync(TestContext.Current.CancellationToken);
 
             persistedArtifactAfterRead =
-                await File.ReadAllBytesAsync(
-                    keyFilePath);
+                await File.ReadAllBytesAsync(keyFilePath, TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(

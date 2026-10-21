@@ -15,11 +15,10 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
         var context = CreateContext();
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new SaveTemporaryWorkspaceCommand(
+        var result = await handler.HandleAsync(new SaveTemporaryWorkspaceCommand(
                 Guid.NewGuid(),
                 "Saved Workspace",
-                null));
+                null), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.WorkspaceNotFound,
@@ -45,11 +44,10 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new SaveTemporaryWorkspaceCommand(
+        var result = await handler.HandleAsync(new SaveTemporaryWorkspaceCommand(
                 workspace.Id,
                 "New Name",
-                null));
+                null), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.WorkspaceNotTemporary,
@@ -73,11 +71,10 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new SaveTemporaryWorkspaceCommand(
+        var result = await handler.HandleAsync(new SaveTemporaryWorkspaceCommand(
                 workspace.Id,
                 "   ",
-                null));
+                null), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.NameRequired,
@@ -104,11 +101,10 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new SaveTemporaryWorkspaceCommand(
+        var result = await handler.HandleAsync(new SaveTemporaryWorkspaceCommand(
                 workspace.Id,
                 "My Workspace",
-                "My workspace description."));
+                "My workspace description."), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.Success,
@@ -168,11 +164,10 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new SaveTemporaryWorkspaceCommand(
+        var result = await handler.HandleAsync(new SaveTemporaryWorkspaceCommand(
                 workspace.Id,
                 "Ordered Workspace",
-                null));
+                null), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             SaveTemporaryWorkspaceResultStatus.Success,
@@ -221,11 +216,10 @@ public sealed class SaveTemporaryWorkspaceHandlerTests
         var handler = CreateHandler(context);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => handler.HandleAsync(
-                new SaveTemporaryWorkspaceCommand(
+            () => handler.HandleAsync(new SaveTemporaryWorkspaceCommand(
                     workspace.Id,
                     "Workspace",
-                    null)));
+                    null), Xunit.TestContext.Current.CancellationToken));
 
         Assert.Same(
             workspace,

@@ -54,7 +54,7 @@ public sealed class DatabaseEncryptionIntegrationTests
             var initializer =
                 serviceProvider.GetRequiredService<DatabaseInitializer>();
 
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             Assert.True(
                 File.Exists(databasePath));
@@ -63,8 +63,7 @@ public sealed class DatabaseEncryptionIntegrationTests
                 File.Exists(databaseKeyPath));
 
             byte[] protectedDatabaseKey =
-                await File.ReadAllBytesAsync(
-                    databaseKeyPath);
+                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
 
             Assert.NotEmpty(
                 protectedDatabaseKey);
@@ -74,10 +73,10 @@ public sealed class DatabaseEncryptionIntegrationTests
                     IDbContextFactory<DeskVaultDbContext>>();
 
             await using var dbContext =
-                await factory.CreateDbContextAsync();
+                await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
             Assert.True(
-                await dbContext.Database.CanConnectAsync());
+                await dbContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
 
             await dbContext.Database.CloseConnectionAsync();
         }
@@ -135,12 +134,12 @@ public sealed class DatabaseEncryptionIntegrationTests
             // Act
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    initializer.InitializeAsync());
+                    initializer.InitializeAsync(TestContext.Current.CancellationToken));
 
             File.Delete(
                 migrationPath);
 
-            await initializer.InitializeAsync();
+            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.True(
@@ -166,10 +165,10 @@ public sealed class DatabaseEncryptionIntegrationTests
                     IDbContextFactory<DeskVaultDbContext>>();
 
             await using DeskVaultDbContext dbContext =
-                await factory.CreateDbContextAsync();
+                await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
             Assert.True(
-                await dbContext.Database.CanConnectAsync());
+                await dbContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
 
             await dbContext.Database.CloseConnectionAsync();
         }

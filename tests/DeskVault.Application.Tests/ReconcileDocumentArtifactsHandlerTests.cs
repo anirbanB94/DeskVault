@@ -64,8 +64,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         var finding =
@@ -140,8 +139,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         var finding =
@@ -223,8 +221,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         var finding =
@@ -310,8 +307,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         var finding =
@@ -398,8 +394,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         var finding =
@@ -490,8 +485,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         var finding =
@@ -647,8 +641,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -775,8 +768,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -876,8 +868,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
                 storageService);
 
         // Act
-        await handler.HandleAsync(
-            new ReconcileDocumentArtifactsQuery());
+        await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         repository.Verify(
@@ -959,8 +950,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         var finding =
@@ -1028,8 +1018,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
 
         // Act
         ReconcileDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new ReconcileDocumentArtifactsQuery());
+            await handler.HandleAsync(new ReconcileDocumentArtifactsQuery(), TestContext.Current.CancellationToken);
 
         // Assert
         var finding =

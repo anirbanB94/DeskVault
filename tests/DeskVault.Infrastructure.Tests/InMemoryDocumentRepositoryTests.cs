@@ -14,12 +14,10 @@ public sealed class InMemoryDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -57,12 +55,10 @@ public sealed class InMemoryDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         bool exists =
-            await repository.ExistsByHashAsync(
-                document.Sha256Hash);
+            await repository.ExistsByHashAsync(document.Sha256Hash, TestContext.Current.CancellationToken);
 
         Assert.True(
             exists);
@@ -75,8 +71,7 @@ public sealed class InMemoryDocumentRepositoryTests
             CreateRepository();
 
         bool exists =
-            await repository.ExistsByHashAsync(
-                "missing-hash");
+            await repository.ExistsByHashAsync("missing-hash", TestContext.Current.CancellationToken);
 
         Assert.False(
             exists);
@@ -99,14 +94,12 @@ public sealed class InMemoryDocumentRepositoryTests
                 "second-hash",
                 "second.dvault");
 
-        await repository.AddAsync(
-            first);
+        await repository.AddAsync(first, TestContext.Current.CancellationToken);
 
-        await repository.AddAsync(
-            second);
+        await repository.AddAsync(second, TestContext.Current.CancellationToken);
 
         IReadOnlyList<Document> documents =
-            await repository.GetAllAsync();
+            await repository.GetAllAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2,
@@ -130,17 +123,14 @@ public sealed class InMemoryDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         document.MarkProcessing();
 
-        await repository.UpdateAsync(
-            document);
+        await repository.UpdateAsync(document, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
 
@@ -160,8 +150,7 @@ public sealed class InMemoryDocumentRepositoryTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () =>
-                repository.UpdateAsync(
-                    document));
+                repository.UpdateAsync(document, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -173,15 +162,12 @@ public sealed class InMemoryDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
-        await repository.DeleteAsync(
-            document.Id);
+        await repository.DeleteAsync(document.Id, TestContext.Current.CancellationToken);
 
         Document? result =
-            await repository.GetByIdAsync(
-                document.Id);
+            await repository.GetByIdAsync(document.Id, TestContext.Current.CancellationToken);
 
         Assert.Null(
             result);
@@ -193,8 +179,7 @@ public sealed class InMemoryDocumentRepositoryTests
         var repository =
             CreateRepository();
 
-        await repository.DeleteAsync(
-            Guid.NewGuid());
+        await repository.DeleteAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -206,8 +191,7 @@ public sealed class InMemoryDocumentRepositoryTests
         Document document =
             CreateDocument();
 
-        await repository.AddAsync(
-            document);
+        await repository.AddAsync(document, TestContext.Current.CancellationToken);
 
         using var cancellationTokenSource =
             new CancellationTokenSource();

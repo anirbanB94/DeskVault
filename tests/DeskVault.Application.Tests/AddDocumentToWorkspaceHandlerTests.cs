@@ -19,7 +19,7 @@ public sealed class AddDocumentToWorkspaceHandlerTests
             Guid.NewGuid());
 
         AddDocumentToWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             AddDocumentToWorkspaceResultStatus.WorkspaceNotFound,
@@ -53,7 +53,7 @@ public sealed class AddDocumentToWorkspaceHandlerTests
             documentId);
 
         AddDocumentToWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             AddDocumentToWorkspaceResultStatus.DocumentNotFound,
@@ -83,7 +83,7 @@ public sealed class AddDocumentToWorkspaceHandlerTests
             documentId);
 
         AddDocumentToWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             AddDocumentToWorkspaceResultStatus.AlreadyMember,
@@ -124,7 +124,7 @@ public sealed class AddDocumentToWorkspaceHandlerTests
             documentId);
 
         AddDocumentToWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             AddDocumentToWorkspaceResultStatus.Success,
@@ -178,7 +178,7 @@ public sealed class AddDocumentToWorkspaceHandlerTests
             documentId);
 
         AddDocumentToWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             AddDocumentToWorkspaceResultStatus.Success,
@@ -245,7 +245,7 @@ public sealed class AddDocumentToWorkspaceHandlerTests
             documentId);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => context.Handler.HandleAsync(command));
+            () => context.Handler.HandleAsync(command, TestContext.Current.CancellationToken));
 
         Assert.Same(
             workspace,

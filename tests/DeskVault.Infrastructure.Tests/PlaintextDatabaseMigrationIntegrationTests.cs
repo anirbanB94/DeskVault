@@ -92,7 +92,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 var initializer =
                     serviceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
             }
 
             Assert.False(
@@ -130,7 +130,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 var initializer =
                     verificationServiceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
                 Assert.False(
                     IsPlaintextSqliteDatabase(
@@ -147,7 +147,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                         IDbContextFactory<DeskVaultDbContext>>();
 
                 IReadOnlyList<Document> allDocuments =
-                    await repository.GetAllAsync();
+                    await repository.GetAllAsync(TestContext.Current.CancellationToken);
 
                 Document allDocumentsMatch =
                     Assert.Single(
@@ -158,8 +158,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     allDocumentsMatch.Id);
 
                 Document? document =
-                    await repository.GetByIdAsync(
-                        documentId);
+                    await repository.GetByIdAsync(documentId, TestContext.Current.CancellationToken);
 
                 Assert.NotNull(
                     document);
@@ -227,7 +226,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     document.StoredFilePath);
 
                 await using DeskVaultDbContext dbContext =
-                    await dbContextFactory.CreateDbContextAsync();
+                    await dbContextFactory.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
                 List<DocumentKnowledgeAvailabilityEntity>
                     knowledgeAvailabilities =
@@ -237,7 +236,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                 availability =>
                                     availability.DocumentId ==
                                     documentId)
-                            .ToListAsync();
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
                 DocumentKnowledgeAvailabilityEntity
                     persistedKeywordSearchAvailability =
@@ -266,7 +265,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                 chunk.DocumentId == documentId)
                         .OrderBy(
                             chunk => chunk.Order)
-                        .ToListAsync();
+                        .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     2,
@@ -355,9 +354,8 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     secondChunk.SourceLocationEndLine);
 
                 SearchDocumentsPage searchPage =
-                    await searchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "plaintext migration"));
+                    await searchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "plaintext migration"), TestContext.Current.CancellationToken);
 
                 IReadOnlyList<SearchDocumentsResult> searchResults =
                     searchPage.Results;
@@ -468,7 +466,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 DatabaseInitializer initializer =
                     serviceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
             }
 
             ServiceProvider verificationServiceProvider =
@@ -481,7 +479,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 DatabaseInitializer initializer =
                     verificationServiceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
                 IDocumentRepository repository =
                     verificationServiceProvider.GetRequiredService<IDocumentRepository>();
@@ -490,8 +488,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     verificationServiceProvider.GetRequiredService<SearchDocumentsHandler>();
 
                 Document? document =
-                    await repository.GetByIdAsync(
-                        documentId);
+                    await repository.GetByIdAsync(documentId, TestContext.Current.CancellationToken);
 
                 Assert.NotNull(
                     document);
@@ -528,7 +525,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     await verificationServiceProvider
                         .GetRequiredService<
                             IDbContextFactory<DeskVaultDbContext>>()
-                        .CreateDbContextAsync();
+                        .CreateDbContextAsync(TestContext.Current.CancellationToken);
 
                 List<DocumentChunkEntity> chunks =
                     await dbContext.DocumentChunks
@@ -540,7 +537,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                         .OrderBy(
                             chunk =>
                                 chunk.Order)
-                        .ToListAsync();
+                        .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     2,
@@ -562,9 +559,8 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                             chunk.ProcessingGeneration));
 
                 SearchDocumentsPage searchPage =
-                    await searchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "plaintext migration"));
+                    await searchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "plaintext migration"), TestContext.Current.CancellationToken);
 
                 SearchDocumentsResult matchingResult =
                     Assert.Single(
@@ -673,7 +669,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 var initializer =
                     migrationServiceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
             }
 
             Assert.False(
@@ -714,7 +710,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 var initializer =
                     recoveryServiceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
                 Assert.False(
                     IsPlaintextSqliteDatabase(
@@ -825,28 +821,25 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                         TaskCreationOptions.RunContinuationsAsynchronously);
 
                 Task firstInitialization =
-                    Task.Run(
-                        async () =>
+                    Task.Run(async () =>
                         {
                             await startGate.Task;
 
                             await firstInitializer.InitializeAsync();
-                        });
+                        }, TestContext.Current.CancellationToken);
 
                 Task secondInitialization =
-                    Task.Run(
-                        async () =>
+                    Task.Run(async () =>
                         {
                             await startGate.Task;
 
                             await secondInitializer.InitializeAsync();
-                        });
+                        }, TestContext.Current.CancellationToken);
 
                 // Act
                 startGate.SetResult(true);
 
-                await Task.Delay(
-                    TimeSpan.FromMilliseconds(500));
+                await Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken);
 
                 // Assert
                 Assert.False(
@@ -951,8 +944,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
             await using (var legacyDbContext =
                 new DeskVaultDbContext(options))
             {
-                await legacyDbContext.Database.MigrateAsync(
-                    "20260917093951_AddWorkspacePersistence");
+                await legacyDbContext.Database.MigrateAsync("20260917093951_AddWorkspacePersistence", cancellationToken: TestContext.Current.CancellationToken);
 
                 await legacyDbContext.Database.CloseConnectionAsync();
             }
@@ -960,7 +952,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
             await using (SqliteConnection connection =
                 new($"Data Source={databasePath};Pooling=False"))
             {
-                await connection.OpenAsync();
+                await connection.OpenAsync(TestContext.Current.CancellationToken);
 
                 await using SqliteCommand command =
                     connection.CreateCommand();
@@ -1057,7 +1049,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     "$workspaceId",
                     workspaceId.ToString().ToUpperInvariant());
 
-                await command.ExecuteNonQueryAsync();
+                await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
             }
 
             documentEncryptionKey =
@@ -1089,14 +1081,10 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     rootDirectory,
                     "existing-source.txt");
 
-            await File.WriteAllBytesAsync(
-                sourceFilePath,
-                existingSourceContent);
+            await File.WriteAllBytesAsync(sourceFilePath, existingSourceContent, TestContext.Current.CancellationToken);
 
             string storedArtifactPath =
-                await storageService.StoreAsync(
-                    sourceFilePath,
-                    documentId);
+                await storageService.StoreAsync(sourceFilePath, documentId, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 expectedStoredFilePath,
@@ -1117,7 +1105,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     serviceProvider.GetRequiredService<DatabaseInitializer>();
 
                 // Act
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
                 // Assert
                 Assert.False(
@@ -1137,7 +1125,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                         IDbContextFactory<DeskVaultDbContext>>();
 
                 await using DeskVaultDbContext dbContext =
-                    await factory.CreateDbContextAsync();
+                    await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
                 DocumentEntity document =
                     Assert.Single(
@@ -1147,7 +1135,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                 document =>
                                     document.Id ==
                                     documentId)
-                            .ToListAsync());
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
                 Assert.Equal(
                     documentId,
@@ -1189,7 +1177,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                 chunk =>
                                     chunk.DocumentId ==
                                     documentId)
-                            .ToListAsync());
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
                 Assert.NotEqual(
                     legacyChunkId,
@@ -1232,7 +1220,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                 workspace =>
                                     workspace.Id ==
                                     workspaceId)
-                            .ToListAsync());
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
                 Assert.Equal(
                     workspaceId,
@@ -1267,7 +1255,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                     workspaceId &&
                                     membership.DocumentId ==
                                     documentId)
-                            .ToListAsync());
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
                 Assert.Equal(
                     workspaceId,
@@ -1286,9 +1274,8 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                         SearchDocumentsHandler>();
 
                 SearchDocumentsPage searchPage =
-                    await searchHandler.HandleAsync(
-                        new SearchDocumentsQuery(
-                            "workspace-era data"));
+                    await searchHandler.HandleAsync(new SearchDocumentsQuery(
+                            "workspace-era data"), TestContext.Current.CancellationToken);
 
                 IReadOnlyList<SearchDocumentsResult> searchResults =
                     searchPage.Results;
@@ -1326,15 +1313,12 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 .ToLowerInvariant();
 
             await using Stream decryptedArtifact =
-                await documentReader.OpenReadAsync(
-                    documentId,
-                    expectedSourceContentHash);
+                await documentReader.OpenReadAsync(documentId, expectedSourceContentHash, TestContext.Current.CancellationToken);
 
             using var decryptedMemory =
                 new MemoryStream();
 
-            await decryptedArtifact.CopyToAsync(
-                decryptedMemory);
+            await decryptedArtifact.CopyToAsync(decryptedMemory, TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 existingSourceContent,
@@ -1420,8 +1404,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
             await using (var legacyDbContext =
                 new DeskVaultDbContext(legacyOptions))
             {
-                await legacyDbContext.Database.MigrateAsync(
-                    "20260917093951_AddWorkspacePersistence");
+                await legacyDbContext.Database.MigrateAsync("20260917093951_AddWorkspacePersistence", cancellationToken: TestContext.Current.CancellationToken);
 
                 await legacyDbContext.Database.CloseConnectionAsync();
             }
@@ -1430,7 +1413,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 new(
                     $"Data Source={databasePath};Pooling=False"))
             {
-                await legacyConnection.OpenAsync();
+                await legacyConnection.OpenAsync(TestContext.Current.CancellationToken);
 
                 await using SqliteCommand legacyCommand =
                     legacyConnection.CreateCommand();
@@ -1558,7 +1541,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     "$workspaceId",
                     workspaceId.ToString().ToUpperInvariant());
 
-                await legacyCommand.ExecuteNonQueryAsync();
+                await legacyCommand.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
             }
 
             ServiceProvider encryptionServiceProvider =
@@ -1572,9 +1555,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     encryptionServiceProvider.GetRequiredService<
                         IDatabaseEncryptionMigrator>();
 
-                await encryptionMigrator.MigrateAsync(
-                    databasePath,
-                    databaseKey);
+                await encryptionMigrator.MigrateAsync(databasePath, databaseKey, TestContext.Current.CancellationToken);
             }
 
             Assert.False(
@@ -1585,7 +1566,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 new(
                     $"Data Source={databasePath};Password={databasePassword};Pooling=False"))
             {
-                await setupConnection.OpenAsync();
+                await setupConnection.OpenAsync(TestContext.Current.CancellationToken);
 
                 await using SqliteCommand setupCommand =
                     setupConnection.CreateCommand();
@@ -1596,7 +1577,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 ADD COLUMN "LastUpdated" TEXT;
                 """;
 
-                await setupCommand.ExecuteNonQueryAsync();
+                await setupCommand.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
             }
 
             // Act - first initialization must fail during the pending schema migration.
@@ -1613,7 +1594,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 Exception exception =
                     await Assert.ThrowsAnyAsync<Exception>(
                         () =>
-                            initializer.InitializeAsync());
+                            initializer.InitializeAsync(TestContext.Current.CancellationToken));
 
                 Assert.Contains(
                     "LastUpdated",
@@ -1626,7 +1607,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 new(
                     $"Data Source={databasePath};Password={databasePassword};Pooling=False"))
             {
-                await failedConnection.OpenAsync();
+                await failedConnection.OpenAsync(TestContext.Current.CancellationToken);
 
                 await using SqliteCommand migrationHistoryCommand =
                     failedConnection.CreateCommand();
@@ -1639,7 +1620,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 """;
 
                 object? result =
-                    await migrationHistoryCommand.ExecuteScalarAsync();
+                    await migrationHistoryCommand.ExecuteScalarAsync(TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     0L,
@@ -1654,7 +1635,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     """;
 
                 object? knowledgeMigrationResult =
-                    await migrationHistoryCommand.ExecuteScalarAsync();
+                    await migrationHistoryCommand.ExecuteScalarAsync(TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     0L,
@@ -1676,7 +1657,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     documentId.ToString().ToUpperInvariant());
 
                 object? documentCountResult =
-                    await documentCountCommand.ExecuteScalarAsync();
+                    await documentCountCommand.ExecuteScalarAsync(TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     1L,
@@ -1688,7 +1669,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 new(
                     $"Data Source={databasePath};Password={databasePassword};Pooling=False"))
             {
-                await repairConnection.OpenAsync();
+                await repairConnection.OpenAsync(TestContext.Current.CancellationToken);
 
                 await using SqliteCommand repairCommand =
                     repairConnection.CreateCommand();
@@ -1699,7 +1680,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 DROP COLUMN "LastUpdated";
                 """;
 
-                await repairCommand.ExecuteNonQueryAsync();
+                await repairCommand.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
             }
 
             // Act - retry against the same vault.
@@ -1713,14 +1694,14 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 DatabaseInitializer initializer =
                     retryServiceProvider.GetRequiredService<DatabaseInitializer>();
 
-                await initializer.InitializeAsync();
+                await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
                 IDbContextFactory<DeskVaultDbContext> factory =
                     retryServiceProvider.GetRequiredService<
                         IDbContextFactory<DeskVaultDbContext>>();
 
                 await using DeskVaultDbContext dbContext =
-                    await factory.CreateDbContextAsync();
+                    await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
 
                 DocumentEntity document =
                     Assert.Single(
@@ -1730,7 +1711,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                 document =>
                                     document.Id ==
                                     documentId)
-                            .ToListAsync());
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
                 Assert.Equal(
                     documentId,
@@ -1778,7 +1759,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                 availability =>
                                     availability.DocumentId ==
                                     documentId)
-                            .ToListAsync();
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
                 DocumentKnowledgeAvailabilityEntity
                     keywordSearchAvailability =
@@ -1810,7 +1791,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                         .OrderBy(
                             chunk =>
                                 chunk.Order)
-                        .ToListAsync();
+                        .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     2,
@@ -1850,7 +1831,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                 workspace =>
                                     workspace.Id ==
                                     workspaceId)
-                            .ToListAsync());
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
                 Assert.Equal(
                     workspaceId,
@@ -1878,7 +1859,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                                     workspaceId &&
                                     membership.DocumentId ==
                                     documentId)
-                            .ToListAsync());
+                            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
                 Assert.Equal(
                     workspaceId,
@@ -1909,7 +1890,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 new(
                     $"Data Source={databasePath};Password={databasePassword};Pooling=False"))
             {
-                await finalConnection.OpenAsync();
+                await finalConnection.OpenAsync(TestContext.Current.CancellationToken);
 
                 await using SqliteCommand finalMigrationHistoryCommand =
                     finalConnection.CreateCommand();
@@ -1922,7 +1903,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 """;
 
                 object? finalResult =
-                    await finalMigrationHistoryCommand.ExecuteScalarAsync();
+                    await finalMigrationHistoryCommand.ExecuteScalarAsync(TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     1L,
@@ -1937,7 +1918,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                     """;
 
                 object? finalKnowledgeMigrationResult =
-                    await finalMigrationHistoryCommand.ExecuteScalarAsync();
+                    await finalMigrationHistoryCommand.ExecuteScalarAsync(TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     1L,

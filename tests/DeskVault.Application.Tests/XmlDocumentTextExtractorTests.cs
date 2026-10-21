@@ -92,9 +92,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -129,9 +127,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -163,9 +159,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -197,9 +191,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -233,9 +225,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -265,9 +255,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -293,14 +281,10 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult first =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         DocumentTextExtractionResult second =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -323,9 +307,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                xml);
+            ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         await Assert.ThrowsAnyAsync<System.Xml.XmlException>(
@@ -384,9 +366,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         Task<DocumentTextExtractionResult> extractionTask =
-            ExtractAsync(
-                extractor,
-                xml);
+            ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         ResourceLimitExceededException exception =
@@ -434,9 +414,7 @@ public sealed class XmlDocumentTextExtractorTests
 
         // Act
         DocumentTextExtractionResult result =
-            await ExtractAsync(
-                extractor,
-                xml);
+            await ExtractAsync(extractor, xml, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

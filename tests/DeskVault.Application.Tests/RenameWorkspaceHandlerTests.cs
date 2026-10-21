@@ -15,10 +15,9 @@ public sealed class RenameWorkspaceHandlerTests
         var context = CreateContext();
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new RenameWorkspaceCommand(
+        var result = await handler.HandleAsync(new RenameWorkspaceCommand(
                 Guid.NewGuid(),
-                "Renamed Workspace"));
+                "Renamed Workspace"), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RenameWorkspaceResultStatus.WorkspaceNotFound,
@@ -42,10 +41,9 @@ public sealed class RenameWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new RenameWorkspaceCommand(
+        var result = await handler.HandleAsync(new RenameWorkspaceCommand(
                 workspace.Id,
-                "Renamed Workspace"));
+                "Renamed Workspace"), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RenameWorkspaceResultStatus.WorkspaceNotPersistent,
@@ -71,10 +69,9 @@ public sealed class RenameWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new RenameWorkspaceCommand(
+        var result = await handler.HandleAsync(new RenameWorkspaceCommand(
                 workspace.Id,
-                "   "));
+                "   "), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RenameWorkspaceResultStatus.NameRequired,
@@ -100,10 +97,9 @@ public sealed class RenameWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new RenameWorkspaceCommand(
+        var result = await handler.HandleAsync(new RenameWorkspaceCommand(
                 workspace.Id,
-                "Renamed Workspace"));
+                "Renamed Workspace"), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RenameWorkspaceResultStatus.Success,
@@ -154,10 +150,9 @@ public sealed class RenameWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new RenameWorkspaceCommand(
+        var result = await handler.HandleAsync(new RenameWorkspaceCommand(
                 workspace.Id,
-                "Renamed Workspace"));
+                "Renamed Workspace"), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             RenameWorkspaceResultStatus.Success,
@@ -206,10 +201,9 @@ public sealed class RenameWorkspaceHandlerTests
         var handler = CreateHandler(context);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => handler.HandleAsync(
-                new RenameWorkspaceCommand(
+            () => handler.HandleAsync(new RenameWorkspaceCommand(
                     workspace.Id,
-                    "Renamed Workspace")));
+                    "Renamed Workspace"), Xunit.TestContext.Current.CancellationToken));
 
         Workspace? activeWorkspace =
             context.ActiveWorkspaceRegistry.Get(workspace.Id);

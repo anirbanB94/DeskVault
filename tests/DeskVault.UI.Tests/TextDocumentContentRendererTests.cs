@@ -21,10 +21,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -74,10 +71,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -113,10 +107,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -150,10 +141,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -188,10 +176,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -226,10 +211,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -264,10 +246,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -306,10 +285,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -362,10 +338,7 @@ public sealed class TextDocumentContentRendererTests
             new Panel();
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            fileName);
+        await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =
@@ -400,10 +373,7 @@ public sealed class TextDocumentContentRendererTests
             });
 
         // Act
-        await renderer.RenderAsync(
-            contentHost,
-            stream,
-            "document.txt");
+        await renderer.RenderAsync(contentHost, stream, "document.txt", TestContext.Current.CancellationToken);
 
         // Assert
         TextBox textBox =

@@ -23,15 +23,12 @@ public sealed class DocumentRemovalIntegrationTests
                 environment.RootDirectory,
                 "retry-removal.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "Document removal retry integration test.");
+        await File.WriteAllTextAsync(sourceFilePath, "Document removal retry integration test.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     sourceFilePath,
-                    "Retry Removal Integration Test"));
+                    "Retry Removal Integration Test"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -70,9 +67,8 @@ public sealed class DocumentRemovalIntegrationTests
 
         // Act
         RemoveDocumentResult firstResult =
-            await environment.Harness.RemoveHandler.HandleAsync(
-                new RemoveDocumentCommand(
-                    documentId));
+            await environment.Harness.RemoveHandler.HandleAsync(new RemoveDocumentCommand(
+                    documentId), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -99,9 +95,8 @@ public sealed class DocumentRemovalIntegrationTests
 
         // Act
         RemoveDocumentResult retryResult =
-            await environment.Harness.RemoveHandler.HandleAsync(
-                new RemoveDocumentCommand(
-                    documentId));
+            await environment.Harness.RemoveHandler.HandleAsync(new RemoveDocumentCommand(
+                    documentId), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -139,15 +134,12 @@ public sealed class DocumentRemovalIntegrationTests
                 environment.RootDirectory,
                 "missing-artifact.txt");
 
-        await File.WriteAllTextAsync(
-            sourceFilePath,
-            "Missing artifact removal integration test.");
+        await File.WriteAllTextAsync(sourceFilePath, "Missing artifact removal integration test.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult importResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     sourceFilePath,
-                    "Missing Artifact Removal Test"));
+                    "Missing Artifact Removal Test"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -178,9 +170,8 @@ public sealed class DocumentRemovalIntegrationTests
 
         // Act
         RemoveDocumentResult result =
-            await environment.Harness.RemoveHandler.HandleAsync(
-                new RemoveDocumentCommand(
-                    documentId));
+            await environment.Harness.RemoveHandler.HandleAsync(new RemoveDocumentCommand(
+                    documentId), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -213,25 +204,19 @@ public sealed class DocumentRemovalIntegrationTests
                 environment.RootDirectory,
                 "second-document.txt");
 
-        await File.WriteAllTextAsync(
-            firstSourceFilePath,
-            "First document.");
+        await File.WriteAllTextAsync(firstSourceFilePath, "First document.", TestContext.Current.CancellationToken);
 
-        await File.WriteAllTextAsync(
-            secondSourceFilePath,
-            "Second document.");
+        await File.WriteAllTextAsync(secondSourceFilePath, "Second document.", TestContext.Current.CancellationToken);
 
         ImportDocumentResult firstImportResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     firstSourceFilePath,
-                    "First Document"));
+                    "First Document"), TestContext.Current.CancellationToken);
 
         ImportDocumentResult secondImportResult =
-            await environment.Harness.ImportHandler.HandleAsync(
-                new ImportDocumentCommand(
+            await environment.Harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                     secondSourceFilePath,
-                    "Second Document"));
+                    "Second Document"), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ImportDocumentResultStatus.Success,
@@ -297,9 +282,8 @@ public sealed class DocumentRemovalIntegrationTests
 
         // Act
         RemoveDocumentResult result =
-            await environment.Harness.RemoveHandler.HandleAsync(
-                new RemoveDocumentCommand(
-                    firstDocumentId));
+            await environment.Harness.RemoveHandler.HandleAsync(new RemoveDocumentCommand(
+                    firstDocumentId), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

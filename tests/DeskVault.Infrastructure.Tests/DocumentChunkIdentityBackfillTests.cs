@@ -48,7 +48,7 @@ public sealed class DocumentChunkIdentityBackfillTests
             CreateBackfill(connection);
 
         // Act
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentChunkEntity chunk =
             await GetSingleChunkAsync(
@@ -132,7 +132,7 @@ public sealed class DocumentChunkIdentityBackfillTests
             CreateBackfill(connection);
 
         // Act
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(
@@ -218,14 +218,14 @@ public sealed class DocumentChunkIdentityBackfillTests
         var backfill =
             CreateBackfill(connection);
 
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentChunkEntity firstChunk =
             await GetSingleChunkAsync(
                 connection);
 
         // Act
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentChunkEntity secondChunk =
             await GetSingleChunkAsync(
@@ -271,7 +271,7 @@ public sealed class DocumentChunkIdentityBackfillTests
             CreateBackfill(connection);
 
         // Act
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> chunks =
             await GetChunksAsync(
@@ -366,7 +366,7 @@ public sealed class DocumentChunkIdentityBackfillTests
             CreateBackfill(connection);
 
         // Act
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         DocumentChunkEntity chunk =
             await GetSingleChunkAsync(
@@ -466,7 +466,7 @@ public sealed class DocumentChunkIdentityBackfillTests
         DbUpdateException exception =
             await Assert.ThrowsAsync<DbUpdateException>(
                 () =>
-                    backfill.BackfillAsync());
+                    backfill.BackfillAsync(TestContext.Current.CancellationToken));
 
         // Assert
         Assert.IsType<SqliteException>(
@@ -505,7 +505,7 @@ public sealed class DocumentChunkIdentityBackfillTests
             connection);
 
         // Retry.
-        await backfill.BackfillAsync();
+        await backfill.BackfillAsync(TestContext.Current.CancellationToken);
 
         List<DocumentChunkEntity> afterRetry =
             await GetChunksAsync(

@@ -128,8 +128,7 @@ public sealed class DocumentTextChunkerTests
 
         // Act
         IReadOnlyList<DocumentChunk> chunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         // Assert
         DocumentChunk chunk =
@@ -178,12 +177,10 @@ public sealed class DocumentTextChunkerTests
 
         // Act
         IReadOnlyList<DocumentChunk> firstChunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         IReadOnlyList<DocumentChunk> secondChunks =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -206,7 +203,7 @@ public sealed class DocumentTextChunkerTests
     public async Task ChunkAsync_EmptyText_ReturnsNoChunks()
     {
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(string.Empty);
+            await ChunkAsync(string.Empty, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Empty(chunks);
     }
@@ -218,7 +215,7 @@ public sealed class DocumentTextChunkerTests
             "DeskVault keeps documents searchable.";
 
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(text);
+            await ChunkAsync(text, cancellationToken: TestContext.Current.CancellationToken);
 
         DocumentChunk chunk =
             Assert.Single(chunks);
@@ -231,8 +228,7 @@ public sealed class DocumentTextChunkerTests
     public async Task ChunkAsync_DefaultSourceLocation_IsUnknown()
     {
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                "DeskVault keeps documents searchable.");
+            await ChunkAsync("DeskVault keeps documents searchable.", cancellationToken: TestContext.Current.CancellationToken);
 
         DocumentChunk chunk =
             Assert.Single(chunks);
@@ -250,8 +246,7 @@ public sealed class DocumentTextChunkerTests
                 DocumentSourceLocationMappingKind.DirectText);
 
         IReadOnlyList<DocumentChunk> chunks =
-            await CreateChunker().ChunkAsync(
-                normalizationResult);
+            await CreateChunker().ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         DocumentChunk chunk =
             Assert.Single(chunks);
@@ -272,8 +267,7 @@ public sealed class DocumentTextChunkerTests
                 DocumentSourceLocationMappingKind.DirectText);
 
         IReadOnlyList<DocumentChunk> chunks =
-            await CreateChunker().ChunkAsync(
-                normalizationResult);
+            await CreateChunker().ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         DocumentChunk chunk =
             Assert.Single(chunks);
@@ -305,8 +299,7 @@ public sealed class DocumentTextChunkerTests
         IReadOnlyList<DocumentChunk> chunks =
             await CreateChunker(
                 secondParagraph.Length)
-            .ChunkAsync(
-                normalizationResult);
+            .ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             2,
@@ -348,8 +341,7 @@ public sealed class DocumentTextChunkerTests
             await CreateChunker(
                 maxChunkSize: 10,
                 chunkOverlap: 2)
-            .ChunkAsync(
-                normalizationResult);
+            .ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -386,8 +378,7 @@ public sealed class DocumentTextChunkerTests
                 DocumentSourceLocationMappingKind.Unknown);
 
         IReadOnlyList<DocumentChunk> chunks =
-            await CreateChunker().ChunkAsync(
-                normalizationResult);
+            await CreateChunker().ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         DocumentChunk chunk =
             Assert.Single(chunks);
@@ -411,8 +402,7 @@ public sealed class DocumentTextChunkerTests
         IReadOnlyList<DocumentChunk> chunks =
             await CreateChunker(
                 SmallMaxChunkSize)
-            .ChunkAsync(
-                normalizationResult);
+            .ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         Assert.True(
             chunks.Count > 1);
@@ -452,7 +442,7 @@ public sealed class DocumentTextChunkerTests
             """;
 
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(text);
+            await ChunkAsync(text, cancellationToken: TestContext.Current.CancellationToken);
 
         DocumentChunk chunk =
             Assert.Single(chunks);
@@ -473,9 +463,7 @@ public sealed class DocumentTextChunkerTests
             $"{firstParagraph}\n\n{secondParagraph}";
 
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                text,
-                secondParagraph.Length);
+            await ChunkAsync(text, secondParagraph.Length, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, chunks.Count);
 
@@ -502,10 +490,7 @@ public sealed class DocumentTextChunkerTests
             $"{firstParagraph}\n\n{secondParagraph}";
 
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                text,
-                maxChunkSize: 10,
-                chunkOverlap: 2);
+            await ChunkAsync(text, maxChunkSize: 10, chunkOverlap: 2, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -539,16 +524,10 @@ public sealed class DocumentTextChunkerTests
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
         IReadOnlyList<DocumentChunk> baselineChunks =
-            await ChunkAsync(
-                text,
-                maxChunkSize: 10,
-                chunkOverlap: 0);
+            await ChunkAsync(text, maxChunkSize: 10, chunkOverlap: 0, cancellationToken: TestContext.Current.CancellationToken);
 
         IReadOnlyList<DocumentChunk> overlapChunks =
-            await ChunkAsync(
-                text,
-                maxChunkSize: 10,
-                chunkOverlap: 3);
+            await ChunkAsync(text, maxChunkSize: 10, chunkOverlap: 3, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         string[] baselineTexts =
@@ -583,9 +562,7 @@ public sealed class DocumentTextChunkerTests
     public async Task ChunkAsync_OversizedParagraph_SplitsIntoBoundedChunks()
     {
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                OversizedText,
-                SmallMaxChunkSize);
+            await ChunkAsync(OversizedText, SmallMaxChunkSize, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(chunks.Count > 1);
 
@@ -604,10 +581,7 @@ public sealed class DocumentTextChunkerTests
             "ABCDEFGHIJKLMNOPQRSTUVWX";
 
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                text,
-                maxChunkSize: 10,
-                chunkOverlap: 3);
+            await ChunkAsync(text, maxChunkSize: 10, chunkOverlap: 3, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(
@@ -633,9 +607,7 @@ public sealed class DocumentTextChunkerTests
     public async Task ChunkAsync_OversizedParagraph_PreservesEveryCharacter()
     {
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                OversizedText,
-                SmallMaxChunkSize);
+            await ChunkAsync(OversizedText, SmallMaxChunkSize, cancellationToken: TestContext.Current.CancellationToken);
 
         string combined =
             string.Concat(
@@ -660,9 +632,7 @@ public sealed class DocumentTextChunkerTests
     public async Task ChunkAsync_OversizedParagraph_ChunksAreOrdered()
     {
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                OversizedText,
-                SmallMaxChunkSize);
+            await ChunkAsync(OversizedText, SmallMaxChunkSize, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             Enumerable.Range(0, chunks.Count),
@@ -674,10 +644,7 @@ public sealed class DocumentTextChunkerTests
     {
         // Arrange
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                OversizedText,
-                maxChunkSize: SmallMaxChunkSize,
-                chunkOverlap: 4);
+            await ChunkAsync(OversizedText, maxChunkSize: SmallMaxChunkSize, chunkOverlap: 4, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(
@@ -713,10 +680,7 @@ public sealed class DocumentTextChunkerTests
             4;
 
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                text,
-                maxChunkSize,
-                chunkOverlap);
+            await ChunkAsync(text, maxChunkSize, chunkOverlap, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(
@@ -764,7 +728,7 @@ public sealed class DocumentTextChunkerTests
             """;
 
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(text);
+            await ChunkAsync(text, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(chunks);
 
@@ -794,10 +758,10 @@ public sealed class DocumentTextChunkerTests
             CreateChunker(SmallMaxChunkSize);
 
         IReadOnlyList<DocumentChunk> first =
-            await chunker.ChunkAsync(normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         IReadOnlyList<DocumentChunk> second =
-            await chunker.ChunkAsync(normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         Assert.Equal(first, second);
     }
@@ -821,12 +785,10 @@ public sealed class DocumentTextChunkerTests
 
         // Act
         IReadOnlyList<DocumentChunk> first =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         IReadOnlyList<DocumentChunk> second =
-            await chunker.ChunkAsync(
-                normalizationResult);
+            await chunker.ChunkAsync(normalizationResult, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -857,9 +819,7 @@ public sealed class DocumentTextChunkerTests
     public async Task ChunkAsync_OversizedParagraph_PreservesExactCharacters()
     {
         IReadOnlyList<DocumentChunk> chunks =
-            await ChunkAsync(
-                OversizedText,
-                SmallMaxChunkSize);
+            await ChunkAsync(OversizedText, SmallMaxChunkSize, cancellationToken: TestContext.Current.CancellationToken);
 
         string combined =
             string.Concat(

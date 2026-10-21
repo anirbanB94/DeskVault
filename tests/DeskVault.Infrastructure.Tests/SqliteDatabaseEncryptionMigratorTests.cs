@@ -55,9 +55,7 @@ public sealed class SqliteDatabaseEncryptionMigratorTests
 
                 await Assert.ThrowsAsync<InvalidOperationException>(
                     () =>
-                        migrator.MigrateAsync(
-                            databasePath,
-                            databaseKey));
+                        migrator.MigrateAsync(databasePath, databaseKey, TestContext.Current.CancellationToken));
 
                 int rollbackResult =
                     raw.sqlite3_exec(
@@ -141,9 +139,7 @@ public sealed class SqliteDatabaseEncryptionMigratorTests
 
                 await Assert.ThrowsAsync<InvalidOperationException>(
                     () =>
-                        migrator.MigrateAsync(
-                            databasePath,
-                            databaseKey));
+                        migrator.MigrateAsync(databasePath, databaseKey, TestContext.Current.CancellationToken));
             }
             finally
             {
@@ -170,9 +166,7 @@ public sealed class SqliteDatabaseEncryptionMigratorTests
             var migratorAfterFailure =
                 new SqliteDatabaseEncryptionMigrator();
 
-            await migratorAfterFailure.MigrateAsync(
-                databasePath,
-                databaseKey);
+            await migratorAfterFailure.MigrateAsync(databasePath, databaseKey, TestContext.Current.CancellationToken);
 
             Assert.False(
                 IsPlaintextSqliteDatabase(
@@ -262,9 +256,7 @@ public sealed class SqliteDatabaseEncryptionMigratorTests
             var migrator =
                 new SqliteDatabaseEncryptionMigrator();
 
-            await migrator.MigrateAsync(
-                databasePath,
-                databaseKey);
+            await migrator.MigrateAsync(databasePath, databaseKey, TestContext.Current.CancellationToken);
 
             byte[] header =
                 new byte[16];
@@ -280,7 +272,7 @@ public sealed class SqliteDatabaseEncryptionMigratorTests
                         useAsync: true))
             {
                 int bytesRead =
-                    await stream.ReadAsync(header);
+                    await stream.ReadAsync(header, TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     16,

@@ -45,8 +45,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                 storageService);
         // Act
         RecoverDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -137,12 +136,10 @@ public sealed class RecoverDocumentArtifactsHandlerTests
 
         // Act
         RecoverDocumentArtifactsResult firstResult =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         RecoverDocumentArtifactsResult retryResult =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -217,12 +214,10 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         // Act
         await Assert.ThrowsAsync<IOException>(
             () =>
-                handler.HandleAsync(
-                    new RecoverDocumentArtifactsCommand()));
+                handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken));
 
         RecoverDocumentArtifactsResult retryResult =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -294,8 +289,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
 
         // Act
         RecoverDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -357,8 +351,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
 
         // Act
         RecoverDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -415,8 +408,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
 
         // Act
         RecoverDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -472,8 +464,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
 
         // Act
         RecoverDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -540,8 +531,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
 
         // Act
         RecoverDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -607,8 +597,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
 
         // Act
         RecoverDocumentArtifactsResult result =
-            await handler.HandleAsync(
-                new RecoverDocumentArtifactsCommand());
+            await handler.HandleAsync(new RecoverDocumentArtifactsCommand(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

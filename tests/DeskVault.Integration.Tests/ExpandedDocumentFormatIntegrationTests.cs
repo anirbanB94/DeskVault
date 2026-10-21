@@ -95,10 +95,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     rootDirectory,
                     fileName);
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -107,10 +104,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Expanded Format Integration Document"));
+                        "Expanded Format Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -133,8 +129,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 DocumentStatus.Imported,
                 importedDocument.Status);
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -211,9 +206,8 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 StringComparison.OrdinalIgnoreCase);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        searchableText));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        searchableText), TestContext.Current.CancellationToken);
 
             IReadOnlyList<SearchDocumentsResult> searchResults =
                 searchPage.Results;
@@ -382,10 +376,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     rootDirectory,
                     fileName);
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -394,10 +385,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Source Code Integration Document"));
+                        "Source Code Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -409,8 +399,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -467,9 +456,8 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 StringComparison.Ordinal);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "enterprise knowledge search"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        "enterprise knowledge search"), TestContext.Current.CancellationToken);
 
             IReadOnlyList<SearchDocumentsResult> searchResults =
                 searchPage.Results;
@@ -529,14 +517,11 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     rootDirectory,
                     "malformed.json");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                """
+            await File.WriteAllTextAsync(sourceFilePath, """
                 {
                   "name": "DeskVault",
                   "purpose":
-                """,
-                Encoding.UTF8);
+                """, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -545,10 +530,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Malformed JSON Integration Document"));
+                        "Malformed JSON Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -573,8 +557,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
 
             await Assert.ThrowsAnyAsync<Exception>(
                 () =>
-                    harness.ProcessingService.ProcessAsync(
-                        documentId));
+                    harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
             Document? failedDocument =
                 await harness.GetDocumentAsync(
@@ -635,10 +618,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     rootDirectory,
                     "unsupported-test.xyz");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "This content must not be imported.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "This content must not be imported.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -647,10 +627,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Unsupported Format Integration Document"));
+                        "Unsupported Format Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.UnsupportedFileType,
@@ -709,10 +688,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             const string sourceText =
                 "DeskVault TXT regression content for enterprise knowledge search.";
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -721,10 +697,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "TXT Regression Integration Document"));
+                        "TXT Regression Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -736,8 +711,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -772,9 +746,8 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 StringComparison.Ordinal);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "enterprise knowledge search"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        "enterprise knowledge search"), TestContext.Current.CancellationToken);
 
             IReadOnlyList<SearchDocumentsResult> searchResults =
                 searchPage.Results;
@@ -838,10 +811,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     rootDirectory,
                     "cancellation-test.txt");
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                "DeskVault cancellation integration content.",
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, "DeskVault cancellation integration content.", Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -850,10 +820,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Cancellation Integration Document"));
+                        "Cancellation Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -937,10 +906,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             const string updatedText =
                 "DeskVault updated content that must not replace the previous successful chunks.";
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                initialText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, initialText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Guid documentId;
             string previousChunkText;
@@ -952,10 +918,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey))
             {
                 ImportDocumentResult importResult =
-                    await initialHarness.ImportHandler.HandleAsync(
-                        new ImportDocumentCommand(
+                    await initialHarness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                             sourceFilePath,
-                            "Cancellation After Success Integration Document"));
+                            "Cancellation After Success Integration Document"), TestContext.Current.CancellationToken);
 
                 Assert.Equal(
                     ImportDocumentResultStatus.Success,
@@ -967,8 +932,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 documentId =
                     importResult.DocumentId.Value;
 
-                await initialHarness.ProcessingService.ProcessAsync(
-                    documentId);
+                await initialHarness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
                 Document? successfulDocument =
                     await initialHarness.GetDocumentAsync(
@@ -1006,10 +970,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                                 chunk => chunk.Text));
             }
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                updatedText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, updatedText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             var cancellingExtractor =
                 new CancellingDocumentTextExtractor();
@@ -1135,10 +1096,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                   "purpose":
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                initialText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, initialText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -1147,10 +1105,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Failure After Success Integration Document"));
+                        "Failure After Success Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -1162,8 +1119,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? successfulDocument =
                 await harness.GetDocumentAsync(
@@ -1200,10 +1156,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                         .Select(
                             chunk => chunk.Text));
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                invalidText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, invalidText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             Document? currentDocument =
                 await harness.GetDocumentAsync(
@@ -1215,14 +1168,11 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             File.Delete(
                 currentDocument.StoredFilePath);
 
-            await harness.StoreArtifactAsync(
-                sourceFilePath,
-                documentId);
+            await harness.StoreArtifactAsync(sourceFilePath, documentId, TestContext.Current.CancellationToken);
 
             await Assert.ThrowsAnyAsync<Exception>(
                 () =>
-                    harness.ProcessingService.ProcessAsync(
-                        documentId));
+                    harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken));
 
             Document? failedDocument =
                 await harness.GetDocumentAsync(
@@ -1308,10 +1258,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             const string sourceText =
                 "DeskVault duplicate import integration content.";
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -1320,16 +1267,14 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult firstImportResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "First Duplicate Integration Document"));
+                        "First Duplicate Integration Document"), TestContext.Current.CancellationToken);
 
             ImportDocumentResult secondImportResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Second Duplicate Integration Document"));
+                        "Second Duplicate Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -1367,8 +1312,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 "First Duplicate Integration Document",
                 document.DisplayName);
 
-            await harness.ProcessingService.ProcessAsync(
-                firstImportResult.DocumentId.Value);
+            await harness.ProcessingService.ProcessAsync(firstImportResult.DocumentId.Value, TestContext.Current.CancellationToken);
 
             List<DocumentChunkEntity> chunks =
                 await harness.GetChunksAsync(
@@ -1427,10 +1371,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     DeskVault,enterprise knowledge search
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -1439,10 +1380,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "CSV Regression Integration Document"));
+                        "CSV Regression Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -1454,8 +1394,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -1490,9 +1429,8 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 StringComparison.OrdinalIgnoreCase);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "enterprise knowledge search"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        "enterprise knowledge search"), TestContext.Current.CancellationToken);
 
             IReadOnlyList<SearchDocumentsResult> searchResults =
                 searchPage.Results;
@@ -1563,10 +1501,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     Enterprise knowledge search regression content.
                 """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -1575,10 +1510,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Markdown Regression Integration Document"));
+                        "Markdown Regression Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -1590,8 +1524,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -1626,9 +1559,8 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                 StringComparison.OrdinalIgnoreCase);
 
             SearchDocumentsPage searchPage =
-                await harness.SearchHandler.HandleAsync(
-                    new SearchDocumentsQuery(
-                        "enterprise knowledge search"));
+                await harness.SearchHandler.HandleAsync(new SearchDocumentsQuery(
+                        "enterprise knowledge search"), TestContext.Current.CancellationToken);
 
             IReadOnlyList<SearchDocumentsResult> searchResults =
                 searchPage.Results;
@@ -1700,10 +1632,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             }
             """;
 
-            await File.WriteAllTextAsync(
-                sourceFilePath,
-                sourceText,
-                Encoding.UTF8);
+            await File.WriteAllTextAsync(sourceFilePath, sourceText, Encoding.UTF8, TestContext.Current.CancellationToken);
 
             await using var harness =
                 new DocumentPipelineTestHarness(
@@ -1712,10 +1641,9 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     encryptionKey);
 
             ImportDocumentResult importResult =
-                await harness.ImportHandler.HandleAsync(
-                    new ImportDocumentCommand(
+                await harness.ImportHandler.HandleAsync(new ImportDocumentCommand(
                         sourceFilePath,
-                        "Artifact Preservation Integration Document"));
+                        "Artifact Preservation Integration Document"), TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 ImportDocumentResultStatus.Success,
@@ -1727,8 +1655,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
             Guid documentId =
                 importResult.DocumentId.Value;
 
-            await harness.ProcessingService.ProcessAsync(
-                documentId);
+            await harness.ProcessingService.ProcessAsync(documentId, TestContext.Current.CancellationToken);
 
             Document? document =
                 await harness.GetDocumentAsync(
@@ -1746,9 +1673,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     document.StoredFilePath));
 
             await using Stream decryptedStream =
-                await harness.DocumentReader.OpenReadAsync(
-                    document.Id,
-                    document.Sha256Hash);
+                await harness.DocumentReader.OpenReadAsync(document.Id, document.Sha256Hash, TestContext.Current.CancellationToken);
 
             using var reader =
                 new StreamReader(
@@ -1756,7 +1681,7 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     Encoding.UTF8);
 
             string storedText =
-                await reader.ReadToEndAsync();
+                await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(
                 sourceText,

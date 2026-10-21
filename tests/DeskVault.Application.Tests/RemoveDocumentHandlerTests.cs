@@ -38,9 +38,8 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult result =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    documentId));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    documentId), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -103,9 +102,8 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult result =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -160,9 +158,8 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult result =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -225,9 +222,8 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult result =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -290,9 +286,8 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult result =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -355,9 +350,8 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult result =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -426,9 +420,8 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult result =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -493,14 +486,12 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult firstResult =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         RemoveDocumentResult retryResult =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -565,14 +556,12 @@ public sealed class RemoveDocumentHandlerTests
 
         // Act
         RemoveDocumentResult firstResult =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         RemoveDocumentResult retryResult =
-            await handler.HandleAsync(
-                new RemoveDocumentCommand(
-                    document.Id));
+            await handler.HandleAsync(new RemoveDocumentCommand(
+                    document.Id), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(

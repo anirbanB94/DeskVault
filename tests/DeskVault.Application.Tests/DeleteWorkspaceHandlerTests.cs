@@ -17,8 +17,7 @@ public sealed class DeleteWorkspaceHandlerTests
 
         var workspaceId = Guid.NewGuid();
 
-        var result = await handler.HandleAsync(
-            new DeleteWorkspaceCommand(workspaceId));
+        var result = await handler.HandleAsync(new DeleteWorkspaceCommand(workspaceId), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DeleteWorkspaceResultStatus.WorkspaceNotFound,
@@ -45,8 +44,7 @@ public sealed class DeleteWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new DeleteWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new DeleteWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DeleteWorkspaceResultStatus.Success,
@@ -80,8 +78,7 @@ public sealed class DeleteWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new DeleteWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new DeleteWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DeleteWorkspaceResultStatus.Success,
@@ -121,8 +118,7 @@ public sealed class DeleteWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new DeleteWorkspaceCommand(workspaceToDelete.Id));
+        var result = await handler.HandleAsync(new DeleteWorkspaceCommand(workspaceToDelete.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DeleteWorkspaceResultStatus.Success,
@@ -174,8 +170,7 @@ public sealed class DeleteWorkspaceHandlerTests
         var handler = CreateHandler(context);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => handler.HandleAsync(
-                new DeleteWorkspaceCommand(workspace.Id)));
+            () => handler.HandleAsync(new DeleteWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken));
 
         Assert.Same(
             workspace,
@@ -199,8 +194,7 @@ public sealed class DeleteWorkspaceHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new DeleteWorkspaceCommand(workspace.Id));
+        var result = await handler.HandleAsync(new DeleteWorkspaceCommand(workspace.Id), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             DeleteWorkspaceResultStatus.Success,

@@ -15,10 +15,9 @@ public sealed class UpdateWorkspaceDescriptionHandlerTests
         var context = CreateContext();
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new UpdateWorkspaceDescriptionCommand(
+        var result = await handler.HandleAsync(new UpdateWorkspaceDescriptionCommand(
                 Guid.NewGuid(),
-                "Updated description"));
+                "Updated description"), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             UpdateWorkspaceDescriptionResultStatus.WorkspaceNotFound,
@@ -42,10 +41,9 @@ public sealed class UpdateWorkspaceDescriptionHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new UpdateWorkspaceDescriptionCommand(
+        var result = await handler.HandleAsync(new UpdateWorkspaceDescriptionCommand(
                 workspace.Id,
-                "Updated description"));
+                "Updated description"), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             UpdateWorkspaceDescriptionResultStatus.WorkspaceNotPersistent,
@@ -72,10 +70,9 @@ public sealed class UpdateWorkspaceDescriptionHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new UpdateWorkspaceDescriptionCommand(
+        var result = await handler.HandleAsync(new UpdateWorkspaceDescriptionCommand(
                 workspace.Id,
-                "Updated description"));
+                "Updated description"), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             UpdateWorkspaceDescriptionResultStatus.Success,
@@ -119,10 +116,9 @@ public sealed class UpdateWorkspaceDescriptionHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new UpdateWorkspaceDescriptionCommand(
+        var result = await handler.HandleAsync(new UpdateWorkspaceDescriptionCommand(
                 workspace.Id,
-                "   "));
+                "   "), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             UpdateWorkspaceDescriptionResultStatus.Success,
@@ -161,10 +157,9 @@ public sealed class UpdateWorkspaceDescriptionHandlerTests
 
         var handler = CreateHandler(context);
 
-        var result = await handler.HandleAsync(
-            new UpdateWorkspaceDescriptionCommand(
+        var result = await handler.HandleAsync(new UpdateWorkspaceDescriptionCommand(
                 workspace.Id,
-                "Updated description"));
+                "Updated description"), Xunit.TestContext.Current.CancellationToken);
 
         Assert.Equal(
             "My Workspace",
@@ -210,10 +205,9 @@ public sealed class UpdateWorkspaceDescriptionHandlerTests
         var handler = CreateHandler(context);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => handler.HandleAsync(
-                new UpdateWorkspaceDescriptionCommand(
+            () => handler.HandleAsync(new UpdateWorkspaceDescriptionCommand(
                     workspace.Id,
-                    "Updated description")));
+                    "Updated description"), Xunit.TestContext.Current.CancellationToken));
 
         Workspace? activeWorkspace =
             context.ActiveWorkspaceRegistry.Get(workspace.Id);

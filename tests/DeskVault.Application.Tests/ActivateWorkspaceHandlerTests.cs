@@ -20,7 +20,7 @@ public sealed class ActivateWorkspaceHandlerTests
         var command = new ActivateWorkspaceCommand(workspace.Id);
 
         ActivateWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ActivateWorkspaceResultStatus.AlreadyActive,
@@ -58,7 +58,7 @@ public sealed class ActivateWorkspaceHandlerTests
         var command = new ActivateWorkspaceCommand(workspace.Id);
 
         ActivateWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ActivateWorkspaceResultStatus.Activated,
@@ -87,7 +87,7 @@ public sealed class ActivateWorkspaceHandlerTests
         var command = new ActivateWorkspaceCommand(workspaceId);
 
         ActivateWorkspaceResult result =
-            await context.Handler.HandleAsync(command);
+            await context.Handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ActivateWorkspaceResultStatus.WorkspaceNotFound,
@@ -128,12 +128,10 @@ public sealed class ActivateWorkspaceHandlerTests
             .ReturnsAsync(secondWorkspace);
 
         var firstResult =
-            await context.Handler.HandleAsync(
-                new ActivateWorkspaceCommand(firstWorkspace.Id));
+            await context.Handler.HandleAsync(new ActivateWorkspaceCommand(firstWorkspace.Id), TestContext.Current.CancellationToken);
 
         var secondResult =
-            await context.Handler.HandleAsync(
-                new ActivateWorkspaceCommand(secondWorkspace.Id));
+            await context.Handler.HandleAsync(new ActivateWorkspaceCommand(secondWorkspace.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ActivateWorkspaceResultStatus.Activated,

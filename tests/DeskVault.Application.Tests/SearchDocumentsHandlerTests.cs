@@ -38,8 +38,7 @@ public sealed class SearchDocumentsHandlerTests
 
         // Act
         SearchDocumentsPage actualPage =
-            await handler.HandleAsync(
-                query);
+            await handler.HandleAsync(query, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Same(
