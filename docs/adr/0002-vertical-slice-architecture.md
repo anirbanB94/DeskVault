@@ -39,6 +39,17 @@ The architectural responsibilities remain separated:
 
 Dependency injection is configured at the composition root so that application code depends on abstractions rather than infrastructure implementations.
 
+### Configuration composition and precedence
+
+The UI composition root owns runtime configuration construction and establishes the application content root explicitly. Configuration must resolve the shipped defaults consistently, independent of the process's current working directory.
+
+- `appsettings.json` is a required shipped defaults file. If it is missing, application initialization must fail rather than silently proceeding with an incomplete configuration.
+- Preserve the default host configuration provider ordering. Shipped JSON settings provide defaults, while supported external sources, including environment variables, override those defaults according to provider precedence.
+- Do not append a duplicate `appsettings.json` provider after the host's default configuration setup. A later JSON provider can override values supplied by external providers and defeat the intended override contract.
+- Supported configuration sources must be deliberate and tested. DeskVault currently constructs the host with an empty argument collection (`Args = []`); command-line arguments are therefore not an application-supported override channel under this contract unless explicitly introduced and tested.
+- Configuration providers are value sources, not inherently protected secret stores. Shipped configuration must not contain actual credentials. Before an in-scope capability introduces a genuine secret, its source, protection mechanism, access boundary, and lifecycle must be explicitly decided.
+- Existing DPAPI-backed key protection and key provisioning/retrieval responsibilities remain governed by the established key-management design and #220. This decision does not introduce a general-purpose secret-management subsystem.
+
 ### MVP presentation and composition
 
 The WinForms UI follows a Passive View MVP pattern.
