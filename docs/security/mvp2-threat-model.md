@@ -5,7 +5,7 @@
 | Property | Value |
 |---|---|
 | Document | MVP2 Security Threat Model and Control Baseline |
-| Status | Initial engineering baseline; validation pending |
+| Status | Initial engineering baseline; integrated validation pending |
 | Technical Task | #230 — Establish MVP2 threat model and security control baseline |
 | Parent PBI | #221 — Strengthen DeskVault Security Against Common Threats |
 | Reviewed source baseline | `49d3e3f29cab423383d2feb0b07b8c58b44f6e10` |
@@ -308,21 +308,27 @@ Calculate the initial triage score as:
 
 ## 8. Source-Evidence Register
 
-All GitHub references in this section are pinned to the reviewed baseline commit:
+Historical source-observation entries E-01 through E-19 retain references pinned to the reviewed baseline commit:
 
 `49d3e3f29cab423383d2feb0b07b8c58b44f6e10`
+
+The follow-up evidence entries E-20 and E-21 record #231 implementation, test, inventory, and scan findings from the task working tree on 2026-10-26. They are not observations from the historical baseline commit.
 
 ### E-01 — Host configuration
 
 [`HostConfigurator.cs`](https://github.com/anirbanB94/DeskVault/blob/49d3e3f29cab423383d2feb0b07b8c58b44f6e10/src/DeskVault.UI/Hosting/HostConfigurator.cs)
 
-Source observation: `HostConfigurator` creates a `HostApplicationBuilder`, sets the base path, then explicitly adds `appsettings.json` before binding application options. Because that provider is added after builder creation, its effective precedence relative to the builder defaults is material and must be verified against the intended override contract; do not assume conventional environment-variable or command-line precedence without a test.
+Historical source observation: `HostConfigurator` creates a `HostApplicationBuilder`, sets the base path, then explicitly adds `appsettings.json` before binding application options. Because that provider is added after builder creation, its effective precedence relative to the builder defaults is material and must be verified against the intended override contract; do not assume conventional environment-variable or command-line precedence without a test.
+
+This is a historical observation about the reviewed baseline. E-20 records the follow-up implementation and runtime test evidence.
 
 ### E-02 — Shipped configuration
 
 [`appsettings.json`](https://github.com/anirbanB94/DeskVault/blob/49d3e3f29cab423383d2feb0b07b8c58b44f6e10/src/DeskVault.UI/appsettings.json)
 
-Source observation: the reviewed file contains application, endpoint, database, storage, processing, CSV parsing, search, rendering, and logging settings. No literal credential was identified in this file during the source review. This does not establish that all deployment artifacts and runtime overrides are secret-free.
+Historical source observation: the reviewed file contains application, endpoint, database, storage, processing, CSV parsing, search, rendering, and logging settings. No literal credential was identified in this file during the source review. This does not establish that all deployment artifacts and runtime overrides are secret-free.
+
+E-21 records the follow-up inventory and bounded scan of configuration candidates.
 
 ### E-03 — Markdown policy construction
 
@@ -448,6 +454,50 @@ These are source/test-observed potential disclosure paths, not proof that a part
 
 **Evidence note:** This register is a reference index, not an execution report. The final task evidence must identify actual tests or inspections executed and record their results.
 
+### E-20 — Current configuration composition and precedence (#231)
+
+Current implementation evidence: `src/DeskVault.UI/Hosting/HostConfigurator.cs` explicitly establishes the content root, requires `appsettings.json` to exist, and constructs the host through `Host.CreateApplicationBuilder` using `HostApplicationBuilderSettings`. The previous explicit, late `AddJsonFile` registration has been removed. Configuration defaults therefore use the host's standard provider composition rather than a duplicate JSON provider appended after the other default providers.
+
+The focused UI configuration-policy tests exercise the current composition path and establish the following results:
+
+- `CreateBuilder_LoadsConfigurationFromSpecifiedContentRoot`: passed.
+- `CreateBuilder_EnvironmentVariablesOverrideJsonSettings`: passed. The environment-variable value overrides the JSON default for `MarkdownRendering:AllowRawHtml`.
+- `CreateBuilder_EnvironmentVariablesOverrideJsonResourceLimits`: passed. The environment-variable value overrides the JSON default for `DocumentProcessing:MaxChunkSize`, and the test verifies the bound options value.
+- `CreateBuilder_ThrowsWhenAppsettingsFileIsMissing`: passed.
+- `ShippedAppsettings_DoesNotContainRecognizedSecretPatterns`: passed.
+
+Execution evidence from the task working tree on 2026-10-26:
+
+- Focused command: `dotnet test .\tests\DeskVault.UI.Tests\DeskVault.UI.Tests.csproj --no-restore --filter "FullyQualifiedName~HostConfigurationPolicyTests"` — **5 passed, 0 failed, 0 skipped**.
+- UI regression command: `dotnet test .\tests\DeskVault.UI.Tests\DeskVault.UI.Tests.csproj --no-restore` — **200 passed, 0 failed, 0 skipped**.
+
+These results establish the tested content-root, required-file, JSON-default, and environment-variable override behavior. They do not establish configuration precedence for every conceivable provider or prove that all possible secrets are absent from every deployment artifact. Full-solution validation and final repository-diff validation remain part of the task's final validation step.
+
+### E-21 — Configuration inventory and secret-pattern review (#231)
+
+The local configuration inventory included the shipped `src/DeskVault.UI/appsettings.json`, repository workflow/configuration YAML files, and issue-template configuration. The reviewed `appsettings.json` contains application metadata, local Ollama endpoint/model/timeout declarations, database-provider and storage-path declarations, processing settings, CSV parsing limits, search settings, Markdown-rendering policy, and Serilog settings.
+
+Configuration declarations were traced to their bindings and consumers where identified. The following distinction is important: a declaration that is bound to an options type is not necessarily an actively consumed runtime control.
+
+| Configuration | Classification and observed use |
+|---|---|
+| `Application:Name`, `Application:Version` | Non-secret application metadata; consumed by `ApplicationInfoService`. |
+| `Application:Environment` | Non-secret declaration; no active consumer was identified in the reviewed implementation. It must not be treated as the host's effective environment setting. |
+| `Ollama:BaseUrl`, `Ollama:DefaultModel`, `Ollama:TimeoutSeconds` | Non-secret endpoint/model/runtime declarations bound to options. No active consumer was identified in the reviewed MVP2 implementation. Endpoint details may be operational metadata; future AI credential policy remains outside MVP2. |
+| `Database:Provider` | Non-secret provider declaration bound to options. No active consumer was identified. It does not replace the established encrypted SQLite provider and key architecture. |
+| `Storage:DataDirectory`, `Storage:LogDirectory`, `Storage:TempDirectory` | Declared path settings for which no effective binding-to-use path was identified. They must not be represented as authoritative runtime storage overrides. Actual application-managed data paths are derived by `DeskVaultDataPaths`; logging uses its Serilog configuration. |
+| `DocumentProcessing:*` | Non-secret processing settings, including resource limits; consumed by the applicable processing paths. |
+| `CsvParsing:MaxRows` | Non-secret parser configuration consumed by the applicable CSV parsing paths. The existence of this setting does not establish that every CSV extraction path uses it. |
+| `Search:PageSize` | Non-secret search configuration consumed by search options. |
+| `MarkdownRendering:AllowRawHtml`, `AllowExternalResources`, `AllowExternalNavigation` | Non-secret policy settings consumed by the Markdown rendering configuration. Effective policy behavior remains subject to the existing renderer controls and their separate security tests. |
+| `Serilog:*` | Operational logging configuration consumed by Serilog. Log destinations and retention settings are operational metadata, not credentials. Diagnostic sanitization remains owned by #232. |
+
+The review distinguishes ordinary non-secret settings from potentially sensitive operational metadata such as local paths, endpoint locations, and log destinations. No actual secret was identified in the reviewed shipped JSON.
+
+The bounded scan of tracked and generated configuration candidates reported `publicKeyToken` property-name matches in generated Roslyn `BuildHost-net472` `.exe.config` files. These are assembly-binding metadata, not credential material. The scan did not report a recognizable credential-value pattern in those reviewed candidates.
+
+The scan is heuristic. Its result is evidence about the reviewed files and patterns, not a guarantee that no arbitrary, encoded, novel, or otherwise unrecognized secret can exist in any source, build, or deployment artifact.
+
 ---
 
 ## 9. Threat Register
@@ -459,16 +509,16 @@ These are source/test-observed potential disclosure paths, not proof that a part
 - **Trust boundary:** TB-01.
 - **Attack scenario:** A supported or unexpected configuration source changes a security-sensitive option, resource limit, storage destination, endpoint, or logging setting. The effective value differs from the intended policy, or a future credential is accidentally shipped in configuration.
 - **Preconditions:** The relevant configuration source or override is available, or the shipped configuration changes.
-- **Entry point:** `HostConfigurator.ConfigureConfiguration`, options binding, the shipped `appsettings.json`, and supported configuration override sources.
+- **Entry point:** `HostConfigurator` configuration composition, options binding, the shipped `appsettings.json`, and supported configuration override sources.
 - **Plausible attack path:** A provider is applied in an unexpected order or an invalid override is accepted; the runtime then uses a security-sensitive endpoint, storage/logging option, renderer setting, or resource limit different from the intended policy. A future secret may also be accidentally included in shipped configuration.
 - **Potential impact:** Weakened restrictions, unintended data destinations or external behavior, resource exhaustion, or credential disclosure if a real secret is introduced.
-- **Current protection:** E-01 and E-02 show explicit configuration setup, option binding, restrictive default Markdown options, and no literal credential identified in the reviewed JSON.
-- **Gap:** `HostConfigurator` adds `appsettings.json` after builder creation, so effective precedence relative to builder defaults is material and must be tested against the intended override contract. Security-sensitive value validation and deployment-wide secret coverage also require explicit verification.
+- **Current protection:** E-01 and E-02 document the historical baseline. E-20 and E-21 record the corrected current configuration composition, tested override behavior, and bounded configuration review.
+- **Gap:** Provider precedence is verified for the tested JSON-default and environment-variable override paths. Security-sensitive value validation and comprehensive deployment-wide secret coverage are not established by these tests and scans.
 - **Initial rating:** Likelihood 3 × Impact 4 = **12, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #231.
-- **Verification:** Test effective resolved options across supported providers and override sources. Check shipped configuration and build artifacts for actual secret values. Test invalid or unsupported values according to the documented policy.
-- **Residual-risk rule:** Do not claim that secrets are comprehensively absent or that precedence is correct until the relevant checks pass.
+- **Verification:** Test effective resolved options across supported providers and override sources. Check shipped configuration and relevant build artifacts for actual secret values. Test invalid or unsupported values according to the documented policy.
+- **Residual-risk rule:** Do not claim that secrets are comprehensively absent or that every conceivable provider combination has been verified.
 
 ### DV-T-002 — Logs or diagnostics disclose sensitive information
 
@@ -667,8 +717,8 @@ This matrix records the threat, affected assets, source-observed protection, cur
 
 | Control | Threat(s) | Affected assets | Current protection / source evidence | Gap or status | Owner | Expected validation evidence |
 |---|---|---|---|---|---|---|
-| DV-SEC-001 - Configuration classification and secret handling | DV-T-001 | A-07, A-08, A-09 | E-01 and E-02; no literal credential identified in the reviewed shipped JSON | Deployment/build-output coverage and future secret policy remain unverified | #231 | Secret scans of shipped configuration/build artifacts; policy review; tests for required and invalid sensitive settings |
-| DV-SEC-002 - Configuration-provider precedence | DV-T-001 | A-07 | E-01 shows an explicit JSON provider is added after builder creation | Effective precedence is material but not yet runtime-tested against the intended override contract | #231 | Tests of resolved options across supported providers and overrides, including security-sensitive settings |
+| DV-SEC-001 - Configuration classification and secret handling | DV-T-001 | A-07, A-08, A-09 | E-02, E-20 and E-21: current configuration inventory, binding/consumer classification, five focused configuration-policy tests, and a bounded secret-pattern review; no recognized actual credential was identified in the reviewed configuration candidates | Current implementation evidence is available, but heuristic scans are not exhaustive and comprehensive deployment-artifact coverage is not claimed | #231 | Review setting classification and future-secret policy; inspect tracked/shipped configuration; run focused tests and relevant build validation; retain residual limitations explicitly |
+| DV-SEC-002 - Configuration-provider precedence | DV-T-001 | A-07 | E-20: the duplicate late JSON provider was removed; runtime tests verify that environment-variable overrides win over JSON defaults for Markdown policy and processing resource limits | Passed for the tested JSON/default and environment-variable override paths; other provider channels are not claimed as independently verified by these tests | #231 | Focused tests for content-root/default loading, environment-variable precedence for a security-sensitive rendering option and a processing resource limit, and required-file behavior |
 | DV-SEC-003 - Sensitive-data-safe diagnostics | DV-T-002 | A-01, A-04 to A-10 | E-19: reader-specific redaction test exists, but multiple handler/presenter paths log or surface exception-bearing values | Cross-cutting safety is not established; exception text and `ex.ToString()` paths require systematic review and safe output behavior | #232 | Captured success/failure logs and user-facing diagnostics using synthetic sensitive values; assert prohibited values are absent while safe operational context remains |
 | DV-SEC-004 - Source-input and structural resource boundaries | DV-T-003 | A-01, A-02, A-06 | E-04 to E-06 show format-specific parsers and output limits | Input-size, structural, cancellation and total-work boundaries require per-format verification | #233 | Tests below, at, and above each defined boundary, including malformed input and cancellation |
 | DV-SEC-005 - Parser intermediate-materialization bounds | DV-T-003 | A-02; application availability | E-04 to E-06 show parsers creating intermediate representations | Final output limits do not establish bounded intermediate memory or structural expansion | #233 | Parser-specific tests for large inputs, nesting, fan-out, rows/nodes/fields and early enforcement |
@@ -695,20 +745,22 @@ The `DV-SEC-*` IDs are stable references used by the threat register and the int
 - **Threat:** DV-T-001.
 - **Assets:** A-07, A-08, A-09.
 - **Owner:** #231.
-- **Current evidence:** E-01, E-02.
-- **Status:** Partial source evidence; deployment coverage unverified.
-- **Required behavior:** Classify settings; keep actual secrets out of shipped configuration; define sourcing/protection policy before an in-scope capability genuinely requires a secret. Do not invent a secret-management subsystem without a current requirement.
-- **Verification:** Shipped configuration and build-artifact scans; secret-handling policy review; tests for required/invalid sensitive configuration values.
+- **Current evidence:** E-02, E-20 and E-21.
+- **Status:** Current configuration source and consumer classification has been documented, and the reviewed configuration candidates produced no recognized credential finding. The scan is heuristic and comprehensive deployment-artifact coverage is not claimed.
+- **Required behavior:** Classify settings according to purpose and sensitivity; distinguish ordinary configuration from potentially sensitive operational metadata and actual secret material; trace declarations to effective consumers; keep actual credentials out of shipped configuration; define the required sourcing, protection, access, lifecycle and diagnostic-exposure decisions before an in-scope capability introduces a genuine secret. Do not introduce a generic secret-management subsystem without a concrete requirement.
+- **Secret-handling policy:** Environment variables and ordinary configuration providers are value sources, not inherently protected secret stores. If an in-scope feature genuinely requires a secret, its source, protection mechanism, authorized access boundary, lifecycle, rotation/replacement requirements where applicable, and diagnostic exposure must be explicitly reviewed before implementation. Existing DPAPI-backed key protection, key identity, provisioning and retrieval remain under #220. AI-specific credentials remain outside MVP2.
+- **Verification:** E-20 records five passing focused configuration-policy tests and 200 passing UI regression tests on the task working tree. E-21 records the reviewed configuration candidates and the known `publicKeyToken` metadata false positives. Final full-solution validation and repository-diff checks remain required before task completion.
 
 ### DV-SEC-002 — Configuration-provider precedence
 
 - **Threat:** DV-T-001.
 - **Assets:** A-07.
 - **Owner:** #231.
-- **Current evidence:** E-01.
-- **Status:** Provider-addition order is source-observed; its effective precedence against the intended override contract is not yet runtime-verified.
-- **Required behavior:** Define and test precedence for each supported configuration source. Confirm that security-sensitive settings resolve to intended values.
-- **Verification:** Runtime options assertions under each supported source and override combination, including restrictive rendering options and resource-limit settings.
+- **Current evidence:** E-20.
+- **Status:** Passed for the tested composition and override paths. The content-root/default-loading behavior, required configuration-file behavior, and environment-variable precedence for a rendering-policy setting and a processing resource limit have automated regression coverage.
+- **Required behavior:** The UI composition root must establish the content root explicitly, require the shipped `appsettings.json`, and preserve the intended host configuration-provider precedence. Environment variables override the shipped JSON defaults for the tested settings. Do not append a duplicate JSON provider after host defaults. Configuration sources not explicitly supported and tested by the application must not be represented as part of this task's verified override contract.
+- **Command-line boundary:** `HostApplicationBuilderSettings.Args` is initialized to an empty argument collection. This task does not introduce command-line configuration as an application override channel. Any future change to the supported sources must explicitly define and test its precedence.
+- **Verification:** E-20 records five passing focused configuration-policy tests and 200 passing UI regression tests. These tests establish the exercised paths, not every possible provider combination. Full-solution validation and final whitespace/diff validation remain pending.
 
 ### DV-SEC-003 — Sensitive-data-safe diagnostics
 
@@ -929,7 +981,7 @@ This is the initial impact assessment for the reviewed baseline. It is not autho
 | ADR | Relevant boundary | Impact decision |
 |---|---|---|
 | [ADR-0001 - Project Vision](../adr/0001-project-vision.md) | Offline-first operation, local data ownership, privacy-sensitive deployment goals, and future local AI | The baseline aligns with local-first operation. Future local AI is not treated as implemented MVP2 functionality. No architecture change proposed. |
-| [ADR-0002 - Vertical Slice Architecture](../adr/0002-vertical-slice-architecture.md) | Domain/Application/Infrastructure/UI boundaries and the composition root | No architecture redesign proposed. The threat model spans existing application slices and Infrastructure/UI trust boundaries. Preserve dependency direction and keep controls within assigned responsibilities. |
+| [ADR-0002 - Vertical Slice Architecture](../adr/0002-vertical-slice-architecture.md) | Domain/Application/Infrastructure/UI boundaries and the composition root | No architecture redesign is proposed. #231 clarifies the configuration-composition invariant at the existing UI composition root: explicit content root, required shipped defaults, and supported override precedence. Dependency direction and existing key-management ownership remain unchanged. |
 | [ADR-0003 - Document Import Workflow](../adr/0003-document-import-workflow.md) | Import validation, storage, compensation and separation from processing | No redesign proposed. #233 hardens the parser/processing boundary while #100 remains authoritative for import reliability. |
 | [ADR-0004 - Document Encryption at Rest](../adr/0004-document-encryption-at-rest.md) | Document encryption, key protection, atomic publication and strict retrieval | Preserve the existing encryption and key lifecycle. Clarify copied-vault and same-user limitations; do not claim universal device binding. Any key-semantics change requires separate justification. |
 | [ADR-0005 - Document Metadata Persistence](../adr/0005-document-metadata-persistence.md) | Metadata and derived-knowledge persistence | No persistence-contract redesign proposed. Treat metadata, processing state, chunks and provenance as potentially sensitive assets. |

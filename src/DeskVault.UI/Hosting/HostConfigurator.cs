@@ -26,26 +26,40 @@ internal static class HostConfigurator
 {
     public static IHost Build()
     {
-        var builder = Host.CreateApplicationBuilder(args: []);
-
-        ConfigureConfiguration(builder);
+        var builder = CreateBuilder(AppContext.BaseDirectory);
 
         ConfigureLogging(builder);
 
-        ConfigureServices(builder.Services, builder.Configuration);
+        ConfigureServices(
+            builder.Services,
+            builder.Configuration);
 
         return builder.Build();
     }
 
-    private static void ConfigureConfiguration(
-        HostApplicationBuilder builder)
+    internal static HostApplicationBuilder CreateBuilder(
+        string contentRoot)
     {
-        builder.Configuration
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile(
-                "appsettings.json",
-                optional: false,
-                reloadOnChange: true);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentRoot);
+
+        var resolvedContentRoot = Path.GetFullPath(contentRoot);
+        var appsettingsPath = Path.Combine(
+            resolvedContentRoot,
+            "appsettings.json");
+
+        if (!File.Exists(appsettingsPath))
+        {
+            throw new FileNotFoundException(
+                "Required application configuration file was not found.",
+                appsettingsPath);
+        }
+
+        return Host.CreateApplicationBuilder(
+            new HostApplicationBuilderSettings
+            {
+                Args = [],
+                ContentRootPath = resolvedContentRoot
+            });
     }
 
     private static void ConfigureLogging(
