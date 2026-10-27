@@ -3,6 +3,8 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -120,9 +122,11 @@ public sealed class EncryptedDocumentReader : IDocumentReader
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentReaderFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentReaderFailure,
+                LogMessages.DocumentReaderFailed,
+                ex);
 
             throw;
         }

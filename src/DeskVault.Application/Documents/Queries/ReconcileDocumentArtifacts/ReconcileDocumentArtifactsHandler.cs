@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Interfaces;
+using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
@@ -74,10 +75,14 @@ public sealed class ReconcileDocumentArtifactsHandler
                     or PathTooLongException
                     or System.Security.SecurityException)
             {
-                _logger.LogWarning(
-                    exception,
+                _logger.LogSafeFailure(
+                    LogLevel.Warning,
+                    DiagnosticOperationCodes.DocumentArtifactPathNormalizationFailure,
                     LogMessages.DocumentArtifactValidationFailed,
-                    document.Id);
+                    exception,
+                    failureCategory: exception is System.Security.SecurityException
+                        ? DiagnosticFailureCategory.AccessDenied
+                        : DiagnosticFailureCategory.InvalidData);
 
                 findings.Add(
                     new DocumentArtifactReconciliationResult(
@@ -153,10 +158,11 @@ public sealed class ReconcileDocumentArtifactsHandler
                     or InvalidDataException
                     or CryptographicException)
             {
-                _logger.LogWarning(
-                    exception,
+                _logger.LogSafeFailure(
+                    LogLevel.Warning,
+                    DiagnosticOperationCodes.DocumentArtifactReadValidationFailure,
                     LogMessages.DocumentArtifactValidationFailed,
-                    document.Id);
+                    exception);
 
                 findings.Add(
                     new DocumentArtifactReconciliationResult(

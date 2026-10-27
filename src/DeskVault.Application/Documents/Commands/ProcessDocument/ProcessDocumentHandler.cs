@@ -5,6 +5,7 @@ using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 
@@ -188,9 +189,11 @@ public sealed class ProcessDocumentHandler
                 document.MarkProcessingFailed();
             }
 
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentProcessingFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentProcessingFailure,
+                LogMessages.DocumentProcessingFailed,
+                ex);
 
             throw;
         }

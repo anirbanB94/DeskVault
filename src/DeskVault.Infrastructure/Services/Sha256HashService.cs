@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using DeskVault.Application.Interfaces;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -46,9 +48,11 @@ public sealed class Sha256HashService : IHashService
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentHashFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentHashFailure,
+                LogMessages.DocumentHashFailed,
+                ex);
 
             throw;
         }
@@ -77,9 +81,11 @@ public sealed class Sha256HashService : IHashService
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentHashFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentHashFailure,
+                LogMessages.DocumentHashFailed,
+                ex);
 
             throw;
         }

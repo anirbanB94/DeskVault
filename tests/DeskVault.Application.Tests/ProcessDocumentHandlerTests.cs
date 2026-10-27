@@ -7,9 +7,13 @@ using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Provenance;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Tests.TestDoubles;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using static DeskVault.Application.Tests.TestDoubles.SafeDiagnosticLogAssertions;
 
 namespace DeskVault.Application.Tests;
 
@@ -326,10 +330,16 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
+        var logger = new RecordingLogger<ProcessDocumentHandler>();
+
         var processingContext =
-            CreateProcessingContext(repository);
+            CreateProcessingContext(
+                repository,
+                logger: logger);
 
         processingContext.Extractor.ThrowOnExtract = true;
+        processingContext.Extractor.ExceptionMessage =
+            CreateSensitiveDetails();
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -384,6 +394,13 @@ public sealed class ProcessDocumentHandlerTests
         Assert.Equal(
             DocumentProcessingState.Failed,
             document.ProcessingState);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentProcessingFailure,
+            LogMessages.DocumentProcessingFailed,
+            nameof(InvalidOperationException));
     }
 
     [Fact]
@@ -1380,7 +1397,8 @@ public sealed class ProcessDocumentHandlerTests
         Mock<IDocumentRepository> repository,
         int maxChunkSize = 100,
         long maxDecryptedDocumentBytes = 32 * 1024 * 1024,
-        DocumentProcessingOptions? processingOptions = null)
+        DocumentProcessingOptions? processingOptions = null,
+        ILogger<ProcessDocumentHandler>? logger = null)
     {
         var reader =
             new TestDocumentReader();
@@ -1419,7 +1437,7 @@ public sealed class ProcessDocumentHandlerTests
                 chunker,
                 processingStore,
                 processingOptions,
-                NullLogger<ProcessDocumentHandler>.Instance);
+                logger ?? NullLogger<ProcessDocumentHandler>.Instance);
 
         return new ProcessingContext(
             handler,
@@ -1495,6 +1513,8 @@ public sealed class ProcessDocumentHandlerTests
 
         public bool ThrowOnExtract { get; set; }
 
+        public string ExceptionMessage { get; set; } = "Test extraction failure.";
+
         public bool CancelOnExtract { get; set; }
 
         public Action? BeforeThrow { get; set; }
@@ -1534,7 +1554,7 @@ public sealed class ProcessDocumentHandlerTests
                 BeforeThrow?.Invoke();
 
                 throw new InvalidOperationException(
-                    "Test extraction failure.");
+                    ExceptionMessage);
             }
 
             if (CancelOnExtract)

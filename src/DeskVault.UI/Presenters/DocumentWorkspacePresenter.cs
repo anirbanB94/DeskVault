@@ -5,6 +5,8 @@ using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.UI.Presenters;
 
@@ -146,9 +148,11 @@ public sealed class DocumentWorkspacePresenter :
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentWorkspaceOpenFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentWorkspaceOpenFailure,
+                LogMessages.DocumentWorkspaceOpenFailed,
+                ex);
 
             _view.ShowError(
                 UiMessages.UnableToOpenDocument,
@@ -220,9 +224,11 @@ public sealed class DocumentWorkspacePresenter :
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentWorkspaceOpenExternallyFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentWorkspaceOpenExternallyFailure,
+                LogMessages.DocumentWorkspaceOpenExternallyFailed,
+                ex);
 
             _view.ShowError(
                 UiMessages.UnableToOpenDocument,
@@ -249,8 +255,29 @@ public sealed class DocumentWorkspacePresenter :
             return;
         }
 
-        if (!_view.ConfirmRemoval(
-            _currentDocument.FileName))
+        bool removalConfirmed;
+
+        try
+        {
+            removalConfirmed = _view.ConfirmRemoval(
+                _currentDocument.FileName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentWorkspaceRemovalConfirmationFailure,
+                LogMessages.DocumentWorkspaceRemovalConfirmationFailed,
+                ex);
+
+            _view.ShowError(
+                UiMessages.UnableToRemoveDocument,
+                UiMessages.DeskVaultTitle);
+
+            return;
+        }
+
+        if (!removalConfirmed)
         {
             _logger.LogDebug(
                 LogMessages.DocumentWorkspaceRemovalCancelled);
@@ -296,9 +323,11 @@ public sealed class DocumentWorkspacePresenter :
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentWorkspaceRemovalFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentWorkspaceRemovalFailure,
+                LogMessages.DocumentWorkspaceRemovalFailed,
+                ex);
 
             _view.ShowError(
                 UiMessages.UnableToRemoveDocument,

@@ -66,7 +66,7 @@ public static class LogMessages
         "Application document artifact recovery preserved an artifact because ownership validation failed.";
 
     public const string DocumentArtifactValidationFailed =
-        "Application document artifact could not be validated for document {DocumentId}.";
+        "Application document artifact could not be validated.";
 
     public const string DocumentSearchStarted =
         "Application document search started.";

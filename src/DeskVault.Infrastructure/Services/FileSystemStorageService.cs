@@ -2,6 +2,8 @@ using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -127,9 +129,11 @@ public sealed class FileSystemStorageService : IStorageService
                     destinationFilePath);
             }
 
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentStorageFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentStorageFailure,
+                LogMessages.DocumentStorageFailed,
+                ex);
 
             throw;
         }
@@ -165,9 +169,11 @@ public sealed class FileSystemStorageService : IStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentStorageDeletionFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentStorageDeletionFailure,
+                LogMessages.DocumentStorageDeletionFailed,
+                ex);
 
             throw;
         }
@@ -194,9 +200,11 @@ public sealed class FileSystemStorageService : IStorageService
         }
         catch (Exception cleanupException)
         {
-            _logger.LogError(
-                cleanupException,
-                LogMessages.DocumentStorageDeletionFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentStorageCleanupFailure,
+                LogMessages.DocumentStorageDeletionFailed,
+                cleanupException);
         }
     }
 }

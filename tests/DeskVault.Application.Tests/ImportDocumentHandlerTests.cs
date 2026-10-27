@@ -1,8 +1,13 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Tests.TestDoubles;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Extensions;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using static DeskVault.Application.Tests.TestDoubles.SafeDiagnosticLogAssertions;
 
 namespace DeskVault.Application.Tests;
 
@@ -349,15 +354,17 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new DocumentHashConflictException(
-                    new InvalidOperationException(
-                        "Duplicate SHA-256 constraint violation.")));
+                    new InvalidOperationException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<ImportDocumentHandler>();
 
         var handler =
             CreateHandler(
                 validator.Object,
                 hashService.Object,
                 storageService.Object,
-                repository);
+                repository,
+                logger);
 
         var command =
             new ImportDocumentCommand(
@@ -403,6 +410,21 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<Document>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Warning,
+            DiagnosticOperationCodes.DocumentImportDuplicate,
+            LogMessages.DocumentImportDuplicate,
+            nameof(DocumentHashConflictException));
+
+        var duplicateEntry = Assert.Single(
+            logger.Entries,
+            entry => entry.Properties.ContainsKey("FailureCategory"));
+        Assert.Equal(
+            DiagnosticFailureCategory.DuplicateConflict,
+            Assert.IsType<DiagnosticFailureCategory>(
+                duplicateEntry.Properties["FailureCategory"]));
     }
 
     [Fact]
@@ -807,14 +829,18 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new IOException(
-                    "Cleanup failed."));
+                    CreateSensitiveDetails(),
+                    new InvalidOperationException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<ImportDocumentHandler>();
 
         var handler =
             CreateHandler(
                 validator.Object,
                 hashService.Object,
                 storageService.Object,
-                repository);
+                repository,
+                logger);
 
         var command =
             new ImportDocumentCommand(
@@ -849,6 +875,13 @@ public sealed class ImportDocumentHandlerTests
                 storedDocumentId,
                 CancellationToken.None),
             Times.Once);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentImportArtifactCleanupFailure,
+            LogMessages.DocumentImportCleanupFailed,
+            nameof(IOException));
     }
 
     [Fact]
@@ -895,14 +928,18 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<string?>()))
             .ThrowsAsync(
                 new IOException(
-                    "Storage failed."));
+                    CreateSensitiveDetails(),
+                    new InvalidOperationException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<ImportDocumentHandler>();
 
         var handler =
             CreateHandler(
                 validator.Object,
                 hashService.Object,
                 storageService.Object,
-                repository);
+                repository,
+                logger);
 
         var command =
             new ImportDocumentCommand(
@@ -932,6 +969,17 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<Document>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        Assert.Equal(
+            "The document could not be imported because storage failed.",
+            result.Description);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentImportStorageFailure,
+            LogMessages.DocumentImportStorageFailed,
+            nameof(IOException));
     }
 
     [Fact]
@@ -978,14 +1026,18 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<string?>()))
             .ThrowsAsync(
                 new UnauthorizedAccessException(
-                    "Access denied."));
+                    CreateSensitiveDetails(),
+                    new InvalidOperationException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<ImportDocumentHandler>();
 
         var handler =
             CreateHandler(
                 validator.Object,
                 hashService.Object,
                 storageService.Object,
-                repository);
+                repository,
+                logger);
 
         var command =
             new ImportDocumentCommand(
@@ -1015,19 +1067,31 @@ public sealed class ImportDocumentHandlerTests
                 It.IsAny<Document>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        Assert.Equal(
+            "The document could not be imported because storage failed.",
+            result.Description);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentImportStorageFailure,
+            LogMessages.DocumentImportStorageFailed,
+            nameof(UnauthorizedAccessException));
     }
 
     private static ImportDocumentHandler CreateHandler(
         IImportDocumentValidator validator,
         IHashService hashService,
         IStorageService storageService,
-        Mock<IDocumentRepository> repository)
+        Mock<IDocumentRepository> repository,
+        ILogger<ImportDocumentHandler>? logger = null)
     {
         return new ImportDocumentHandler(
             validator,
             hashService,
             storageService,
             repository.Object,
-            NullLogger<ImportDocumentHandler>.Instance);
+            logger ?? NullLogger<ImportDocumentHandler>.Instance);
     }
 }
