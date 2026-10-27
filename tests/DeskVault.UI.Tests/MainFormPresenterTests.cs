@@ -19,11 +19,14 @@ using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
 using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Presenters;
+using DeskVault.UI.Tests.TestDoubles;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
 using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -304,10 +307,19 @@ public sealed class MainFormPresenterTests
     public async Task SearchRequested_SearchStoreFails_ShowsErrorAndFailureStatus()
     {
         const string searchText =
-            "security";
+            "SEARCH-QUERY-SENTINEL-232";
 
-        const string errorMessage =
-            "Search store failure.";
+        string[] sensitiveMarkers =
+        [
+            "DOCUMENT-CONTENT-SENTINEL-232",
+            "ENCRYPTION-KEY-SENTINEL-232",
+            @"C:\Sensitive\Vault\SearchReport-232.pdf",
+            searchText,
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string errorMessage =
+            string.Join("|", sensitiveMarkers);
 
         var searchStore =
             new Mock<IDocumentSearchStore>();
@@ -333,10 +345,14 @@ public sealed class MainFormPresenterTests
             .SetupGet(x => x.SearchText)
             .Returns(searchText);
 
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
         _ =
             CreatePresenter(
                 view,
-                searchStore);
+                searchStore,
+                logger: logger);
 
         view.Raise(
             x => x.SearchRequested += null,
@@ -358,18 +374,19 @@ public sealed class MainFormPresenterTests
 
         view.Verify(
             x => x.SetStatus(
-                $"Search failed: {errorMessage}"),
+                UiMessages.SearchFailedStatus),
             Times.Once);
 
         view.Verify(
             x => x.ShowError(
-                It.Is<string>(
-                    message =>
-                        message.Contains(
-                            errorMessage,
-                            StringComparison.Ordinal)),
-                "DeskVault"),
+                UiMessages.SearchFailedMessage,
+                UiMessages.DeskVaultTitle),
             Times.Once);
+
+        AssertSafeSearchFailureLog(
+            logger,
+            DiagnosticOperationCodes.DocumentSearchFailure,
+            sensitiveMarkers);
 
         view.Verify(
             x => x.ShowDocuments(
@@ -679,6 +696,115 @@ public sealed class MainFormPresenterTests
                                 result.DisplayName ==
                                 "Stale Load More Result"))),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task LoadMoreRequested_WhenSearchStoreFails_LogsSafeDiagnosticAndKeepsRetryEnabled()
+    {
+        const string searchText =
+            "SEARCH-QUERY-SENTINEL-232";
+
+        string[] sensitiveMarkers =
+        [
+            "DOCUMENT-CONTENT-SENTINEL-232",
+            "ENCRYPTION-KEY-SENTINEL-232",
+            @"C:\Sensitive\Vault\SearchReport-232.pdf",
+            searchText,
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation == null &&
+                        query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                CreateSearchResultsForBatching(21));
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation != null &&
+                        query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    string.Join("|", sensitiveMarkers)));
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns(searchText);
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
+        _ =
+            CreatePresenter(
+                view,
+                searchStore,
+                logger: logger);
+
+        // Arrange: complete an initial search to establish a continuation.
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        // Act: the next page fails.
+        view.Raise(
+            x => x.LoadMoreSearchResultsRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert: the continuation request happened and retry remains enabled.
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.Is<SearchDocumentsQuery>(
+                    query =>
+                        query.SearchText == searchText &&
+                        query.Continuation != null &&
+                        query.Limit == 20),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetLoadMoreEnabled(true),
+            Times.Exactly(2));
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.SearchFailedStatus),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.SearchFailedMessage,
+                UiMessages.DeskVaultTitle),
+            Times.Once);
+
+        AssertSafeSearchFailureLog(
+            logger,
+            DiagnosticOperationCodes.DocumentSearchLoadMoreFailure,
+            sensitiveMarkers);
     }
 
     [Fact]
@@ -1403,8 +1529,16 @@ public sealed class MainFormPresenterTests
         Guid documentId =
             Guid.NewGuid();
 
-        const string errorMessage =
-            "Unable to read document.";
+        string[] sensitiveMarkers =
+        [
+            "DOCUMENT-CONTENT-SENTINEL-232",
+            "ENCRYPTION-KEY-SENTINEL-232",
+            @"C:\Sensitive\Vault\OpenReport-232.pdf",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string errorMessage =
+            string.Join("|", sensitiveMarkers);
 
         var searchStore =
             new Mock<IDocumentSearchStore>();
@@ -1443,12 +1577,16 @@ public sealed class MainFormPresenterTests
             new InvalidOperationException(
                 errorMessage));
 
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
         _ =
             CreatePresenter(
                 view,
                 searchStore,
                 repository,
-                documentReader);
+                documentReader,
+                logger: logger);
 
         view.Raise(
             x => x.OpenRequested += null,
@@ -1471,6 +1609,65 @@ public sealed class MainFormPresenterTests
             x => x.SetOpenEnabled(
                 It.IsAny<bool>()),
             Times.AtLeastOnce);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.DocumentOpenFailed,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.DocumentOpenFailure}",
+            entry.Message);
+
+        string failureType =
+            Assert.IsType<string>(
+                entry.Properties["FailureType"]);
+
+        Assert.False(
+            string.IsNullOrWhiteSpace(failureType));
+
+        Assert.Contains(
+            $"FailureType={failureType}",
+            entry.Message);
+
+        Assert.DoesNotContain(
+            documentId.ToString(),
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
+
+        foreach (object? value in entry.Properties.Values)
+        {
+            Assert.DoesNotContain(
+                documentId.ToString(),
+                value?.ToString() ?? string.Empty);
+        }
     }
 
     [Fact]
@@ -1757,10 +1954,10 @@ public sealed class MainFormPresenterTests
         string extension)
     {
         string filePath =
-            $@"C:\Documents\document{extension}";
+            $@"C:\Sensitive\PRIVATE_DOCUMENT_SENTINEL_232{extension}";
 
         string fileName =
-            $"document{extension}";
+            $"PRIVATE_DOCUMENT_SENTINEL_232{extension}";
 
         const string hash =
             "unsupported-format-hash";
@@ -1843,6 +2040,9 @@ public sealed class MainFormPresenterTests
         var processingService =
             new Mock<IDocumentProcessingService>();
 
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
         _ =
             CreatePresenter(
                 view,
@@ -1850,7 +2050,8 @@ public sealed class MainFormPresenterTests
                 repository,
                 hashService: hashService,
                 storageService: storageService,
-                processingService: processingService);
+                processingService: processingService,
+                logger: logger);
 
         view.Raise(
             x => x.ImportRequested += null,
@@ -1866,7 +2067,7 @@ public sealed class MainFormPresenterTests
                     document =>
                         document.Id == importedDocumentId &&
                         document.FileName == fileName &&
-                        document.DisplayName == "document"),
+                        document.DisplayName == "PRIVATE_DOCUMENT_SENTINEL_232"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -1880,6 +2081,24 @@ public sealed class MainFormPresenterTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        var skipLog = Assert.Single(
+            logger.Entries,
+            entry => entry.Message.Contains(
+                "Document processing skipped because no text extractor is available for file extension",
+                StringComparison.Ordinal));
+
+        Assert.Null(skipLog.Exception);
+        Assert.Equal(
+            Path.GetExtension(fileName),
+            Assert.IsType<string>(skipLog.Properties["FileExtension"]));
+        Assert.DoesNotContain(fileName, skipLog.Message);
+        Assert.DoesNotContain(
+            fileName,
+            string.Join(
+                Environment.NewLine,
+                skipLog.Properties.Select(
+                    property => $"{property.Key}={property.Value}")));
 
         view.Verify(
             x => x.ShowDocuments(
@@ -1924,8 +2143,16 @@ public sealed class MainFormPresenterTests
         const string hash =
             "processing-failure-hash";
 
-        const string errorMessage =
-            "Document processing failed.";
+        string[] sensitiveMarkers =
+        [
+            "DOCUMENT-CONTENT-SENTINEL-232",
+            "ENCRYPTION-KEY-SENTINEL-232",
+            filePath,
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string errorMessage =
+            string.Join("|", sensitiveMarkers);
 
         Guid? importedDocumentId = null;
 
@@ -1990,6 +2217,9 @@ public sealed class MainFormPresenterTests
                 new InvalidOperationException(
                     errorMessage));
 
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
         _ =
             CreatePresenter(
                 view,
@@ -1997,7 +2227,8 @@ public sealed class MainFormPresenterTests
                 repository,
                 hashService: hashService,
                 storageService: storageService,
-                processingService: processingService);
+                processingService: processingService,
+                logger: logger);
 
         view.Raise(
             x => x.ImportRequested += null,
@@ -2054,8 +2285,189 @@ public sealed class MainFormPresenterTests
         view.Verify(
             x => x.SetImportEnabled(true),
             Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.DocumentImportFailed,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.DocumentImportUnexpectedFailure}",
+            entry.Message);
+
+        Assert.Contains(
+            $"FailureType={nameof(InvalidOperationException)}",
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
     }
 
+    [Fact]
+    public async Task ReprocessRequested_WhenProcessingFails_LogsSafeDiagnosticAndShowsGenericError()
+    {
+        Guid documentId = Guid.NewGuid();
+
+        string[] sensitiveMarkers =
+        [
+            "DOCUMENT-CONTENT-SENTINEL-232",
+            "ENCRYPTION-KEY-SENTINEL-232",
+            @"C:\Sensitive\Vault\ReprocessReport-232.csv",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string errorMessage =
+            string.Join("|", sensitiveMarkers);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        view
+            .SetupGet(x => x.SelectedDocumentFileName)
+            .Returns("ReprocessReport-232.csv");
+
+        var processingService =
+            new Mock<IDocumentProcessingService>();
+
+        processingService
+            .Setup(x => x.ProcessAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(errorMessage));
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
+        _ = CreatePresenter(
+            view,
+            new Mock<IDocumentSearchStore>(),
+            processingService: processingService,
+            logger: logger);
+
+        view.Raise(
+            x => x.ReprocessRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToReprocessDocumentStatus),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToReprocessDocument,
+                UiMessages.ReprocessDocumentTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetOpenEnabled(true),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetRemoveEnabled(true),
+            Times.Once);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.DocumentReprocessFailed,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.DocumentReprocessFailure}",
+            entry.Message);
+
+        string failureType =
+            Assert.IsType<string>(
+                entry.Properties["FailureType"]);
+
+        Assert.False(
+            string.IsNullOrWhiteSpace(failureType));
+
+        Assert.Contains(
+            $"FailureType={failureType}",
+            entry.Message);
+
+        Assert.DoesNotContain(
+            documentId.ToString(),
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
+
+        foreach (object? value in entry.Properties.Values)
+        {
+            Assert.DoesNotContain(
+                documentId.ToString(),
+                value?.ToString() ?? string.Empty);
+        }
+    }
     [Fact]
     public async Task ReprocessRequested_WhenProcessingSucceeds_RefreshesDocumentsAndShowsSuccess()
     {
@@ -2182,16 +2594,20 @@ public sealed class MainFormPresenterTests
 
         view
             .SetupGet(x => x.SelectedDocumentFileName)
-            .Returns("unsupported.docx");
+            .Returns("PRIVATE_DOCUMENT_SENTINEL_232.docx");
 
         var processingService =
             new Mock<IDocumentProcessingService>();
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
 
         _ =
             CreatePresenter(
                 view,
                 searchStore,
-                processingService: processingService);
+                processingService: processingService,
+                logger: logger);
 
         view.Raise(
             x => x.ReprocessRequested += null,
@@ -2205,6 +2621,26 @@ public sealed class MainFormPresenterTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
+        var skipLog = Assert.Single(
+            logger.Entries,
+            entry => entry.Message.Contains(
+                "Document reprocessing skipped because no text extractor is available for file extension",
+                StringComparison.Ordinal));
+
+        Assert.Null(skipLog.Exception);
+        Assert.Equal(
+            ".docx",
+            Assert.IsType<string>(skipLog.Properties["FileExtension"]));
+        Assert.DoesNotContain(
+            "PRIVATE_DOCUMENT_SENTINEL_232.docx",
+            skipLog.Message);
+        Assert.DoesNotContain(
+            "PRIVATE_DOCUMENT_SENTINEL_232",
+            string.Join(
+                Environment.NewLine,
+                skipLog.Properties.Select(
+                    property => $"{property.Key}={property.Value}")));
+
         view.Verify(
             x => x.SetReprocessEnabled(false),
             Times.AtLeastOnce);
@@ -2213,6 +2649,890 @@ public sealed class MainFormPresenterTests
             x => x.SetStatus(
                 UiMessages.ReprocessingDocumentStatus),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task WorkspaceCreateRequested_WhenCreationThrows_LogsSafeDiagnosticAndShowsGenericError()
+    {
+        string[] sensitiveMarkers =
+        [
+            "WORKSPACE-NAME-SENTINEL-232",
+            "WORKSPACE-DESCRIPTION-SENTINEL-232",
+            @"C:\Sensitive\Workspace\workspace.db",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string exceptionMessage =
+            string.Join("|", sensitiveMarkers);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(exceptionMessage));
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .Setup(x => x.ShowCreateWorkspaceDialog())
+            .Returns(
+                new WorkspaceCreateRequest(
+                    sensitiveMarkers[0],
+                    sensitiveMarkers[1]));
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
+        _ = CreatePresenter(
+            view,
+            new Mock<IDocumentSearchStore>(),
+            workspaceRepository: workspaceRepository,
+            logger: logger);
+
+        view.Raise(
+            x => x.WorkspaceCreateRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        workspaceRepository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToCreateWorkspace),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToCreateWorkspace,
+                UiMessages.CreateWorkspaceTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.WorkspaceCreationUnexpectedFailure,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.WorkspaceCreationFailure}",
+            entry.Message);
+
+        Assert.Contains(
+            $"FailureType={nameof(InvalidOperationException)}",
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task WorkspaceCloseRequested_WhenCloseThrows_LogsSafeDiagnosticAndShowsGenericError()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        string[] sensitiveMarkers =
+        [
+            "WORKSPACE-NAME-SENTINEL-232",
+            "WORKSPACE-DESCRIPTION-SENTINEL-232",
+            @"C:\Sensitive\Workspace\workspace.db",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string exceptionMessage =
+            string.Join("|", sensitiveMarkers);
+
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                workspaceId,
+                sensitiveMarkers[0],
+                sensitiveMarkers[1]);
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns(workspace);
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Remove(workspaceId))
+            .Throws(
+                new InvalidOperationException(exceptionMessage));
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var workspaceView =
+            new Mock<IWorkspacePresentationView>();
+
+        WorkspacePresentation presentation =
+            CreateWorkspacePresentationForCloseTesting(
+                workspaceId,
+                workspace.Name,
+                workspace.Description,
+                workspaceView,
+                workspaceRepository,
+                activeWorkspaceRegistry);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        workspacePresentationManager
+            .Setup(x => x.GetOrCreate(
+                workspaceId,
+                WorkspaceType.Persistent,
+                workspace.Name,
+                workspace.Description))
+            .Returns(presentation);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedWorkspaceId)
+            .Returns(workspaceId);
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
+        _ = CreatePresenter(
+            view,
+            new Mock<IDocumentSearchStore>(),
+            workspacePresentationManager: workspacePresentationManager,
+            workspaceRepository: workspaceRepository,
+            activeWorkspaceRegistry: activeWorkspaceRegistry,
+            logger: logger);
+
+        // Open the workspace so the presenter subscribes to its close event.
+        view.Raise(
+            x => x.WorkspaceOpenRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        // Raise the actual WorkspacePresentation close event.
+        workspaceView.Raise(
+            x => x.CloseWorkspaceRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        activeWorkspaceRegistry.Verify(
+            x => x.Remove(workspaceId),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToCloseWorkspace),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToCloseWorkspace,
+                UiMessages.CloseWorkspace),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.WorkspaceCloseUnexpectedFailure,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.WorkspaceCloseFailure}",
+            entry.Message);
+
+        Assert.Contains(
+            $"FailureType={nameof(InvalidOperationException)}",
+            entry.Message);
+
+        Assert.DoesNotContain(
+            workspaceId.ToString(),
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
+
+        foreach (object? value in entry.Properties.Values)
+        {
+            Assert.DoesNotContain(
+                workspaceId.ToString(),
+                value?.ToString() ?? string.Empty);
+        }
+
+        presentation.Dispose();
+    }
+
+    private static WorkspacePresentation CreateWorkspacePresentationForCloseTesting(
+        Guid workspaceId,
+        string? workspaceName,
+        string? description,
+        Mock<IWorkspacePresentationView> view,
+        Mock<IWorkspaceRepository> workspaceRepository,
+        Mock<IActiveWorkspaceRegistry> activeWorkspaceRegistry)
+    {
+        var dialogService =
+            new Mock<IWorkspaceDialogService>();
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        var documentRepository =
+            new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var listDocumentsHandler =
+            new ListDocumentsHandler(
+                documentRepository.Object,
+                NullLogger<ListDocumentsHandler>.Instance);
+
+        var addDocumentToWorkspaceHandler =
+            new AddDocumentToWorkspaceHandler(
+                documentRepository.Object,
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<AddDocumentToWorkspaceHandler>.Instance);
+
+        var removeDocumentFromWorkspaceHandler =
+            new RemoveDocumentFromWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<RemoveDocumentFromWorkspaceHandler>.Instance);
+
+        var renameWorkspaceHandler =
+            new RenameWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<RenameWorkspaceHandler>.Instance);
+
+        var saveTemporaryWorkspaceHandler =
+            new SaveTemporaryWorkspaceHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<SaveTemporaryWorkspaceHandler>.Instance);
+
+        var updateWorkspaceDescriptionHandler =
+            new UpdateWorkspaceDescriptionHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
+
+        return new WorkspacePresentation(
+            workspaceId,
+            WorkspaceType.Persistent,
+            workspaceName,
+            description,
+            documentPresentationFactory.Object,
+            listDocumentsHandler,
+            addDocumentToWorkspaceHandler,
+            removeDocumentFromWorkspaceHandler,
+            renameWorkspaceHandler,
+            saveTemporaryWorkspaceHandler,
+            updateWorkspaceDescriptionHandler,
+            dialogService.Object,
+            view.Object,
+            NullLogger<WorkspacePresentation>.Instance);
+    }
+
+    [Fact]
+    public async Task RemoveRequested_WhenHandlerThrows_LogsSafeDiagnosticAndShowsGenericError()
+    {
+        Guid documentId = Guid.NewGuid();
+
+        string[] sensitiveMarkers =
+        [
+            "DOCUMENT-CONTENT-SENTINEL-232",
+            "ENCRYPTION-KEY-SENTINEL-232",
+            @"C:\Sensitive\Vault\RemoveReport-232.pdf",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string errorMessage =
+            string.Join("|", sensitiveMarkers);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(errorMessage));
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        view
+            .SetupGet(x => x.SelectedDocumentFileName)
+            .Returns("RemoveReport-232.pdf");
+
+        view
+            .Setup(x => x.ConfirmRemoval(
+                It.IsAny<string>()))
+            .Returns(true);
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
+        _ = CreatePresenter(
+            view,
+            new Mock<IDocumentSearchStore>(),
+            repository: repository,
+            logger: logger);
+
+        view.Raise(
+            x => x.RemoveRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.ConfirmRemoval("RemoveReport-232.pdf"),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToRemoveDocumentStatus),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToRemoveDocument,
+                UiMessages.DeskVaultTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Once);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.DocumentRemovalFailed,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.DocumentRemovalUnexpectedFailure}",
+            entry.Message);
+
+        string failureType =
+            Assert.IsType<string>(
+                entry.Properties["FailureType"]);
+
+        Assert.False(
+            string.IsNullOrWhiteSpace(failureType));
+
+        Assert.Contains(
+            $"FailureType={failureType}",
+            entry.Message);
+
+        Assert.DoesNotContain(
+            documentId.ToString(),
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
+
+        foreach (object? value in entry.Properties.Values)
+        {
+            Assert.DoesNotContain(
+                documentId.ToString(),
+                value?.ToString() ?? string.Empty);
+        }
+    }
+    [Fact]
+    public async Task WorkspaceRemoveRequested_WhenDeletionThrows_LogsSafeDiagnosticAndShowsGenericError()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        string[] sensitiveMarkers =
+        [
+            "WORKSPACE-NAME-SENTINEL-232",
+            "WORKSPACE-DESCRIPTION-SENTINEL-232",
+            @"C:\Sensitive\Workspace\workspace.db",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string exceptionMessage =
+            string.Join("|", sensitiveMarkers);
+
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                workspaceId,
+                sensitiveMarkers[0],
+                sensitiveMarkers[1]);
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns(workspace);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.DeleteAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(exceptionMessage));
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedWorkspaceId)
+            .Returns(workspaceId);
+
+        view
+            .SetupGet(x => x.SelectedWorkspaceName)
+            .Returns(sensitiveMarkers[0]);
+
+        view
+            .Setup(x => x.ConfirmWorkspaceRemoval(
+                sensitiveMarkers[0]))
+            .Returns(true);
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
+        _ = CreatePresenter(
+            view,
+            new Mock<IDocumentSearchStore>(),
+            workspaceRepository: workspaceRepository,
+            activeWorkspaceRegistry: activeWorkspaceRegistry,
+            logger: logger);
+
+        view.Raise(
+            x => x.WorkspaceRemoveRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        workspaceRepository.Verify(
+            x => x.DeleteAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToRemoveWorkspace),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToRemoveWorkspace,
+                UiMessages.DeleteWorkspace),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.WorkspaceRemovalUnexpectedFailure,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.WorkspaceRemovalFailure}",
+            entry.Message);
+
+        Assert.Contains(
+            $"FailureType={nameof(InvalidOperationException)}",
+            entry.Message);
+
+        Assert.DoesNotContain(
+            workspaceId.ToString(),
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
+
+        foreach (object? value in entry.Properties.Values)
+        {
+            Assert.DoesNotContain(
+                workspaceId.ToString(),
+                value?.ToString() ?? string.Empty);
+        }
+    }
+
+    [Fact]
+    public async Task WorkspaceOpenRequested_WhenOpeningThrows_LogsSafeDiagnosticAndShowsGenericError()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        string[] sensitiveMarkers =
+        [
+            "WORKSPACE-NAME-SENTINEL-232",
+            "WORKSPACE-DESCRIPTION-SENTINEL-232",
+            @"C:\Sensitive\Workspace\workspace.db",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        string exceptionMessage =
+            string.Join("|", sensitiveMarkers);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.GetByIdAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(exceptionMessage));
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns((Workspace?)null);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedWorkspaceId)
+            .Returns(workspaceId);
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
+        _ = CreatePresenter(
+            view,
+            new Mock<IDocumentSearchStore>(),
+            workspaceRepository: workspaceRepository,
+            activeWorkspaceRegistry: activeWorkspaceRegistry,
+            logger: logger);
+
+        view.Raise(
+            x => x.WorkspaceOpenRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        workspaceRepository.Verify(
+            x => x.GetByIdAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToOpenWorkspace),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToOpenWorkspace,
+                UiMessages.OpenWorkspaceTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.WorkspaceOpenUnexpectedFailure,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.WorkspaceOpenFailure}",
+            entry.Message);
+
+        Assert.Contains(
+            $"FailureType={nameof(InvalidOperationException)}",
+            entry.Message);
+
+        Assert.DoesNotContain(
+            workspaceId.ToString(),
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
+
+        foreach (object? value in entry.Properties.Values)
+        {
+            Assert.DoesNotContain(
+                workspaceId.ToString(),
+                value?.ToString() ?? string.Empty);
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenDocumentRepositoryThrows_LogsSafeDiagnosticAndShowsGenericError()
+    {
+        string[] sensitiveMarkers =
+        [
+            "DOCUMENT-CONTENT-SENTINEL-232",
+            "ENCRYPTION-KEY-SENTINEL-232",
+            @"C:\Sensitive\Vault\InitializeReport-232.pdf",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    string.Join("|", sensitiveMarkers)));
+
+        var view =
+            new Mock<IMainFormView>();
+
+        var logger =
+            new RecordingLogger<MainFormPresenter>();
+
+        MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                logger: logger);
+
+        await presenter.InitializeAsync();
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToLoadDocumentsStatus),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToLoadDocuments,
+                UiMessages.DeskVaultTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                It.Is<string>(
+                    message => sensitiveMarkers.Any(
+                        marker => message.Contains(
+                            marker,
+                            StringComparison.Ordinal))),
+                It.IsAny<string>()),
+            Times.Never);
+
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.MainWorkspaceInitializationFailed,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.MainWorkspaceInitializationFailure}",
+            entry.Message);
+
+        Assert.Contains(
+            $"FailureType={nameof(InvalidOperationException)}",
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
+    }
+
+    private static void AssertSafeSearchFailureLog(
+        RecordingLogger<MainFormPresenter> logger,
+        string operationCode,
+        IReadOnlyCollection<string> sensitiveMarkers)
+    {
+        RecordedLogEntry entry =
+            Assert.Single(
+                logger.Entries,
+                item => item.Level == LogLevel.Error);
+
+        Assert.Contains(
+            LogMessages.DocumentSearchFailed,
+            entry.Message);
+
+        Assert.Contains(
+            $"OperationCode={operationCode}",
+            entry.Message);
+
+        Assert.Contains(
+            $"FailureType={nameof(InvalidOperationException)}",
+            entry.Message);
+
+        Assert.Null(entry.Exception);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, entry.Message);
+
+            foreach (object? value in entry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
     }
 
     private static IReadOnlyList<SearchDocumentsResult> CreateSearchResults(
@@ -2335,7 +3655,8 @@ public sealed class MainFormPresenterTests
         DocumentTextExtractorResolver? documentTextExtractorResolver = null,
         Mock<IWorkspacePresentationManager>? workspacePresentationManager = null,
         Mock<IWorkspaceRepository>? workspaceRepository = null,
-        Mock<IActiveWorkspaceRegistry>? activeWorkspaceRegistry = null)
+        Mock<IActiveWorkspaceRegistry>? activeWorkspaceRegistry = null,
+        ILogger<MainFormPresenter>? logger = null)
     {
         repository ??=
             new Mock<IDocumentRepository>();
@@ -2448,7 +3769,7 @@ public sealed class MainFormPresenterTests
             workspacePresentationManager.Object,
             processingService.Object,
             documentTextExtractorResolver,
-            NullLogger<MainFormPresenter>.Instance,
+            logger ?? NullLogger<MainFormPresenter>.Instance,
             searchOptions);
     }
 

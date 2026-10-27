@@ -1,8 +1,12 @@
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Tests.TestDoubles;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using static DeskVault.Application.Tests.TestDoubles.SafeDiagnosticLogAssertions;
 
 namespace DeskVault.Application.Tests;
 
@@ -92,13 +96,17 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new IOException(
-                    "Storage deletion failed."));
+                    CreateSensitiveDetails(),
+                    new InvalidOperationException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<RemoveDocumentHandler>();
 
         var handler =
             CreateHandler(
                 repository,
                 workspaceRepository,
-                storageService);
+                storageService,
+                logger);
 
         // Act
         RemoveDocumentResult result =
@@ -111,7 +119,7 @@ public sealed class RemoveDocumentHandlerTests
             result.Status);
 
         Assert.Equal(
-            "Storage deletion failed.",
+            "The document could not be removed because its stored artifact could not be deleted.",
             result.Message);
 
         storageService.Verify(
@@ -131,6 +139,13 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentRemovalStorageDeletionFailure,
+            LogMessages.DocumentStorageDeletionFailed,
+            nameof(IOException));
     }
 
     [Fact]
@@ -206,7 +221,10 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new InvalidOperationException(
-                    "Metadata deletion failed."));
+                    CreateSensitiveDetails(),
+                    new IOException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<RemoveDocumentHandler>();
 
         var workspaceRepository =
             new Mock<IWorkspaceRepository>();
@@ -218,7 +236,8 @@ public sealed class RemoveDocumentHandlerTests
             CreateHandler(
                 repository,
                 workspaceRepository,
-                storageService);
+                storageService,
+                logger);
 
         // Act
         RemoveDocumentResult result =
@@ -231,7 +250,7 @@ public sealed class RemoveDocumentHandlerTests
             result.Status);
 
         Assert.Equal(
-            "Metadata deletion failed.",
+            "Document removal is incomplete because metadata cleanup failed.",
             result.Message);
 
         storageService.Verify(
@@ -251,6 +270,13 @@ public sealed class RemoveDocumentHandlerTests
                 document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentRemovalMetadataDeletionFailure,
+            LogMessages.DocumentMetadataDeletionFailed,
+            nameof(InvalidOperationException));
     }
 
     [Fact]
@@ -276,13 +302,17 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new UnauthorizedAccessException(
-                    "Access denied."));
+                    CreateSensitiveDetails(),
+                    new InvalidOperationException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<RemoveDocumentHandler>();
 
         var handler =
             CreateHandler(
                 repository,
                 workspaceRepository,
-                storageService);
+                storageService,
+                logger);
 
         // Act
         RemoveDocumentResult result =
@@ -295,7 +325,7 @@ public sealed class RemoveDocumentHandlerTests
             result.Status);
 
         Assert.Equal(
-            "Access denied.",
+            "The document could not be removed because its stored artifact could not be deleted.",
             result.Message);
 
         storageService.Verify(
@@ -315,6 +345,13 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentRemovalStorageDeletionFailure,
+            LogMessages.DocumentStorageDeletionFailed,
+            nameof(UnauthorizedAccessException));
     }
 
     [Fact]
@@ -334,7 +371,10 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new IOException(
-                    "Metadata storage operation failed."));
+                    CreateSensitiveDetails(),
+                    new InvalidOperationException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<RemoveDocumentHandler>();
 
         var workspaceRepository =
             new Mock<IWorkspaceRepository>();
@@ -346,7 +386,8 @@ public sealed class RemoveDocumentHandlerTests
             CreateHandler(
                 repository,
                 workspaceRepository,
-                storageService);
+                storageService,
+                logger);
 
         // Act
         RemoveDocumentResult result =
@@ -359,7 +400,7 @@ public sealed class RemoveDocumentHandlerTests
             result.Status);
 
         Assert.Equal(
-            "Metadata storage operation failed.",
+            "Document removal is incomplete because metadata cleanup failed.",
             result.Message);
 
         storageService.Verify(
@@ -379,6 +420,13 @@ public sealed class RemoveDocumentHandlerTests
                 document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentRemovalMetadataDeletionFailure,
+            LogMessages.DocumentMetadataDeletionFailed,
+            nameof(IOException));
     }
 
     [Fact]
@@ -407,7 +455,10 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new InvalidOperationException(
-                    "Workspace membership cleanup failed."));
+                    CreateSensitiveDetails(),
+                    new IOException(CreateSensitiveDetails())));
+
+        var logger = new RecordingLogger<RemoveDocumentHandler>();
 
         var storageService =
             new Mock<IStorageService>();
@@ -416,7 +467,8 @@ public sealed class RemoveDocumentHandlerTests
             CreateHandler(
                 repository,
                 workspaceRepository,
-                storageService);
+                storageService,
+                logger);
 
         // Act
         RemoveDocumentResult result =
@@ -429,7 +481,7 @@ public sealed class RemoveDocumentHandlerTests
             result.Status);
 
         Assert.Equal(
-            "Workspace membership cleanup failed.",
+            "Document removal is incomplete because workspace membership cleanup failed.",
             result.Message);
 
         storageService.Verify(
@@ -449,6 +501,13 @@ public sealed class RemoveDocumentHandlerTests
                 document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentRemovalWorkspaceMembershipCleanupFailure,
+            LogMessages.DocumentWorkspaceMembershipCleanupFailed,
+            nameof(InvalidOperationException));
     }
 
     [Fact]
@@ -609,13 +668,14 @@ public sealed class RemoveDocumentHandlerTests
     private static RemoveDocumentHandler CreateHandler(
         Mock<IDocumentRepository> repository,
         Mock<IWorkspaceRepository> workspaceRepository,
-        Mock<IStorageService> storageService)
+        Mock<IStorageService> storageService,
+        ILogger<RemoveDocumentHandler>? logger = null)
     {
         return new RemoveDocumentHandler(
             repository.Object,
             workspaceRepository.Object,
             storageService.Object,
-            NullLogger<RemoveDocumentHandler>.Instance);
+            logger ?? NullLogger<RemoveDocumentHandler>.Instance);
     }
 
     private static Document CreateDocument()

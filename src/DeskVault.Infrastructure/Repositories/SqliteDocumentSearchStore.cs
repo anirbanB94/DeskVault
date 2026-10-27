@@ -6,6 +6,8 @@ using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Shared.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.Infrastructure.Repositories;
 
@@ -275,9 +277,11 @@ public sealed class SqliteDocumentSearchStore
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentSearchStoreFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentSearchStoreFailure,
+                LogMessages.DocumentSearchStoreFailed,
+                ex);
 
             throw;
         }

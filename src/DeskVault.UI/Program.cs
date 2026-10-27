@@ -1,4 +1,6 @@
 using DeskVault.Infrastructure.Persistence;
+using DeskVault.Shared.Extensions;
+using DeskVault.Shared.Resources;
 using DeskVault.UI.Forms;
 using DeskVault.UI.Hosting;
 using DeskVault.UI.Resources;
@@ -30,8 +32,11 @@ internal static class Program
         catch (Exception ex)
         {
             Log.Error(
-                ex,
-                LogMessages.DatabaseInitializationFailed);
+                "{SafeMessage} OperationCode={OperationCode} FailureType={FailureType} FailureCategory={FailureCategory}.",
+                Shared.Resources.LogMessages.DatabaseInitializationFailed,
+                DiagnosticOperationCodes.DatabaseInitializationFailure,
+                ex.GetType().Name,
+                DiagnosticFailureClassifier.Classify(ex));
 
             WindowsForms.MessageBox.Show(
                 UiMessages.UnableToInitializeDatabase,
@@ -42,7 +47,7 @@ internal static class Program
             return;
         }
 
-        Log.Information(LogMessages.ApplicationStarting);
+        Log.Information(Resources.LogMessages.ApplicationStarting);
 
         var mainForm = host.Services.GetRequiredService<MainForm>();
 

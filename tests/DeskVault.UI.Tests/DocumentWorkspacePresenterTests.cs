@@ -8,6 +8,9 @@ using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
+using DeskVault.UI.Tests.TestDoubles;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -197,17 +200,20 @@ public sealed class DocumentWorkspacePresenterTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new IOException(
-                    "The document could not be rendered."));
+                    "PBI232_DOCUMENT_WORKSPACE_OPEN_SENTINEL"));
 
         var documentViewer =
             new Mock<IDocumentViewer>();
+
+        var logger = new RecordingLogger<DocumentWorkspacePresenter>();
 
         var presenter =
             CreatePresenter(
                 view,
                 documentViewer,
                 repository,
-                storageService);
+                storageService,
+                logger);
 
         using var stream =
             CreateDocumentStream();
@@ -219,6 +225,12 @@ public sealed class DocumentWorkspacePresenterTests
                 UiMessages.UnableToOpenDocument,
                 UiMessages.DeskVaultTitle),
             Times.Once);
+
+        AssertSafeFailureLog(
+            logger,
+            DiagnosticOperationCodes.DocumentWorkspaceOpenFailure,
+            LogMessages.DocumentWorkspaceOpenFailed,
+            "PBI232_DOCUMENT_WORKSPACE_OPEN_SENTINEL");
     }
 
     [Fact]
@@ -431,14 +443,17 @@ public sealed class DocumentWorkspacePresenterTests
                 document.FileName))
             .ThrowsAsync(
                 new IOException(
-                    "Unable to open document."));
+                    "PBI232_DOCUMENT_WORKSPACE_EXTERNAL_OPEN_SENTINEL"));
+
+        var logger = new RecordingLogger<DocumentWorkspacePresenter>();
 
         var presenter =
             CreatePresenter(
                 view,
                 documentViewer,
                 repository,
-                storageService);
+                storageService,
+                logger);
 
         using var stream =
             CreateDocumentStream();
@@ -456,6 +471,12 @@ public sealed class DocumentWorkspacePresenterTests
                 UiMessages.UnableToOpenDocument,
                 UiMessages.OpenDocumentTitle),
             Times.Once);
+
+        AssertSafeFailureLog(
+            logger,
+            DiagnosticOperationCodes.DocumentWorkspaceOpenExternallyFailure,
+            LogMessages.DocumentWorkspaceOpenExternallyFailed,
+            "PBI232_DOCUMENT_WORKSPACE_EXTERNAL_OPEN_SENTINEL");
     }
 
     [Fact]
@@ -678,7 +699,7 @@ public sealed class DocumentWorkspacePresenterTests
         // Assert
         view.Verify(
             x => x.ShowError(
-                "Storage deletion failed.",
+                "The document could not be removed because its stored artifact could not be deleted.",
                 UiMessages.RemoveFailedTitle),
             Times.Once);
 
@@ -696,6 +717,65 @@ public sealed class DocumentWorkspacePresenterTests
 
         view.Verify(
             x => x.CloseWorkspace(),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RemoveDocument_WhenConfirmationThrows_LogsSafeFailureAndShowsError()
+    {
+        Guid documentId = Guid.NewGuid();
+        Document document = CreateDocument(documentId, "document.csv");
+
+        var repository = CreateRepository(document);
+        var storageService = new Mock<IStorageService>();
+        var view = new Mock<IDocumentWorkspaceView>();
+
+        const string sentinel = "PBI232_DOCUMENT_WORKSPACE_REMOVE_SENTINEL";
+
+        view
+            .Setup(x => x.ConfirmRemoval(document.FileName))
+            .Throws(new IOException(sentinel));
+
+        var documentViewer = new Mock<IDocumentViewer>();
+        var logger = new RecordingLogger<DocumentWorkspacePresenter>();
+
+        var presenter = CreatePresenter(
+            view,
+            documentViewer,
+            repository,
+            storageService,
+            logger);
+
+        using var stream = CreateDocumentStream();
+
+        await presenter.OpenAsync(
+            documentId,
+            stream,
+            document.FileName,
+            TestContext.Current.CancellationToken);
+
+        view.Raise(
+            x => x.RemoveDocumentRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToRemoveDocument,
+                UiMessages.DeskVaultTitle),
+            Times.Once);
+
+        AssertSafeFailureLog(
+            logger,
+            DiagnosticOperationCodes.DocumentWorkspaceRemovalConfirmationFailure,
+            LogMessages.DocumentWorkspaceRemovalConfirmationFailed,
+            sentinel);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -802,11 +882,44 @@ public sealed class DocumentWorkspacePresenterTests
         return repository;
     }
 
+    private static void AssertSafeFailureLog(
+        RecordingLogger<DocumentWorkspacePresenter> logger,
+        string operationCode,
+        string safeMessage,
+        string sensitiveMarker)
+    {
+        RecordedLogEntry entry = Assert.Single(
+            logger.Entries,
+            item => item.Level == LogLevel.Error);
+
+        Assert.Contains(safeMessage, entry.Message);
+        Assert.Contains($"OperationCode={operationCode}", entry.Message);
+        Assert.Contains($"FailureType={nameof(IOException)}", entry.Message);
+
+        Assert.Equal(
+            operationCode,
+            Assert.IsType<string>(entry.Properties["OperationCode"]));
+
+        Assert.Equal(
+            nameof(IOException),
+            Assert.IsType<string>(entry.Properties["FailureType"]));
+
+        Assert.Null(entry.Exception);
+        Assert.DoesNotContain(sensitiveMarker, entry.Message);
+
+        foreach (object? propertyValue in entry.Properties.Values)
+        {
+            Assert.DoesNotContain(
+                sensitiveMarker,
+                propertyValue?.ToString() ?? string.Empty);
+        }
+    }
     private static DocumentWorkspacePresenter CreatePresenter(
         Mock<IDocumentWorkspaceView> view,
         Mock<IDocumentViewer> documentViewer,
         Mock<IDocumentRepository> repository,
-        Mock<IStorageService> storageService)
+        Mock<IStorageService> storageService,
+        RecordingLogger<DocumentWorkspacePresenter>? logger = null)
     {
         return new DocumentWorkspacePresenter(
             Guid.NewGuid(),
@@ -824,7 +937,7 @@ public sealed class DocumentWorkspacePresenterTests
                 new Mock<IWorkspaceRepository>().Object,
                 storageService.Object,
                 NullLogger<RemoveDocumentHandler>.Instance),
-            NullLogger<DocumentWorkspacePresenter>.Instance);
+            (ILogger<DocumentWorkspacePresenter>?)logger ?? NullLogger<DocumentWorkspacePresenter>.Instance);
     }
 
     private static Document CreateDocument(

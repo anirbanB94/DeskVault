@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure.Services;
@@ -169,9 +171,11 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DatabaseEncryptionKeyOperationFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DatabaseEncryptionKeyOperationFailure,
+                LogMessages.DatabaseEncryptionKeyOperationFailed,
+                ex);
 
             throw;
         }
@@ -242,9 +246,11 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DatabaseEncryptionKeyOperationFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DatabaseEncryptionKeyOperationFailure,
+                LogMessages.DatabaseEncryptionKeyOperationFailed,
+                ex);
 
             throw;
         }

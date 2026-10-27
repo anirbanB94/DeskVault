@@ -5,6 +5,8 @@ using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
 using DeskVault.Domain.Workspaces;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
@@ -239,12 +241,11 @@ public sealed class WorkspacePresentation : IDisposable
                     presentation);
             }
 
-            _logger.LogError(
-                exception,
-                LogMessages.WorkspacePresentationDocumentOpenFailed,
-                WorkspaceId,
-                documentId,
-                exception.Message);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspacePresentationDocumentOpenFailure,
+                LogMessages.WorkspacePresentationDocumentOpenSafeFailure,
+                exception);
 
             throw;
         }
@@ -584,12 +585,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(
-                exception,
-                LogMessages.WorkspacePresentationOperationFailed,
-                WorkspaceId,
-                LogMessages.WorkspacePresentationAddDocumentsOperation,
-                exception.Message);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspacePresentationAddDocumentsFailure,
+                LogMessages.WorkspacePresentationAddDocumentsSafeFailure,
+                exception);
         }
         catch (OperationCanceledException)
         {
@@ -666,12 +666,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(
-                exception,
-                LogMessages.WorkspacePresentationOperationFailed,
-                WorkspaceId,
-                LogMessages.WorkspacePresentationRemoveDocumentsOperation,
-                exception.Message);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspacePresentationRemoveDocumentsFailure,
+                LogMessages.WorkspacePresentationRemoveDocumentsSafeFailure,
+                exception);
         }
         catch (OperationCanceledException)
         {
@@ -764,12 +763,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(
-                exception,
-                LogMessages.WorkspacePresentationOperationFailed,
-                WorkspaceId,
-                LogMessages.WorkspacePresentationSaveAsWorkspaceOperation,
-                exception.Message);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspacePresentationSaveAsWorkspaceFailure,
+                LogMessages.WorkspacePresentationSaveAsWorkspaceSafeFailure,
+                exception);
         }
         catch (OperationCanceledException)
         {
@@ -904,12 +902,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(
-                exception,
-                LogMessages.WorkspacePresentationOperationFailed,
-                WorkspaceId,
-                LogMessages.WorkspacePresentationUpdateDetailsOperation,
-                exception.Message);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspacePresentationUpdateDetailsFailure,
+                LogMessages.WorkspacePresentationUpdateDetailsSafeFailure,
+                exception);
         }
         catch (OperationCanceledException)
         {
@@ -977,12 +974,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(
-                exception,
-                LogMessages.WorkspacePresentationOperationFailed,
-                WorkspaceId,
-                LogMessages.WorkspacePresentationActivateDocumentOperation,
-                exception.Message);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspacePresentationActivateDocumentFailure,
+                LogMessages.WorkspacePresentationActivateDocumentSafeFailure,
+                exception);
         }
         catch (OperationCanceledException)
         {

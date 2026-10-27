@@ -1,7 +1,10 @@
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Tests.TestDoubles;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using System.Security.Cryptography;
@@ -293,17 +296,21 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new CryptographicException(
-                    "Artifact authentication failed."));
+                    SafeDiagnosticLogAssertions.CreateSensitiveDetails()));
 
         var storageService =
             CreateStorageServiceMock();
+
+        var logger =
+            new RecordingLogger<ReconcileDocumentArtifactsHandler>();
 
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService);
+                storageService,
+                logger);
 
         // Act
         ReconcileDocumentArtifactsResult result =
@@ -325,6 +332,21 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             expectedArtifactPath,
             finding.ArtifactPath);
 
+        SafeDiagnosticLogAssertions.AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Warning,
+            DiagnosticOperationCodes.DocumentArtifactReadValidationFailure,
+            LogMessages.DocumentArtifactValidationFailed,
+            nameof(CryptographicException));
+
+        var readFailureEntry = Assert.Single(
+            logger.Entries,
+            entry => entry.Properties.ContainsKey("FailureCategory"));
+
+        Assert.Equal(
+            DeskVault.Shared.Extensions.DiagnosticFailureCategory.CryptographicFailure,
+            Assert.IsType<DeskVault.Shared.Extensions.DiagnosticFailureCategory>(
+                readFailureEntry.Properties["FailureCategory"]));
         storageService.Verify(
             x => x.IsOwnedArtifactPath(
                 document.Id,
@@ -703,8 +725,9 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         Guid malformedDocumentId =
             Guid.NewGuid();
 
-        const string malformedStoredPath =
-            "Documents\0invalid.dvault";
+        string malformedStoredPath =
+            SafeDiagnosticLogAssertions.CreateSensitiveDetails() +
+            "\0invalid.dvault";
 
         Document malformedDocument =
             Document.Create(
@@ -759,12 +782,16 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
+        var logger =
+            new RecordingLogger<ReconcileDocumentArtifactsHandler>();
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService);
+                storageService,
+                logger);
 
         // Act
         ReconcileDocumentArtifactsResult result =
@@ -809,6 +836,21 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             expectedValidArtifactPath,
             validDocumentFinding.ArtifactPath);
 
+        SafeDiagnosticLogAssertions.AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Warning,
+            DiagnosticOperationCodes.DocumentArtifactPathNormalizationFailure,
+            LogMessages.DocumentArtifactValidationFailed,
+            nameof(ArgumentException));
+
+        var pathFailureEntry = Assert.Single(
+            logger.Entries,
+            entry => entry.Properties.ContainsKey("FailureCategory"));
+
+        Assert.Equal(
+            DeskVault.Shared.Extensions.DiagnosticFailureCategory.InvalidData,
+            Assert.IsType<DeskVault.Shared.Extensions.DiagnosticFailureCategory>(
+                pathFailureEntry.Properties["FailureCategory"]));
         storageService.Verify(
             x => x.IsOwnedArtifactPath(
                 malformedDocument.Id,
@@ -1051,14 +1093,15 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         Mock<IDocumentRepository> repository,
         Mock<IDocumentArtifactEnumerator> artifactEnumerator,
         Mock<IDocumentReader> reader,
-        Mock<IStorageService> storageService)
+        Mock<IStorageService> storageService,
+        RecordingLogger<ReconcileDocumentArtifactsHandler>? logger = null)
     {
         return new ReconcileDocumentArtifactsHandler(
             repository.Object,
             artifactEnumerator.Object,
             reader.Object,
             storageService.Object,
-            NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
+            (ILogger<ReconcileDocumentArtifactsHandler>?)logger ?? NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
     }
 
     private static Mock<IStorageService> CreateStorageServiceMock()

@@ -10,10 +10,13 @@ using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Presenters;
+using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
 using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -97,6 +100,101 @@ public sealed class WorkspacePresentationTests
             x => x.SetNavigationMode(
                 It.IsAny<WorkspacePresentationNavigationMode>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task OpenDocumentAsync_WhenPresenterFails_LogsSafeDiagnosticAndRethrows()
+    {
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        string[] sensitiveMarkers =
+        [
+            "DOCUMENT-CONTENT-SENTINEL-232",
+            "ENCRYPTION-KEY-SENTINEL-232",
+            @"C:\Sensitive\Vault\CustomerReport-232.pdf",
+            "SEARCH-QUERY-SENTINEL-232",
+            "EXCEPTION-DETAIL-SENTINEL-232"
+        ];
+
+        var originalException =
+            new InvalidOperationException(
+                string.Join("|", sensitiveMarkers));
+
+        var logger =
+            new RecordingLogger<WorkspacePresentation>();
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        WorkspaceDocumentPresentation documentPresentation =
+            CreateDocumentPresentation(
+                workspaceId,
+                documentId,
+                originalException);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(
+                workspaceId,
+                documentId))
+            .Returns(documentPresentation);
+
+        WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory,
+                logger: logger);
+
+        // Act
+        InvalidOperationException thrownException =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => presentation.OpenDocumentAsync(
+                    documentId,
+                    TestContext.Current.CancellationToken));
+
+        // Assert: preserve the original exception and failed-presentation cleanup.
+        Assert.Same(originalException, thrownException);
+        Assert.Empty(presentation.PresentedDocumentIds);
+
+        RecordedLogEntry logEntry =
+            Assert.Single(logger.Entries);
+
+        Assert.Equal(LogLevel.Error, logEntry.Level);
+        Assert.Contains(
+            LogMessages.WorkspacePresentationDocumentOpenSafeFailure,
+            logEntry.Message);
+        Assert.Contains(
+            $"OperationCode={DiagnosticOperationCodes.WorkspacePresentationDocumentOpenFailure}",
+            logEntry.Message);
+        Assert.Contains(
+            $"FailureType={nameof(InvalidOperationException)}",
+            logEntry.Message);
+
+        Assert.DoesNotContain("{WorkspaceId}", logEntry.Message);
+        Assert.DoesNotContain("{DocumentId}", logEntry.Message);
+        Assert.DoesNotContain("{Description}", logEntry.Message);
+        // The logger receives no exception object or runtime workspace/document IDs.
+        Assert.Null(logEntry.Exception);
+        Assert.DoesNotContain(workspaceId.ToString(), logEntry.Message);
+        Assert.DoesNotContain(documentId.ToString(), logEntry.Message);
+        Assert.DoesNotContain("WorkspaceId", logEntry.Properties.Keys);
+        Assert.DoesNotContain("DocumentId", logEntry.Properties.Keys);
+        Assert.DoesNotContain("Description", logEntry.Properties.Keys);
+
+        foreach (string marker in sensitiveMarkers)
+        {
+            Assert.DoesNotContain(marker, logEntry.Message);
+
+            foreach (object? value in logEntry.Properties.Values)
+            {
+                Assert.DoesNotContain(
+                    marker,
+                    value?.ToString() ?? string.Empty);
+            }
+        }
     }
 
     [Fact]
@@ -943,7 +1041,8 @@ public sealed class WorkspacePresentationTests
         Mock<IWorkspaceRepository>? workspaceRepository = null,
         Mock<IActiveWorkspaceRegistry>? activeWorkspaceRegistry = null,
         Guid? workspaceId = null,
-        Mock<IWorkspaceDocumentPresentationFactory>? documentPresentationFactory = null)
+        Mock<IWorkspaceDocumentPresentationFactory>? documentPresentationFactory = null,
+        ILogger<WorkspacePresentation>? logger = null)
     {
         Guid id =
             workspaceId ?? Guid.NewGuid();
@@ -1022,18 +1121,28 @@ public sealed class WorkspacePresentationTests
             updateWorkspaceDescriptionHandler,
             dialogService.Object,
             view.View.Object,
-            NullLogger<WorkspacePresentation>.Instance);
+            logger ?? NullLogger<WorkspacePresentation>.Instance);
     }
 
     private static WorkspaceDocumentPresentation CreateDocumentPresentation(
         Guid workspaceId,
-        Guid documentId)
+        Guid documentId,
+        Exception? openException = null)
     {
         var view =
             new Mock<IDocumentWorkspaceView>();
 
         var documentRepository =
             new Mock<IDocumentRepository>();
+
+        if (openException is not null)
+        {
+            documentRepository
+                .Setup(x => x.GetByIdAsync(
+                    documentId,
+                    It.IsAny<CancellationToken>()))
+                .ThrowsAsync(openException);
+        }
 
         var documentReader =
             new Mock<IDocumentReader>();
@@ -1095,5 +1204,61 @@ public sealed class WorkspacePresentationTests
         }
 
         public Mock<IWorkspacePresentationView> View { get; }
+    }
+
+    private sealed class RecordingLogger<TCategory> : ILogger<TCategory>
+    {
+        private readonly List<RecordedLogEntry> _entries = [];
+
+        public IReadOnlyList<RecordedLogEntry> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull =>
+                NoopDisposable.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            string message =
+                formatter(state, exception);
+
+            Dictionary<string, object?> properties = [];
+
+            if (state is IEnumerable<KeyValuePair<string, object?>> structuredState)
+            {
+                foreach (KeyValuePair<string, object?> property in structuredState)
+                {
+                    properties[property.Key] = property.Value;
+                }
+            }
+
+            _entries.Add(
+                new RecordedLogEntry(
+                    logLevel,
+                    message,
+                    exception,
+                    properties));
+        }
+    }
+
+    private sealed record RecordedLogEntry(
+        LogLevel Level,
+        string Message,
+        Exception? Exception,
+        IReadOnlyDictionary<string, object?> Properties);
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        public static NoopDisposable Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
     }
 }

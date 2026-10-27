@@ -487,8 +487,12 @@ cleanup.
 ### Startup Failure Handling
 
 Database initialization is a security-sensitive startup boundary.
-Failures are logged with the technical exception for diagnostics, but
-raw exception details are not presented to the user.
+Failures use the shared safe-failure logging policy: preserve the
+operation's severity and stable operation code, emit a source-controlled
+non-sensitive message and the exception type as a failure classification,
+and do not forward the raw exception object, exception message,
+inner-exception chain, or serialized exception details to the application
+logging provider. The user-facing path remains generic.
 
 When database initialization fails, DeskVault displays a fixed generic
 message and exits without starting the main application window.
@@ -586,9 +590,12 @@ permanent database copies.
 
 Database initialization failures are intentionally surfaced to users
 through a generic startup error message rather than raw exception
-details. Technical exception details remain available through application
-logging for diagnostics, subject to the application's existing logging
-configuration.
+details. The normal application log retains approved operational context:
+a source-controlled message, stable operation code, severity, and
+exception-type classification. It does not retain raw exception messages,
+exception objects, inner-exception chains, or serialized exception
+details. Any future need for richer diagnostics must be reviewed against
+the sensitive-data classification and must not weaken this boundary.
 
 The selected provider can be reconsidered in the future if native
 runtime support, licensing requirements, platform support, or security
@@ -634,9 +641,11 @@ The provider-level migration spike established the following behavior:
 - The production Infrastructure registration uses the encrypted
   SQLite3MC provider path rather than the previous plaintext SQLite
   runtime provider.
-- Database initialization failures are logged without intentionally
-  logging database key material and are presented to users through a
-  fixed generic startup failure message.
+- Database initialization failures use safe-failure logging with a stable
+  operation code, source-controlled safe message, and exception-type
+  classification; raw exception details are not forwarded to the normal
+  logger. Startup failures are presented through a fixed generic message.
+  Cross-cutting sink/source regression evidence is owned by #232.
 - `VaultInitializationCoordinator` provides same-vault cross-process
   exclusion using an exclusive filesystem handle on the vault-scoped
   initialization lock.

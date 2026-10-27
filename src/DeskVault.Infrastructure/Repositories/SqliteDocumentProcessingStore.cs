@@ -7,6 +7,8 @@ using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Shared.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.Infrastructure.Repositories;
 
@@ -292,9 +294,11 @@ public sealed class SqliteDocumentProcessingStore
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentChunkReplacementFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentChunkReplacementFailure,
+                LogMessages.DocumentChunkReplacementFailed,
+                ex);
 
             throw;
         }
@@ -447,9 +451,11 @@ public sealed class SqliteDocumentProcessingStore
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentChunkReplacementFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentChunkReplacementFailure,
+                LogMessages.DocumentChunkReplacementFailed,
+                ex);
 
             throw;
         }

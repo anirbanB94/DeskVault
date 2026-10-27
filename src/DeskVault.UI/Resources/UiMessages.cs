@@ -271,6 +271,12 @@ public static class UiMessages
     public const string SearchDocumentsPlaceholder =
         "Search documents...";
 
+    public const string SearchFailedStatus =
+        "Search failed.";
+
+    public const string SearchFailedMessage =
+        "The search could not be completed. Please try again.";
+
     public const string NoWorkspacesAvailable =
         "No workspaces available.";
 

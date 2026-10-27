@@ -36,7 +36,7 @@ public static class LogMessages
         "Temporary workspace creation failed.";
 
     public const string DocumentProcessingSkippedWithoutTextExtractor =
-        "Document processing skipped because no text extractor is available for {FileName}.";
+        "Document processing skipped because no text extractor is available for file extension {FileExtension}.";
 
     public const string DocumentOpenSkippedWithoutSelection =
         "Document open skipped because no document is selected.";
@@ -75,7 +75,7 @@ public static class LogMessages
         "Document reprocessing skipped because no document is selected.";
 
     public const string DocumentReprocessSkippedWithoutTextExtractor =
-        "Document reprocessing skipped because no text extractor is available for {FileName}.";
+        "Document reprocessing skipped because no text extractor is available for file extension {FileExtension}.";
 
     public const string DocumentReprocessStarted =
         "Document reprocessing started.";
@@ -164,6 +164,9 @@ public static class LogMessages
     public const string DocumentWorkspaceRemovalFailed =
         "Document workspace removal failed.";
 
+    public const string DocumentWorkspaceRemovalConfirmationFailed =
+        "Document removal confirmation failed.";
+
     public const string DocumentWorkspaceCloseRequested =
         "Document workspace close requested.";
 
@@ -197,6 +200,9 @@ public static class LogMessages
     public const string WorkspaceOpened =
         "Workspace {WorkspaceId} was opened.";
 
+    public const string WorkspaceOpenUnexpectedFailure =
+        "Workspace open failed.";
+
     public const string WorkspaceOpenFailed =
         "Failed to open workspace {WorkspaceId}.";
 
@@ -211,6 +217,9 @@ public static class LogMessages
 
     public const string WorkspaceClosed =
         "Workspace {WorkspaceId} was closed.";
+
+    public const string WorkspaceCloseUnexpectedFailure =
+        "Workspace close failed.";
 
     public const string WorkspaceCloseFailed =
         "Failed to close workspace {WorkspaceId}.";
@@ -235,6 +244,9 @@ public static class LogMessages
 
     public const string WorkspaceRemoved =
         "Workspace {WorkspaceId} was removed.";
+
+    public const string WorkspaceRemovalUnexpectedFailure =
+        "Workspace removal failed.";
 
     public const string WorkspaceRemovalFailed =
         "Failed to remove workspace {WorkspaceId}.";
@@ -280,6 +292,24 @@ public static class LogMessages
 
     public const string WorkspacePresentationDetailsUpdated =
         "Workspace {WorkspaceId} details were updated.";
+
+    public const string WorkspacePresentationDocumentOpenSafeFailure =
+        "Document presentation could not be opened.";
+
+    public const string WorkspacePresentationAddDocumentsSafeFailure =
+        "Workspace presentation failed while adding documents.";
+
+    public const string WorkspacePresentationRemoveDocumentsSafeFailure =
+        "Workspace presentation failed while removing documents.";
+
+    public const string WorkspacePresentationSaveAsWorkspaceSafeFailure =
+        "Temporary workspace could not be saved as a persistent workspace.";
+
+    public const string WorkspacePresentationUpdateDetailsSafeFailure =
+        "Workspace details could not be updated.";
+
+    public const string WorkspacePresentationActivateDocumentSafeFailure =
+        "Document could not be activated in the workspace presentation.";
 
     public const string WorkspacePresentationOperationFailed =
         "Workspace {WorkspaceId} presentation operation failed during {Operation}: {Description}.";

@@ -1,6 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Shared.Resources;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Application.Documents.Commands.ImportDocument;
@@ -117,9 +118,12 @@ public sealed class ImportDocumentHandler
         }
         catch (DocumentHashConflictException ex)
         {
-            _logger.LogWarning(
+            _logger.LogSafeFailure(
+                LogLevel.Warning,
+                DiagnosticOperationCodes.DocumentImportDuplicate,
+                LogMessages.DocumentImportDuplicate,
                 ex,
-                LogMessages.DocumentImportDuplicate);
+                failureCategory: DiagnosticFailureCategory.DuplicateConflict);
 
             return new ImportDocumentResult(
                 ImportDocumentResultStatus.Duplicate,
@@ -128,25 +132,29 @@ public sealed class ImportDocumentHandler
         }
         catch (IOException ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentImportStorageFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentImportStorageFailure,
+                LogMessages.DocumentImportStorageFailed,
+                ex);
 
             return new ImportDocumentResult(
                 ImportDocumentResultStatus.StorageFailed,
                 null,
-                ex.Message);
+                "The document could not be imported because storage failed.");
         }
         catch (UnauthorizedAccessException ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentImportStorageFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentImportStorageFailure,
+                LogMessages.DocumentImportStorageFailed,
+                ex);
 
             return new ImportDocumentResult(
                 ImportDocumentResultStatus.StorageFailed,
                 null,
-                ex.Message);
+                "The document could not be imported because storage failed.");
         }
         finally
         {
@@ -170,9 +178,11 @@ public sealed class ImportDocumentHandler
         }
         catch (Exception cleanupException)
         {
-            _logger.LogError(
-                cleanupException,
-                LogMessages.DocumentImportCleanupFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentImportArtifactCleanupFailure,
+                LogMessages.DocumentImportCleanupFailed,
+                cleanupException);
         }
     }
 }

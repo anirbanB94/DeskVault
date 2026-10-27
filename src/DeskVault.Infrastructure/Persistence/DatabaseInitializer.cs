@@ -4,6 +4,8 @@ using DeskVault.Infrastructure.Services;
 using DeskVault.Shared.Resources;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.Infrastructure.Persistence;
 
@@ -73,9 +75,11 @@ public sealed class DatabaseInitializer
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DatabaseInitializationFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DatabaseInitializationFailure,
+                LogMessages.DatabaseInitializationFailed,
+                ex);
 
             throw;
         }

@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -223,9 +225,11 @@ public sealed class DocumentEncryptionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentEncryptionFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentEncryptionFailure,
+                LogMessages.DocumentEncryptionFailed,
+                ex);
 
             throw;
         }
@@ -501,9 +505,11 @@ public sealed class DocumentEncryptionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentDecryptionFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentDecryptionFailure,
+                LogMessages.DocumentDecryptionFailed,
+                ex);
 
             throw;
         }

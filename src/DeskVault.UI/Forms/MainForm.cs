@@ -1,5 +1,7 @@
 using DeskVault.Application.Documents;
 using DeskVault.Application.Interfaces;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Views;
@@ -196,9 +198,11 @@ public partial class MainForm : Form, IMainFormView
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.MainFormLoadFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.MainFormLoadFailure,
+                LogMessages.MainFormLoadFailed,
+                ex);
         }
     }
 

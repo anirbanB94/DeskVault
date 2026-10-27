@@ -9,6 +9,8 @@ using DeskVault.Application.Workspaces.Commands.CreateWorkspace;
 using DeskVault.Application.Workspaces.Commands.DeleteWorkspace;
 using DeskVault.Application.Workspaces.Commands.OpenWorkspace;
 using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
+using DeskVault.Shared.Extensions;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
@@ -146,9 +148,11 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.MainWorkspaceInitializationFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.MainWorkspaceInitializationFailure,
+                LogMessages.MainWorkspaceInitializationFailed,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnableToLoadDocumentsStatus);
@@ -211,7 +215,7 @@ public sealed class MainFormPresenter
                 {
                     _logger.LogDebug(
                         LogMessages.DocumentProcessingSkippedWithoutTextExtractor,
-                        fileName);
+                        Path.GetExtension(fileName));
                 }
 
                 await RefreshDocumentsAsync();
@@ -249,9 +253,11 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentImportFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentImportUnexpectedFailure,
+                LogMessages.DocumentImportFailed,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnexpectedImportError);
@@ -354,9 +360,11 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentOpenFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentOpenFailure,
+                LogMessages.DocumentOpenFailed,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnableToOpenDocumentStatus);
@@ -451,15 +459,17 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.WorkspaceCreationUnexpectedFailure);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspaceCreationFailure,
+                LogMessages.WorkspaceCreationUnexpectedFailure,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnableToCreateWorkspace);
 
             _view.ShowError(
-                ex.ToString(),
+                UiMessages.UnableToCreateWorkspace,
                 UiMessages.CreateWorkspaceTitle);
         }
     }
@@ -592,16 +602,17 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.WorkspaceCloseFailed,
-                workspaceId);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspaceCloseFailure,
+                LogMessages.WorkspaceCloseUnexpectedFailure,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnableToCloseWorkspace);
 
             _view.ShowError(
-                ex.ToString(),
+                UiMessages.UnableToCloseWorkspace,
                 UiMessages.CloseWorkspace);
         }
     }
@@ -692,16 +703,17 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.WorkspaceRemovalFailed,
-                workspaceId);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspaceRemovalFailure,
+                LogMessages.WorkspaceRemovalUnexpectedFailure,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnableToRemoveWorkspace);
 
             _view.ShowError(
-                ex.ToString(),
+                UiMessages.UnableToRemoveWorkspace,
                 UiMessages.DeleteWorkspace);
         }
     }
@@ -796,16 +808,17 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.WorkspaceOpenFailed,
-                workspaceId);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspaceOpenFailure,
+                LogMessages.WorkspaceOpenUnexpectedFailure,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnableToOpenWorkspace);
 
             _view.ShowError(
-                ex.ToString(),
+                UiMessages.UnableToOpenWorkspace,
                 UiMessages.OpenWorkspaceTitle);
         }
     }
@@ -920,9 +933,11 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentRemovalFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentRemovalUnexpectedFailure,
+                LogMessages.DocumentRemovalFailed,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnableToRemoveDocumentStatus);
@@ -974,7 +989,7 @@ public sealed class MainFormPresenter
         {
             _logger.LogDebug(
                 LogMessages.DocumentReprocessSkippedWithoutTextExtractor,
-                fileName);
+                Path.GetExtension(fileName));
 
             _view.SetReprocessEnabled(false);
 
@@ -1010,9 +1025,11 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentReprocessFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentReprocessFailure,
+                LogMessages.DocumentReprocessFailed,
+                ex);
 
             _view.SetStatus(
                 UiMessages.UnableToReprocessDocumentStatus);
@@ -1154,15 +1171,17 @@ public sealed class MainFormPresenter
                 return;
             }
 
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentSearchFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentSearchFailure,
+                LogMessages.DocumentSearchFailed,
+                ex);
 
             _view.SetStatus(
-                $"Search failed: {ex.Message}");
+                UiMessages.SearchFailedStatus);
 
             _view.ShowError(
-                ex.ToString(),
+                UiMessages.SearchFailedMessage,
                 UiMessages.DeskVaultTitle);
         }
         finally
@@ -1276,17 +1295,19 @@ public sealed class MainFormPresenter
                 return;
             }
 
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentSearchFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentSearchLoadMoreFailure,
+                LogMessages.DocumentSearchFailed,
+                ex);
 
             _view.SetLoadMoreEnabled(true);
 
             _view.SetStatus(
-                $"Search failed: {ex.Message}");
+                UiMessages.SearchFailedStatus);
 
             _view.ShowError(
-                ex.ToString(),
+                UiMessages.SearchFailedMessage,
                 UiMessages.DeskVaultTitle);
         }
         finally

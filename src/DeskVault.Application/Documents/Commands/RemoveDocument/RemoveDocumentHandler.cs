@@ -1,4 +1,5 @@
 using DeskVault.Application.Interfaces;
+using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 
@@ -52,23 +53,27 @@ public sealed class RemoveDocumentHandler
         }
         catch (IOException ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentStorageDeletionFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentRemovalStorageDeletionFailure,
+                LogMessages.DocumentStorageDeletionFailed,
+                ex);
 
             return new RemoveDocumentResult(
                 RemoveDocumentResultStatus.StorageDeletionFailed,
-                ex.Message);
+                "The document could not be removed because its stored artifact could not be deleted.");
         }
         catch (UnauthorizedAccessException ex)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentStorageDeletionFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentRemovalStorageDeletionFailure,
+                LogMessages.DocumentStorageDeletionFailed,
+                ex);
 
             return new RemoveDocumentResult(
                 RemoveDocumentResultStatus.StorageDeletionFailed,
-                ex.Message);
+                "The document could not be removed because its stored artifact could not be deleted.");
         }
 
         try
@@ -81,13 +86,15 @@ public sealed class RemoveDocumentHandler
             ex is IOException ||
             ex is InvalidOperationException)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentWorkspaceMembershipCleanupFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentRemovalWorkspaceMembershipCleanupFailure,
+                LogMessages.DocumentWorkspaceMembershipCleanupFailed,
+                ex);
 
             return new RemoveDocumentResult(
                 RemoveDocumentResultStatus.WorkspaceMembershipCleanupFailed,
-                ex.Message);
+                "Document removal is incomplete because workspace membership cleanup failed.");
         }
 
         try
@@ -100,13 +107,15 @@ public sealed class RemoveDocumentHandler
             ex is IOException ||
             ex is InvalidOperationException)
         {
-            _logger.LogError(
-                ex,
-                LogMessages.DocumentMetadataDeletionFailed);
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentRemovalMetadataDeletionFailure,
+                LogMessages.DocumentMetadataDeletionFailed,
+                ex);
 
             return new RemoveDocumentResult(
                 RemoveDocumentResultStatus.MetadataDeletionFailed,
-                ex.Message);
+                "Document removal is incomplete because metadata cleanup failed.");
         }
 
         _logger.LogInformation(
