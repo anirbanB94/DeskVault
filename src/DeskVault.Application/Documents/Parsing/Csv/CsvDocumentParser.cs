@@ -1,4 +1,6 @@
 using CsvHelper;
+using CsvHelper.Configuration;
+using DeskVault.Application.Configurations;
 using System.Globalization;
 using System.Text;
 
@@ -7,11 +9,34 @@ namespace DeskVault.Application.Documents.Parsing.Csv;
 public sealed class CsvDocumentParser
 {
     private readonly CsvParsingOptions _options;
+    private readonly DocumentProcessingOptions _processingOptions;
 
     public CsvDocumentParser(
-        CsvParsingOptions options)
+        CsvParsingOptions options,
+        DocumentProcessingOptions? processingOptions = null)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         _options = options;
+        _processingOptions =
+            processingOptions ?? new DocumentProcessingOptions();
+
+        if (_options.MaxRows is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "Maximum CSV rows cannot be negative.");
+        }
+
+        if (_processingOptions.MaxCsvRows <= 0 ||
+            _processingOptions.MaxCsvColumns <= 0 ||
+            _processingOptions.MaxCsvFieldLength <= 0 ||
+            _processingOptions.MaxCsvCells <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(processingOptions),
+                "CSV resource limits must be greater than zero.");
+        }
     }
 
     public async Task<CsvDocument> ParseAsync(
@@ -25,9 +50,22 @@ public sealed class CsvDocumentParser
             bufferSize: 1024,
             leaveOpen: true);
 
-        using var csv = new CsvReader(
+        using var boundedReader = new CsvResourceLimitTextReader(
             reader,
-            CultureInfo.InvariantCulture);
+            _processingOptions.MaxCsvColumns,
+            _processingOptions.MaxCsvFieldLength,
+            _processingOptions.MaxCsvCells,
+            cancellationToken);
+
+        var csvConfiguration =
+            new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                ExceptionMessagesContainRawData = false
+            };
+
+        using var csv = new CsvReader(
+            boundedReader,
+            csvConfiguration);
 
         var columns =
             new List<CsvDocumentColumn>();

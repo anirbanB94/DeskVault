@@ -1,11 +1,14 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.ImportDocument;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Entities;
 using DeskVault.Application.Documents.Extraction;
 using System.Security.Cryptography;
 using System.Text;
+using DeskVault.Application.Documents.Extraction.JsonDocument;
 
 namespace DeskVault.Integration.Tests;
 
@@ -1355,6 +1358,254 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public async Task ProcessDocument_WhenParserResourceLimitIsExceededAfterPreviousSuccess_PreservesPreviousChunksAndGeneration()
+    {
+        // Arrange
+        string rootDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "DeskVaultIntegrationTests",
+            Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(rootDirectory);
+
+        string databasePath = Path.Combine(
+            rootDirectory,
+            "DeskVault.db");
+
+        string sourceFilePath = Path.Combine(
+            rootDirectory,
+            "resource-limit-test.json");
+
+        byte[] encryptionKey = RandomNumberGenerator.GetBytes(32);
+
+        const string sourceText =
+            """{"purpose":"initial successful processing"}""";
+
+        Guid documentId = Guid.Empty;
+
+        (
+            Guid Id,
+            int Order,
+            string Text,
+            string ContentHash,
+            long ProcessingGeneration
+        )[] previousChunkSnapshot = [];
+
+        string? previousProcessingRuleVersion = null;
+
+        try
+        {
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                sourceText,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                TestContext.Current.CancellationToken);
+
+            // Act 1: process successfully with the normal resource policy.
+            await using (var initialHarness = new DocumentPipelineTestHarness(
+                rootDirectory,
+                databasePath,
+                encryptionKey))
+            {
+                ImportDocumentResult importResult =
+                    await initialHarness.ImportHandler.HandleAsync(
+                        new ImportDocumentCommand(
+                            sourceFilePath,
+                            "Parser Resource Limit Integration Document"),
+                        TestContext.Current.CancellationToken);
+
+                Assert.Equal(
+                    ImportDocumentResultStatus.Success,
+                    importResult.Status);
+
+                Assert.NotNull(importResult.DocumentId);
+                documentId = importResult.DocumentId.Value;
+
+                await initialHarness.ProcessingService.ProcessAsync(
+                    documentId,
+                    TestContext.Current.CancellationToken);
+
+                // Assert 1: establish the successful baseline.
+                Document? successfulDocument =
+                    await initialHarness.GetDocumentAsync(documentId);
+
+                Assert.NotNull(successfulDocument);
+                Assert.Equal(DocumentStatus.Available, successfulDocument.Status);
+                Assert.Equal(1L, successfulDocument.ProcessingGeneration);
+                Assert.Equal(
+                    1L,
+                    successfulDocument.LastSuccessfulProcessingGeneration);
+
+                // Assert 1: establish the successful processing lineage.
+                previousProcessingRuleVersion =
+                    successfulDocument.LastSuccessfulProcessingRuleVersion;
+
+                Assert.False(
+                    string.IsNullOrWhiteSpace(previousProcessingRuleVersion));
+
+                DocumentKnowledgeAvailability successfulKeywordSearch =
+                    Assert.Single(
+                        successfulDocument.KnowledgeAvailability,
+                        availability =>
+                            availability.Representation ==
+                            DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+                Assert.Equal(
+                    DocumentKnowledgeAvailabilityState.Available,
+                    successfulKeywordSearch.State);
+
+                Assert.Equal(
+                    1L,
+                    successfulKeywordSearch.LastAvailableProcessingGeneration);
+
+                // Confirm keyword search works before the failed retry.
+                SearchDocumentsPage initialSearchPage =
+                    await initialHarness.SearchHandler.HandleAsync(
+                        new SearchDocumentsQuery("initial successful processing"),
+                        TestContext.Current.CancellationToken);
+
+                SearchDocumentsResult initialSearchResult =
+                    Assert.Single(
+                        initialSearchPage.Results,
+                        result => result.DocumentId == documentId);
+
+                Assert.Contains(
+                    initialSearchResult.Matches,
+                    match =>
+                        match.Source == SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "initial successful processing",
+                            StringComparison.OrdinalIgnoreCase));
+
+                List<DocumentChunkEntity> previousChunks =
+                    await initialHarness.GetChunksAsync(documentId);
+
+                Assert.NotEmpty(previousChunks);
+
+                previousChunkSnapshot = SnapshotChunks(previousChunks);
+            }
+
+            // Arrange 2: same persisted artifact, stricter parser limit.
+            var boundedOptions = new DocumentProcessingOptions
+            {
+                MaxStructuredNodeCount = 2
+            };
+
+            // Act 2: the unchanged valid JSON exceeds the new node limit.
+            await using (var boundedHarness = new DocumentPipelineTestHarness(
+                rootDirectory,
+                databasePath,
+                encryptionKey,
+                extractors: new IDocumentTextExtractor[]
+                {
+                    new JsonDocumentTextExtractor(
+                        boundedOptions)
+                },
+                processingOptions: boundedOptions))
+            {
+                DocumentStructureLimitExceededException exception =
+                    await Assert.ThrowsAsync<DocumentStructureLimitExceededException>(
+                        () => boundedHarness.ProcessingService.ProcessAsync(
+                            documentId,
+                            TestContext.Current.CancellationToken));
+
+                // Assert 2: the resource violation is explicit.
+                Assert.Equal(
+                    "JSON structured nodes",
+                    exception.ResourceName);
+
+                Assert.Equal(2L, exception.Limit);
+                Assert.Equal(3L, exception.Attempted);
+
+                // Assert 3: the failed generation does not replace the last success.
+                Document? failedDocument =
+                    await boundedHarness.GetDocumentAsync(documentId);
+
+                Assert.NotNull(failedDocument);
+                Assert.Equal(DocumentStatus.Failed, failedDocument.Status);
+                Assert.Equal(2L, failedDocument.ProcessingGeneration);
+                Assert.Equal(
+                    1L,
+                    failedDocument.LastSuccessfulProcessingGeneration);
+
+                // Assert: the failed attempt must not replace successful lineage.
+                Assert.Equal(
+                    previousProcessingRuleVersion,
+                    failedDocument.LastSuccessfulProcessingRuleVersion);
+
+                DocumentKnowledgeAvailability preservedKeywordSearch =
+                    Assert.Single(
+                        failedDocument.KnowledgeAvailability,
+                        availability =>
+                            availability.Representation ==
+                            DocumentKnowledgeRepresentationKind.KeywordSearch);
+
+                Assert.Equal(
+                    DocumentKnowledgeAvailabilityState.Available,
+                    preservedKeywordSearch.State);
+
+                Assert.Equal(
+                    1L,
+                    preservedKeywordSearch.LastAvailableProcessingGeneration);
+
+                List<DocumentChunkEntity> preservedChunks =
+                    await boundedHarness.GetChunksAsync(documentId);
+
+                Assert.Equal(
+                    previousChunkSnapshot,
+                    SnapshotChunks(preservedChunks));
+
+                // Assert: keyword search still returns the previous successful content.
+                SearchDocumentsPage preservedSearchPage =
+                    await boundedHarness.SearchHandler.HandleAsync(
+                        new SearchDocumentsQuery("initial successful processing"),
+                        TestContext.Current.CancellationToken);
+
+                SearchDocumentsResult preservedSearchResult =
+                    Assert.Single(
+                        preservedSearchPage.Results,
+                        result => result.DocumentId == documentId);
+
+                Assert.Contains(
+                    preservedSearchResult.Matches,
+                    match =>
+                        match.Source == SearchMatchSource.ProcessedContent &&
+                        match.Context.Contains(
+                            "initial successful processing",
+                            StringComparison.OrdinalIgnoreCase));
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(
+                    rootDirectory,
+                    recursive: true);
+            }
+        }
+    }
+
+    private static (
+        Guid Id,
+        int Order,
+        string Text,
+        string ContentHash,
+        long ProcessingGeneration)[]
+        SnapshotChunks(IEnumerable<DocumentChunkEntity> chunks)
+    {
+        return chunks
+            .OrderBy(chunk => chunk.Order)
+            .Select(chunk => (
+                chunk.Id,
+                chunk.Order,
+                chunk.Text,
+                chunk.ContentHash,
+                chunk.ProcessingGeneration))
+            .ToArray();
     }
 
     [Fact]

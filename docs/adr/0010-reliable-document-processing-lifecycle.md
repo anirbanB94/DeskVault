@@ -289,6 +289,23 @@ generation is still authoritative. Failures must not result in a document
 being reported as successfully processed when the derived result is
 incomplete or belongs to an obsolete attempt.
 
+Parser-specific resource-limit breaches are non-cancellation processing
+failures. These include configured limits on structured-document nesting
+depth and node count, CSV rows, columns, field length and total cells, INI
+entries and line length, and corresponding resource dimensions enforced by
+other supported formats.
+
+A parser resource-limit breach that prevents complete extraction must follow
+the same generation-aware `Failed` publication rule as any other
+non-cancellation processing failure. The incomplete candidate must not enter
+the successful derived-content publication transaction.
+
+The previous successful chunks, `LastSuccessfulProcessingGeneration`,
+`LastSuccessfulProcessingRuleVersion`, and previously available
+`KeywordSearch` knowledge must remain intact when a later authoritative
+processing attempt fails at a parser resource boundary. An obsolete attempt
+must not publish a failure state over a newer attempt.
+
 Cancellation and failure handling must respect the same authoritative
 generation used for successful publication.
 
@@ -624,8 +641,67 @@ processing-policy limits. The decrypted-source boundary protects source
 materialization, while the processed-text boundary protects accumulation of
 the derived textual representation.
 
-Neither boundary is a process-wide operating-system memory cap. Parser-specific
-preview limits remain separate from these processing resource policies.
+#### Format-Specific Parser and Structure Limits
+
+Decrypted-source and processed-text limits do not independently bound every
+parser structure, intermediate representation, or traversal operation.
+Complete document processing must also enforce the applicable format-specific
+resource limits at the parsing and extraction boundaries.
+
+The configured limits include the following dimensions where applicable to a
+supported format:
+
+- Structured-document nesting depth.
+- Structured node count.
+- CSV row count, column count, individual field length, and total cell count.
+- INI section/entry structural-node count, entry count, and line length.
+- Corresponding structure, expansion, or traversal dimensions for other
+  supported formats where such limits are defined by the processing policy.
+
+The CSV field-length and INI line-length limits count decoded .NET string
+characters (`string.Length`, UTF-16 code units), not source bytes. The separate
+`MaxDecryptedDocumentBytes` boundary limits source bytes. This unit distinction
+must remain explicit in configuration documentation and boundary tests.
+
+The applicable dimensions depend on the parser and extraction format. Parser
+resource boundaries must be enforced by the relevant parsing or extraction
+component; a final processed-text-size check is not a substitute for bounding
+structure traversal or intermediate materialization.
+
+Each configured dimension must be checked at the earliest practical boundary
+that can prevent excessive materialization or traversal. Where the parser API
+allows incremental checks, processing must not wait until the full structure
+has been traversed or materialized before detecting that a configured limit
+has been exceeded.
+
+A parser resource-limit breach that prevents complete extraction must fail
+explicitly. Parser-structure boundary failures are represented by
+`DocumentStructureLimitExceededException`; the relevant source-size and
+processed-text boundaries use their dedicated `ResourceLimitExceededException`
+where applicable. These are non-cancellation processing failures and must
+follow the generation-aware failure-publication rules defined above.
+
+A parser must not return a prefix or truncated semantic representation as
+though it were a successful complete result when a hard processing limit has
+prevented complete extraction. A deliberate bounded preview is a separate
+presentation contract and must not be used to turn a processing-limit breach
+into successful complete knowledge.
+
+A structure-limit failure must not publish the failed candidate as the new
+derived result. If a previous successful result exists, its chunks,
+`LastSuccessfulProcessingGeneration`, `LastSuccessfulProcessingRuleVersion`,
+and existing `KeywordSearch` availability must remain intact. The current
+generation may be recorded as `Failed` only while it remains authoritative;
+an obsolete attempt must not overwrite the state of a newer generation.
+
+These parser-specific limits constrain the configured dimensions. They do not
+establish a process-wide operating-system memory cap, a universal CPU-time
+quota, or a guarantee against allocations performed internally by third-party
+parser libraries beyond the boundaries the application can enforce.
+
+Neither the decrypted-source boundary nor the processed-text boundary is a
+process-wide operating-system memory cap. Parser-specific preview limits
+remain separate from these processing resource policies.
 
 ### Architectural Boundaries
 
@@ -853,6 +929,10 @@ must not implicitly change unrelated processing or document lifecycle state.
 * Application and Domain remain independent of EF Core and SQLite.
 * The design remains compatible with the existing encrypted SQLite persistence
   boundary.
+* Format-specific parser resource-limit breaches are explicit processing
+  failures rather than successful truncated results.
+* Failed parser-boundary checks cannot replace the last successful derived
+  result or its processing lineage.
 
 ### Negative
 
@@ -873,6 +953,9 @@ must not implicitly change unrelated processing or document lifecycle state.
   coexist until lifecycle persistence migration is complete.
 * Document-artifact reconciliation and recovery require additional detection,
   validation, and recovery-path tests.
+* Format-specific processing limits require per-format configuration,
+  enforcement, and boundary tests; they do not provide a universal memory or
+  CPU-time bound for parser libraries.
 
 These trade-offs are acceptable because stale-result protection is required
 for a reliable document-processing lifecycle and artifact consistency must be
@@ -941,6 +1024,22 @@ The implementation must:
   decrypted chunk;
 * distinguish resource-limit failures from cancellation and successful
   processing;
+* enforce applicable format-specific parser structure limits, including
+  nesting depth, structured node count, CSV row/column/field/cell dimensions,
+  and INI entry/line dimensions;
+* check configured parser limits at the earliest practical parsing or
+  extraction boundary to prevent excessive materialization or traversal;
+* fail complete processing explicitly when a hard parser limit prevents
+  complete extraction rather than publishing truncated content as success;
+* preserve the last successful chunks, processing generation, rule version,
+  and knowledge availability when a later processing attempt fails because a
+  resource boundary was exceeded;
+* publish a resource-limit failure as `Failed` only when that processing
+  generation remains authoritative;
+* keep parser-specific processing limits separate from intentional bounded
+  preview behavior;
+* acknowledge that configured parser boundaries do not establish a process-wide
+  operating-system memory cap or universal CPU-time quota;
 * preserve the existing encrypted document format and key-management
   boundary;
 * keep processing resource policy separate from parser-specific preview
@@ -963,6 +1062,8 @@ and recovery work.
   processing.
 * ADR-0005 establishes SQLite / EF Core as the persistence boundary for
   document metadata, processing state, and derived chunks.
+* ADR-0008 establishes the semantic distinction between intentional bounded
+  previews and resource-limit failures that prevent complete extraction.
 * ADR-0009 establishes the encrypted SQLite provider and database
   key-management boundary.
 * The reliable document processing lifecycle investigation established the
@@ -1031,6 +1132,15 @@ evidence is converted into `KeywordSearch = Available @ 0` without inventing
 a historical processing attempt. `Imported` and `Deleted` documents remain
 unavailable, and runtime searchability continues to require persisted
 knowledge availability and generation alignment.
+
+Format-specific parser resource limits are part of the complete processing
+contract. If a configured hard limit prevents complete extraction, that
+processing attempt fails instead of publishing a truncated result as complete
+knowledge. The failure follows generation-aware publication rules and cannot
+replace previously successful chunks, their processing lineage, or the
+associated `KeywordSearch` availability. These configured boundaries constrain
+their named dimensions but do not establish a process-wide memory cap or a
+universal CPU-time quota.
 
 This separation prevents obsolete processing attempts from overwriting newer
 document state or derived content while ensuring that database/filesystem

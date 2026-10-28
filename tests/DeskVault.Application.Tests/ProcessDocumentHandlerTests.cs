@@ -498,10 +498,13 @@ public sealed class ProcessDocumentHandlerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
+        var logger = new RecordingLogger<ProcessDocumentHandler>();
+
         var processingContext =
             CreateProcessingContext(
                 repository,
-                maxDecryptedDocumentBytes: 100);
+                maxDecryptedDocumentBytes: 100,
+                logger: logger);
 
         processingContext.Reader.ThrowResourceLimitExceededOnOpen = true;
 
@@ -540,6 +543,13 @@ public sealed class ProcessDocumentHandlerTests
                 Assert.Equal(
                     1L,
                     publication.ProcessingGeneration));
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentProcessingFailure,
+            LogMessages.DocumentProcessingFailed,
+            nameof(ResourceLimitExceededException));
 
         Assert.True(
             processingContext.Reader.WasOpened);

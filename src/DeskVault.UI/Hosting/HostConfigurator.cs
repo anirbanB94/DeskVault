@@ -137,11 +137,12 @@ internal static class HostConfigurator
         services.AddTransient<IDocumentContentRenderer, MarkdownDocumentContentRenderer>();
         services.AddTransient<CsvDocumentParser>(
             provider =>
-            new CsvDocumentParser(
-                provider
-                .GetRequiredService<
-                    IOptions<CsvParsingOptions>>()
-                .Value));
+                new CsvDocumentParser(
+                    provider
+                        .GetRequiredService<
+                            IOptions<CsvParsingOptions>>()
+                        .Value,
+                    provider.GetRequiredService<DocumentProcessingOptions>()));
         services.AddTransient<IDocumentContentRenderer, CsvDocumentContentRenderer>();
         services.AddTransient<IDocumentContentRendererResolver, DocumentContentRendererResolver>();
     }

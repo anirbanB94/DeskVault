@@ -436,6 +436,52 @@ additional-content indicator
 
 The exact property names may vary by representation, but the semantic requirement remains the same.
 
+## Processing Resource Boundaries and Completeness
+
+Document-processing resource limits are processing-policy boundaries, not presentation-preview policies.
+
+The application may deliberately materialize a bounded preview for interactive display when the representation exposes that additional content exists. That preview contract is distinct from the requirement to derive complete knowledge from the supported processing input.
+
+Resource limits for knowledge processing may apply to:
+
+- decrypted source bytes;
+- cumulative processed-text bytes;
+- parser nesting depth;
+- structured node count;
+- CSV rows, columns, field length, and total cells;
+- INI line length and entry count; INI section declarations also consume the general structured-node budget.
+- format-specific intermediate materialization or expansion.
+
+The applicable dimensions depend on the parser and extraction format. A format must enforce the resource boundaries relevant to its implementation rather than relying solely on a final output-size limit.
+
+When a processing resource limit is exceeded before complete extraction can be produced, extraction must fail explicitly. The implementation must not return a prefix or truncated semantic representation as though it were a successful complete result. It must not conflate a hard processing limit with the `HasMoreRows` or equivalent indicator used for an intentional preview.
+
+The distinction is:
+
+```text
+Intentional bounded preview
+    ↓
+Preview representation
+    ↓
+Explicit indication that more source content exists
+```
+
+versus:
+
+```text
+Processing resource limit exceeded
+    ↓
+Extraction / processing failure
+    ↓
+No publication of the failed partial result as complete knowledge
+```
+
+A configured limit must be enforced at the earliest practical boundary that can prevent the excessive materialization or traversal it is intended to constrain. The parser and extractor must preserve cancellation propagation and must not bypass a resource boundary merely to produce some output.
+
+These limits constrain the configured dimensions; they do not establish a process-wide operating-system memory cap, an exact bound on all third-party parser allocations, or a universal CPU-time quota.
+
+The authoritative processing-state, generation-fencing, failure-publication, and preservation rules for the last successful derived result are governed by ADR-0010. This ADR establishes the semantic contract: processing-limit failure must not be presented as complete extracted knowledge.
+
 ## Structural Warnings
 
 Parsers should preserve meaningful structural anomalies rather than silently normalizing them away.
@@ -575,7 +621,7 @@ Source-oriented textual formats may use the same architectural boundary while co
 
 Parsing behavior that affects document semantics or resource usage must be configurable through parser-specific options rather than being hidden inside the renderer.
 
-The current CSV configuration is:
+The current CSV preview/parsing configuration is:
 
 ```text
 CsvParsing
@@ -600,7 +646,13 @@ IOptions<CsvParsingOptions>
 CsvDocumentParser
 ```
 
-The renderer must not independently impose a different row limit.
+The `CsvParsing:MaxRows` setting and its `HasMoreRows` behavior are part of the bounded parser/preview contract where those are used to produce a preview representation.
+
+The `DocumentProcessing` resource policy governs complete extraction and knowledge processing. The CSV column, field-length, and total-cell limits are also applied by the shared CSV parser when it parses content for UI preview. These additional parser-safety limits do not change preview completeness semantics: `CsvParsing:MaxRows` controls the preview row cap, and `HasMoreRows` indicates that additional source rows exist. During complete knowledge extraction, the extractor sets the parser row cap from `DocumentProcessing:MaxCsvRows` and treats `HasMoreRows` as an explicit resource-limit failure rather than a successful, silently truncated searchable representation. The complete-processing row limit is therefore distinct from the preview row limit; both remain independently configured.
+
+Other format-specific processing limits must likewise be configured and enforced at the relevant application parsing/extraction boundary.
+
+The renderer must not independently impose a different semantic limit.
 
 This prevents contradictory limits such as:
 
@@ -610,8 +662,6 @@ Renderer: 1,000 rows
 ```
 
 where the UI could accidentally create a second semantic boundary.
-
-The same principle applies to other format-specific parsing limits.
 
 Presentation-specific display constraints may exist, but they must not silently redefine the semantic completeness of the document-processing result.
 
@@ -822,6 +872,10 @@ The application should preserve this distinction because future AI/search workfl
 Warnings should be represented as data where practical.
 
 A renderer consuming original source content for presentation must not be treated as a second extraction pipeline unless the renderer explicitly requires format-specific parsing for presentation.
+
+A parser resource-limit breach that prevents extraction from completing according to its contract is an extraction failure. It must not be converted into a successful result merely because a bounded prefix or partial representation can be rendered or searched.
+
+The authoritative processing-state and derived-result publication consequences of extraction failure remain governed by ADR-0010.
 
 Exceptions should be reserved for conditions that prevent the operation from completing according to its contract.
 
@@ -1321,6 +1375,14 @@ Large enterprise documents may be too expensive to fully materialize for interac
 
 Bounded previewing with explicit completeness information is preferred.
 
+### Treat processing resource-limit overflow as an implicit preview
+
+Rejected.
+
+A hard source, structural, or processed-output limit represents a failure to complete the configured knowledge-processing contract. Returning a truncated representation as a successful processing result would make incomplete knowledge indistinguishable from complete content.
+
+An intentional preview remains acceptable when it has an explicit preview contract and exposes that additional source content exists. It is not a substitute for enforcing resource boundaries during complete extraction.
+
 ### Hide structural warnings to provide a cleaner UI
 
 Rejected.
@@ -1357,6 +1419,8 @@ Syntax highlighting, language-aware navigation, code intelligence, AST analysis,
 - Format-specific information can be preserved.
 - Large-document previewing can remain bounded without falsely implying completeness.
 - Structural anomalies can be preserved and surfaced.
+- Parser resource-limit failures are distinguished from deliberate partial previews.
+- Resource-limit breaches cannot be represented as successful complete extraction merely because partial content was produced.
 - Future document formats can introduce their own representations.
 - AI does not become coupled to WinForms controls or WebView2.
 - Renderer implementations remain replaceable.
@@ -1371,6 +1435,8 @@ Syntax highlighting, language-aware navigation, code intelligence, AST analysis,
 - Each document format may require format-specific parsing/extraction logic.
 - Downstream consumers must understand the representations they consume.
 - Preview completeness requires additional metadata and UI handling.
+- Format-specific processing limits require configuration, enforcement, and boundary tests.
+- Configured limits do not provide a process-wide memory cap or universal CPU-time bound.
 - More explicit boundaries increase implementation complexity compared with direct rendering.
 - Future shared document abstractions may require careful design to avoid either duplication or semantic loss.
 - Native source presentation may require format-aware renderer implementations even when semantic extraction already exists.
