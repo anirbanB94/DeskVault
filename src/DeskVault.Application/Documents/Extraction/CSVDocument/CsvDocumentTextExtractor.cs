@@ -2,6 +2,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Content;
 using DeskVault.Application.Documents.Parsing.Csv;
 using DeskVault.Application.Documents.Processing;
+using System.Security.Cryptography;
 
 namespace DeskVault.Application.Documents.Extraction.CSVDocument;
 
@@ -12,6 +13,9 @@ public sealed class CsvDocumentTextExtractor
         "csv-extractor-v1";
 
     private readonly long _maxProcessedTextBytes;
+    private readonly long _maxDecryptedDocumentBytes;
+
+    private readonly DocumentProcessingOptions _processingOptions;
 
     public CsvDocumentTextExtractor()
         : this(new DocumentProcessingOptions())
@@ -23,8 +27,18 @@ public sealed class CsvDocumentTextExtractor
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        _maxProcessedTextBytes =
-            options.MaxProcessedTextBytes;
+        _processingOptions = options;
+        _maxProcessedTextBytes = options.MaxProcessedTextBytes;
+        _maxDecryptedDocumentBytes = options.MaxDecryptedDocumentBytes;
+
+        if (_maxProcessedTextBytes <= 0 ||
+            _maxDecryptedDocumentBytes <= 0 ||
+            _processingOptions.MaxCsvRows <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "CSV processing resource limits must be greater than zero.");
+        }
     }
 
     public string RuleVersion =>
@@ -46,17 +60,52 @@ public sealed class CsvDocumentTextExtractor
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var parser =
-            new CsvDocumentParser(
+        CsvDocument document;
+
+        using var inputBuffer = new MemoryStream();
+        byte[] readBuffer = new byte[81920];
+
+        try
+        {
+            await ReadBoundedInputAsync(
+                documentStream,
+                inputBuffer,
+                readBuffer,
+                cancellationToken);
+
+            inputBuffer.Position = 0;
+
+            var parser = new CsvDocumentParser(
                 new CsvParsingOptions
                 {
-                    MaxRows = null
-                });
+                    MaxRows = _processingOptions.MaxCsvRows
+                },
+                _processingOptions);
 
-        CsvDocument document =
-            await parser.ParseAsync(
-                documentStream,
+            document = await parser.ParseAsync(
+                inputBuffer,
                 cancellationToken);
+        }
+        finally
+        {
+            if (inputBuffer.TryGetBuffer(
+                    out ArraySegment<byte> segment) &&
+                segment.Array is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    segment.Array.AsSpan());
+            }
+
+            CryptographicOperations.ZeroMemory(readBuffer);
+        }
+
+        if (document.HasMoreRows)
+        {
+            throw new DocumentStructureLimitExceededException(
+                "CSV data rows",
+                _processingOptions.MaxCsvRows,
+                (long)_processingOptions.MaxCsvRows + 1);
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -132,6 +181,50 @@ public sealed class CsvDocumentTextExtractor
         return new DocumentTextExtractionResult(
             output.ToString(),
             Content: content);
+    }
+
+    private async Task ReadBoundedInputAsync(
+        Stream documentStream,
+        MemoryStream inputBuffer,
+        byte[] readBuffer,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            long remainingBytes =
+                _maxDecryptedDocumentBytes - inputBuffer.Length;
+
+            int bytesToRead =
+                remainingBytes >= readBuffer.Length
+                    ? readBuffer.Length
+                    : checked((int)remainingBytes + 1);
+
+            int bytesRead = await documentStream.ReadAsync(
+                readBuffer.AsMemory(0, bytesToRead),
+                cancellationToken);
+
+            if (bytesRead == 0)
+            {
+                return;
+            }
+
+            long attemptedBytes =
+                inputBuffer.Length + bytesRead;
+
+            if (attemptedBytes > _maxDecryptedDocumentBytes)
+            {
+                throw new ResourceLimitExceededException(
+                    _maxDecryptedDocumentBytes,
+                    attemptedBytes);
+            }
+
+            inputBuffer.Write(
+                readBuffer,
+                0,
+                bytesRead);
+        }
     }
 
     private static DocumentContent CreateDocumentContent(
