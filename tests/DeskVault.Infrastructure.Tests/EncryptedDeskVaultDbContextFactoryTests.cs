@@ -150,7 +150,7 @@ public sealed class EncryptedDeskVaultDbContextFactoryTests
         public FactoryTestFixture(
             bool invalidConnectionString = false)
         {
-            SQLitePCL.Batteries_V2.Init();
+            SqliteProviderBootstrap.EnsureInitialized();
 
             _temporaryDirectory =
                 CreateTemporaryDirectory();

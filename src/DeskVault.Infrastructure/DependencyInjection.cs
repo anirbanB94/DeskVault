@@ -16,7 +16,7 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         services.AddSingleton<IApplicationInfoService, ApplicationInfoService>();
 

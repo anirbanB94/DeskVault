@@ -1,3 +1,4 @@
+using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Services;
 using SQLitePCL;
 using System.Security.Cryptography;
@@ -10,7 +11,7 @@ public sealed class SqliteDatabaseEncryptionMigratorTests
     [Fact]
     public async Task MigrateAsync_WhenDatabaseIsBusy_FailsAndPreservesSource()
     {
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -94,7 +95,7 @@ public sealed class SqliteDatabaseEncryptionMigratorTests
     [Fact]
     public async Task MigrateAsync_WhenBusyMigrationFails_CanRetrySuccessfully()
     {
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -235,7 +236,7 @@ public sealed class SqliteDatabaseEncryptionMigratorTests
     [Fact]
     public async Task MigrateAsync_WhenPlaintextDatabaseExists_EncryptsAndPreservesData()
     {
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
