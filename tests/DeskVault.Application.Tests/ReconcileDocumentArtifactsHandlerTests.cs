@@ -1,12 +1,15 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Tests.TestDoubles;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.Security;
 using System.Security.Cryptography;
 
 namespace DeskVault.Application.Tests;
@@ -27,33 +30,30 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                document.StoredFilePath
-            ]);
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, [document.StoredFilePath]);
 
         var reader =
             new Mock<IDocumentReader>();
 
         reader
-            .Setup(x => x.OpenReadAsync(
+            .Setup(x => x.ValidateContentHashAsync(
                 document.Id,
                 document.Sha256Hash,
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new MemoryStream(
-                    "decrypted-content"u8.ToArray()));
+            .Returns(Task.CompletedTask);
 
         var storageService =
             CreateStorageServiceMock();
@@ -89,12 +89,13 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             x => x.IsOwnedArtifactPath(
                 document.Id,
                 expectedArtifactPath),
-            Times.Once);
+            Times.Exactly(2));
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 document.Id,
                 document.Sha256Hash,
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -113,19 +114,19 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                Array.Empty<string>());
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, Array.Empty<string>());
 
         var reader =
             new Mock<IDocumentReader>();
@@ -167,9 +168,10 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Once);
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -193,21 +195,19 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                orphanPath
-            ]);
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, [orphanPath]);
 
         var reader =
             new Mock<IDocumentReader>();
@@ -243,9 +243,10 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             finding.ArtifactPath);
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -270,29 +271,28 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                document.StoredFilePath
-            ]);
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, [document.StoredFilePath]);
 
         var reader =
             new Mock<IDocumentReader>();
 
         reader
-            .Setup(x => x.OpenReadAsync(
+            .Setup(x => x.ValidateContentHashAsync(
                 document.Id,
                 document.Sha256Hash,
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new CryptographicException(
@@ -351,6 +351,388 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             x => x.IsOwnedArtifactPath(
                 document.Id,
                 expectedArtifactPath),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenOneArtifactExceedsValidationLimit_ReportsUnreadableAndContinues()
+    {
+        // Arrange
+        Document oversizedDocument =
+            CreateDocument();
+
+        Document validDocument =
+            CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        ConfigureDocumentLookup(repository);
+
+        repository
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                oversizedDocument,
+                validDocument
+            ]);
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, [oversizedDocument.StoredFilePath, validDocument.StoredFilePath]);
+
+        long maximumPlaintextBytes =
+            DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes;
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        reader
+            .Setup(x => x.ValidateContentHashAsync(
+                oversizedDocument.Id,
+                oversizedDocument.Sha256Hash,
+                maximumPlaintextBytes,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new ResourceLimitExceededException(
+                    maximumPlaintextBytes,
+                    maximumPlaintextBytes + 1));
+
+        reader
+            .Setup(x => x.ValidateContentHashAsync(
+                validDocument.Id,
+                validDocument.Sha256Hash,
+                maximumPlaintextBytes,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery(),
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        var oversizedFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    oversizedDocument.Id);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.UnreadableArtifact,
+            oversizedFinding.Status);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.PreserveForRecovery,
+            oversizedFinding.RecoveryAction);
+
+        var validFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    validDocument.Id);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.Matched,
+            validFinding.Status);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.None,
+            validFinding.RecoveryAction);
+
+        reader.Verify(
+            x => x.ValidateContentHashAsync(
+                oversizedDocument.Id,
+                oversizedDocument.Sha256Hash,
+                maximumPlaintextBytes,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        reader.Verify(
+            x => x.ValidateContentHashAsync(
+                validDocument.Id,
+                validDocument.Sha256Hash,
+                maximumPlaintextBytes,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenValidationThrowsSecurityException_ReportsUnreadableAndContinues()
+    {
+        // Arrange
+        Document inaccessibleDocument =
+            CreateDocument();
+
+        Document validDocument =
+            CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        ConfigureDocumentLookup(repository);
+
+        repository
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                inaccessibleDocument,
+            validDocument
+            ]);
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        ConfigureArtifactEnumeratorMock(
+            artifactEnumerator,
+            [
+                inaccessibleDocument.StoredFilePath,
+            validDocument.StoredFilePath
+            ]);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        reader
+            .Setup(x => x.ValidateContentHashAsync(
+                inaccessibleDocument.Id,
+                inaccessibleDocument.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new System.Security.SecurityException(
+                    SafeDiagnosticLogAssertions.CreateSensitiveDetails()));
+
+        reader
+            .Setup(x => x.ValidateContentHashAsync(
+                validDocument.Id,
+                validDocument.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var logger =
+            new RecordingLogger<ReconcileDocumentArtifactsHandler>();
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService,
+                logger);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery(),
+                TestContext.Current.CancellationToken);
+
+        SafeDiagnosticLogAssertions.AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Warning,
+            DiagnosticOperationCodes.DocumentArtifactReadValidationFailure,
+            LogMessages.DocumentArtifactValidationFailed,
+            nameof(SecurityException));
+
+        // Assert
+        var inaccessibleFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    inaccessibleDocument.Id);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.UnreadableArtifact,
+            inaccessibleFinding.Status);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.PreserveForRecovery,
+            inaccessibleFinding.RecoveryAction);
+
+        var validFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    validDocument.Id);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.Matched,
+            validFinding.Status);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.None,
+            validFinding.RecoveryAction);
+
+        var failureEntry =
+            Assert.Single(
+                logger.Entries,
+                entry => entry.Properties.ContainsKey("FailureCategory"));
+
+        Assert.Equal(
+            DiagnosticFailureCategory.AccessDenied,
+            Assert.IsType<DiagnosticFailureCategory>(
+                failureEntry.Properties["FailureCategory"]));
+
+        reader.Verify(
+            x => x.ValidateContentHashAsync(
+                inaccessibleDocument.Id,
+                inaccessibleDocument.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        reader.Verify(
+            x => x.ValidateContentHashAsync(
+                validDocument.Id,
+                validDocument.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCanonicalArtifactCannotBeAccessed_ReportsUnreadableAndContinues()
+    {
+        // Arrange
+        Document inaccessibleDocument =
+            CreateDocument();
+
+        Document validDocument =
+            CreateDocument();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        ConfigureDocumentLookup(repository);
+
+        repository
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                inaccessibleDocument,
+            validDocument
+            ]);
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        ConfigureArtifactEnumeratorMock(
+            artifactEnumerator,
+            [validDocument.StoredFilePath]);
+
+        artifactEnumerator
+            .Setup(x => x.ExistsForDocument(
+                inaccessibleDocument.Id))
+            .Throws(
+                new UnauthorizedAccessException(
+                    "Sensitive filesystem details."));
+
+        artifactEnumerator
+            .Setup(x => x.ExistsForDocument(
+                validDocument.Id))
+            .Returns(true);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        reader
+            .Setup(x => x.ValidateContentHashAsync(
+                validDocument.Id,
+                validDocument.Sha256Hash,
+                DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var logger =
+            new RecordingLogger<ReconcileDocumentArtifactsHandler>();
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService,
+                logger);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery(),
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        var inaccessibleFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    inaccessibleDocument.Id);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.UnreadableArtifact,
+            inaccessibleFinding.Status);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.PreserveForRecovery,
+            inaccessibleFinding.RecoveryAction);
+
+        var validFinding =
+            Assert.Single(
+                result.Findings,
+                finding =>
+                    finding.DocumentId ==
+                    validDocument.Id);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.Matched,
+            validFinding.Status);
+
+        reader.Verify(
+            x => x.ValidateContentHashAsync(
+                inaccessibleDocument.Id,
+                inaccessibleDocument.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        reader.Verify(
+            x => x.ValidateContentHashAsync(
+                validDocument.Id,
+                validDocument.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -381,19 +763,19 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            Array.Empty<string>());
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, Array.Empty<string>());
 
         var reader =
             new Mock<IDocumentReader>();
@@ -441,9 +823,10 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Once);
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -472,19 +855,19 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            Array.Empty<string>());
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, Array.Empty<string>());
 
         var reader =
             new Mock<IDocumentReader>();
@@ -532,9 +915,10 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Once);
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -545,6 +929,8 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         // Arrange
         var repository =
             new Mock<IDocumentRepository>();
+
+        ConfigureDocumentLookup(repository);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
@@ -581,7 +967,19 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Never);
 
         artifactEnumerator.Verify(
-            x => x.EnumerateAsync(
+            x => x.EnumerateIncrementallyAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        artifactEnumerator.Verify(
+            x => x.ExistsForDocument(
+                It.IsAny<Guid>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
@@ -592,9 +990,10 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Never);
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -626,21 +1025,19 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                orphanArtifactPath
-            ]);
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, [orphanArtifactPath]);
 
         var reader =
             new Mock<IDocumentReader>();
@@ -711,9 +1108,10 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Once);
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -747,8 +1145,12 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
             [
@@ -759,25 +1161,18 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                validDocument.StoredFilePath
-            ]);
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, [validDocument.StoredFilePath]);
 
         var reader =
             new Mock<IDocumentReader>();
 
         reader
-            .Setup(x => x.OpenReadAsync(
+            .Setup(x => x.ValidateContentHashAsync(
                 validDocument.Id,
                 validDocument.Sha256Hash,
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new MemoryStream(
-                    "decrypted-content"u8.ToArray()));
+            .Returns(Task.CompletedTask);
 
         var storageService =
             CreateStorageServiceMock();
@@ -858,16 +1253,18 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Never);
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 malformedDocument.Id,
                 malformedDocument.Sha256Hash,
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
         reader.Verify(
-            x => x.OpenReadAsync(
+            x => x.ValidateContentHashAsync(
                 validDocument.Id,
                 validDocument.Sha256Hash,
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -882,19 +1279,19 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                Array.Empty<string>());
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, Array.Empty<string>());
 
         var reader =
             new Mock<IDocumentReader>();
@@ -952,33 +1349,30 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                document.StoredFilePath
-            ]);
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, [document.StoredFilePath]);
 
         var reader =
             new Mock<IDocumentReader>();
 
         reader
-            .Setup(x => x.OpenReadAsync(
+            .Setup(x => x.ValidateContentHashAsync(
                 document.Id,
                 document.Sha256Hash,
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new MemoryStream(
-                    "decrypted-content"u8.ToArray()));
+            .Returns(Task.CompletedTask);
 
         var storageService =
             CreateStorageServiceMock();
@@ -1021,29 +1415,28 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        ConfigureDocumentLookup(repository);
+
         repository
-            .Setup(x => x.GetAllAsync(
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([document]);
 
         var artifactEnumerator =
             new Mock<IDocumentArtifactEnumerator>();
 
-        artifactEnumerator
-            .Setup(x => x.EnumerateAsync(
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-            [
-                document.StoredFilePath
-            ]);
+        ConfigureArtifactEnumeratorMock(artifactEnumerator, [document.StoredFilePath]);
 
         var reader =
             new Mock<IDocumentReader>();
 
         reader
-            .Setup(x => x.OpenReadAsync(
+            .Setup(x => x.ValidateContentHashAsync(
                 document.Id,
                 document.Sha256Hash,
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new DocumentContentIntegrityException());
@@ -1089,6 +1482,168 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task HandleAsync_WhenVaultExceedsSingleRepositoryPage_ReconcilesEveryDocumentWithoutFullInventoryCalls()
+    {
+        // Arrange
+        const int additionalDocuments = 4;
+        int documentCount =
+            IDocumentRepository.MaximumDocumentPageSize + additionalDocuments;
+
+        DateTime importedAt =
+            new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        Document[] documents =
+            Enumerable.Range(0, documentCount)
+                .Select(index =>
+                {
+                    Guid documentId =
+                        Guid.Parse(
+                            $"00000000-0000-0000-0000-{index + 1:D12}");
+
+                    string artifactPath =
+                        Path.GetFullPath(
+                            Path.Combine(
+                                "Documents",
+                                $"{documentId}.dvault"));
+
+                    return Document.Restore(
+                        documentId,
+                        $"document-{index}.txt",
+                        $"Document {index}",
+                        $"sha256-test-hash-{index}",
+                        artifactPath,
+                        importedAt.AddTicks(index),
+                        DocumentStatus.Imported);
+                })
+                .ToArray();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(
+                (DocumentPageCursor? cursor,
+                 int pageSize,
+                 CancellationToken _) =>
+                {
+                    IEnumerable<Document> query = documents;
+
+                    if (cursor is not null)
+                    {
+                        string cursorDocumentId =
+                            cursor.DocumentId.ToString();
+
+                        query = query.Where(document =>
+                            document.ImportedAt < cursor.ImportedAt ||
+                            (document.ImportedAt == cursor.ImportedAt &&
+                             string.CompareOrdinal(
+                                 document.Id.ToString(),
+                                 cursorDocumentId) > 0));
+                    }
+
+                    IReadOnlyList<Document> page = query
+                        .OrderByDescending(
+                            document => document.ImportedAt)
+                        .ThenBy(
+                            document => document.Id.ToString(),
+                            StringComparer.Ordinal)
+                        .Take(pageSize)
+                        .ToArray();
+
+                    return Task.FromResult(page);
+                });
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(
+                (Guid documentId, CancellationToken _) =>
+                    Task.FromResult<Document?>(
+                        documents.FirstOrDefault(
+                            document => document.Id == documentId)));
+
+        var artifactEnumerator =
+            new Mock<IDocumentArtifactEnumerator>();
+
+        ConfigureArtifactEnumeratorMock(
+            artifactEnumerator,
+            documents
+                .Select(document => document.StoredFilePath)
+                .ToArray());
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        reader
+            .Setup(x => x.ValidateContentHashAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService);
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await handler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery(),
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(documentCount, result.Findings.Count);
+
+        Assert.All(
+            result.Findings,
+            finding =>
+                Assert.Equal(
+                    DocumentArtifactReconciliationStatus.Matched,
+                    finding.Status));
+
+        repository.Verify(
+            x => x.GetPageAsync(
+                It.Is<DocumentPageCursor?>(
+                    cursor => cursor == null),
+                IDocumentRepository.MaximumDocumentPageSize,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetPageAsync(
+                It.Is<DocumentPageCursor?>(
+                    cursor => cursor != null),
+                IDocumentRepository.MaximumDocumentPageSize,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetPageAsync(
+                It.IsAny<DocumentPageCursor?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+    }
+
     private static ReconcileDocumentArtifactsHandler CreateHandler(
         Mock<IDocumentRepository> repository,
         Mock<IDocumentArtifactEnumerator> artifactEnumerator,
@@ -1101,6 +1656,7 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             artifactEnumerator.Object,
             reader.Object,
             storageService.Object,
+            new DocumentProcessingOptions(),
             (ILogger<ReconcileDocumentArtifactsHandler>?)logger ?? NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
     }
 
@@ -1131,5 +1687,105 @@ public sealed class ReconcileDocumentArtifactsHandlerTests
             Path.Combine(
                 "Documents",
                 $"{documentId}.dvault"));
+    }
+
+    private static void ConfigureArtifactEnumeratorMock(
+        Mock<IDocumentArtifactEnumerator> artifactEnumerator,
+        IReadOnlyList<string> artifactPaths)
+    {
+
+        artifactEnumerator
+            .Setup(x => x.ExistsForDocument(
+                It.IsAny<Guid>()))
+            .Returns(
+                (Guid documentId) =>
+                    artifactPaths.Any(
+                        path =>
+                            Guid.TryParse(
+                                Path.GetFileNameWithoutExtension(path),
+                                out Guid artifactId)
+                            && artifactId == documentId));
+
+        artifactEnumerator
+            .Setup(x => x.EnumerateIncrementallyAsync(
+                It.IsAny<CancellationToken>()))
+            .Returns(
+                (CancellationToken cancellationToken) =>
+                    EnumerateArtifactPathsAsync(
+                        artifactPaths,
+                        cancellationToken));
+    }
+
+    private static async IAsyncEnumerable<string> EnumerateArtifactPathsAsync(
+        IReadOnlyList<string> artifactPaths,
+        [System.Runtime.CompilerServices.EnumeratorCancellation]
+        CancellationToken cancellationToken = default)
+    {
+        await Task.Yield();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        foreach (string artifactPath in artifactPaths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            yield return artifactPath;
+        }
+    }
+
+    private static void ConfigureDocumentLookup(
+        Mock<IDocumentRepository> repository)
+    {
+        repository
+            .Setup(x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(
+                (Guid documentId, CancellationToken cancellationToken) =>
+                    FindDocumentAsync(
+                        repository.Object,
+                        documentId,
+                        cancellationToken));
+    }
+
+    private static async Task<Document?> FindDocumentAsync(
+        IDocumentRepository repository,
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        const int pageSize =
+            IDocumentRepository.MaximumDocumentPageSize;
+
+        DocumentPageCursor? cursor = null;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            IReadOnlyList<Document> documents =
+                await repository.GetPageAsync(
+                    cursor,
+                    pageSize,
+                    cancellationToken);
+
+            Document? document =
+                documents.FirstOrDefault(
+                    item => item.Id == documentId);
+
+            if (document is not null)
+            {
+                return document;
+            }
+
+            if (documents.Count < pageSize)
+            {
+                return null;
+            }
+
+            Document lastDocument = documents[^1];
+
+            cursor = new DocumentPageCursor(
+                lastDocument.ImportedAt,
+                lastDocument.Id);
+        }
     }
 }

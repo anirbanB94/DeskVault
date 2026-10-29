@@ -1482,8 +1482,8 @@ public sealed class ProcessDocumentHandlerTests
         public Task<Stream> OpenReadAsync(
             Guid documentId,
             string expectedSha256Hash,
-            CancellationToken cancellationToken = default,
-            long? maximumPlaintextBytes = null)
+            long maximumPlaintextBytes,
+            CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -1497,7 +1497,7 @@ public sealed class ProcessDocumentHandlerTests
             if (ThrowResourceLimitExceededOnOpen)
             {
                 long limitBytes =
-                    maximumPlaintextBytes ?? 0L;
+                    maximumPlaintextBytes;
 
                 throw new ResourceLimitExceededException(
                     limitBytes,
@@ -1513,6 +1513,18 @@ public sealed class ProcessDocumentHandlerTests
                 new MemoryStream();
 
             return Task.FromResult(stream);
+        }
+
+        public Task ValidateContentHashAsync(
+            Guid documentId,
+            string expectedSha256Hash,
+            long maximumPlaintextBytes,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            throw new NotSupportedException(
+                "Hash validation is not supported by this process-handler test double.");
         }
     }
 

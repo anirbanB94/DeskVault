@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Interfaces;
+using DeskVault.Domain.Documents;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
 
@@ -39,13 +40,6 @@ public sealed class RecoverDocumentArtifactsHandler
             await _reconciliationHandler.HandleAsync(
                 new ReconcileDocumentArtifactsQuery(),
                 cancellationToken);
-
-        var persistedDocumentIds =
-            (await _repository.GetAllAsync(
-                cancellationToken))
-            .Select(
-                document => document.Id)
-            .ToHashSet();
 
         var recoveryFindings =
             new List<DocumentArtifactReconciliationResult>(
@@ -96,8 +90,14 @@ public sealed class RecoverDocumentArtifactsHandler
             Guid documentId =
                 finding.DocumentId.Value;
 
-            if (persistedDocumentIds.Contains(
-                    documentId))
+            // Recheck current metadata immediately before cleanup.
+            // Reconciliation findings may have become stale since they were created.
+            Document? persistedDocument =
+                await _repository.GetByIdAsync(
+                    documentId,
+                    cancellationToken);
+
+            if (persistedDocument is not null)
             {
                 _logger.LogWarning(
                     LogMessages.DocumentArtifactRecoveryPreserved);

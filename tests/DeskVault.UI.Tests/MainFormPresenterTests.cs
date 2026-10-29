@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
@@ -1164,6 +1165,7 @@ public sealed class MainFormPresenterTests
             .Setup(x => x.OpenReadAsync(
                 documentId,
                 It.IsAny<string>(),
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
             CreateContentStream(
@@ -1187,6 +1189,7 @@ public sealed class MainFormPresenterTests
             new OpenDocumentHandler(
                 repository.Object,
                 documentReader.Object,
+                new DocumentProcessingOptions(),
                 NullLogger<OpenDocumentHandler>.Instance);
 
         var removeDocumentHandler =
@@ -1516,10 +1519,11 @@ public sealed class MainFormPresenterTests
             Times.Never);
 
         documentReader.Verify(
-            x => x.OpenReadAsync(
-                It.IsAny<Guid>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()),
+        x => x.OpenReadAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<string>(),
+            It.IsAny<long>(),
+            It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -1572,6 +1576,7 @@ public sealed class MainFormPresenterTests
             .Setup(x => x.OpenReadAsync(
                 documentId,
                 It.IsAny<string>(),
+                It.IsAny<long>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
             new InvalidOperationException(

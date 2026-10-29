@@ -371,6 +371,17 @@ public sealed class DocumentRemovalIntegrationTests
                 cancellationToken);
         }
 
+        public Task<IReadOnlyList<Document>> GetPageAsync(
+            DocumentPageCursor? cursor,
+            int pageSize,
+            CancellationToken cancellationToken = default)
+        {
+            return _inner.GetPageAsync(
+                cursor,
+                pageSize,
+                cancellationToken);
+        }
+
         public Task DeleteAsync(
             Guid documentId,
             CancellationToken cancellationToken = default)

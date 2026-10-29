@@ -1,4 +1,5 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
+using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Repositories;
@@ -790,6 +791,355 @@ public sealed class SqliteDocumentRepositoryTests
                 repository.AddAsync(
                     document,
                     cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task GetPageAsync_ReturnsRequestedPageInDeterministicImportOrder()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        DateTime importedAt = DateTime.UtcNow;
+
+        Document older =
+            Document.Restore(
+                Guid.NewGuid(),
+                "older.txt",
+                "Older Document",
+                "hash-older",
+                "older.dvault",
+                importedAt.AddMinutes(-10),
+                DocumentStatus.Imported);
+
+        Document middle =
+            Document.Restore(
+                Guid.NewGuid(),
+                "middle.txt",
+                "Middle Document",
+                "hash-middle",
+                "middle.dvault",
+                importedAt.AddMinutes(-5),
+                DocumentStatus.Imported);
+
+        Document newer =
+            Document.Restore(
+                Guid.NewGuid(),
+                "newer.txt",
+                "Newer Document",
+                "hash-newer",
+                "newer.dvault",
+                importedAt,
+                DocumentStatus.Imported);
+
+        await repository.AddAsync(
+            older,
+            TestContext.Current.CancellationToken);
+
+        await repository.AddAsync(
+            newer,
+            TestContext.Current.CancellationToken);
+
+        await repository.AddAsync(
+            middle,
+            TestContext.Current.CancellationToken);
+
+        IReadOnlyList<Document> firstPage =
+            await repository.GetPageAsync(
+                null,
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document firstDocument =
+            Assert.Single(firstPage);
+
+        IReadOnlyList<Document> secondPage =
+            await repository.GetPageAsync(
+                new DocumentPageCursor(
+                    firstDocument.ImportedAt,
+                    firstDocument.Id),
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document secondDocument =
+            Assert.Single(secondPage);
+
+        IReadOnlyList<Document> thirdPage =
+            await repository.GetPageAsync(
+                new DocumentPageCursor(
+                    secondDocument.ImportedAt,
+                    secondDocument.Id),
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document thirdDocument =
+            Assert.Single(thirdPage);
+
+        Assert.Equal(newer.Id, firstDocument.Id);
+        Assert.Equal(middle.Id, secondDocument.Id);
+        Assert.Equal(older.Id, thirdDocument.Id);
+    }
+
+    [Fact]
+    public async Task GetPageAsync_WhenImportTimestampsMatch_UsesDocumentIdAsTieBreakerAcrossPages()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        DateTime importedAt =
+            new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        Guid firstId =
+            Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+        Guid secondId =
+            Guid.Parse("00000000-0000-0000-0000-000000000002");
+
+        Guid thirdId =
+            Guid.Parse("00000000-0000-0000-0000-000000000003");
+
+        Document first =
+            Document.Restore(
+                firstId,
+                "first.txt",
+                "First Document",
+                "sqlite-same-time-hash-1",
+                "first.dvault",
+                importedAt,
+                DocumentStatus.Imported);
+
+        Document second =
+            Document.Restore(
+                secondId,
+                "second.txt",
+                "Second Document",
+                "sqlite-same-time-hash-2",
+                "second.dvault",
+                importedAt,
+                DocumentStatus.Imported);
+
+        Document third =
+            Document.Restore(
+                thirdId,
+                "third.txt",
+                "Third Document",
+                "sqlite-same-time-hash-3",
+                "third.dvault",
+                importedAt,
+                DocumentStatus.Imported);
+
+        await repository.AddAsync(
+            third,
+            TestContext.Current.CancellationToken);
+
+        await repository.AddAsync(
+            first,
+            TestContext.Current.CancellationToken);
+
+        await repository.AddAsync(
+            second,
+            TestContext.Current.CancellationToken);
+
+        DocumentPageCursor? cursor = null;
+
+        foreach (Guid expectedId in new[] { firstId, secondId, thirdId })
+        {
+            IReadOnlyList<Document> page =
+                await repository.GetPageAsync(
+                    cursor,
+                    1,
+                    TestContext.Current.CancellationToken);
+
+            Document actual =
+                Assert.Single(page);
+
+            Assert.Equal(expectedId, actual.Id);
+            Assert.Equal(importedAt, actual.ImportedAt);
+
+            cursor =
+                new DocumentPageCursor(
+                    actual.ImportedAt,
+                    actual.Id);
+        }
+
+        IReadOnlyList<Document> exhaustedPage =
+            await repository.GetPageAsync(
+                cursor,
+                1,
+                TestContext.Current.CancellationToken);
+
+        Assert.Empty(exhaustedPage);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(257)]
+    public async Task GetPageAsync_WhenPageSizeIsInvalid_ThrowsArgumentOutOfRangeException(
+        int pageSize)
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => repository.GetPageAsync(
+                null,
+                pageSize,
+                TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetPageAsync_WhenNewerDocumentIsInsertedBetweenPages_DoesNotSkipRemainingDocuments()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        DateTime importedAt = DateTime.UtcNow;
+
+        Document older =
+            Document.Restore(
+                Guid.NewGuid(),
+                "older.txt",
+                "Older Document",
+                "hash-older-insert-test",
+                "older.dvault",
+                importedAt.AddMinutes(-10),
+                DocumentStatus.Imported);
+
+        Document middle =
+            Document.Restore(
+                Guid.NewGuid(),
+                "middle.txt",
+                "Middle Document",
+                "hash-middle-insert-test",
+                "middle.dvault",
+                importedAt.AddMinutes(-5),
+                DocumentStatus.Imported);
+
+        Document newer =
+            Document.Restore(
+                Guid.NewGuid(),
+                "newer.txt",
+                "Newer Document",
+                "hash-newer-insert-test",
+                "newer.dvault",
+                importedAt,
+                DocumentStatus.Imported);
+
+        await repository.AddAsync(
+            older,
+            TestContext.Current.CancellationToken);
+
+        await repository.AddAsync(
+            middle,
+            TestContext.Current.CancellationToken);
+
+        await repository.AddAsync(
+            newer,
+            TestContext.Current.CancellationToken);
+
+        IReadOnlyList<Document> firstPage =
+            await repository.GetPageAsync(
+                null,
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document firstDocument =
+            Assert.Single(firstPage);
+
+        Assert.Equal(newer.Id, firstDocument.Id);
+
+        Document insertedNewer =
+            Document.Restore(
+                Guid.NewGuid(),
+                "inserted.txt",
+                "Inserted Newer Document",
+                "hash-inserted-newer-test",
+                "inserted.dvault",
+                importedAt.AddMinutes(1),
+                DocumentStatus.Imported);
+
+        await repository.AddAsync(
+            insertedNewer,
+            TestContext.Current.CancellationToken);
+
+        IReadOnlyList<Document> secondPage =
+            await repository.GetPageAsync(
+                new DocumentPageCursor(
+                    firstDocument.ImportedAt,
+                    firstDocument.Id),
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document secondDocument =
+            Assert.Single(secondPage);
+
+        IReadOnlyList<Document> thirdPage =
+            await repository.GetPageAsync(
+                new DocumentPageCursor(
+                    secondDocument.ImportedAt,
+                    secondDocument.Id),
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document thirdDocument =
+            Assert.Single(thirdPage);
+
+        Assert.Equal(middle.Id, secondDocument.Id);
+        Assert.Equal(older.Id, thirdDocument.Id);
+    }
+
+    [Fact]
+    public async Task GetPageAsync_WhenCursorHasDefaultTimestamp_ThrowsArgumentException()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        var cursor =
+            new DocumentPageCursor(
+                default,
+                Guid.NewGuid());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => repository.GetPageAsync(
+                cursor,
+                10,
+                TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetPageAsync_WhenCursorHasEmptyDocumentId_ThrowsArgumentException()
+    {
+        await using SqliteConnection connection =
+            CreateConnection();
+
+        var repository =
+            CreateRepository(connection);
+
+        var cursor =
+            new DocumentPageCursor(
+                DateTime.UtcNow,
+                Guid.Empty);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => repository.GetPageAsync(
+                cursor,
+                10,
+                TestContext.Current.CancellationToken));
     }
 
     private static SqliteDocumentRepository CreateRepository(

@@ -121,8 +121,8 @@ public sealed class ProcessDocumentHandler
                 await _documentReader.OpenReadAsync(
                     document.Id,
                     document.Sha256Hash,
-                    cancellationToken,
-                    _maxDecryptedDocumentBytes);
+                    _maxDecryptedDocumentBytes,
+                    cancellationToken);
 
             var extractionResult =
                 await extractor.ExtractAsync(

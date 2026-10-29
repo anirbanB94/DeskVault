@@ -56,6 +56,53 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         return Task.FromResult(documents);
     }
 
+    public Task<IReadOnlyList<Document>> GetPageAsync(
+        DocumentPageCursor? cursor,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageSize <= 0 ||
+            pageSize > IDocumentRepository.MaximumDocumentPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        if (cursor is not null &&
+            (cursor.ImportedAt == default ||
+             cursor.DocumentId == Guid.Empty))
+        {
+            throw new ArgumentException(
+                "Document page cursor is invalid.",
+                nameof(cursor));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IEnumerable<Document> query = _documents;
+
+        if (cursor is not null)
+        {
+            string cursorDocumentId = cursor.DocumentId.ToString();
+
+            query = query.Where(document =>
+                document.ImportedAt < cursor.ImportedAt ||
+                (document.ImportedAt == cursor.ImportedAt &&
+                 string.CompareOrdinal(
+                     document.Id.ToString(),
+                     cursorDocumentId) > 0));
+        }
+
+        IReadOnlyList<Document> documents = query
+            .OrderByDescending(document => document.ImportedAt)
+            .ThenBy(
+                document => document.Id.ToString(),
+                StringComparer.Ordinal)
+            .Take(pageSize)
+            .ToArray();
+
+        return Task.FromResult(documents);
+    }
+
     public Task UpdateAsync(
         Document document,
         CancellationToken cancellationToken = default)

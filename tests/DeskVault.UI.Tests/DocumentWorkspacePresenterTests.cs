@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.GetDocument;
@@ -931,6 +932,7 @@ public sealed class DocumentWorkspacePresenterTests
             new OpenDocumentHandler(
                 repository.Object,
                 new Mock<IDocumentReader>().Object,
+                new DocumentProcessingOptions(),
                 NullLogger<OpenDocumentHandler>.Instance),
             new RemoveDocumentHandler(
                 repository.Object,

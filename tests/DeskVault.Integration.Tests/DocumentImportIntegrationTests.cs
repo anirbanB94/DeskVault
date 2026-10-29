@@ -4866,7 +4866,11 @@ public sealed class DocumentImportIntegrationTests
                     document.StoredFilePath));
 
             await using Stream decryptedStream =
-                await harness.DocumentReader.OpenReadAsync(document.Id, document.Sha256Hash, TestContext.Current.CancellationToken);
+                await harness.DocumentReader.OpenReadAsync(
+                    document.Id,
+                    document.Sha256Hash,
+                    DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                    TestContext.Current.CancellationToken);
 
             using var decryptedContent =
                 new MemoryStream();
@@ -5036,6 +5040,17 @@ public sealed class DocumentImportIntegrationTests
             CancellationToken cancellationToken = default)
         {
             return _inner.GetAllAsync(
+                cancellationToken);
+        }
+
+        public Task<IReadOnlyList<Document>> GetPageAsync(
+            DocumentPageCursor? cursor,
+            int pageSize,
+            CancellationToken cancellationToken = default)
+        {
+            return _inner.GetPageAsync(
+                cursor,
+                pageSize,
                 cancellationToken);
         }
 

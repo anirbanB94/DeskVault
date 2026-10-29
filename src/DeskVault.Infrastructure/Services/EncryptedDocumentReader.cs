@@ -35,10 +35,17 @@ public sealed class EncryptedDocumentReader : IDocumentReader
     public async Task<Stream> OpenReadAsync(
         Guid documentId,
         string expectedSha256Hash,
-        CancellationToken cancellationToken = default,
-        long? maximumPlaintextBytes = null)
+        long maximumPlaintextBytes,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expectedSha256Hash);
+
+        if (maximumPlaintextBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumPlaintextBytes),
+                "Maximum plaintext bytes must be greater than zero.");
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -115,6 +122,83 @@ public sealed class EncryptedDocumentReader : IDocumentReader
 
                 throw;
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentReaderFailure,
+                LogMessages.DocumentReaderFailed,
+                ex);
+
+            throw;
+        }
+    }
+
+    public async Task ValidateContentHashAsync(
+        Guid documentId,
+        string expectedSha256Hash,
+        long maximumPlaintextBytes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(
+            expectedSha256Hash);
+
+        if (maximumPlaintextBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumPlaintextBytes),
+                "Maximum plaintext bytes must be greater than zero.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string storedFilePath =
+            _artifactPathResolver.GetPath(
+                documentId);
+
+        _logger.LogInformation(
+            LogMessages.DocumentReaderStarted);
+
+        try
+        {
+            await using var source =
+                new FileStream(
+                    storedFilePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 81920,
+                    useAsync: true);
+
+            using var hashingStream =
+                new HashingWriteStream();
+
+            await _encryptionService.DecryptAsync(
+                source,
+                hashingStream,
+                documentId,
+                cancellationToken,
+                maximumPlaintextBytes);
+
+            string actualSha256Hash =
+                Convert.ToHexString(
+                    hashingStream.GetHashAndReset());
+
+            if (!string.Equals(
+                actualSha256Hash,
+                expectedSha256Hash,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new DocumentContentIntegrityException();
+            }
+
+            _logger.LogInformation(
+                LogMessages.DocumentReaderCompleted);
         }
         catch (OperationCanceledException)
         {

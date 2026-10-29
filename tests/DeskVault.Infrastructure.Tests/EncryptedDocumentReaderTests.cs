@@ -1,4 +1,5 @@
-﻿using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Configurations;
+using DeskVault.Application.Documents.Processing;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -35,7 +36,7 @@ public sealed class EncryptedDocumentReaderTests
 
         // Act
         await using Stream result =
-            await context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), Xunit.TestContext.Current.CancellationToken);
+            await context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), originalContent.Length, Xunit.TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -77,6 +78,305 @@ public sealed class EncryptedDocumentReaderTests
         {
             CryptographicOperations.ZeroMemory(
                 returnedContent);
+        }
+    }
+
+    [Fact]
+    public async Task ValidateContentHashAsync_WhenStoredFileIsValid_ValidatesWithoutUsingMemoryStaging()
+    {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "DeskVault incremental content-hash validation test.");
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        string artifactPath =
+            context.PathResolver.GetPath(
+                documentId);
+
+        await CreateEncryptedFileAsync(
+            artifactPath,
+            documentId,
+            originalContent,
+            context.EncryptionService);
+
+        context.Reader.DecryptedStagingStreamFactoryForTesting =
+            () =>
+                throw new InvalidOperationException(
+                    "Hash-only validation must not use plaintext staging.");
+
+        // Act
+        await context.Reader.ValidateContentHashAsync(
+            documentId,
+            ComputeSha256Hash(originalContent),
+            originalContent.Length,
+            Xunit.TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ValidateContentHashAsync_WhenContentIdentityDoesNotMatch_ThrowsIntegrityException()
+    {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "Original document content.");
+
+        byte[] differentContent =
+            Encoding.UTF8.GetBytes(
+                "Different document content.");
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        string artifactPath =
+            context.PathResolver.GetPath(
+                documentId);
+
+        await CreateEncryptedFileAsync(
+            artifactPath,
+            documentId,
+            originalContent,
+            context.EncryptionService);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<DocumentContentIntegrityException>(
+            () =>
+                context.Reader.ValidateContentHashAsync(
+                    documentId,
+                    ComputeSha256Hash(differentContent),
+                    originalContent.Length,
+                    Xunit.TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ValidateContentHashAsync_WhenPlaintextExceedsMaximum_ThrowsResourceLimitException()
+    {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
+        byte[] originalContent =
+            Encoding.UTF8.GetBytes(
+                "Content that exceeds the validation limit.");
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        string artifactPath =
+            context.PathResolver.GetPath(
+                documentId);
+
+        await CreateEncryptedFileAsync(
+            artifactPath,
+            documentId,
+            originalContent,
+            context.EncryptionService);
+
+        long maximumPlaintextBytes =
+            originalContent.Length - 1;
+
+        // Act
+        ResourceLimitExceededException exception =
+            await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                () =>
+                    context.Reader.ValidateContentHashAsync(
+                        documentId,
+                        ComputeSha256Hash(originalContent),
+                        maximumPlaintextBytes,
+                        Xunit.TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Equal(
+            maximumPlaintextBytes,
+            exception.LimitBytes);
+
+        Assert.Equal(
+            originalContent.Length,
+            exception.AttemptedBytes);
+    }
+
+    [Fact]
+    public async Task OpenReadAsync_WhenPlaintextExceedsMaximum_ThrowsResourceLimitExceptionAndClearsStaging()
+    {
+        using var context = CreateTestContext();
+
+        const int maximumPlaintextBytes = 1024 * 1024;
+
+        byte[] originalContent =
+            new byte[maximumPlaintextBytes + 37];
+
+        RandomNumberGenerator.Fill(originalContent);
+
+        Guid documentId = Guid.NewGuid();
+
+        string artifactPath =
+            context.PathResolver.GetPath(documentId);
+
+        MemoryStream? observedStagingStream = null;
+
+        try
+        {
+            await CreateEncryptedFileAsync(
+                artifactPath,
+                documentId,
+                originalContent,
+                context.EncryptionService);
+
+            context.Reader.DecryptedStagingStreamFactoryForTesting =
+                () => observedStagingStream = new MemoryStream();
+
+            ResourceLimitExceededException exception =
+                await Assert.ThrowsAsync<ResourceLimitExceededException>(
+                    () => context.Reader.OpenReadAsync(
+                        documentId,
+                        ComputeSha256Hash(originalContent),
+                        maximumPlaintextBytes,
+                        Xunit.TestContext.Current.CancellationToken));
+
+            Assert.Equal(
+                maximumPlaintextBytes,
+                exception.LimitBytes);
+
+            Assert.Equal(
+                originalContent.Length,
+                exception.AttemptedBytes);
+
+            AssertStagingBufferCleared(observedStagingStream);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(originalContent);
+        }
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    public async Task ValidateContentHashAsync_WhenMaximumIsNotPositive_ThrowsArgumentOutOfRangeException(
+        long maximumPlaintextBytes)
+    {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () =>
+                context.Reader.ValidateContentHashAsync(
+                    Guid.NewGuid(),
+                    "expected-hash",
+                    maximumPlaintextBytes,
+                    Xunit.TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ValidateContentHashAsync_WhenCancellationIsRequested_ThrowsOperationCanceledException()
+    {
+        // Arrange
+        using var context =
+            CreateTestContext();
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        cancellationTokenSource.Cancel();
+
+        // Act & Assert
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () =>
+                context.Reader.ValidateContentHashAsync(
+                    Guid.NewGuid(),
+                    "expected-hash",
+                    1024,
+                    cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task ValidateContentHashAsync_WhenCancellationOccursAfterFirstChunkIsHashed_ThrowsOperationCanceledExceptionAndDisposesSource()
+    {
+        using var context = CreateTestContext();
+
+        const int chunkSize = 1024 * 1024;
+
+        byte[] originalContent = new byte[chunkSize + 37];
+        RandomNumberGenerator.Fill(originalContent);
+
+        Guid documentId = Guid.NewGuid();
+
+        string artifactPath =
+            context.PathResolver.GetPath(documentId);
+
+        try
+        {
+            await CreateEncryptedFileAsync(
+                artifactPath,
+                documentId,
+                originalContent,
+                context.EncryptionService);
+
+            using var cancellationTokenSource =
+                new CancellationTokenSource();
+
+            int plaintextBufferAllocations = 0;
+
+            // The first decrypted chunk reaches the hashing stream.
+            // Cancel when decryption prepares the second chunk.
+            context.EncryptionService
+                .DecryptedPlaintextBufferFactoryForTesting =
+                    size =>
+                    {
+                        if (Interlocked.Increment(
+                                ref plaintextBufferAllocations) == 2)
+                        {
+                            cancellationTokenSource.Cancel();
+                        }
+
+                        return new byte[size];
+                    };
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () =>
+                    context.Reader.ValidateContentHashAsync(
+                        documentId,
+                        ComputeSha256Hash(originalContent),
+                        originalContent.Length,
+                        cancellationTokenSource.Token));
+
+            Assert.Equal(
+                2,
+                plaintextBufferAllocations);
+
+            // Cancellation must not be reported as a reader failure or a
+            // content-integrity mismatch. Only the operation-start log remains.
+            Assert.Single(
+                context.ReaderLogger.Entries);
+
+            // The reader's source file handle must have been disposed when
+            // cancellation propagated out of hash validation.
+            await using var exclusiveProbe =
+                new FileStream(
+                    artifactPath,
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    bufferSize: 1,
+                    useAsync: true);
+
+            Assert.True(exclusiveProbe.CanRead);
+            Assert.True(exclusiveProbe.CanWrite);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                originalContent);
         }
     }
 
@@ -234,7 +534,7 @@ public sealed class EncryptedDocumentReaderTests
             () => observedStagingStream = new MemoryStream();
 
         // Act & Assert
-        await Assert.ThrowsAsync<AuthenticationTagMismatchException>(() => context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), Xunit.TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<AuthenticationTagMismatchException>(() => context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), originalContent.Length, Xunit.TestContext.Current.CancellationToken));
 
         AssertStagingBufferCleared(observedStagingStream);
     }
@@ -252,7 +552,11 @@ public sealed class EncryptedDocumentReaderTests
         // Act & Assert
         await Assert.ThrowsAsync<FileNotFoundException>(
             () =>
-                context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(Array.Empty<byte>()), Xunit.TestContext.Current.CancellationToken));
+                context.Reader.OpenReadAsync(
+                    documentId,
+                    ComputeSha256Hash(Array.Empty<byte>()),
+                    DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                    Xunit.TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -288,6 +592,7 @@ public sealed class EncryptedDocumentReaderTests
                 () => context.Reader.OpenReadAsync(
                     documentId,
                     ComputeSha256Hash(originalContent),
+                    originalContent.Length,
                     cancellationTokenSource.Token));
 
             AssertStagingBufferCleared(observedStagingStream);
@@ -333,6 +638,7 @@ public sealed class EncryptedDocumentReaderTests
                 context.Reader.OpenReadAsync(
                     documentId,
                     ComputeSha256Hash(originalContent),
+                    originalContent.Length,
                     cancellationTokenSource.Token));
     }
 
@@ -379,7 +685,7 @@ public sealed class EncryptedDocumentReaderTests
 
         // Act
         await using Stream result =
-            await context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(canonicalContent), Xunit.TestContext.Current.CancellationToken);
+            await context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(canonicalContent), canonicalContent.Length, Xunit.TestContext.Current.CancellationToken);
 
         using var memory =
             new MemoryStream();
@@ -423,7 +729,7 @@ public sealed class EncryptedDocumentReaderTests
 
         // Act
         await using Stream result =
-            await context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), Xunit.TestContext.Current.CancellationToken);
+            await context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), originalContent.Length, Xunit.TestContext.Current.CancellationToken);
 
         using var memory =
             new MemoryStream();
@@ -476,7 +782,11 @@ public sealed class EncryptedDocumentReaderTests
         // Act & Assert
         await Assert.ThrowsAsync<DocumentContentIntegrityException>(
             () =>
-                context.Reader.OpenReadAsync(documentId, expectedSha256Hash, Xunit.TestContext.Current.CancellationToken));
+                context.Reader.OpenReadAsync(
+                    documentId,
+                    expectedSha256Hash,
+                    DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                    Xunit.TestContext.Current.CancellationToken));
 
         AssertStagingBufferCleared(observedStagingStream);
     }
@@ -537,7 +847,11 @@ public sealed class EncryptedDocumentReaderTests
 
         // Act
         await Assert.ThrowsAsync<DocumentContentIntegrityException>(
-            () => context.Reader.OpenReadAsync(documentId, expectedHash, Xunit.TestContext.Current.CancellationToken));
+            () => context.Reader.OpenReadAsync(
+                documentId,
+                expectedHash,
+                DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                Xunit.TestContext.Current.CancellationToken));
 
         string diagnostics =
             string.Join(
@@ -614,7 +928,11 @@ public sealed class EncryptedDocumentReaderTests
 
         // Act
         await using Stream result =
-            await context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), Xunit.TestContext.Current.CancellationToken);
+            await context.Reader.OpenReadAsync(
+                documentId,
+                ComputeSha256Hash(originalContent),
+                DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                Xunit.TestContext.Current.CancellationToken);
 
         using var memory =
             new MemoryStream();
@@ -658,7 +976,11 @@ public sealed class EncryptedDocumentReaderTests
 
         // Act
         await using Stream result =
-            await context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), Xunit.TestContext.Current.CancellationToken);
+            await context.Reader.OpenReadAsync(
+                documentId,
+                ComputeSha256Hash(originalContent),
+                DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                Xunit.TestContext.Current.CancellationToken);
 
         using var memory =
             new MemoryStream();
@@ -724,7 +1046,28 @@ public sealed class EncryptedDocumentReaderTests
         // Act & Assert
         await Assert.ThrowsAsync<DocumentContentIntegrityException>(
             () =>
-                context.Reader.OpenReadAsync(documentId, ComputeSha256Hash(originalContent), Xunit.TestContext.Current.CancellationToken));
+                context.Reader.OpenReadAsync(
+                    documentId,
+                    ComputeSha256Hash(originalContent),
+                    DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                    Xunit.TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    public async Task OpenReadAsync_WhenMaximumPlaintextBytesIsNotPositive_ThrowsArgumentOutOfRangeException(
+        long maximumPlaintextBytes)
+    {
+        using var context = CreateTestContext();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () =>
+                context.Reader.OpenReadAsync(
+                    Guid.NewGuid(),
+                    ComputeSha256Hash(Array.Empty<byte>()),
+                    maximumPlaintextBytes,
+                    Xunit.TestContext.Current.CancellationToken));
     }
 
     private static TestContext CreateTestContext()

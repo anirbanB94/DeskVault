@@ -1,4 +1,5 @@
 using DeskVault.Application.Interfaces;
+using System.Runtime.CompilerServices;
 
 namespace DeskVault.Infrastructure.Services;
 
@@ -15,29 +16,93 @@ public sealed class DocumentArtifactEnumerator
         _dataPaths = dataPaths;
     }
 
-    public Task<IReadOnlyList<string>> EnumerateAsync(
-        CancellationToken cancellationToken = default)
+    public async IAsyncEnumerable<string> EnumerateIncrementallyAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        await Task.Yield();
+
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!Directory.Exists(
-                _dataPaths.DocumentsDirectory))
+        if (!DocumentsDirectoryExists())
         {
-            return Task.FromResult<
-                IReadOnlyList<string>>(
-                Array.Empty<string>());
+            yield break;
         }
 
-        string[] artifactPaths =
-            Directory.GetFiles(
+        foreach (string artifactPath in Directory.EnumerateFiles(
+                     _dataPaths.DocumentsDirectory,
+                     $"*{ArtifactExtension}",
+                     SearchOption.TopDirectoryOnly))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            yield return artifactPath;
+        }
+    }
+
+    public bool ExistsForDocument(Guid documentId)
+    {
+        if (documentId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Document ID cannot be empty.",
+                nameof(documentId));
+        }
+
+        if (!DocumentsDirectoryExists())
+        {
+            return false;
+        }
+
+        string artifactPath =
+            Path.Combine(
                 _dataPaths.DocumentsDirectory,
-                $"*{ArtifactExtension}",
-                SearchOption.TopDirectoryOnly);
+                $"{documentId}{ArtifactExtension}");
 
-        cancellationToken.ThrowIfCancellationRequested();
+        FileAttributes attributes;
 
-        return Task.FromResult<
-            IReadOnlyList<string>>(
-            artifactPaths);
+        try
+        {
+            attributes = File.GetAttributes(artifactPath);
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException or
+            DirectoryNotFoundException)
+        {
+            return false;
+        }
+
+        if ((attributes & FileAttributes.Directory) != 0)
+        {
+            throw new IOException(
+                "The canonical document artifact path is not a file.");
+        }
+
+        return true;
+    }
+
+    private bool DocumentsDirectoryExists()
+    {
+        FileAttributes attributes;
+
+        try
+        {
+            attributes =
+                File.GetAttributes(
+                    _dataPaths.DocumentsDirectory);
+        }
+        catch (Exception exception)
+            when (exception is FileNotFoundException
+                or DirectoryNotFoundException)
+        {
+            return false;
+        }
+
+        if ((attributes & FileAttributes.Directory) == 0)
+        {
+            throw new IOException(
+                "The configured document storage path is not a directory.");
+        }
+
+        return true;
     }
 }
