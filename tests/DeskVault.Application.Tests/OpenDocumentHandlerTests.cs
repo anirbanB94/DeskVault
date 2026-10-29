@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
@@ -12,6 +13,8 @@ public sealed class OpenDocumentHandlerTests
     public async Task HandleAsync_WhenDocumentExists_OpensUsingDocumentIdentity()
     {
         // Arrange
+        const long maximumPlaintextBytes = 1024;
+
         Guid documentId =
             Guid.NewGuid();
 
@@ -43,14 +46,19 @@ public sealed class OpenDocumentHandlerTests
             .Setup(x => x.OpenReadAsync(
                 documentId,
                 document.Sha256Hash,
-                It.IsAny<CancellationToken>(),
-                It.IsAny<long?>()))
+                maximumPlaintextBytes,
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedContent);
 
         var handler =
             new OpenDocumentHandler(
                 repository.Object,
                 documentReader.Object,
+                new DocumentProcessingOptions
+                {
+                    MaxDecryptedDocumentBytes =
+                        maximumPlaintextBytes
+                },
                 NullLogger<OpenDocumentHandler>.Instance);
 
         // Act
@@ -71,8 +79,8 @@ public sealed class OpenDocumentHandlerTests
             x => x.OpenReadAsync(
                 documentId,
                 document.Sha256Hash,
-                It.IsAny<CancellationToken>(),
-                It.IsAny<long?>()),
+                maximumPlaintextBytes,
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -99,6 +107,7 @@ public sealed class OpenDocumentHandlerTests
             new OpenDocumentHandler(
                 repository.Object,
                 documentReader.Object,
+                new DocumentProcessingOptions(),
                 NullLogger<OpenDocumentHandler>.Instance);
 
         // Act & Assert
@@ -111,8 +120,34 @@ public sealed class OpenDocumentHandlerTests
             x => x.OpenReadAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
-                It.IsAny<CancellationToken>(),
-                It.IsAny<long?>()),
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public void Constructor_WhenMaximumPlaintextBytesIsNotPositive_ThrowsArgumentOutOfRangeException()
+    {
+        // Arrange
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        var processingOptions =
+            new DocumentProcessingOptions
+            {
+                MaxDecryptedDocumentBytes = 0
+            };
+
+        // Act & Assert
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () =>
+                new OpenDocumentHandler(
+                    repository.Object,
+                    documentReader.Object,
+                    processingOptions,
+                    NullLogger<OpenDocumentHandler>.Instance));
     }
 }

@@ -1,8 +1,7 @@
-using System.Security.Cryptography;
-using System.Text;
 using DeskVault.Application;
-using DeskVault.Application.Documents.Queries.SearchDocuments;
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
+using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence;
@@ -13,8 +12,10 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SQLitePCL;
 using Microsoft.Extensions.Logging.Abstractions;
+using SQLitePCL;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -1313,7 +1314,11 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 .ToLowerInvariant();
 
             await using Stream decryptedArtifact =
-                await documentReader.OpenReadAsync(documentId, expectedSourceContentHash, TestContext.Current.CancellationToken);
+                await documentReader.OpenReadAsync(
+                    documentId,
+                    expectedSourceContentHash,
+                    DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                    TestContext.Current.CancellationToken);
 
             using var decryptedMemory =
                 new MemoryStream();

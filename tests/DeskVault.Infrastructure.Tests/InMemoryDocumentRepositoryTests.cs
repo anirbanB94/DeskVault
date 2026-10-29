@@ -1,3 +1,4 @@
+using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Repositories;
 
@@ -203,6 +204,146 @@ public sealed class InMemoryDocumentRepositoryTests
                 repository.UpdateAsync(
                     document,
                     cancellationTokenSource.Token));
+    }
+
+    [Fact]
+    public async Task GetPageAsync_ReturnsRequestedPageInDeterministicImportOrder()
+    {
+        var repository =
+            CreateRepository();
+
+        DateTime importedAt =
+            DateTime.UtcNow;
+
+        Document older =
+            Document.Restore(
+                Guid.NewGuid(),
+                "older.txt",
+                "Older Document",
+                "in-memory-hash-older",
+                "older.dvault",
+                importedAt.AddMinutes(-10),
+                DocumentStatus.Imported);
+
+        Document middle =
+            Document.Restore(
+                Guid.NewGuid(),
+                "middle.txt",
+                "Middle Document",
+                "in-memory-hash-middle",
+                "middle.dvault",
+                importedAt.AddMinutes(-5),
+                DocumentStatus.Imported);
+
+        Document newer =
+            Document.Restore(
+                Guid.NewGuid(),
+                "newer.txt",
+                "Newer Document",
+                "in-memory-hash-newer",
+                "newer.dvault",
+                importedAt,
+                DocumentStatus.Imported);
+
+        await repository.AddAsync(
+            older,
+            TestContext.Current.CancellationToken);
+
+        await repository.AddAsync(
+            newer,
+            TestContext.Current.CancellationToken);
+
+        await repository.AddAsync(
+            middle,
+            TestContext.Current.CancellationToken);
+
+        IReadOnlyList<Document> firstPage =
+            await repository.GetPageAsync(
+                null,
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document firstDocument =
+            Assert.Single(firstPage);
+
+        IReadOnlyList<Document> secondPage =
+            await repository.GetPageAsync(
+                new DocumentPageCursor(
+                    firstDocument.ImportedAt,
+                    firstDocument.Id),
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document secondDocument =
+            Assert.Single(secondPage);
+
+        IReadOnlyList<Document> thirdPage =
+            await repository.GetPageAsync(
+                new DocumentPageCursor(
+                    secondDocument.ImportedAt,
+                    secondDocument.Id),
+                1,
+                TestContext.Current.CancellationToken);
+
+        Document thirdDocument =
+            Assert.Single(thirdPage);
+
+        Assert.Equal(newer.Id, firstDocument.Id);
+        Assert.Equal(middle.Id, secondDocument.Id);
+        Assert.Equal(older.Id, thirdDocument.Id);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(257)]
+    public async Task GetPageAsync_WhenPageSizeIsInvalid_ThrowsArgumentOutOfRangeException(
+        int pageSize)
+    {
+        var repository =
+            CreateRepository();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => repository.GetPageAsync(
+                null,
+                pageSize,
+                TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetPageAsync_WhenCursorHasDefaultTimestamp_ThrowsArgumentException()
+    {
+        var repository =
+            CreateRepository();
+
+        var cursor =
+            new DocumentPageCursor(
+                default,
+                Guid.NewGuid());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => repository.GetPageAsync(
+                cursor,
+                10,
+                TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetPageAsync_WhenCursorHasEmptyDocumentId_ThrowsArgumentException()
+    {
+        var repository =
+            CreateRepository();
+
+        var cursor =
+            new DocumentPageCursor(
+                DateTime.UtcNow,
+                Guid.Empty);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => repository.GetPageAsync(
+                cursor,
+                10,
+                TestContext.Current.CancellationToken));
     }
 
     private static InMemoryDocumentRepository CreateRepository()

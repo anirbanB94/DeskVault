@@ -204,6 +204,102 @@ public sealed class SqliteDocumentRepository
             .ToList();
     }
 
+    public async Task<IReadOnlyList<Document>> GetPageAsync(
+        DocumentPageCursor? cursor,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageSize <= 0 ||
+            pageSize > IDocumentRepository.MaximumDocumentPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        if (cursor is not null &&
+            (cursor.ImportedAt == default ||
+             cursor.DocumentId == Guid.Empty))
+        {
+            throw new ArgumentException(
+                "Document page cursor is invalid.",
+                nameof(cursor));
+        }
+
+        await using var dbContext =
+            await _dbContextFactory.CreateDbContextAsync(
+                cancellationToken);
+
+        IQueryable<DocumentEntity> query =
+            dbContext.Documents.AsNoTracking();
+
+        if (cursor is not null)
+        {
+            DateTime cursorImportedAt = cursor.ImportedAt;
+            string cursorDocumentId = cursor.DocumentId.ToString();
+
+            query = query.Where(document =>
+                document.ImportedAt < cursorImportedAt ||
+                (document.ImportedAt == cursorImportedAt &&
+                 document.Id.ToString().CompareTo(cursorDocumentId) > 0));
+        }
+
+        var entities = await query
+            .OrderByDescending(document => document.ImportedAt)
+            .ThenBy(document => document.Id.ToString())
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        if (entities.Count == 0)
+        {
+            return [];
+        }
+
+        Guid[] documentIds =
+            entities
+                .Select(document => document.Id)
+                .ToArray();
+
+        List<DocumentKnowledgeAvailabilityEntity>
+            knowledgeAvailability =
+                await dbContext.DocumentKnowledgeAvailabilities
+                    .AsNoTracking()
+                    .Where(
+                        availability =>
+                            documentIds.Contains(
+                                availability.DocumentId))
+                    .OrderBy(
+                        availability =>
+                            availability.DocumentId)
+                    .ThenBy(
+                        availability =>
+                            availability.Representation)
+                    .ToListAsync(cancellationToken);
+
+        Dictionary<Guid, IReadOnlyList<DocumentKnowledgeAvailabilityEntity>>
+            knowledgeByDocument =
+                knowledgeAvailability
+                    .GroupBy(
+                        availability =>
+                            availability.DocumentId)
+                    .ToDictionary(
+                        group =>
+                            group.Key,
+                        group =>
+                            (IReadOnlyList<DocumentKnowledgeAvailabilityEntity>)
+                            group.ToList());
+
+        return entities
+            .Select(
+                entity =>
+                    ToDomain(
+                        entity,
+                        knowledgeByDocument.TryGetValue(
+                            entity.Id,
+                            out IReadOnlyList<DocumentKnowledgeAvailabilityEntity>? availability)
+                                ? availability
+                                : []))
+            .ToList();
+    }
+
     public async Task DeleteAsync(
         Guid documentId,
         CancellationToken cancellationToken = default)

@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.OpenDocument;
@@ -269,6 +270,7 @@ public sealed class WorkspaceDocumentPresentationTests
         var openDocumentHandler = new OpenDocumentHandler(
             documentRepository.Object,
             documentReader.Object,
+            new DocumentProcessingOptions(),
             NullLogger<OpenDocumentHandler>.Instance);
 
         var removeDocumentHandler = new RemoveDocumentHandler(
@@ -306,6 +308,7 @@ public sealed class WorkspaceDocumentPresentationTests
         var openDocumentHandler = new OpenDocumentHandler(
             documentRepository.Object,
             documentReader.Object,
+            new DocumentProcessingOptions(),
             NullLogger<OpenDocumentHandler>.Instance);
 
         var removeDocumentHandler = new RemoveDocumentHandler(

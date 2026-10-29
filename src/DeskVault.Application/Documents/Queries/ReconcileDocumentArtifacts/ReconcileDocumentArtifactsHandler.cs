@@ -1,8 +1,11 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Interfaces;
+using DeskVault.Domain.Documents;
 using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 
 namespace DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
@@ -13,6 +16,7 @@ public sealed class ReconcileDocumentArtifactsHandler
     private readonly IDocumentArtifactEnumerator _artifactEnumerator;
     private readonly IDocumentReader _documentReader;
     private readonly IStorageService _storageService;
+    private readonly long _maximumPlaintextBytes;
     private readonly ILogger<ReconcileDocumentArtifactsHandler> _logger;
 
     public ReconcileDocumentArtifactsHandler(
@@ -20,12 +24,24 @@ public sealed class ReconcileDocumentArtifactsHandler
         IDocumentArtifactEnumerator artifactEnumerator,
         IDocumentReader documentReader,
         IStorageService storageService,
+        DocumentProcessingOptions processingOptions,
         ILogger<ReconcileDocumentArtifactsHandler> logger)
     {
+        ArgumentNullException.ThrowIfNull(processingOptions);
+
+        if (processingOptions.MaxDecryptedDocumentBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(processingOptions),
+                "Maximum decrypted document bytes must be greater than zero.");
+        }
+
         _repository = repository;
         _artifactEnumerator = artifactEnumerator;
         _documentReader = documentReader;
         _storageService = storageService;
+        _maximumPlaintextBytes =
+            processingOptions.MaxDecryptedDocumentBytes;
         _logger = logger;
     }
 
@@ -37,27 +53,12 @@ public sealed class ReconcileDocumentArtifactsHandler
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var documents =
-            await _repository.GetAllAsync(
-                cancellationToken);
-
-        var artifactPaths =
-            await _artifactEnumerator.EnumerateAsync(
-                cancellationToken);
-
-        var normalizedArtifactPaths =
-            new HashSet<string>(
-                artifactPaths.Select(Path.GetFullPath),
-                StringComparer.OrdinalIgnoreCase);
-
-        var expectedArtifactPaths =
-            new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
-
         var findings =
             new List<DocumentArtifactReconciliationResult>();
 
-        foreach (var document in documents)
+        await foreach (
+            var document in EnumerateDocumentsInPagesAsync(
+                cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -108,11 +109,42 @@ public sealed class ReconcileDocumentArtifactsHandler
                 continue;
             }
 
-            expectedArtifactPaths.Add(
-                expectedArtifactPath);
+            bool artifactExists;
 
-            if (!normalizedArtifactPaths.Contains(
-                    expectedArtifactPath))
+            try
+            {
+                artifactExists =
+                    _artifactEnumerator.ExistsForDocument(
+                        document.Id);
+            }
+            catch (Exception exception)
+                when (exception is IOException
+                    or UnauthorizedAccessException
+                    or System.Security.SecurityException
+                    or ArgumentException
+                    or NotSupportedException)
+            {
+                _logger.LogSafeFailure(
+                    LogLevel.Warning,
+                    DiagnosticOperationCodes.DocumentArtifactReadValidationFailure,
+                    LogMessages.DocumentArtifactValidationFailed,
+                    exception,
+                    failureCategory: exception is UnauthorizedAccessException
+                        or System.Security.SecurityException
+                            ? DiagnosticFailureCategory.AccessDenied
+                            : DiagnosticFailureCategory.InvalidData);
+
+                findings.Add(
+                    new DocumentArtifactReconciliationResult(
+                        DocumentArtifactReconciliationStatus.UnreadableArtifact,
+                        document.Id,
+                        expectedArtifactPath,
+                        "The expected encrypted artifact could not be accessed to determine whether it is available for validation."));
+
+                continue;
+            }
+
+            if (!artifactExists)
             {
                 findings.Add(
                     new DocumentArtifactReconciliationResult(
@@ -126,11 +158,11 @@ public sealed class ReconcileDocumentArtifactsHandler
 
             try
             {
-                await using var verifiedStream =
-                    await _documentReader.OpenReadAsync(
-                        document.Id,
-                        document.Sha256Hash,
-                        cancellationToken);
+                await _documentReader.ValidateContentHashAsync(
+                    document.Id,
+                    document.Sha256Hash,
+                    _maximumPlaintextBytes,
+                    cancellationToken);
 
                 findings.Add(
                     new DocumentArtifactReconciliationResult(
@@ -155,14 +187,20 @@ public sealed class ReconcileDocumentArtifactsHandler
             catch (Exception exception)
                 when (exception is IOException
                     or UnauthorizedAccessException
+                    or System.Security.SecurityException
                     or InvalidDataException
-                    or CryptographicException)
+                    or CryptographicException
+                    or ResourceLimitExceededException)
             {
                 _logger.LogSafeFailure(
                     LogLevel.Warning,
                     DiagnosticOperationCodes.DocumentArtifactReadValidationFailure,
                     LogMessages.DocumentArtifactValidationFailed,
-                    exception);
+                    exception,
+                    failureCategory: exception is UnauthorizedAccessException
+                        or System.Security.SecurityException
+                            ? DiagnosticFailureCategory.AccessDenied
+                            : null);
 
                 findings.Add(
                     new DocumentArtifactReconciliationResult(
@@ -173,26 +211,118 @@ public sealed class ReconcileDocumentArtifactsHandler
             }
         }
 
-        foreach (var artifactPath in normalizedArtifactPaths)
+        await foreach (
+            string artifactPath in _artifactEnumerator.EnumerateIncrementallyAsync(
+                cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (expectedArtifactPaths.Contains(
-                    artifactPath))
+            string normalizedArtifactPath =
+                Path.GetFullPath(artifactPath);
+
+            Guid? documentId =
+                TryGetDocumentId(normalizedArtifactPath);
+
+            if (documentId.HasValue)
             {
-                continue;
+                Document? document =
+                    await _repository.GetByIdAsync(
+                        documentId.Value,
+                        cancellationToken);
+
+                if (document is not null &&
+                    IsExpectedArtifactPath(
+                        document,
+                        normalizedArtifactPath))
+                {
+                    continue;
+                }
             }
 
             findings.Add(
                 new DocumentArtifactReconciliationResult(
                     DocumentArtifactReconciliationStatus.OrphanedArtifact,
-                    TryGetDocumentId(artifactPath),
-                    artifactPath,
+                    documentId,
+                    normalizedArtifactPath,
                     "The encrypted artifact has no corresponding persisted document record."));
         }
 
         return new ReconcileDocumentArtifactsResult(
             findings);
+    }
+
+    private async IAsyncEnumerable<Document> EnumerateDocumentsInPagesAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        const int pageSize =
+            IDocumentRepository.MaximumDocumentPageSize;
+
+        DocumentPageCursor? cursor = null;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            IReadOnlyList<Document> documents =
+                await _repository.GetPageAsync(
+                    cursor,
+                    pageSize,
+                    cancellationToken);
+
+            if (documents.Count == 0)
+            {
+                yield break;
+            }
+
+            foreach (Document document in documents)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return document;
+            }
+
+            Document lastDocument = documents[^1];
+
+            cursor = new DocumentPageCursor(
+                lastDocument.ImportedAt,
+                lastDocument.Id);
+
+            if (documents.Count < pageSize)
+            {
+                yield break;
+            }
+        }
+    }
+
+    private bool IsExpectedArtifactPath(
+        Document document,
+        string artifactPath)
+    {
+        if (!_storageService.IsOwnedArtifactPath(
+                document.Id,
+                artifactPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            string expectedArtifactPath =
+                Path.GetFullPath(
+                    document.StoredFilePath);
+
+            return string.Equals(
+                expectedArtifactPath,
+                artifactPath,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception)
+            when (exception is ArgumentException
+                or NotSupportedException
+                or PathTooLongException
+                or System.Security.SecurityException)
+        {
+            return false;
+        }
     }
 
     private static Guid? TryGetDocumentId(

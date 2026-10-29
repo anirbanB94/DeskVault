@@ -2052,7 +2052,11 @@ public sealed class ExpandedDocumentFormatIntegrationTests
                     document.StoredFilePath));
 
             await using Stream decryptedStream =
-                await harness.DocumentReader.OpenReadAsync(document.Id, document.Sha256Hash, TestContext.Current.CancellationToken);
+                await harness.DocumentReader.OpenReadAsync(
+                    document.Id,
+                    document.Sha256Hash,
+                    DocumentProcessingOptions.DefaultMaxDecryptedDocumentBytes,
+                    TestContext.Current.CancellationToken);
 
             using var reader =
                 new StreamReader(

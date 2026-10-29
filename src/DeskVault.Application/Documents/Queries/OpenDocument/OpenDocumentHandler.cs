@@ -1,3 +1,4 @@
+using DeskVault.Application.Configurations;
 using DeskVault.Application.Interfaces;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
@@ -10,15 +11,28 @@ public sealed class OpenDocumentHandler
 
     private readonly IDocumentReader _documentReader;
 
+    private readonly long _maximumPlaintextBytes;
+
     private readonly ILogger<OpenDocumentHandler> _logger;
 
     public OpenDocumentHandler(
         IDocumentRepository repository,
         IDocumentReader documentReader,
+        DocumentProcessingOptions processingOptions,
         ILogger<OpenDocumentHandler> logger)
     {
+        ArgumentNullException.ThrowIfNull(processingOptions);
+
+        if (processingOptions.MaxDecryptedDocumentBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(processingOptions),
+                "Maximum decrypted document bytes must be greater than zero.");
+        }
+
         _repository = repository;
         _documentReader = documentReader;
+        _maximumPlaintextBytes = processingOptions.MaxDecryptedDocumentBytes;
         _logger = logger;
     }
 
@@ -44,6 +58,7 @@ public sealed class OpenDocumentHandler
             await _documentReader.OpenReadAsync(
                 document.Id,
                 document.Sha256Hash,
+                _maximumPlaintextBytes,
                 cancellationToken);
 
         _logger.LogInformation(

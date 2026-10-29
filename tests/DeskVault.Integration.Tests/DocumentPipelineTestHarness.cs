@@ -209,6 +209,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                     DataPaths),
                 DocumentReader,
                 _storageService,
+                processingOptions ?? new DocumentProcessingOptions(),
                 NullLogger<ReconcileDocumentArtifactsHandler>.Instance);
 
         RecoveryHandler =

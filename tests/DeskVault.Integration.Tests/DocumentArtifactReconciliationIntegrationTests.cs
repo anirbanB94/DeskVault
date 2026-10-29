@@ -1,6 +1,7 @@
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
+using DeskVault.Application.Interfaces;
 using DeskVault.Domain.Documents;
 using System.Security.Cryptography;
 
@@ -849,6 +850,111 @@ public sealed class DocumentArtifactReconciliationIntegrationTests
         Assert.False(
             File.Exists(
                 canonicalArtifactPath));
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_WhenVaultExceedsPageSizeWithEqualImportTimestamps_ReturnsAllDocumentsMatched()
+    {
+        await using var environment =
+            await TestEnvironment.CreateAsync();
+
+        int documentCount =
+            IDocumentRepository.MaximumDocumentPageSize + 1;
+
+        DateTime importedAt =
+            new(2025, 1, 15, 12, 0, 0, DateTimeKind.Utc);
+
+        List<Guid> expectedDocumentIds =
+            new(documentCount);
+
+        for (int index = 1; index <= documentCount; index++)
+        {
+            Guid documentId =
+                Guid.Parse(
+                    $"00000000-0000-0000-0000-{index:D12}");
+
+            string fileName =
+                $"large-vault-{index:D4}.txt";
+
+            string content =
+                $"DeskVault large-vault reconciliation content {index:D4}.";
+
+            string sourceFilePath =
+                Path.Combine(
+                    environment.RootDirectory,
+                    fileName);
+
+            await File.WriteAllTextAsync(
+                sourceFilePath,
+                content,
+                TestContext.Current.CancellationToken);
+
+            string sha256Hash =
+                Convert.ToHexString(
+                    SHA256.HashData(
+                        System.Text.Encoding.UTF8.GetBytes(
+                            content)));
+
+            await environment.Harness.StoreArtifactAsync(
+                sourceFilePath,
+                documentId,
+                TestContext.Current.CancellationToken);
+
+            string artifactPath =
+                Path.GetFullPath(
+                    Path.Combine(
+                        environment.Harness.DataPaths.DocumentsDirectory,
+                        $"{documentId}.dvault"));
+
+            Document document =
+                Document.Restore(
+                    documentId,
+                    fileName,
+                    $"Large Vault Document {index:D4}",
+                    sha256Hash,
+                    artifactPath,
+                    importedAt,
+                    DocumentStatus.Imported);
+
+            await environment.Harness.PersistDocumentAsync(
+                document);
+
+            expectedDocumentIds.Add(
+                documentId);
+        }
+
+        // Act
+        ReconcileDocumentArtifactsResult result =
+            await environment.Harness.ReconciliationHandler.HandleAsync(
+                new ReconcileDocumentArtifactsQuery(),
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            documentCount,
+            result.Findings.Count);
+
+        Assert.All(
+            result.Findings,
+            finding =>
+                Assert.Equal(
+                    DocumentArtifactReconciliationStatus.Matched,
+                    finding.Status));
+
+        Assert.Equal(
+            documentCount,
+            result.Findings
+                .Select(finding => finding.DocumentId)
+                .Distinct()
+                .Count());
+
+        foreach (Guid documentId in expectedDocumentIds)
+        {
+            Assert.Contains(
+                result.Findings,
+                finding =>
+                    finding.DocumentId == documentId);
+        }
     }
 
     private sealed class TestEnvironment : IAsyncDisposable
