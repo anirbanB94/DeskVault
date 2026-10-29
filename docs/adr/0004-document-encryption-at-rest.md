@@ -229,15 +229,21 @@ Compatibility must not silently claim the stronger guarantees of version 3. The 
 
 ##### Persisted Content-Identity Verification
 
-`Document.Sha256Hash` is the persisted identity of the complete original document content. The encrypted-record reader must not return plaintext as a successfully verified document until all encrypted content has been decrypted and the SHA-256 hash of the complete plaintext has been compared with the expected persisted hash.
+`Document.Sha256Hash` is the persisted identity of the complete original document content. A document must not be reported as successfully opened or as a matched artifact until the complete encrypted record has been processed and the SHA-256 hash of the complete plaintext has been compared with the expected persisted hash.
 
-The `IDocumentReader` contract requires callers to supply the persisted expected SHA-256 value. The Infrastructure implementation performs decryption into a private, non-returned buffer, hashes the complete plaintext, and compares the result with the expected value before returning the stream. If decryption, authentication, hashing, cancellation, or content-identity verification fails, the reader must explicitly overwrite the available backing array of its operation-owned plaintext staging `MemoryStream` with `CryptographicOperations.ZeroMemory` before disposing it, and the read must fail. The reader must also clear superseded staging backing arrays when stream growth replaces them. These guarantees apply to staging arrays owned by the stream and do not guarantee erasure of copies maintained by the runtime or cryptographic provider.
+The `IDocumentReader` contract requires callers to supply the persisted expected SHA-256 value. Ordinary document opening uses `OpenReadAsync` with a finite, positive plaintext-size limit. It decrypts into a private, operation-owned staging stream and returns that stream only after record authentication, record-completeness checks, and the complete plaintext hash comparison succeed.
+The configured limit bounds the number of plaintext bytes staged; the stream's allocated capacity can be higher because of buffer growth. If the limit is exceeded, decryption or authentication fails, cancellation occurs, or the content identity does not match, the read must fail rather than return partial or unverified plaintext.
 
-The hash comparison must be case-insensitive for its hexadecimal representation. The implementation must not expose the calculated hash, expected hash, plaintext, key material, or authentication data through exception messages or diagnostics.
+Artifact reconciliation uses the separate `ValidateContentHashAsync` contract. Infrastructure decrypts the complete artifact into an operation-owned `HashingWriteStream`, which incrementally computes SHA-256 without retaining the complete plaintext. The validation call uses an explicit finite plaintext-size limit, compares the computed digest with the persisted expected hash,
+and completes only after all required encrypted content has been processed. The hash-only validation path must not allocate a full-plaintext staging buffer or return plaintext to the caller.
+
+The hash comparison must be case-insensitive for its hexadecimal representation. The implementation must not expose the calculated hash, expected hash, plaintext, key material, or authentication data through exception messages or diagnostics. If ordinary opening fails after staging allocation, the reader must explicitly overwrite the available backing array of its operation-owned
+plaintext staging `MemoryStream` with `CryptographicOperations.ZeroMemory` before disposing it. `ZeroingMemoryStream` must also clear superseded staging backing arrays when stream growth replaces them. These guarantees apply to staging arrays owned by the stream and do not guarantee erasure of copies maintained by the runtime or cryptographic provider.
 
 A format-2 document truncated at a complete chunk boundary must not be accepted when the resulting plaintext does not match its persisted whole-document hash. The same persisted-content verification applies to format-3 records, in addition to format 3's authenticated final record.
 
-Reconciliation must classify a persisted-content identity mismatch as a content mismatch, not as a valid matched artifact. A cryptographic, format, or I/O failure that prevents the content from being read remains an unreadable-artifact condition. These results must continue to be available to the explicit recovery boundary; an integrity failure must not trigger silent replacement, adoption, or deletion of content.
+Reconciliation must classify a persisted-content identity mismatch as a content mismatch, not as a valid matched artifact. A resource-limit, cryptographic, format, or I/O failure that prevents complete validation remains an unreadable-artifact condition. An incomplete or cancelled validation must never be treated as a successful match; cancellation must remain cancellation.
+An integrity failure must not trigger silent replacement, adoption, or deletion of content, and findings for unrelated artifacts should continue where safe to do so.
 
 The SHA-256 check is a consistency check against persisted metadata, not a replacement for AES-GCM authenticity. It does not make legacy format-2 ciphertext independently bound to the document identity or restore its missing authenticated terminator.
 
@@ -267,7 +273,7 @@ Document-artifact reconciliation is the consistency capability used to compare p
 
 Reconciliation must distinguish artifact identity and ownership before recovery is considered.
 
-A readable artifact is not automatically a valid document artifact. Successful decryption and authentication do not alone establish that the returned plaintext matches the persisted content identity. The document reader verifies the complete plaintext against the persisted SHA-256 value before returning a stream.
+A readable artifact is not automatically a valid document artifact. Successful decryption and authentication do not alone establish that the plaintext matches the persisted content identity. Reconciliation validates the complete plaintext against the persisted SHA-256 value through `IDocumentReader.ValidateContentHashAsync`, using incremental hashing without retaining a full plaintext buffer or returning a plaintext stream. Ordinary opening remains a separate bounded `OpenReadAsync` operation.
 
 For a persisted document, reconciliation may classify the expected artifact as:
 
@@ -346,7 +352,8 @@ The Application layer must not construct or accept physical managed artifact pat
 - Reconciliation and recovery require additional validation and lifecycle handling for inconsistent states.
 - Format 3 introduces a mandatory authenticated final record and stricter framing requirements that legacy artifacts do not contain.
 - Legacy format-2 records cannot independently authenticate document identity, chunk ordering, or whole-document completion using their record structure alone. Their compatibility depends on validating the complete decrypted plaintext against the persisted document SHA-256 identity.
-- The reader must hold the complete decrypted document in a private buffer while verifying the whole-document hash before returning a stream. This introduces memory overhead proportional to the decrypted document size, in addition to applicable resource limits.
+- Ordinary document opening must hold staged plaintext while verifying the whole-document hash before returning a stream; the configured finite limit caps the plaintext length accepted for opening, but not the exact peak memory allocation; stream-capacity growth and transient decryption buffers add overhead. Reconciliation avoids that full-plaintext buffer by hashing decrypted bytes incrementally,
+  although its CPU and I/O work remains proportional to the content processed. Bounded metadata paging and incremental artifact enumeration reduce inventory working-set pressure but do not establish a global time, total-byte, or finding-count budget; reconciliation findings are still accumulated for the caller.
 
 ## Security Considerations
 
@@ -410,7 +417,8 @@ Recovery must not expose document contents or cryptographic material through log
 
 - `DocumentEncryptionService.EncryptCoreAsync` must clear its reusable operation-owned plaintext input buffer after each chunk has been consumed and when the operation exits through an exception or cancellation after allocation.
 - `DocumentEncryptionService.DecryptCoreAsync` must clear each operation-owned plaintext chunk buffer after consumption, including when ciphertext reads, authenticated decryption, destination writes, record validation, or cancellation fail after allocation.
-- `EncryptedDocumentReader.OpenReadAsync` must not return its private staging stream until all record authentication and completeness checks and the complete plaintext SHA-256 comparison succeed. When decryption, authentication, hashing, cancellation, or content-identity verification fails, it must use `CryptographicOperations.ZeroMemory` to overwrite the available backing array of its operation-owned staging `MemoryStream` before disposing it.
+- `EncryptedDocumentReader.OpenReadAsync` must enforce the caller-supplied finite plaintext-size limit and must not return its private staging stream until all record authentication and completeness checks and the complete plaintext SHA-256 comparison succeed. When decryption, authentication, hashing, cancellation, a size-limit failure, or content-identity verification fails after staging allocation, it must use `CryptographicOperations.ZeroMemory` to overwrite the available backing array of its operation-owned staging `MemoryStream` before disposing it.
+- `EncryptedDocumentReader.ValidateContentHashAsync` must enforce its explicit finite plaintext-size limit and decrypt into an operation-owned `HashingWriteStream` that computes SHA-256 incrementally without retaining the complete plaintext. It must dispose its input and hash resources on success, failure, and cancellation; it must not report successful validation until complete content and the expected persisted hash have both been verified. Hash/stream cleanup must not convert cancellation into a content mismatch or an incomplete validation into a matched result.
 - `ZeroingMemoryStream` must clear each operation-owned staging backing array when stream growth replaces it, and clear its current backing array on disposal. The failed reader path explicitly clears the available current backing array before disposal. These guarantees do not extend to copies maintained independently by the runtime or cryptographic provider.
 - Cleanup targets only buffers owned by the operation. It must not clear caller-owned streams or buffers, shared key-service state, or plaintext storage before it has been successfully returned to a caller.
 - Explicit clearing reduces avoidable plaintext retention but does not guarantee erasure of copies maintained by the runtime or cryptographic provider.
@@ -510,13 +518,38 @@ Complete plaintext SHA-256 verification against persisted Document.Sha256Hash
 Readable document stream
 ```
 
-The reader decrypts into a private buffer and verifies the complete plaintext against the caller-supplied persisted document hash before returning that buffer as a readable stream.
-A malformed record, authentication failure, unsupported format, invalid final record, truncated content that fails the persisted hash check, or hash mismatch must prevent a successful read. On failure, the reader clears the available backing array of its operation-owned plaintext staging stream with `CryptographicOperations.ZeroMemory` before disposal. `ZeroingMemoryStream` also clears superseded backing arrays when stream growth replaces them. Successful returns retain the staged plaintext for the caller. These guarantees cover the stream-owned arrays, not copies maintained independently by the runtime or cryptographic provider.
+Ordinary document opening calls `IDocumentReader.OpenReadAsync` with a finite,
+positive plaintext-size limit supplied by the application configuration.
+The reader decrypts into a private, operation-owned staging stream and verifies the
+complete plaintext against the caller-supplied persisted document hash before returning
+a readable stream. A malformed record, authentication failure, unsupported format,
+invalid final record, truncated content that fails the persisted hash check, an exceeded
+size limit, or a hash mismatch must prevent a successful read. On failure after staging
+allocation, the reader clears the available backing array of its staging stream with
+`CryptographicOperations.ZeroMemory` before disposal. `ZeroingMemoryStream` also clears
+superseded backing arrays when stream growth replaces them. Successful returns retain the
+staged plaintext for the caller. These guarantees cover the stream-owned arrays, not copies
+maintained independently by the runtime or cryptographic provider.
+
+Artifact reconciliation does not use `OpenReadAsync` to create or retain a complete plaintext staging buffer.
+It calls `IDocumentReader.ValidateContentHashAsync` with the persisted expected hash and finite maximum plaintext size.
+Infrastructure decrypts the artifact into `HashingWriteStream`, which hashes bytes incrementally and does not retain the plaintext,
+then compares the resulting SHA-256 value with `Document.Sha256Hash`. A hash mismatch becomes `DocumentContentIntegrityException`
+and a content-mismatch finding. A limit, format, authentication, or I/O failure that prevents complete validation becomes an
+unreadable-artifact finding. An artifact is never `Matched` unless complete validation and the expected-hash comparison succeed.
+Per-artifact validation failures do not suppress unrelated findings where safe continuation is possible; cancellation remains
+cancellation and stops the cancelled operation.
 
 Ordinary document opening and lifecycle operations do not trust the persisted physical `StoredFilePath` as the authoritative artifact selector. Reconciliation may inspect that persisted value as evidence, but ownership is validated against the canonical document-owned path.
 
-Artifact reconciliation validates content identity through the document reader's persisted-hash verification contract. The reader computes the SHA-256 hash of the complete plaintext and compares it with the persisted document's `Sha256Hash` before returning a stream. Reconciliation does not calculate the hash again;
-it maps `DocumentContentIntegrityException` to a content-mismatch finding. A readable artifact whose content hash differs is classified as a content mismatch and is preserved rather than treated as a valid match.
+Reconciliation reads persisted document metadata through deterministic keyset-paged repository queries, with a maximum page size of 256 documents,
+and processes the artifact inventory incrementally. The page cursor orders by `ImportedAt` with `DocumentId` as a deterministic tie-breaker.
+The cursor avoids offset-based paging but does not establish a transactionally consistent snapshot across concurrent repository changes.
+Filesystem discovery uses incremental enumeration rather than materializing all artifact paths into an array, and canonical artifact existence is checked per document.
+This bounds intermediate inventory materialization; it does not cap total traversal time, cumulative bytes read, or the number of findings retained in the response.
+
+Recovery re-reads the current document metadata for each orphan immediately before canonical ownership validation and deletion rather than relying on a stale full-repository snapshot.
+This reduces stale-snapshot cleanup risk but does not turn reconciliation into an atomic snapshot of the filesystem and repository.
 
 Recovery is implemented as a separate Application command over reconciliation
 findings. It may clean up a confirmed orphan only when the artifact identity is
@@ -566,8 +599,8 @@ the expected whole-record completion boundary. Exact end-of-file is required aft
 Legacy version-2 documents remain readable under their documented compatibility limits. Because their record framing does not provide an authenticated document identity, chunk sequence, or final marker, compatibility
 reads depend on verifying the complete plaintext against the persisted `Sha256Hash` before returning a stream. This consistency check does not retroactively make the legacy ciphertext provide format-3 guarantees.
 
-Reconciliation verifies ownership and content identity before
-classifying a document/artifact relationship as valid.
+Reconciliation verifies canonical ownership and the complete persisted content identity before classifying a document/artifact relationship as valid. Ordinary reads are bounded by a finite plaintext-size limit; reconciliation uses incremental hash-only
+validation and paged/incremental inventory traversal rather than retaining a full plaintext or full artifact-path snapshot.
 
 Recovery remains a separate, explicit capability. It performs automatic
 cleanup only for sufficiently evidenced canonical orphans and preserves
