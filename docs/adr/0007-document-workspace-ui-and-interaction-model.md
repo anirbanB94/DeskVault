@@ -413,33 +413,16 @@ The renderer should support normal Markdown document features while
 avoiding premature implementation of a general-purpose HTML/browser
 framework.
 
+The renderer will also provide a DeskVault-controlled HTML presentation shell rather than relying on browser-default document styling. The shell owns typography, spacing, code blocks, tables, links, and other Markdown presentation styles. Its CSS variables provide a future seam for DeskVault light, dark, system, and accessibility-oriented themes without changing the renderer contract.
+
 ### Markdown Rendering Security and Presentation Policy
 
 Imported Markdown is treated as untrusted content. The Markdown renderer
-will apply defense-in-depth controls at both the Markdown parsing and
-presentation layers.
+applies defense-in-depth restrictions at the parsing, generated-HTML and
+WebView2 presentation boundaries. Rendering must not turn imported document
+content into unrestricted browser activity.
 
-The initial policy is:
-
-```text
-Raw HTML
-    ↓
-Disabled by Markdig
-
-JavaScript
-    ↓
-Disabled in WebView2
-
-Remote HTTP/HTTPS resources
-    ↓
-Blocked by WebView2 resource interception
-
-External HTTP/HTTPS navigation
-    ↓
-Cancelled unless the renderer policy explicitly permits it
-```
-
-The renderer exposes explicit policy options for future scalability:
+The renderer exposes explicit policy options:
 
 ```text
 MarkdownRenderingOptions
@@ -448,16 +431,149 @@ MarkdownRenderingOptions
 └── AllowExternalNavigation
 ```
 
-The initial application configuration will keep all three disabled.
+The shipped application configuration keeps all three options disabled.
+The options control separate capabilities and must not be treated as
+interchangeable security switches.
 
 `AllowRawHtml` controls whether the Markdig pipeline permits raw HTML.
+When false, the pipeline uses `DisableHtml()` and treats raw HTML as text.
+When true, Markdig preserves configured raw HTML; this is not an HTML
+sanitization guarantee and must not be interpreted as permission to execute
+scripts or other active content.
 
-`AllowExternalResources` controls whether remote HTTP/HTTPS resource requests may be loaded by the WebView2 presentation surface.
+JavaScript remains disabled in WebView2 independently of the raw-HTML option.
 
-`AllowExternalNavigation` controls whether HTTP/HTTPS navigation is permitted by the renderer. Enabling this option must not be interpreted as turning the document viewer into an unrestricted browser. Any future external-navigation experience should remain an explicit, controlled user interaction.
+#### Navigation URI Policy
 
-The renderer will also provide a DeskVault-controlled HTML presentation shell rather than relying on browser-default document styling. The shell owns typography, spacing, code blocks, tables, links, and other Markdown presentation styles. Its CSS variables provide a future seam for DeskVault light, dark, system, and accessibility-oriented themes without changing the renderer contract.
+The renderer permits its internal `about:blank` document navigation target,
+including its fragment form. This internal exception is navigation-only;
+it does not make `about:blank` an approved resource URI.
 
+`NavigateToString` is the renderer-owned initial HTML document-load operation.
+WebView2 reports this initial navigation as a `data:text/html` URI. The
+renderer permits exactly one non-user-initiated, non-redirected
+`data:text/html` navigation while a host-side initial-load token is pending.
+The token is consumed by the first top-level navigation event, including a
+rejected event. This exception applies only to the renderer's initial HTML
+presentation. It does not permit Markdown-originated `data:` navigation or
+`data:` resource loading. All subsequent navigation continues through the
+explicit URI policy.
+
+External navigation is restricted to absolute, well-formed HTTP/HTTPS URIs.
+The URI must have a non-empty host and must not contain embedded user
+information. Relative references, local-file and UNC paths, malformed
+references, unsupported schemes and custom URI schemes are rejected.
+
+External navigation requires both:
+
+- `AllowExternalNavigation` to be enabled; and
+- the initial navigation request to be user-initiated.
+
+A redirect is permitted only when it belongs to a previously authorized
+external navigation identified by the same WebView2 navigation ID. A
+redirect must not independently acquire authorization merely because the
+external-navigation option is enabled.
+
+Enabling `AllowExternalNavigation` therefore does not turn the Markdown
+viewer into an unrestricted browser or permit automatic navigation initiated
+by untrusted document content.
+
+#### Resource URI Policy
+
+Resource loading is independently controlled by `AllowExternalResources`.
+
+Only absolute, well-formed HTTP/HTTPS resource URIs are permitted when that
+option is enabled. The resource URI must have a non-empty host and must not
+contain embedded user information.
+
+The renderer rejects local-file and UNC paths, relative references,
+`about:blank`, data/blob/FTP/mail/custom schemes, malformed URI values and
+other unsupported resource forms.
+
+The navigation and resource switches remain independent. Permitting an
+external navigation must not permit external resources, and permitting
+external resources must not authorize navigation.
+
+#### WebView2 Enforcement
+
+The renderer enforces the policy at the WebView2 boundary:
+
+- JavaScript remains disabled.
+- Document-source resource requests are intercepted through the registered
+  `WebResourceRequested` filter. A request rejected by the resource URI
+  policy receives an HTTP 403 response.
+- `NavigationStarting` applies the explicit URI policy, the user-initiated
+  requirement and same-navigation-ID redirect authorization.
+- Navigation events for created frames are cancelled.
+- New-window requests are handled without opening a new window.
+- External URI-scheme launching is cancelled.
+
+Resource-request interception is a defense-in-depth mechanism, not an
+assumption that every URI scheme or browser activity must raise the same
+resource-request event. The explicit URI policy and generated HTML Content
+Security Policy provide independent restrictions.
+
+#### Generated HTML Content Security Policy
+
+The renderer supplies a DeskVault-controlled HTML presentation shell. Its
+head contains a `Content-Security-Policy` meta element before the
+Markdown-derived content is inserted.
+
+The generated policy establishes the following restrictions:
+
+```text
+default-src 'none'
+script-src 'none'
+object-src 'none'
+frame-src 'none'
+child-src 'none'
+worker-src 'none'
+connect-src 'none'
+base-uri 'none'
+form-action 'none'
+```
+
+Image, font and media sources are restricted to HTTP/HTTPS only when
+`AllowExternalResources` is enabled. Otherwise, those source directives
+use `'none'`.
+
+The presentation shell uses inline styles. Its `style-src` directive
+therefore permits `'unsafe-inline'`; HTTP/HTTPS style sources are added
+only when external resources are enabled.
+
+Enabling external resources does not enable scripts, objects, frames,
+child documents, workers, connections, base-URI changes or form submission.
+CSP remains an independent restriction even when raw HTML is explicitly
+permitted by configuration.
+
+The CSP and WebView2 event controls must remain aligned with the URI policy.
+Future changes to supported schemes, allowed resource types or the default
+policy require corresponding security-policy and regression-test updates.
+
+#### Policy Verification and Runtime Boundary
+
+The policy contract requires regression coverage for:
+
+- raw HTML disabled and explicitly enabled behavior;
+- JavaScript and active-content restrictions;
+- legitimate HTTP/HTTPS navigation and resource cases;
+- local-file, UNC, relative, malformed, encoded and custom-scheme references;
+- independent navigation and resource options;
+- user-initiated external navigation and authorized redirects;
+- frame navigation, new-window requests and external URI-scheme attempts;
+- generated CSP directives and their placement before untrusted content.
+
+Policy-method tests and generated HTML assertions establish the policy
+construction and integration contract; they do not, by themselves, prove
+that every browser-runtime behavior is enforced. Actual WebView2 runtime
+behavior, including CSP enforcement, resource requests, navigation,
+redirects, frames, new windows and external URI schemes, must be verified
+in the integrated security review.
+
+The Markdown renderer remains an implementation detail behind
+`IDocumentContentRenderer`. These security controls do not move WebView2
+into the workspace presenter or view contract and do not change the
+renderer-owned resource lifecycle.
 ### Markdown Renderer Lifecycle and Ownership
 
 The Markdown renderer owns the WebView2 control it creates for document presentation, while the workspace remains responsible for the host control and overall workspace lifecycle.
