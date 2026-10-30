@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using SQLitePCL;
 using System.Security.Cryptography;
 using System.Text;
@@ -24,7 +25,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
     [Fact]
     public async Task PlaintextDatabase_WhenInitializedThroughProductionInfrastructurePath_IsMigratedAndPreserved()
     {
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -415,7 +416,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
     [Fact]
     public async Task PlaintextDatabase_WhenLegacyFailedDocumentHasPersistedChunks_PreservesSearchableKnowledge()
     {
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -610,7 +611,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
     [Fact]
     public async Task EncryptedDatabase_WhenMigrationBackupRemainsAfterPromotion_IsRecoveredAndBackupRemoved()
     {
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -742,10 +743,380 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
     }
 
     [Fact]
+    public async Task PlaintextDatabase_WhenInitializationFailsAfterPromotion_RetainedBackupIsProtectedAndRecoveryCleansIt()
+    {
+        // Arrange
+        SqliteProviderBootstrap.EnsureInitialized();
+
+        Pbi234MigrationTestRoot testRoot =
+            CreatePbi234MigrationTestRoot("MigrationBackup");
+
+        string rootDirectory =
+            testRoot.RootDirectory;
+
+        byte[] databaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        Guid documentId =
+            Guid.NewGuid();
+
+        Guid firstChunkId =
+            Guid.NewGuid();
+
+        Guid secondChunkId =
+            Guid.NewGuid();
+
+        DateTime importedAt =
+            new DateTime(
+                2026,
+                10,
+                20,
+                11,
+                45,
+                0,
+                DateTimeKind.Utc);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        string migrationPath =
+            databasePath + ".migration";
+
+        string migrationBackupPath =
+            databasePath + ".migration-backup";
+
+        const string injectedFailureMessage =
+            "Injected database context creation failure after promotion.";
+
+        CancellationToken cancellationToken =
+            TestContext.Current.CancellationToken;
+
+        try
+        {
+            Directory.CreateDirectory(rootDirectory);
+            AssertPbi234MigrationTestRootAcl(rootDirectory);
+
+            CreatePlaintextDeskVaultDatabase(
+                databasePath,
+                documentId,
+                firstChunkId,
+                secondChunkId,
+                importedAt);
+
+            Assert.True(
+                IsPlaintextSqliteDatabase(databasePath));
+
+            AssertPlaintextDocumentExists(
+                databasePath,
+                documentId);
+
+            Mock<IDbContextFactory<DeskVaultDbContext>> failingFactory =
+                new(MockBehavior.Strict);
+
+            failingFactory
+                .Setup(factory =>
+                    factory.CreateDbContextAsync(
+                        It.IsAny<CancellationToken>()))
+                .Returns((CancellationToken _) =>
+                    Task.FromException<DeskVaultDbContext>(
+                        new InvalidOperationException(
+                            injectedFailureMessage)));
+
+            // Act: allow the production migration and promotion to run,
+            // then fail at the next database-context creation.
+            await using (ServiceProvider failingProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey,
+                    failingFactory.Object))
+            {
+                DatabaseInitializer initializer =
+                    failingProvider.GetRequiredService<DatabaseInitializer>();
+
+                InvalidOperationException exception =
+                    await Assert.ThrowsAsync<InvalidOperationException>(
+                        () => initializer.InitializeAsync(cancellationToken));
+
+                Assert.Equal(
+                    injectedFailureMessage,
+                    exception.Message);
+            }
+
+            failingFactory.Verify(
+                factory => factory.CreateDbContextAsync(
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+
+            // Assert: promotion succeeded and the previous plaintext
+            // database remains available as a recovery artifact.
+            Assert.True(
+                File.Exists(databasePath));
+
+            Assert.False(
+                File.Exists(migrationPath));
+
+            Assert.True(
+                File.Exists(migrationBackupPath));
+
+            Assert.False(
+                IsPlaintextSqliteDatabase(databasePath));
+
+            Assert.True(
+                IsPlaintextSqliteDatabase(migrationBackupPath));
+
+            AssertPlaintextDocumentExists(
+                migrationBackupPath,
+                documentId);
+
+            AssertEncryptedDocumentExists(
+                databasePath,
+                documentId,
+                databaseKey);
+
+            // Check explicit and inherited ACLs on the real backup produced
+            // by File.Replace, while it is retained for recovery.
+            var backupRules =
+                AuxiliaryArtifactAclAssertions.CaptureAccessRules(
+                    migrationBackupPath,
+                    isDirectory: false);
+
+            AuxiliaryArtifactAclAssertions
+                .AssertProtectedArtifactAcl(
+                    backupRules,
+                    "retained plaintext migration backup",
+                    migrationBackupPath);
+
+            // Act: normal startup recovery with the real infrastructure.
+            await using (ServiceProvider recoveryProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey))
+            {
+                DatabaseInitializer recoveryInitializer =
+                    recoveryProvider.GetRequiredService<DatabaseInitializer>();
+
+                await recoveryInitializer.InitializeAsync(
+                    cancellationToken);
+            }
+
+            // Assert: successful retry retains the encrypted database/data
+            // and cleans up the migration recovery artifacts.
+            Assert.True(
+                File.Exists(databasePath));
+
+            Assert.False(
+                IsPlaintextSqliteDatabase(databasePath));
+
+            Assert.False(
+                File.Exists(migrationPath));
+
+            Assert.False(
+                File.Exists(migrationBackupPath));
+
+            AssertEncryptedDocumentExists(
+                databasePath,
+                documentId,
+                databaseKey);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                databaseKey);
+
+            DeletePbi234MigrationTestRoot(testRoot);
+        }
+    }
+
+    [Fact]
+    public async Task PlaintextDatabase_WhenMigrationIsCancelledAfterStagingCopy_StagingRemainsProtectedAndRecoveryCleansIt()
+    {
+        // Arrange
+        SqliteProviderBootstrap.EnsureInitialized();
+
+        Pbi234MigrationTestRoot testRoot =
+            CreatePbi234MigrationTestRoot("CancelledMigration");
+
+        string rootDirectory =
+            testRoot.RootDirectory;
+
+        byte[] databaseKey =
+            RandomNumberGenerator.GetBytes(32);
+
+        Guid documentId = Guid.NewGuid();
+        Guid firstChunkId = Guid.NewGuid();
+        Guid secondChunkId = Guid.NewGuid();
+
+        DateTime importedAt =
+            new DateTime(
+                2026,
+                10,
+                20,
+                11,
+                45,
+                0,
+                DateTimeKind.Utc);
+
+        string databasePath =
+            Path.Combine(
+                rootDirectory,
+                "DeskVault.db");
+
+        string migrationPath =
+            databasePath + ".migration";
+
+        string migrationBackupPath =
+            databasePath + ".migration-backup";
+
+        using var cancellationSource =
+            new CancellationTokenSource();
+
+        Mock<IDatabaseEncryptionMigrator> cancelingMigrator =
+            new(MockBehavior.Strict);
+
+        cancelingMigrator
+            .Setup(migrator =>
+                migrator.MigrateAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<byte[]>(),
+                    It.IsAny<CancellationToken>()))
+            .Returns((
+                string migrationDatabasePath,
+                byte[] migrationDatabaseKey,
+                CancellationToken token) =>
+            {
+                cancellationSource.Cancel();
+
+                return Task.FromCanceled(token);
+            });
+
+        try
+        {
+            Directory.CreateDirectory(rootDirectory);
+            AssertPbi234MigrationTestRootAcl(rootDirectory);
+
+            CreatePlaintextDeskVaultDatabase(
+                databasePath,
+                documentId,
+                firstChunkId,
+                secondChunkId,
+                importedAt);
+
+            Assert.True(
+                IsPlaintextSqliteDatabase(databasePath));
+
+            AssertPlaintextDocumentExists(
+                databasePath,
+                documentId);
+
+            // Act: cancel from the migrator, after production code
+            // has created the plaintext staging copy.
+            await using (ServiceProvider cancellingProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey,
+                    databaseEncryptionMigratorOverride:
+                        cancelingMigrator.Object))
+            {
+                DatabaseInitializer initializer =
+                    cancellingProvider.GetRequiredService<DatabaseInitializer>();
+
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    () => initializer.InitializeAsync(
+                        cancellationSource.Token));
+            }
+
+            cancelingMigrator.Verify(
+                migrator => migrator.MigrateAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<byte[]>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+
+            // Assert: cancellation preserves the canonical plaintext database
+            // and its staging copy. Neither may be treated as encrypted.
+            Assert.True(
+                File.Exists(databasePath));
+
+            Assert.True(
+                File.Exists(migrationPath));
+
+            Assert.False(
+                File.Exists(migrationBackupPath));
+
+            Assert.True(
+                IsPlaintextSqliteDatabase(databasePath));
+
+            Assert.True(
+                IsPlaintextSqliteDatabase(migrationPath));
+
+            AssertPlaintextDocumentExists(
+                databasePath,
+                documentId);
+
+            AssertPlaintextDocumentExists(
+                migrationPath,
+                documentId);
+
+            // Verify the retained staging file's explicit and inherited ACLs.
+            var migrationRules =
+                AuxiliaryArtifactAclAssertions.CaptureAccessRules(
+                    migrationPath,
+                    isDirectory: false);
+
+            AuxiliaryArtifactAclAssertions
+                .AssertProtectedArtifactAcl(
+                    migrationRules,
+                    "cancelled plaintext migration staging file",
+                    migrationPath);
+
+            // Act: retry with the real production infrastructure.
+            await using (ServiceProvider recoveryProvider =
+                BuildServiceProvider(
+                    rootDirectory,
+                    databaseKey))
+            {
+                DatabaseInitializer recoveryInitializer =
+                    recoveryProvider.GetRequiredService<DatabaseInitializer>();
+
+                await recoveryInitializer.InitializeAsync(
+                    TestContext.Current.CancellationToken);
+            }
+
+            // Assert: recovery promotes an encrypted database, preserves data,
+            // and cleans the staging and backup artifacts.
+            Assert.True(
+                File.Exists(databasePath));
+
+            Assert.False(
+                IsPlaintextSqliteDatabase(databasePath));
+
+            Assert.False(
+                File.Exists(migrationPath));
+
+            Assert.False(
+                File.Exists(migrationBackupPath));
+
+            AssertEncryptedDocumentExists(
+                databasePath,
+                documentId,
+                databaseKey);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(
+                databaseKey);
+
+            DeletePbi234MigrationTestRoot(testRoot);
+        }
+    }
+
+    [Fact]
     public async Task PlaintextDatabase_WhenInitializedConcurrentlyThroughProductionInfrastructurePath_PreservesConsistentFinalState()
     {
         // Arrange
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -891,7 +1262,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
     public async Task ExistingWorkspaceEraVault_WhenUpgradedThroughProductionInfrastructurePath_PreservesExistingDataAndEstablishesCurrentSchema()
     {
         // Arrange
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -1349,7 +1720,7 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
     public async Task ExistingWorkspaceEraVault_WhenSchemaMigrationFails_RetryCompletesUpgradeSafely()
     {
         // Arrange
-        SQLitePCL.Batteries_V2.Init();
+        SqliteProviderBootstrap.EnsureInitialized();
 
         string rootDirectory =
             CreateTemporaryDirectory();
@@ -2243,7 +2614,9 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
 
     private static ServiceProvider BuildServiceProvider(
         string rootDirectory,
-        byte[] databaseKey)
+        byte[] databaseKey,
+        IDbContextFactory<DeskVaultDbContext>? dbContextFactoryOverride = null,
+        IDatabaseEncryptionMigrator? databaseEncryptionMigratorOverride = null)
     {
         var services =
             new ServiceCollection();
@@ -2273,6 +2646,18 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
         services.AddSingleton<IDatabaseEncryptionKeyProvisioningService>(
             testDatabaseEncryptionKeyService);
 
+        if (dbContextFactoryOverride is not null)
+        {
+            services.AddSingleton<IDbContextFactory<DeskVaultDbContext>>(
+                dbContextFactoryOverride);
+        }
+
+        if (databaseEncryptionMigratorOverride is not null)
+        {
+            services.AddSingleton<IDatabaseEncryptionMigrator>(
+                databaseEncryptionMigratorOverride);
+        }
+
         return services.BuildServiceProvider();
     }
 
@@ -2299,6 +2684,68 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                header.AsSpan()
                    .SequenceEqual(
                        "SQLite format 3\0"u8);
+    }
+
+    private sealed record Pbi234MigrationTestRoot(
+        string ApplicationRootDirectory,
+        string RootDirectory,
+        bool ApplicationRootExisted);
+
+    private static Pbi234MigrationTestRoot CreatePbi234MigrationTestRoot(
+        string scenario)
+    {
+        string localApplicationData =
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData);
+
+        Assert.False(
+            string.IsNullOrWhiteSpace(localApplicationData),
+            "LocalApplicationData must resolve to a valid directory.");
+
+        string applicationRootDirectory =
+            new DeskVaultDataPaths().RootDirectory;
+
+        Assert.Equal(
+            Path.GetFullPath(
+                Path.Combine(localApplicationData, "DeskVault")),
+            Path.GetFullPath(applicationRootDirectory));
+
+        return new Pbi234MigrationTestRoot(
+            applicationRootDirectory,
+            Path.Combine(
+                applicationRootDirectory,
+                $"PBI234-{scenario}-{Guid.NewGuid():N}"),
+            Directory.Exists(applicationRootDirectory));
+    }
+
+    private static void AssertPbi234MigrationTestRootAcl(
+        string rootDirectory)
+    {
+        var rootRules =
+            AuxiliaryArtifactAclAssertions.CaptureAccessRules(
+                rootDirectory,
+                isDirectory: true);
+
+        AuxiliaryArtifactAclAssertions.AssertProtectedArtifactAcl(
+            rootRules,
+            "application-root child containing migration test artifacts",
+            rootDirectory);
+    }
+
+    private static void DeletePbi234MigrationTestRoot(
+        Pbi234MigrationTestRoot testRoot)
+    {
+        DeleteTemporaryDirectory(testRoot.RootDirectory);
+
+        // Remove the parent only if this test had to create it and it is
+        // still empty. Never remove a pre-existing application data root.
+        if (!testRoot.ApplicationRootExisted &&
+            Directory.Exists(testRoot.ApplicationRootDirectory) &&
+            !Directory.EnumerateFileSystemEntries(
+                testRoot.ApplicationRootDirectory).Any())
+        {
+            Directory.Delete(testRoot.ApplicationRootDirectory);
+        }
     }
 
     private static string CreateTemporaryDirectory()

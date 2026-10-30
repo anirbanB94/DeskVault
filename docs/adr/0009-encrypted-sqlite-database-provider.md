@@ -140,6 +140,23 @@ SQLite3MC / SQLitePCLRaw
 Encrypted SQLite Database
 ```
 
+### SQLite Provider Initialization Lifetime
+
+SQLite3MC provider initialization is process-wide and must be completed once
+before the application uses provider-backed SQLite connections. Infrastructure
+owns this initialization through `SqliteProviderBootstrap.EnsureInitialized()`.
+The bootstrap uses a shared `Lazy<bool>` with
+`LazyThreadSafetyMode.ExecutionAndPublication`, so concurrent callers share one
+initialization rather than repeatedly invoking `SQLitePCL.Batteries_V2.Init()`.
+
+This is a provider-lifetime invariant, not a change to provider selection or the
+EF Core persistence boundary. Reinitializing the provider after database
+connections have registered SQLite scalar-function callbacks can replace
+provider-global state associated with those callbacks. The provider bootstrap
+must therefore remain centralized; production composition and Infrastructure
+test fixtures must call `EnsureInitialized()` rather than invoke
+`Batteries_V2.Init()` independently.
+
 Database encryption remains an Infrastructure concern. The Application and
 Domain layers will not perform SQLite encryption operations directly and
 will not depend on SQLite3MC-specific implementation details.
@@ -512,6 +529,11 @@ use the same Entity Framework Core and `IDbContextFactory` abstractions.
 Database encryption is isolated inside Infrastructure, preserving the
 existing Application and Domain boundaries.
 
+SQLite3MC initialization is centralized as a once-per-process provider
+lifecycle invariant. Repeated callers share the completed initialization
+and must not independently reinitialize provider-global state after
+connections and scalar-function callbacks are in use.
+
 Database key management becomes an explicit security responsibility
 separate from the database provider itself.
 
@@ -636,6 +658,8 @@ The provider-level migration spike established the following behavior:
   before EF Core migrations.
 - SQLite runtime artifacts are checked to ensure persisted plaintext
   database content is not unintentionally exposed.
+- `SqliteProviderBootstrapTests.EnsureInitialized_WhenCalledRepeatedly_PreservesScalarFunctionCallbacksForOpenConnections` verifies that repeated calls through the shared bootstrap do not break a registered scalar-function callback on an open connection after forced garbage collection.
+- Production dependency injection and Infrastructure test fixtures use the centralized provider bootstrap; the direct `SQLitePCL.Batteries_V2.Init()` call is limited to `SqliteProviderBootstrap`.
 - The supported Windows `win-x64` Release publish was verified to include
   the SQLite3MC native runtime and provider dependencies.
 - The production Infrastructure registration uses the encrypted
@@ -645,7 +669,6 @@ The provider-level migration spike established the following behavior:
   operation code, source-controlled safe message, and exception-type
   classification; raw exception details are not forwarded to the normal
   logger. Startup failures are presented through a fixed generic message.
-  Cross-cutting sink/source regression evidence is owned by #232.
 - `VaultInitializationCoordinator` provides same-vault cross-process
   exclusion using an exclusive filesystem handle on the vault-scoped
   initialization lock.
