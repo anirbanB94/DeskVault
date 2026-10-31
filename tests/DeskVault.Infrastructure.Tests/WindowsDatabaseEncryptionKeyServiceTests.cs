@@ -110,6 +110,521 @@ public sealed class WindowsDatabaseEncryptionKeyServiceTests
     }
 
     [Fact]
+    public async Task GetOrCreateKeyAsync_WhenExistingKeyReadEncountersSharingViolation_RetriesAndReturnsAuthoritativeKey()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        EncryptionKeyMaterial? originalKey = null;
+        EncryptionKeyMaterial? retrievedKey = null;
+        byte[]? persistedArtifactBeforeRead = null;
+        byte[]? persistedArtifactAfterRead = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(rootDirectory);
+
+            var provisioningService =
+                CreateService(dataPaths);
+
+            originalKey =
+                await provisioningService.GetOrCreateKeyAsync(
+                    TestContext.Current.CancellationToken);
+
+            string keyFilePath =
+                GetDatabaseKeyFilePath(dataPaths);
+
+            persistedArtifactBeforeRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath,
+                    TestContext.Current.CancellationToken);
+
+            int readAttempts = 0;
+
+            var service =
+                new WindowsDatabaseEncryptionKeyService(
+                    dataPaths,
+                    NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                    beforeKeyPublicationAsync: null,
+                    readProtectedKeyFileAsync: async (path, cancellationToken) =>
+                    {
+                        if (Interlocked.Increment(ref readAttempts) == 1)
+                        {
+                            throw new IOException(
+                                "Simulated transient sharing violation.",
+                                unchecked((int)0x80070020));
+                        }
+
+                        return await File.ReadAllBytesAsync(
+                            path,
+                            cancellationToken);
+                    });
+
+            // Act
+            retrievedKey =
+                await service.GetOrCreateKeyAsync(
+                    TestContext.Current.CancellationToken);
+
+            persistedArtifactAfterRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath,
+                    TestContext.Current.CancellationToken);
+
+            // Assert
+            Assert.Equal(2, readAttempts);
+
+            Assert.Equal(
+                originalKey.KeyBytes,
+                retrievedKey.KeyBytes);
+
+            Assert.Equal(
+                originalKey.KeyId,
+                retrievedKey.KeyId);
+
+            Assert.Equal(
+                originalKey.KeyVersion,
+                retrievedKey.KeyVersion);
+
+            Assert.Equal(
+                persistedArtifactBeforeRead,
+                persistedArtifactAfterRead);
+
+            Assert.Equal(
+                new[] { keyFilePath },
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "database.key.*.tmp"));
+        }
+        finally
+        {
+            if (originalKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    originalKey.KeyBytes);
+            }
+
+            if (retrievedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    retrievedKey.KeyBytes);
+            }
+
+            if (persistedArtifactBeforeRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedArtifactBeforeRead);
+            }
+
+            if (persistedArtifactAfterRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedArtifactAfterRead);
+            }
+
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenPublicationLoserReadEncountersSharingViolation_RetriesAndReturnsAuthoritativeKey()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        EncryptionKeyMaterial? authoritativeKey = null;
+        EncryptionKeyMaterial? retrievedKey = null;
+        byte[]? persistedArtifactBeforeRead = null;
+        byte[]? persistedArtifactAfterRead = null;
+
+        int publicationHookCalls = 0;
+        int readAttempts = 0;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(rootDirectory);
+
+            string keyFilePath =
+                GetDatabaseKeyFilePath(dataPaths);
+
+            var service =
+                new WindowsDatabaseEncryptionKeyService(
+                    dataPaths,
+                    NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                    beforeKeyPublicationAsync: async cancellationToken =>
+                    {
+                        Interlocked.Increment(
+                            ref publicationHookCalls);
+
+                        // Simulate another initializer winning publication
+                        // after this service has already created its candidate.
+                        authoritativeKey =
+                            await CreateService(dataPaths)
+                                .GetOrCreateKeyAsync(cancellationToken);
+
+                        persistedArtifactBeforeRead =
+                            await File.ReadAllBytesAsync(
+                                keyFilePath,
+                                cancellationToken);
+                    },
+                    readProtectedKeyFileAsync: async (path, cancellationToken) =>
+                    {
+                        if (Interlocked.Increment(ref readAttempts) == 1)
+                        {
+                            throw new IOException(
+                                "Simulated transient sharing violation.",
+                                unchecked((int)0x80070020));
+                        }
+
+                        return await File.ReadAllBytesAsync(
+                            path,
+                            cancellationToken);
+                    });
+
+            // Act
+            retrievedKey =
+                await service.GetOrCreateKeyAsync(
+                    TestContext.Current.CancellationToken);
+
+            persistedArtifactAfterRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath,
+                    TestContext.Current.CancellationToken);
+
+            // Assert
+            Assert.Equal(1, publicationHookCalls);
+            Assert.Equal(2, readAttempts);
+
+            Assert.NotNull(authoritativeKey);
+
+            Assert.Equal(
+                authoritativeKey.KeyBytes,
+                retrievedKey.KeyBytes);
+
+            Assert.Equal(
+                authoritativeKey.KeyId,
+                retrievedKey.KeyId);
+
+            Assert.Equal(
+                authoritativeKey.KeyVersion,
+                retrievedKey.KeyVersion);
+
+            Assert.Equal(
+                persistedArtifactBeforeRead,
+                persistedArtifactAfterRead);
+
+            Assert.Equal(
+                new[] { keyFilePath },
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "database.key.*.tmp"));
+        }
+        finally
+        {
+            if (authoritativeKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    authoritativeKey.KeyBytes);
+            }
+
+            if (retrievedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    retrievedKey.KeyBytes);
+            }
+
+            if (persistedArtifactBeforeRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedArtifactBeforeRead);
+            }
+
+            if (persistedArtifactAfterRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedArtifactAfterRead);
+            }
+
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenCancelledDuringSharingViolationRetry_StopsRetryAndPreservesKey()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        EncryptionKeyMaterial? originalKey = null;
+        EncryptionKeyMaterial? verifiedKey = null;
+
+        byte[]? persistedArtifactBeforeRead = null;
+        byte[]? persistedArtifactAfterRead = null;
+
+        int readAttempts = 0;
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(rootDirectory);
+
+            var provisioningService =
+                CreateService(dataPaths);
+
+            originalKey =
+                await provisioningService.GetOrCreateKeyAsync(
+                    TestContext.Current.CancellationToken);
+
+            string keyFilePath =
+                GetDatabaseKeyFilePath(dataPaths);
+
+            persistedArtifactBeforeRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath,
+                    TestContext.Current.CancellationToken);
+
+            var service =
+                new WindowsDatabaseEncryptionKeyService(
+                    dataPaths,
+                    NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                    beforeKeyPublicationAsync: null,
+                    readProtectedKeyFileAsync: (_, _) =>
+                    {
+                        Interlocked.Increment(ref readAttempts);
+
+                        // Cancel while the production retry delay is pending.
+                        cancellationTokenSource.CancelAfter(
+                            TimeSpan.FromMilliseconds(50));
+
+                        return Task.FromException<byte[]>(
+                            new IOException(
+                                "Simulated transient sharing violation.",
+                                unchecked((int)0x80070020)));
+                    });
+
+            // Act
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () =>
+                    service.GetOrCreateKeyAsync(
+                        cancellationTokenSource.Token));
+
+            persistedArtifactAfterRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath,
+                    TestContext.Current.CancellationToken);
+
+            // Verify that strict retrieval still returns the original key.
+            verifiedKey =
+                await CreateService(dataPaths).GetKeyAsync(
+                    TestContext.Current.CancellationToken);
+
+            // Assert
+            Assert.Equal(1, readAttempts);
+
+            Assert.Equal(
+                originalKey.KeyBytes,
+                verifiedKey.KeyBytes);
+
+            Assert.Equal(
+                originalKey.KeyId,
+                verifiedKey.KeyId);
+
+            Assert.Equal(
+                originalKey.KeyVersion,
+                verifiedKey.KeyVersion);
+
+            Assert.Equal(
+                persistedArtifactBeforeRead,
+                persistedArtifactAfterRead);
+
+            Assert.Equal(
+                new[] { keyFilePath },
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "database.key.*.tmp"));
+        }
+        finally
+        {
+            if (originalKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    originalKey.KeyBytes);
+            }
+
+            if (verifiedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    verifiedKey.KeyBytes);
+            }
+
+            if (persistedArtifactBeforeRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedArtifactBeforeRead);
+            }
+
+            if (persistedArtifactAfterRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedArtifactAfterRead);
+            }
+
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task GetOrCreateKeyAsync_WhenExistingKeyReadEncountersNonSharingIOException_FailsWithoutRetryingOrModifyingKey()
+    {
+        // Arrange
+        string rootDirectory =
+            CreateTemporaryDirectory();
+
+        EncryptionKeyMaterial? originalKey = null;
+        EncryptionKeyMaterial? verifiedKey = null;
+
+        byte[]? persistedArtifactBeforeRead = null;
+        byte[]? persistedArtifactAfterRead = null;
+
+        try
+        {
+            var dataPaths =
+                new DeskVaultDataPaths(rootDirectory);
+
+            var provisioningService =
+                CreateService(dataPaths);
+
+            originalKey =
+                await provisioningService.GetOrCreateKeyAsync(
+                    TestContext.Current.CancellationToken);
+
+            string keyFilePath =
+                GetDatabaseKeyFilePath(dataPaths);
+
+            persistedArtifactBeforeRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath,
+                    TestContext.Current.CancellationToken);
+
+            int readAttempts = 0;
+
+            var expectedException =
+                new IOException(
+                    "Simulated non-sharing I/O failure.",
+                    unchecked((int)0x80070005));
+
+            var service =
+                new WindowsDatabaseEncryptionKeyService(
+                    dataPaths,
+                    NullLogger<WindowsDatabaseEncryptionKeyService>.Instance,
+                    beforeKeyPublicationAsync: null,
+                    readProtectedKeyFileAsync: (_, _) =>
+                    {
+                        Interlocked.Increment(ref readAttempts);
+
+                        return Task.FromException<byte[]>(
+                            expectedException);
+                    });
+
+            // Act
+            IOException exception =
+                await Assert.ThrowsAsync<IOException>(
+                    () =>
+                        service.GetOrCreateKeyAsync(
+                            TestContext.Current.CancellationToken));
+
+            persistedArtifactAfterRead =
+                await File.ReadAllBytesAsync(
+                    keyFilePath,
+                    TestContext.Current.CancellationToken);
+
+            verifiedKey =
+                await CreateService(dataPaths).GetKeyAsync(
+                    TestContext.Current.CancellationToken);
+
+            // Assert
+            Assert.Same(
+                expectedException,
+                exception);
+
+            Assert.Equal(1, readAttempts);
+
+            Assert.Equal(
+                originalKey.KeyBytes,
+                verifiedKey.KeyBytes);
+
+            Assert.Equal(
+                originalKey.KeyId,
+                verifiedKey.KeyId);
+
+            Assert.Equal(
+                originalKey.KeyVersion,
+                verifiedKey.KeyVersion);
+
+            Assert.Equal(
+                persistedArtifactBeforeRead,
+                persistedArtifactAfterRead);
+
+            Assert.Equal(
+                new[] { keyFilePath },
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory));
+
+            Assert.Empty(
+                Directory.GetFiles(
+                    dataPaths.SecurityDirectory,
+                    "database.key.*.tmp"));
+        }
+        finally
+        {
+            if (originalKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    originalKey.KeyBytes);
+            }
+
+            if (verifiedKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    verifiedKey.KeyBytes);
+            }
+
+            if (persistedArtifactBeforeRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedArtifactBeforeRead);
+            }
+
+            if (persistedArtifactAfterRead is not null)
+            {
+                CryptographicOperations.ZeroMemory(
+                    persistedArtifactAfterRead);
+            }
+
+            DeleteTemporaryDirectory(rootDirectory);
+        }
+    }
+
+    [Fact]
     public async Task GetOrCreateKeyAsync_CreatesSecurityDirectory()
     {
         string rootDirectory =

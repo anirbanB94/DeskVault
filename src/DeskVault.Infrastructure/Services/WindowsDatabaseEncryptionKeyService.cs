@@ -12,11 +12,14 @@ public sealed class WindowsDatabaseEncryptionKeyService :
 {
     private const string KeyFileName = "database.key";
     private const int KeySize = 32;
+    private const int SharingViolationRetryDelayMilliseconds = 100;
+    private const int SharingViolationWin32Error = 32;
 
     private readonly DeskVaultDataPaths _dataPaths;
     private readonly ILogger<WindowsDatabaseEncryptionKeyService> _logger;
     private readonly Func<CancellationToken, Task>? _beforeKeyPublicationAsync;
     private readonly IKeyCandidateFileOperations _candidateFileOperations;
+    private readonly Func<string, CancellationToken, Task<byte[]>> _readProtectedKeyFileAsync;
 
     public WindowsDatabaseEncryptionKeyService(
         DeskVaultDataPaths dataPaths,
@@ -25,7 +28,8 @@ public sealed class WindowsDatabaseEncryptionKeyService :
             dataPaths,
             logger,
             beforeKeyPublicationAsync: null,
-            candidateFileOperations: null)
+            candidateFileOperations: null,
+            readProtectedKeyFileAsync: null)
     {
     }
 
@@ -36,13 +40,16 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         DeskVaultDataPaths dataPaths,
         ILogger<WindowsDatabaseEncryptionKeyService> logger,
         Func<CancellationToken, Task>? beforeKeyPublicationAsync,
-        IKeyCandidateFileOperations? candidateFileOperations = null)
+        IKeyCandidateFileOperations? candidateFileOperations = null,
+        Func<string, CancellationToken, Task<byte[]>>? readProtectedKeyFileAsync = null)
     {
         _dataPaths = dataPaths;
         _logger = logger;
         _beforeKeyPublicationAsync = beforeKeyPublicationAsync;
         _candidateFileOperations =
             candidateFileOperations ?? new KeyCandidateFileOperations();
+        _readProtectedKeyFileAsync =
+            readProtectedKeyFileAsync ?? File.ReadAllBytesAsync;
     }
 
     public async Task<EncryptionKeyMaterial> GetOrCreateKeyAsync(
@@ -73,7 +80,7 @@ public sealed class WindowsDatabaseEncryptionKeyService :
 
             if (File.Exists(keyFilePath))
             {
-                return await ReadExistingKeyAsync(
+                return await ReadExistingKeyForProvisioningAsync(
                     keyFilePath,
                     cancellationToken);
             }
@@ -147,7 +154,7 @@ public sealed class WindowsDatabaseEncryptionKeyService :
 
                 candidateKey = null;
 
-                return await ReadExistingKeyAsync(
+                return await ReadExistingKeyForProvisioningAsync(
                     keyFilePath,
                     cancellationToken);
             }
@@ -256,15 +263,54 @@ public sealed class WindowsDatabaseEncryptionKeyService :
         }
     }
 
+    private async Task<EncryptionKeyMaterial> ReadExistingKeyForProvisioningAsync(
+        string keyFilePath,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            byte[] protectedKeyFromFile;
+
+            try
+            {
+                protectedKeyFromFile =
+                    await _readProtectedKeyFileAsync(
+                        keyFilePath,
+                        cancellationToken);
+            }
+            catch (IOException exception)
+                when (IsSharingViolation(exception))
+            {
+                await Task.Delay(
+                    SharingViolationRetryDelayMilliseconds,
+                    cancellationToken);
+
+                continue;
+            }
+
+            return DecodeExistingKey(
+                protectedKeyFromFile);
+        }
+    }
+
     private async Task<EncryptionKeyMaterial> ReadExistingKeyAsync(
         string keyFilePath,
         CancellationToken cancellationToken)
     {
         byte[] protectedKeyFromFile =
-            await File.ReadAllBytesAsync(
+            await _readProtectedKeyFileAsync(
                 keyFilePath,
                 cancellationToken);
 
+        return DecodeExistingKey(
+            protectedKeyFromFile);
+    }
+
+    private EncryptionKeyMaterial DecodeExistingKey(
+        byte[] protectedKeyFromFile)
+    {
         byte[]? keyPayload = null;
 
         try
@@ -297,5 +343,13 @@ public sealed class WindowsDatabaseEncryptionKeyService :
                     keyPayload);
             }
         }
+    }
+
+    private static bool IsSharingViolation(
+        IOException exception)
+    {
+        return
+            (exception.HResult & 0xFFFF) ==
+            SharingViolationWin32Error;
     }
 }
