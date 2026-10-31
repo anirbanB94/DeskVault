@@ -220,7 +220,34 @@ the tested construction exception does not contain the Base64-encoded key.
 
 ### Atomic Database Encryption Key Provisioning
 
-`IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync` is the provisioning-capable operation for the database encryption key, not a replacement, rotation, repair, or recovery API. `DatabaseInitializer` may use this capability only when the initialization lifecycle has explicitly authorized provisioning for a new database or for an existing plaintext database undergoing migration to the encrypted format. The retrieval-only `IDatabaseEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit or expose provisioning capability. When the canonical `Security\database.key` artifact already exists, the provisioning service retrieves and validates the existing key rather than generating a replacement. An existing encrypted database must use strict retrieval of its established key; a missing, unreadable, invalid, or unprotectable key must fail startup without provisioning a new database key.
+`IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync` is the
+provisioning-capable operation for the database encryption key, not a
+replacement, rotation, repair, or recovery API. `DatabaseInitializer`
+may use this capability only when the initialization lifecycle has
+explicitly authorized provisioning for a new database or for an existing
+plaintext database undergoing migration to the encrypted format. The
+retrieval-only `IDatabaseEncryptionKeyService` exposes only
+`GetKeyAsync()` and does not inherit or expose provisioning capability.
+
+When the canonical `Security\database.key` artifact already exists, the
+provisioning service reads and validates that artifact rather than
+generating a replacement. For reads performed by
+`IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync`, a
+Windows sharing violation is treated as transient only when the
+low-order 16 bits of `IOException.HResult` equal `32`
+(`ERROR_SHARING_VIOLATION`). The provisioning service waits 100
+milliseconds using the operation's cancellation token and retries the
+canonical-key read. It continues until the read succeeds or cancellation
+is requested. Other I/O failures are not retried.
+
+This retry behavior applies both to the initial read of an existing
+canonical key and to the losing initializer's read after another
+initializer wins non-overwriting publication. It does not apply to
+`IDatabaseEncryptionKeyService.GetKeyAsync`, whose strict retrieval
+remains non-provisioning and fail-fast. An existing encrypted database
+must use strict retrieval of its established key. A missing, unreadable,
+invalid, or unprotectable key must fail startup without provisioning a
+new database key. Cancellation remains cancellation.
 
 When the canonical key is absent, provisioning follows an atomic
 publication strategy:
@@ -550,6 +577,13 @@ Concurrent first-time provisioning attempts converge on the key
 published first, rather than overwriting the canonical artifact with
 competing candidates.
 
+Provisioning can recover from transient Windows sharing violations while
+reading the canonical database-key artifact. This retry is restricted to
+Win32 sharing-violation error `32` and uses a cancellation-aware
+100-millisecond delay. It does not weaken strict existing-key retrieval:
+`GetKeyAsync` remains fail-fast, and non-sharing I/O failures are not
+retried.
+
 A temporary protected-key file may exist while provisioning is in
 progress. Cleanup is attempted only for a candidate the operation
 successfully created and still owns. Successful publication relinquishes
@@ -677,9 +711,14 @@ The provider-level migration spike established the following behavior:
   concurrency, and first-run root-directory creation.
 - Focused database encryption key-service regression tests verify that
   concurrent independent service instances converge on one persisted
-  authoritative key, that only the canonical database-key file remains
-  after successful provisioning, and that failed publication does not
-  leave a temporary protected-key file behind.
+  authoritative key; provisioning retries transient Windows sharing
+  violations when reading an existing canonical key and when a losing
+  initializer retrieves the winner's key after publication conflict;
+  cancellation during the retry delay stops further attempts; non-sharing
+  I/O failures are not retried; persisted key bytes and identity/version
+  remain unchanged; and temporary candidate files are cleaned up.
+  Strict retrieval remains fail-fast when the canonical key file is held
+  open.
 - Database-key provisioning integration coverage verifies concurrent
   first-time initialization, retrieval of the persisted authoritative
   key through the registered Infrastructure service, successful database
