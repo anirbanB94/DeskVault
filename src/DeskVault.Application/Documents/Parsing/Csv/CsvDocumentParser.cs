@@ -1,5 +1,4 @@
 using CsvHelper;
-using CsvHelper.Configuration;
 using DeskVault.Application.Configurations;
 using System.Globalization;
 using System.Text;
@@ -57,15 +56,25 @@ public sealed class CsvDocumentParser
             _processingOptions.MaxCsvCells,
             cancellationToken);
 
-        var csvConfiguration =
-            new CsvConfiguration(CultureInfo.InvariantCulture)
+        var csvOptions =
+            new CsvReaderOptions
             {
-                ExceptionMessagesContainRawData = false
+                Separator = ',',
+                FormatProvider = CultureInfo.InvariantCulture,
+                HasHeader = true,
+                Mode = CsvMode.Rfc4180,
+                MalformedData = CsvMalformedDataHandling.Throw,
+                FieldCountMismatch = CsvFieldCountHandling.Allow,
+                MissingField = CsvMissingFieldHandling.ReturnEmpty,
+                IncludeValuesInExceptions = false,
+                SkipEmptyLines = true,
+                AllowLineBreaksInQuotes = true
             };
 
-        using var csv = new CsvReader(
+        await using var csv = CsvReader.Create(
             boundedReader,
-            csvConfiguration);
+            csvOptions,
+            leaveOpen: true);
 
         var columns =
             new List<CsvDocumentColumn>();
@@ -76,18 +85,20 @@ public sealed class CsvDocumentParser
         var warnings =
             new List<CsvDocumentWarning>();
 
-        if (!await csv.ReadAsync())
-        {
-            return CsvDocument.Empty;
-        }
+        await csv.ReadHeaderAsync(cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        string[] sourceHeaders =
-            csv.Parser.Record ?? [];
+        IReadOnlyList<string> sourceHeaders =
+            csv.Headers;
 
         int headerColumnCount =
-            sourceHeaders.Length;
+            sourceHeaders.Count;
+
+        if (headerColumnCount == 0)
+        {
+            return CsvDocument.Empty;
+        }
 
         int columnCount =
             headerColumnCount;
@@ -113,15 +124,12 @@ public sealed class CsvDocumentParser
 
         int materializedRowCount = 0;
 
-        while (await csv.ReadAsync())
+        while (await csv.ReadAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (csv.Parser.Record is not
-                string[] record)
-            {
-                continue;
-            }
+            int recordFieldCount =
+                csv.FieldCount;
 
             if (_options.MaxRows is int maxRows &&
                 materializedRowCount >= maxRows)
@@ -136,21 +144,21 @@ public sealed class CsvDocumentParser
             int sourceRowNumber =
                 materializedRowCount + 2;
 
-            if (record.Length != headerColumnCount)
+            if (recordFieldCount != headerColumnCount)
             {
                 warnings.Add(
                     new CsvDocumentWarning(
                         sourceRowNumber,
                         $"Row {sourceRowNumber} contains " +
-                        $"{record.Length} field(s), but the " +
+                        $"{recordFieldCount} field(s), but the " +
                         $"header contains " +
                         $"{headerColumnCount} column(s)."));
             }
 
-            if (record.Length > columnCount)
+            if (recordFieldCount > columnCount)
             {
                 for (int columnIndex = columnCount;
-                     columnIndex < record.Length;
+                     columnIndex < recordFieldCount;
                      columnIndex++)
                 {
                     columns.Add(
@@ -160,7 +168,7 @@ public sealed class CsvDocumentParser
                 }
 
                 columnCount =
-                    record.Length;
+                    recordFieldCount;
             }
 
             var values =
@@ -171,8 +179,8 @@ public sealed class CsvDocumentParser
                  columnIndex++)
             {
                 values[columnIndex] =
-                    columnIndex < record.Length
-                        ? record[columnIndex]
+                    columnIndex < recordFieldCount
+                        ? csv.GetString(columnIndex)
                         : string.Empty;
             }
 

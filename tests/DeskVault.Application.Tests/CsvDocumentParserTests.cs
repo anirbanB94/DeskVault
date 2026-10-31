@@ -1,3 +1,4 @@
+using CsvHelper;
 using DeskVault.Application.Documents.Parsing.Csv;
 
 namespace DeskVault.Application.Tests;
@@ -78,6 +79,56 @@ public sealed class CsvDocumentParserTests
 
         Assert.Empty(document.Warnings);
         Assert.False(document.HasMoreRows);
+    }
+
+    [Fact]
+    public async Task ParseAsync_AlternativeSeparator_DoesNotAutoDetectDelimiter()
+    {
+        const string csv =
+            "Id;Name\n1;Alice";
+
+        CsvDocument document =
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
+
+        Assert.Single(document.Columns);
+        Assert.Equal("Id;Name", document.Columns[0].Header);
+
+        IReadOnlyList<string> row =
+            Assert.Single(document.Rows);
+
+        Assert.Equal("1;Alice", row[0]);
+        Assert.Empty(document.Warnings);
+        Assert.False(document.HasMoreRows);
+    }
+
+    [Fact]
+    public async Task ParseAsync_QuotedMultilineField_PreservesEmbeddedLineBreak()
+    {
+        const string csv =
+            "Id,Notes\n1,\"First line\nSecond line\"";
+
+        CsvDocument document =
+            await ParseAsync(csv, TestContext.Current.CancellationToken);
+
+        IReadOnlyList<string> row =
+            Assert.Single(document.Rows);
+
+        Assert.Equal(
+            "First line\nSecond line",
+            row[1]);
+
+        Assert.Empty(document.Warnings);
+        Assert.False(document.HasMoreRows);
+    }
+
+    [Fact]
+    public async Task ParseAsync_MalformedQuotedField_ThrowsCsvFormatException()
+    {
+        const string csv =
+            "Id,Name\n1,\"Alice\"trailing";
+
+        await Assert.ThrowsAsync<CsvFormatException>(
+            () => ParseAsync(csv, TestContext.Current.CancellationToken));
     }
 
     [Fact]
