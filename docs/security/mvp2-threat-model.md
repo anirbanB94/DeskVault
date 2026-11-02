@@ -4,47 +4,47 @@
 
 | Property | Value |
 |---|---|
-| Document | MVP2 Security Threat Model and Control Baseline |
-| Status | Initial engineering baseline; integrated validation pending |
-| Technical Task | #230 — Establish MVP2 threat model and security control baseline |
+| Document | MVP2 Security Threat Model and Integrated Control Evidence |
+| Status | Integrated local assessment recorded; remaining evidence limitations and the #235 PR/CI gate are explicit in E-27 and Section 11. |
+| Baseline Technical Task | #230 — Establish MVP2 threat model and security control baseline |
+| Integrated verification task | #235 — Validate MVP2 security controls against the threat model |
 | Parent PBI | #221 — Strengthen DeskVault Security Against Common Threats |
-| Reviewed source baseline | `49d3e3f29cab423383d2feb0b07b8c58b44f6e10` |
+| Historical source baseline | `49d3e3f29cab423383d2feb0b07b8c58b44f6e10` |
+| Integrated assessment revision | `7e7f6eb41ed368915b598f3e19d9fafd5b105a19` (assessed `main` and #235 working-tree base) |
 | Baseline date | 2026-10-26 |
+| Integrated assessment date | 2026-10-31 |
 | Primary implementation platform | Windows desktop, .NET |
+| Integrated validation environment | Windows; .NET 10.0.14 x64; WebView2 Runtime 156.0.4314.50 for the executed browser tests |
 | Architecture goal | Offline-first document and knowledge platform |
+| Completed implementation PRs | #325, #326, #327, #328, #329 and #330 are merged; their Build and Test workflows succeeded. |
 | Integrated verification owner | #235 |
 | Intended audience | Product engineering, architecture, security review, and portfolio reviewers |
 
-This document is the authoritative MVP2 threat model and cross-cutting security control baseline for DeskVault.
+This document is the authoritative MVP2 threat model and cross-cutting security control baseline for DeskVault. E-01 through E-19 retain historical source observations; E-20 through E-26 retain task-level implementation evidence; E-27 records the distinct integrated assessment for #235.
 
-It documents the supported security model, sensitive assets, trust boundaries, attacker assumptions, threat scenarios, risk-prioritization decisions, existing protections, control gaps, implementation ownership, and verification requirements.
+It documents the supported security model, sensitive assets, trust boundaries, attacker assumptions, threat scenarios, risk-prioritization decisions, implementation ownership, executed validation evidence, unresolved gaps, and residual-risk disposition.
 
-It is an engineering threat model, not a penetration-test report, certification, or claim that the application has passed a comprehensive security assessment.
+It is an engineering threat model and evidence assessment, not a penetration-test report, certification, or claim that the application has passed a comprehensive security assessment. A passing test, merged pull request, or successful CI run proves only the behavior and revision it actually exercised.
 
-**Baseline limitation:** This document records source-level observations associated with the stated commit. A source observation is not equivalent to a reproduced exploit, an executed test, a verified Windows access-control result, or proof that the corresponding threat is fully mitigated.
-
----
+**Assessment boundary:** The integrated build and test results in E-27 were obtained against the assessed `main` revision with the #235 renderer and WebView2 test changes present in the local working tree. The threat-model reconciliation is a documentation change; the #235 pull-request CI gate had not yet been created or executed at the time of this assessment.
 
 ## 2. Executive Security Assessment
 
-DeskVault is intended to be a local-first knowledge platform that allows users to store, process, search, and view sensitive documents while retaining control over their local data.
+DeskVault is a local-first knowledge platform for storing, processing, searching, and viewing sensitive documents. The MVP2 security baseline now has completed implementation changes for configuration composition and secret handling, sensitive-data-safe diagnostics, parser resource boundaries, ordinary document reads and reconciliation, filesystem/SQLite auxiliary-artifact protection, and untrusted Markdown rendering. Their implementation pull requests #325 through #330 are merged.
 
-The current MVP2 architecture includes encrypted document artifacts, an encrypted SQLite persistence boundary, protected key material, document processing and extraction, application diagnostics, artifact reconciliation, and in-app document rendering.
+The integrated local verification for #235 succeeded: the full solution build completed, and the full solution test suite passed **1,552 tests, 0 failed, 0 skipped**. Each of the five test projects also passed its complete suite; the exact counts, focused security selections, runtime observations, and merged-PR CI evidence are preserved in E-27. These results are not added to or substituted for the historical task-level counts in E-20 through E-26.
 
-The principal cross-cutting security concern is that **encryption at rest does not protect every other representation or operation involving the same data**. Sensitive information can also appear in process memory, parser intermediates, derived document chunks, diagnostic output, filesystem metadata, runtime database files, or migration and recovery artifacts.
+The integrated assessment does not declare every control fully verified. The control register in Section 11 is authoritative for each control's separate implementation, verification, and residual-risk status. In particular:
 
-The current source review identifies the following areas requiring explicit verification or hardening:
+1. The configuration inventory and secret-pattern review are bounded and heuristic; they do not prove that every possible deployment artifact is free of secrets.
+2. Parser and reconciliation controls impose operation-specific limits, not a strict process-wide memory/CPU ceiling or global reconciliation time, cumulative-byte, finding-count, or consistent-snapshot guarantee.
+3. WebView2 runtime behavior is now exercised by five focused tests. The initial-document test configures `AllowRawHtml=true` and supplies script markup; it verifies that JavaScript remains disabled and the script marker does not execute, but it does not assert that a script element remains in the generated DOM. The runtime suite does not exercise every URI variant or an actual click on a rendered Markdown anchor.
+4. Filesystem ACL evidence is host- and artifact-specific. It is not a complete Windows effective-access calculation for every identity, group, host, or location.
+5. Some SQLite auxiliary-artifact variants and abrupt-crash, power-loss, or concurrent-state scenarios remain unmaterialized or unexecuted.
+6. Copied-vault behavior has not been tested under the original profile, a different Windows profile, or another device. DPAPI `CurrentUser` is not represented as universal device binding.
+7. The #235 pull request and its own CI checks remain pending; the successful Build/Test workflows for #325–#330 establish provenance for the merged implementation baseline, not for a future #235 pull request.
 
-1. Effective configuration precedence and the handling of future secret-bearing settings.
-2. Sensitive-data disclosure through logging, exception handling, and diagnostics.
-3. Source-input, structural-complexity, parser-intermediate, and processed-output resource boundaries.
-4. Resource limits for ordinary document opening and artifact reconciliation.
-5. Complete URI-scheme, navigation, and resource-loading restrictions for untrusted Markdown.
-6. Effective filesystem access protection for application-managed and SQLite auxiliary artifacts.
-7. Safe outcomes for resource-limit failures, incomplete validation, interrupted migration, and other security-sensitive failures.
-8. The precise protection boundary when an encrypted vault is copied to another Windows profile or device.
-
-These findings are **areas for assessment and control verification**, not declarations that every area is exploitable. The remaining #221 Technical Tasks own their respective implementation. #235 owns integrated verification against this threat model.
+These are evidence limitations and explicit residual gaps, not findings that the completed implementation tasks are defective. No risk is recorded as accepted without an authorized decision. The assessment preserves the existing product, encryption, viewing, recovery, processing, and artifact-lifecycle owners.
 
 ### 2.1 Product-level security objectives
 
@@ -56,9 +56,7 @@ The MVP2 security work should preserve five product outcomes:
 - **Correctness:** An incomplete or indeterminate operation must not be reported as successful, complete, matched, or healthy.
 - **Trustworthiness:** Every material security claim must be traceable to implementation evidence and an executed validation result or explicitly remain unverified.
 
-The implementation must preserve DeskVault's existing local-first architecture. Security hardening must not silently replace the established encryption, key lifecycle, document viewing, recovery, or persistence designs.
-
----
+The implementation preserves DeskVault's existing local-first architecture. Security hardening does not replace the established encryption, key lifecycle, document viewing, recovery, processing, or persistence designs.
 
 ## 3. Scope and Methodology
 
@@ -119,79 +117,85 @@ This is an iterative baseline. Threat IDs and control IDs are stable references;
 
 ### 4.1 Logical architecture
 
-The following diagram is a security-oriented view of the system, not a substitute for the complete application architecture.
+The following diagram is a security-oriented view of the assessed MVP2 implementation. Flow labels identify the transferred data and the relevant enforcement boundary; the diagram is not a substitute for the complete application architecture.
 
 ```mermaid
 flowchart TD
     USER["User and selected local files"]
-    CFG["Configuration providers"]
-    HOST["DeskVault application and use cases"]
-    PARSER["Format-specific extraction and parsing"]
-    PROCESS["Normalization, chunking and processed knowledge"]
+    CFG["Configuration providers\nrequired JSON defaults and supported environment overrides"]
+    HOST["DeskVault UI composition root and application use cases"]
+    PARSER["Format extractors and parsers\nsource, structural and intermediate limits"]
+    PROCESS["Normalization, chunking and bounded processed output\nexisting generation lifecycle"]
     DOCSTORE["Encrypted .dvault document artifacts"]
-    DB["Encrypted SQLite database"]
-    KEY["Protected key material and key services"]
-    READ["Ordinary document-read path"]
-    MEMORY["Plaintext and parser data in process memory"]
-    RENDER["Format-specific renderer"]
-    WEBVIEW["WebView2 Markdown presentation"]
-    LOG["Logs and user-facing diagnostics"]
-    AUX["SQLite sidecars, migration/recovery artifacts and temporary files"]
-    OS["Windows user context and filesystem permissions"]
+    DB["Encrypted SQLite database\nSQLite3MC provider"]
+    DOC_KEY["Protected document key\nstrict IEncryptionKeyService.GetKeyAsync() (#220)"]
+    DB_KEY["Protected database key\nstrict IDatabaseEncryptionKeyService.GetKeyAsync()"]
+    DOC_WRITER["Infrastructure storage and encryption\nFileSystemStorageService / DocumentEncryptionService"]
+    READ["Ordinary document-read path\npositive plaintext-size boundary"]
+    MEMORY["Authenticated plaintext stream and parser data in process memory"]
+    RENDER["Markdig pipeline and generated HTML\nURI policy and Content Security Policy"]
+    WEBVIEW["WebView2\nJavaScript disabled and navigation/resource handlers"]
+    DIAG["Safe-failure diagnostics\noperation code, safe message and exception-type classification"]
+    LOG["Configured logging sink"]
+    AUX["SQLite WAL/SHM/journals/TEMP and migration/recovery/lock artifacts"]
+    OS["Windows user context and host-specific inherited filesystem permissions"]
 
-    USER --> HOST
-    CFG --> HOST
-    HOST --> PARSER
-    PARSER --> PROCESS
-    PROCESS --> DB
-    HOST --> DOCSTORE
-    DOCSTORE --> READ
-    KEY --> DOCSTORE
-    KEY --> DB
-    READ --> MEMORY
-    MEMORY --> RENDER
-    RENDER --> WEBVIEW
-    HOST --> LOG
-    DB --> AUX
-    HOST --> AUX
-    OS -. access boundary .-> DOCSTORE
-    OS -. access boundary .-> DB
-    OS -. access boundary .-> KEY
-    OS -. access boundary .-> AUX
+    USER -->|"Selected local file and user action"| HOST
+    CFG -->|"Resolved settings and supported overrides"| HOST
+    HOST -->|"Bounded document input"| PARSER
+    PARSER -->|"Bounded structures and complete/failed outcome"| PROCESS
+    PROCESS -->|"Derived chunks, metadata and processing state"| DB
+    HOST -->|"ImportDocumentHandler via IStorageService.StoreAsync"| DOC_WRITER
+    DOC_KEY -->|"Strict existing document-key retrieval"| DOC_WRITER
+    DOC_WRITER -->|"AES-GCM encrypted .dvault publication"| DOCSTORE
+    DOCSTORE -->|"Encrypted records"| READ
+    DOC_KEY -->|"Strict existing document-key retrieval"| READ
+    DB_KEY -->|"Strict existing database-key retrieval"| DB
+    READ -->|"Authenticated, bounded plaintext stream"| MEMORY
+    MEMORY -->|"Untrusted Markdown content"| RENDER
+    RENDER -->|"CSP-wrapped HTML"| WEBVIEW
+    HOST -->|"Safe failure context; no raw exception serialization"| DIAG
+    DIAG -->|"Reviewed structured diagnostic event"| LOG
+    DB -->|"Runtime database and conditional sidecars"| AUX
+    HOST -->|"Migration staging, retained backup and initialization lock"| AUX
+    OS -.->|"Host-specific access-control boundary"| DOCSTORE
+    OS -.->|"Host-specific access-control boundary"| DB
+    OS -.->|"DPAPI CurrentUser / protected master.key boundary"| DOC_KEY
+    OS -.->|"DPAPI CurrentUser / protected database.key boundary"| DB_KEY
+    OS -.->|"Inherited artifact permissions"| AUX
 ```
 
 ### 4.2 Component and data-flow descriptions
 
 | Component | Security relevance |
 |---|---|
-| Configuration providers | Supply processing, rendering, storage, endpoint, and logging settings that influence runtime behavior. |
-| Application use cases | Orchestrate document import, processing, reading, search, removal, and other workflows. |
-| Parsers and extractors | Consume externally supplied document structures and can allocate intermediate objects before producing bounded output. |
-| Processed knowledge | Derived text, chunks, metadata, and provenance remain potentially sensitive even after extraction. |
-| Encrypted artifact storage | Stores document contents outside the SQLite metadata boundary. |
-| Encrypted SQLite persistence | Stores document metadata, lifecycle information, processing state, and derived knowledge. |
-| Key services | Provide protected key creation and retrieval under the existing encryption architecture. |
-| Ordinary read path | Decrypts a stored document for use by the application; must have an explicit resource boundary. |
-| Renderers and WebView2 | Present untrusted document content under a restricted, format-specific policy. |
-| Logs and diagnostics | Can expose sensitive values even when stored artifacts are encrypted. |
-| Auxiliary artifacts | May contain database data, temporary state, locks, or recovery information; their protection depends on actual contents and lifecycle. |
-| Windows security context | Governs access to application files and DPAPI-protected key material; it is not an isolation boundary against arbitrary code executing with the same user's effective privileges. |
+| Configuration providers | `HostConfigurator` establishes the content root and required shipped JSON configuration; tested environment-variable overrides take precedence for the covered settings. Unsupported provider channels are not part of the verified contract. |
+| Application use cases | Orchestrate document import, processing, reading, search, removal, reconciliation, and other workflows while preserving their existing lifecycle owners. |
+| Parsers and extractors | Consume untrusted document structures. Source-input, format-specific structural/intermediate, and processed-output limits are enforced for the reviewed CSV, JSON, XML, YAML, INI, text, and Markdown paths as applicable. |
+| Processed knowledge | Derived text, chunks, metadata, and provenance remain potentially sensitive. A parser/resource failure must not publish incomplete output as successful complete processing or replace a previous successful generation. |
+| Encrypted artifact storage | Stores document contents outside the SQLite metadata boundary under the existing document/key lifecycle. |
+| Encrypted SQLite persistence | Stores document metadata, lifecycle information, processing state, and derived knowledge. SQLite3MC provider initialization is centralized and retained for the process lifetime. |
+| Key services | Provide protected key creation and retrieval under #220. Retrieval failure must not silently provision replacement authoritative key material. |
+| Ordinary read path | `OpenDocumentHandler` supplies the finite configured `MaxDecryptedDocumentBytes` boundary to the encrypted reader; the limit bounds accepted plaintext length, not exact peak memory allocation. |
+| Reconciliation | Uses incremental artifact enumeration, keyset-paged metadata (maximum page size 256), and hash-only per-artifact content validation. It does not establish global scan-time/cumulative-byte/finding-count budgets or an atomic inventory snapshot. |
+| Renderers and WebView2 | Present untrusted Markdown through Markdig and a restrictive generated CSP, with separate navigation/resource policies and WebView2 event restrictions. Runtime verification is recorded in E-27 with unexecuted variants explicit. |
+| Logs and diagnostics | Shared safe-failure handling retains safe messages, operation codes, severity, and exception-type classification without forwarding raw exception objects; representative actual file-sink output is tested. |
+| Auxiliary artifacts | WAL, persistent rollback journal, TEMP-related storage, migration staging/backup, initialization lock and document/key paths are classified by actual contents and lifecycle. Not every conditional SQLite variant was materialized. |
+| Windows security context | Governs filesystem access and DPAPI-protected key material. Host ACE inspection is not a universal effective-access calculation or an isolation boundary against same-user code. |
 
 ### 4.3 Trust boundaries
 
-| ID | Boundary | Security requirement |
+| ID | Boundary | Security requirement and assessed enforcement |
 |---|---|---|
-| TB-01 | Configuration provider → application | Validate supported values and verify precedence; security-sensitive configuration must not be silently weakened. |
-| TB-02 | External document → parser | Treat document bytes and structures as untrusted; enforce input and structural resource limits. |
-| TB-03 | Parser → canonical processed representation | Preserve complete/partial semantics and avoid publishing incomplete output as successful complete knowledge. |
-| TB-04 | Application → persistent storage | Preserve encryption, key authority, canonical artifact ownership, and appropriate access protection for every artifact class. |
-| TB-05 | Stored document → process memory | Apply read limits and minimize unnecessary plaintext materialization and lifetime. |
-| TB-06 | Markdown-derived HTML → WebView2 | Enforce a complete markup, navigation, URI-scheme, and resource-loading policy. |
-| TB-07 | Runtime failure → logs and user-visible diagnostics | Keep useful operational information while preventing disclosure of protected content and metadata. |
-| TB-08 | SQLite and filesystem lifecycle → auxiliary files | Classify artifacts by actual contents and protect them without destroying required recovery state. |
-| TB-09 | Initialization and recovery across processes | Preserve authoritative key/database state during concurrency, cancellation, interruption, and recovery. |
-
----
+| TB-01 | Configuration provider → application | `HostConfigurator` fixes content-root/default loading and tested provider precedence; do not assume untested sources or command-line overrides. |
+| TB-02 | External document → parser | Treat document bytes and structures as untrusted; enforce source-input and format-specific structural/intermediate limits. |
+| TB-03 | Parser → canonical processed representation | Preserve complete/partial semantics and do not publish malformed, cancelled, or resource-limited output as successful complete knowledge. |
+| TB-04 | Application → persistent storage | Preserve encryption, key authority, canonical artifact ownership, SQLite provider lifetime, and host-specific artifact access protection. |
+| TB-05 | Stored document → process memory | Apply the positive ordinary-read size boundary and minimize unnecessary plaintext materialization and lifetime. |
+| TB-06 | Markdown-derived HTML → WebView2 | Enforce raw-HTML configuration, JavaScript restrictions, URI policy, one-time initial document navigation, event handling, and generated CSP. |
+| TB-07 | Runtime failure → logs and user-visible diagnostics | Retain safe operational context without exposing protected content, key material, credentials, paths, filenames, or raw exception details. |
+| TB-08 | SQLite and filesystem lifecycle → auxiliary files | Classify actual artifacts and protect them without destroying required recovery state; retain unmaterialized-variant limitations. |
+| TB-09 | Initialization and recovery across processes | Preserve authoritative key/database state during concurrency, cancellation, interruption, and recovery; do not claim untested crash/concurrent-state guarantees. |
 
 ## 5. Assets and Security Goals
 
@@ -628,7 +632,54 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **ADR impact review (current `main` baselines):** ADR-0007 (`834d05429998e252dc691fad4e8643c710110d62`) has been updated in the current #319 change set to document the explicit navigation and resource URI policies, the internal `about:blank` navigation exception, user-initiated external navigation and same-navigation-ID redirect authorization, WebView2 frame/new-window/external-scheme restrictions, JavaScript restrictions, and generated HTML Content Security Policy. The existing DeskVault-controlled presentation-shell decision, including typography, spacing, code blocks, tables, links and future theme support, remains documented under `### Markdown Rendering Strategy`. ADR-0008 (`a055ed8883787d16f9f4500ffce3e7fde9c54e84`) was reviewed and requires no update because #319 does not change extraction, structured document semantics, source preservation, normalization, chunking or the persisted derived representation. ADR-0002 was reviewed and requires no update because the implementation remains within the existing UI renderer boundary and does not change layer responsibilities or dependency direction. Document-viewing authorization and temporary plaintext lifecycle remain under #193.
 - **Validation boundary:** The full-solution build and test suite passed against the #319 implementation and test change set. All five project suites passed, with the aggregate result of 1,540 passed, 0 failed, and 0 skipped. The focused Markdown selection is included in the UI and full-solution totals. Tracked and new-file whitespace checks passed. The subsequent reconciliation of this evidence entry changes documentation only. Actual WebView2 runtime enforcement and integrated cross-control security verification remain owned by #235. These results support the tested policy and generated-HTML behavior but do not prove every WebView2 runtime path or constitute final integrated MVP2 security acceptance.
 
+### E-27 — Integrated MVP2 security verification (#235)
+
+**Evidence type:** Integrated local working-tree verification and live merged-PR/CI review performed on 2026-10-31. This entry is separate from the historical implementation-task evidence E-20 through E-26; those entries retain the counts and conditions of their original task runs.
+
+- **Assessed repository revision:** `7e7f6eb41ed368915b598f3e19d9fafd5b105a19`; the #235 branch `feat/235-validate-mvp2-security-controls-against-threat-model` had this `HEAD`, matching the reviewed `origin/main` and merge base. The working tree under test contained the #235 renderer testability change in `src/DeskVault.UI/Rendering/MarkdownDocumentRendering/MarkdownDocumentContentRenderer.cs` and the untracked `tests/DeskVault.UI.Tests/MarkdownWebView2RuntimeSecurityTests.cs`. The tested changes were local working-tree changes beyond the assessed commit; no committed branch delta was claimed.
+- **Environment:** Windows desktop; .NET `10.0.14`, x64; WebView2 Runtime `156.0.4314.50`; the five runtime tests ran on an STA WinForms thread using the real WebView2 runtime. The Windows OS build was not captured in the evidence and is not inferred here.
+- **Full-solution build:** `dotnet build .\DeskVault.slnx --no-restore --verbosity minimal` — succeeded (reported duration 1.8 seconds).
+- **Full-solution test:** `dotnet test .\DeskVault.slnx --no-restore --verbosity minimal` — **1,552 passed, 0 failed, 0 skipped** (reported duration 13.5 seconds).
+- **Complete project-suite reruns:** Shared **25/25**, Application **750/750**, Infrastructure **395/395**, Integration **85/85**, and UI **297/297**; all reported 0 failed and 0 skipped. The project counts sum to 1,552 and reconcile with the full-solution result. Project reruns are not added again to the solution count.
+- **Complete project-suite rerun commands** (each used `--no-build --no-restore --verbosity minimal`):
+  - `dotnet test .\tests\DeskVault.Shared.Tests\DeskVault.Shared.Tests.csproj --no-build --no-restore --verbosity minimal` — **25 passed, 0 failed, 0 skipped**.
+  - `dotnet test .\tests\DeskVault.Application.Tests\DeskVault.Application.Tests.csproj --no-build --no-restore --verbosity minimal` — **750 passed, 0 failed, 0 skipped**.
+  - `dotnet test .\tests\DeskVault.Infrastructure.Tests\DeskVault.Infrastructure.Tests.csproj --no-build --no-restore --verbosity minimal` — **395 passed, 0 failed, 0 skipped**.
+  - `dotnet test .\tests\DeskVault.Integration.Tests\DeskVault.Integration.Tests.csproj --no-build --no-restore --verbosity minimal` — **85 passed, 0 failed, 0 skipped**.
+  - `dotnet test .\tests\DeskVault.UI.Tests\DeskVault.UI.Tests.csproj --no-build --no-restore --verbosity minimal` — **297 passed, 0 failed, 0 skipped**.
+- **Focused configuration and diagnostic selections:** `HostConfigurationPolicyTests` — 5/5; `SafeFailureLoggingExtensionsTests` — 25/25; selected Application safe-diagnostic failure-path tests — 55/55; `KeyServiceSafeLoggingTests` — 4/4; `SafeFailureLoggingSerilogSinkTests` — 1/1. The sink test checks actual emitted file output for retained safe context and absent synthetic sensitive markers.
+- **Focused parser/processing selections:** the selected Application parser/resource-boundary tests — 72/72; Integration parser-limit/preservation test — 1/1. The task-level per-format counts and exact historical runs remain in E-23. These focused selections overlap the complete project suites and are not summed into 1,552.
+- **Focused ordinary-read/reconciliation selections:** selected Application tests — 50/50; Infrastructure tests — 76/76; Integration reconciliation/recovery tests — 11/11. These are additional selections within the same test projects, not additional unique tests for the full-suite total.
+- **Focused filesystem/SQLite selections:** `AuxiliaryArtifactProtectionIntegrationTests` — 6/6; `EncryptedDatabasePipelineIntegrationTests` — 9/9; `PlaintextDatabaseMigrationIntegrationTests` — 8/8; and selected Infrastructure migrator/context/initialization-coordinator/provider-bootstrap tests — 13/13. These selections overlap project-suite totals.
+- **Key-service regression rerun:** an initial broad selected run reported 62 passed and 1 failed due to a transient file-sharing violation while reading `Security\database.key` in `ConcurrentKeyProvisioning_InitializesEncryptedDatabaseUsingAuthoritativeKey`. The affected test passed on isolated rerun (1/1), and the subsequent broad selection passed 63/63. No production change was made in response to that transient failure. The final full Infrastructure and full-solution suites also passed.
+- **Markdown policy tests:** `MarkdownRenderingSecurityPolicyTests` — **81/81**. These cover raw-HTML pipeline behavior, navigation/resource URI policies, adversarial/malformed/local/custom URI variants, independent settings, initial-document policy, redirect authorization, CSP generation, and HTML wrapper placement. Policy-method coverage is not by itself browser-runtime evidence.
+- **Actual WebView2 runtime tests:** `MarkdownWebView2RuntimeSecurityTests` — **5/5**:
+  1. `RenderAsync_UsesWebView2RuntimeAndEnforcesInitialDocumentPolicy` verified a real initial HTML document, JavaScript disabled, script/CSP restrictions, rendered Markdown, and blocked an attempted external navigation. The renderer was configured with `AllowRawHtml=true` and received script markup; the script marker did not execute, but the test does not assert that the generated DOM retains a script element.
+  2. `ConfigureSecurityAndNavigate_AllowsHttpNavigationAndAuthorizesSameNavigationRedirect` verified an HTTP navigation and redirect associated with the same authorized navigation ID.
+  3. `ConfigureSecurityAndNavigate_BlocksResourceRequestsAndFrameNavigation` observed a blocked resource request (HTTP 403 through the production handler) and cancelled frame navigation.
+  4. `GeneratedContentSecurityPolicy_BlocksExternalImageRequestsAtRuntime` observed `img-src 'none'` prevent the attempted remote image request during the probe window.
+  5. `ConfigureSecurityAndNavigate_HandlesNewWindowsAndExternalUriSchemes` verified popup handling and cancellation of external `ms-settings:privacy` scheme launching.
+- **Runtime limitations:** The initial-document runtime test did configure `AllowRawHtml=true` and supplied script markup. It verified that JavaScript remained disabled and the script marker did not execute, but it did not assert that the raw `<script>` element remained in the generated DOM; it therefore does not directly establish raw-element retention under that option. The HTTP and external-navigation scenarios were initiated through `CoreWebView2.Navigate`; the runtime reported the initial API navigation as `IsUserInitiated=true`, but the suite did not simulate a user click on a rendered Markdown anchor. `about:blank` fragment policy is unit-tested, but a separate interactive in-document fragment navigation was not exercised in the browser. Individual file/UNC, malformed/encoded, `data:`, `blob:`, and other unsupported/custom URI variants are covered by policy tests but were not each exercised as distinct browser-runtime cases. The runtime resource probes cover the attempted request and CSP image case, not every resource class or every external-resource-enabled path. Those unexecuted runtime variants remain explicitly insufficiently evidenced; the five actual runtime tests must not be generalized into proof of every browser path.
+- **Copied-vault limitation:** No copied-vault attempt was executed under the original Windows profile, a different Windows profile, or another device. The host profile inventory found zero additional non-special local profiles; this inventory is not a copied-vault test. Existing DPAPI/key-service tests are not copied-vault evidence.
+- **Repository-quality checks:** Before the threat-model reconciliation, `git diff --check` passed for the tracked renderer change, and `git diff --no-index --check -- /dev/null tests/DeskVault.UI.Tests/MarkdownWebView2RuntimeSecurityTests.cs` passed for the new test file. The V4 guarded threat-model write and the subsequent AC-reconciliation correction each completed with a passing post-write `git diff --check`. No files are staged or committed.
+- **Merged implementation PR/CI provenance:** Each implementation PR is closed/merged, and its GitHub Build and Test workflows completed successfully at the PR head:
+
+  | Implementation | Merged PR commit | Build/Test workflow run |
+  |---|---|---|
+  | #231 configuration | #325 — `484c9173c775314c224e4b9c5e723004394ffc58` | Run 329 — both succeeded |
+  | #232 diagnostics | #326 — `1c4e0a848540f12dffc7c59cd522a58d6df2fb44` | Run 331 — both succeeded |
+  | #233 parser boundaries | #327 — `bc6d0a283cfd661e505025edcd132a4bf61e359f` | Run 333 — both succeeded |
+  | #272 read/reconciliation bounds | #328 — `b4db2dd331eca4a60e51a03a2a65c674a2bafd63` | Run 335 — both succeeded |
+  | #234 auxiliary artifacts | #329 — `bf9d6583f37fb25a6f895c6b8146c54bb7631153` | Run 339 — both succeeded |
+  | #319 Markdown policy | #330 — `9b5def578e8c369f114518405d9efed1cc82bdcb` | Run 341 — both succeeded |
+
+- **#235 PR/CI status:** No #235 pull request had been created at the time of this assessment. Its own PR checks are therefore unexecuted/pending and are not represented as passed. The six merged PR workflows establish provenance for the implementation baseline only.
+- **Overall interpretation:** The local full-solution build and tests passed. No final blanket security pass is claimed. The control-specific limitations and follow-up owners are recorded in Sections 10, 11, 14 and 16. No residual risk is recorded as accepted without an authorized decision.
+
 ## 9. Threat Register
+
+The scenarios, initial ratings, and implementation ownership below remain the threat baseline. The **Verification** field in each threat describes the evidence criteria for that threat; actual execution results and status are recorded in Sections 10 and 11 and E-27. The three status fields in Section 11 are authoritative; historical task counts in E-20 through E-26 are not current integrated counts.
+
 
 ### DV-T-001 — Configuration overrides weaken security-sensitive behavior
 
@@ -640,12 +691,15 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** `HostConfigurator` configuration composition, options binding, the shipped `appsettings.json`, and supported configuration override sources.
 - **Plausible attack path:** A provider is applied in an unexpected order or an invalid override is accepted; the runtime then uses a security-sensitive endpoint, storage/logging option, renderer setting, or resource limit different from the intended policy. A future secret may also be accidentally included in shipped configuration.
 - **Potential impact:** Weakened restrictions, unintended data destinations or external behavior, resource exhaustion, or credential disclosure if a real secret is introduced.
-- **Current protection:** E-01 and E-02 document the historical baseline. E-20 and E-21 record the corrected current configuration composition, tested override behavior, and bounded configuration review.
-- **Gap:** Provider precedence is verified for the tested JSON-default and environment-variable override paths. Security-sensitive value validation and comprehensive deployment-wide secret coverage are not established by these tests and scans.
+- **Current protection:** E-20 and E-21 record the current configuration composition, tested JSON/environment-variable precedence, setting-to-consumer classification, and bounded secret-pattern review. E-27 records the integrated build/test result and the live merged #325 Build/Test workflow provenance.
+
+- **Gap:** The tested provider paths are established, but the secret scan is heuristic and does not prove comprehensive coverage of every possible deployment artifact or unrecognized secret encoding. No command-line override channel is supported (`Args=[]`); do not extend the verified provider contract beyond the exercised sources.
+
 - **Initial rating:** Likelihood 3 × Impact 4 = **12, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #231.
-- **Verification:** Test effective resolved options across supported providers and override sources. Check shipped configuration and relevant build artifacts for actual secret values. Test invalid or unsupported values according to the documented policy.
+- **Verification:** E-20 records five configuration-policy tests; E-27 reran HostConfigurationPolicyTests 5/5 and the full project/solution suites. The secret inventory remains heuristic; Args=[] and unsupported provider channels remain outside the verified contract.
+
 - **Residual-risk rule:** Do not claim that secrets are comprehensively absent or that every conceivable provider combination has been verified.
 
 ### DV-T-002 — Logs or diagnostics disclose sensitive information
@@ -658,12 +712,15 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** Failure catches and logger calls in Application document handlers, Infrastructure storage/encryption/database services, and UI forms/presenters. E-19 records the historical paths; E-22 records the current implementation and test evidence reviewed for #232.
 - **Plausible attack path:** A malformed input, path, storage condition, or backend failure causes an exception carrying sensitive details; code logs the exception or forwards its message/`ToString()` into user-visible diagnostics.
 - **Potential impact:** Disclosure of sensitive paths, filenames, document-derived values, query data, or other exception-carried information to log readers or users who should not receive it.
-- **Current protection:** E-19 preserves the pre-#232 observation. E-22 records the shared safe-failure logging helper, stable diagnostic operation codes, representative sentinel-value regression tests, an actual Serilog file-sink test, targeted source-to-sink findings, and full-solution validation (1,339 passed, 0 failed, 0 skipped). The scans have not confirmed a disclosure in the inspected paths but remain heuristic rather than proof of every runtime dataflow.
-- **Residual limitation:** The targeted inventory and producer-to-consumer checks found no confirmed disclosure in the reviewed paths. Pattern-based scanning cannot prove the absence of every arbitrary or unrecognized runtime dataflow. New or changed logging calls, scopes/enrichers, structured properties, and dynamic user-facing diagnostics must be evaluated under this control and covered with representative sentinel tests where applicable.
+- **Current protection:** E-22 records the shared safe-failure helper, operation codes, reviewed failure paths, sentinel tests, and actual Serilog file-sink output. E-27 adds the integrated project/solution results and the repeated safe-diagnostic regression selections.
+
+- **Residual limitation:** The inspected paths and representative emitted output passed. Pattern-based source-to-sink inventories remain heuristic and cannot prove every possible runtime dataflow safe; new structured properties, scopes/enrichers, and user-facing diagnostics still require review.
+
 - **Initial rating:** Likelihood 3 × Impact 4 = **12, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #232.
-- **Verification:** E-22 records passing project/full-solution tests, the reviewed logging-call inventory and classification of its dynamic candidates, producer-to-consumer findings, and configured file-sink evidence. The acceptance criteria for the inspected task paths have been reconciled against the current code, tests, and documentation. The heuristic nature of the inventory remains an explicit limitation; rerun status/diff checks after this documentation change.
+- **Verification:** E-22 records source-to-sink review and actual Serilog file-sink evidence. E-27 reran Shared safe-failure tests 25/25, selected Application diagnostics 55/55, Infrastructure key-service diagnostics 4/4 and the UI Serilog sink test 1/1. The inspected output excluded synthetic markers; the inventory remains heuristic.
+
 - **Residual-risk rule:** A test of one handler does not establish that all cross-cutting diagnostic paths are safe.
 
 ### DV-T-003 — Untrusted document input causes excessive parser resource use
@@ -676,12 +733,15 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** Supported document-processing entry points and format-specific extractors/parsers for CSV, JSON, XML, YAML, and INI content.
 - **Plausible attack path:** A crafted or unusually large document reaches a parser that constructs a full intermediate representation before output limits apply; high row/field/node counts, nesting, aliases, or fan-out cause excessive allocation or traversal.
 - **Potential impact:** Excessive memory/CPU consumption, application unresponsiveness or failure, and possible incomplete processed knowledge if resource-limit outcomes are mishandled.
-- **Current protection:** E-04 through E-06 retain the historical source observations. E-23 records current source-input, structural-complexity, intermediate-materialization, and output-boundary enforcement across CSV, JSON, XML, YAML, and INI extraction. It also records the executed Application and Integration suite results and the real-SQLite lifecycle regression that verifies preservation of the previous successful processing generation and chunks after a later resource-limit failure.
-- **Gap:** Format-specific limits reduce uncontrolled parsing and materialization risk but do not establish a strict process-memory or CPU-time budget. Parser-library allocation overhead and total wall-clock work are not measured directly by the configured byte, node, row, field, cell, entry, and depth limits. Integrated cross-control verification remains owned by #235.
+- **Current protection:** E-23 records source-input, structural, intermediate, and output enforcement across the reviewed CSV, JSON, XML, YAML, and INI paths, plus preservation of the previous successful generation after a later parser-limit failure. E-27 records the integrated Application/Integration/solution results.
+
+- **Gap:** Format-specific limits do not establish a strict process-wide memory ceiling, universal parser-allocation bound, or global CPU-time quota. Library allocation overhead and total wall-clock work are not measured directly.
+
 - **Initial rating:** Likelihood 4 × Impact 4 = **16, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #233. Preserve processing lifecycle semantics owned by #101.
-- **Verification:** E-23 records executed format-specific regression selections, 741 passing Application tests, 84 passing Integration tests, JSON BOM compatibility, INI section-fan-out rejection, YAML alias-expansion rejection, and persisted processing-state/chunk preservation after a parser resource-limit failure. These results support the implemented limits and tested failure behavior; they do not establish universal resource guarantees or complete integrated security acceptance. #235 must record final integrated verification.
+- **Verification:** E-23 records per-format parser regressions. E-27 selected Application parser/resource tests 72/72 and the Integration prior-generation preservation test 1/1; complete Application 750/750 and Integration 85/85 passed. No process-wide memory or CPU-time guarantee is established.
+
 - **Residual-risk rule:** A bounded final text buffer must not be cited as proof that parser memory is bounded.
 
 ### DV-T-004 — Ordinary document opening materializes excessive plaintext
@@ -694,12 +754,14 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** The ordinary open use case (`OpenDocumentHandler`) calling `IDocumentReader.OpenReadAsync`, with plaintext staged by `EncryptedDocumentReader`.
 - **Plausible attack path:** A large stored artifact reaches the ordinary-open path and requires substantial plaintext staging. If the caller does not supply an effective bound, the operation can consume excessive resources. E-17 preserves this as a historical source observation; E-24 records the current caller-supplied limit.
 - **Potential impact:** Uncontrolled memory consumption, degraded availability, or a larger/longer-lived plaintext representation than intended. The precise exploitability remains unverified.
-- **Current protection:** E-07 and E-17 retain the historical reader/caller observations. E-24 records that `OpenDocumentHandler` supplies the finite configured `MaxDecryptedDocumentBytes` limit to `IDocumentReader.OpenReadAsync`. The reader returns a stream only after authentication, record-completeness and persisted-hash checks succeed.
-- **Gap:** The missing caller-supplied limit is addressed in the current implementation. The configured limit bounds accepted plaintext length, not exact peak memory: stream-capacity growth and transient decryption buffers add overhead. #235 integrated control verification remains pending; document-viewing authorization and temporary-plaintext lifecycle remain under #193.
+- **Current protection:** E-24 records the positive configured `MaxDecryptedDocumentBytes` value supplied by `OpenDocumentHandler` and the encrypted reader checks for authenticated record completeness and persisted-hash validity. E-27 records the integrated read/reconciliation selections and complete suite.
+
+- **Gap:** The plaintext-length boundary is not an exact peak-memory-allocation bound; transient buffers and stream growth add overhead. Viewing authorization and temporary-plaintext lifecycle remain owned by #193.
+
 - **Initial rating:** Likelihood 3 × Impact 4 = **12, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #272. Temporary plaintext viewing lifecycle remains under #193.
-- **Verification:** E-24 records the focused Application and Infrastructure regressions and full-solution results. #235 must map the required size-boundary, cancellation, integrity-failure and explicit-outcome scenarios to the integrated evidence record. Silent truncation remains unacceptable.
+- **Verification:** E-24 records the caller-supplied positive plaintext-size limit and reader validation. E-27 selected Application ordinary-read tests 50/50 and Infrastructure read tests 76/76; complete project suites passed. The length bound is not an exact peak-memory bound; #193 retains viewing lifecycle ownership.
 
 ### DV-T-005 — Untrusted Markdown bypasses the intended rendering policy
 
@@ -711,12 +773,15 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** Markdown preview in `MarkdownDocumentContentRenderer`, including the Markdig pipeline, generated HTML shell, WebView2 navigation and web-resource-request handlers.
 - **Plausible attack path:** Crafted Markdown produces raw markup, links or embedded resources that reach the presentation boundary. If that boundary relies only on HTTP/HTTPS request filtering, unsupported schemes or browser behaviors that do not raise the expected resource-request event may not be rejected by a complete explicit policy.
 - **Potential impact:** Unintended navigation or resource access, disclosure of locally accessible information, script or frame activity where restrictions are bypassed, or misleading/spoofed presentation. No specific exploit is claimed reproduced.
-- **Current protection:** E-03 preserves the historical baseline observation. E-26 records the current policy boundary and renderer integration: configurable Markdig raw-HTML disabling; WebView2 JavaScript disabled; explicit absolute-URI validation and HTTP/HTTPS scheme allow-lists; an internal `about:blank` navigation exception; user-initiated external navigation and same-navigation-ID redirect authorization; independent resource and navigation options; resource-request rejection; frame, new-window and external-URI-scheme restrictions; and a generated HTML CSP placed before untrusted content. The shipped values for all three Markdown policy options remain false.
-- **Gap:** E-26 verifies the policy methods, Markdig behavior and generated HTML policy through executed UI tests. It does not exercise a running WebView2 runtime. Actual browser enforcement of CSP and the WebView2 event paths for navigation, redirects, frames, new windows, external URI schemes and resource loading therefore remains to be established by #235. Raw HTML enabled by explicit configuration remains raw markup; its active behavior is restricted by the independent script, CSP and navigation/resource controls rather than by HTML sanitization.
+- **Current protection:** E-26 records Markdig, renderer, WebView2 event, and generated CSP controls. E-27 adds five actual WebView2 runtime tests covering initial load, permitted HTTP/redirect navigation, resource/frame blocking, CSP image blocking, and popup/external-scheme handling.
+
+- **Gap:** The initial-document runtime test sets `AllowRawHtml=true` and supplies script markup; it observes JavaScript disabled and the script marker not executing, but does not assert that the raw element remains in the generated DOM. The runtime navigation tests use `CoreWebView2.Navigate` rather than an actual click on a rendered Markdown anchor; interactive in-document fragment navigation was not exercised. Individual file/UNC, malformed/encoded, data/blob, and unsupported/custom URI variants are policy-tested but not each runtime-tested. Runtime resource probes do not cover every resource class or configuration.
+
 - **Initial rating:** Likelihood 3 × Impact 4 = **12, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #319 for the renderer policy and task-local regression coverage; #235 for integrated runtime verification and evidence completeness.
-- **Verification:** E-26 records 81/81 focused Markdown security tests, 292/292 UI tests, a successful full-solution build, and 1,540 full-solution tests passed with 0 failures and 0 skips. The five project totals are recorded in E-26 and reconcile with the solution result. The focused selection overlaps the UI and full-solution totals and is not added again. #235 must exercise actual WebView2 runtime behavior and record environment/runtime details, outcomes and any residual restrictions. Preserve support for legitimate Markdown presentation while ensuring unsupported or unverified behavior is not treated as permitted.
+- **Verification:** E-26 records policy tests; E-27 `MarkdownRenderingSecurityPolicyTests` passed 81/81 and actual WebView2 runtime tests passed 5/5. The first runtime test used `AllowRawHtml=true` with script markup and verified disabled JavaScript/non-execution, but did not assert script-element retention in the DOM. The navigation tests used `CoreWebView2.Navigate`; they did not simulate a user click on a rendered Markdown anchor. The runtime tests also covered the initial document, allowed HTTP and same-ID redirect, resource/frame rejection, selected CSP enforcement, popup and external-scheme handling. Other URI/resource variants and interactive fragment navigation remain insufficiently evidenced.
+
 - **Residual-risk rule:** Do not describe policy-method tests or generated CSP string assertions as proof that every WebView2 runtime navigation/resource path has been blocked. Do not describe the renderer as sanitizing raw HTML when `AllowRawHtml` is explicitly enabled.
 
 ### DV-T-006 — Artifact inventory or validation consumes excessive resources
@@ -729,12 +794,14 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** `DocumentArtifactEnumerator.EnumerateIncrementallyAsync`, canonical artifact-existence checks, keyset-paged `IDocumentRepository.GetPageAsync` queries, and the reconciliation inventory/content-validation loop in `ReconcileDocumentArtifactsHandler`.
 - **Plausible attack path:** A very large or changing vault requires work proportional to the inventory and content processed. Incremental enumeration, deterministic paging and per-artifact limits reduce intermediate materialization, but do not place a global bound on total scan time, cumulative bytes read or the number of findings retained.
 - **Potential impact:** Excessive memory/CPU/IO use and degraded availability during reconciliation; an interrupted pass may also leave validation incomplete.
-- **Current protection:** E-08 records the historical `Directory.GetFiles` inventory behavior. E-24 records incremental artifact enumeration, canonical existence checks, keyset metadata paging with a maximum page size of 256, and finite per-artifact hash-only content validation. Recovery re-reads metadata for an orphan immediately before ownership validation and deletion.
-- **Gap:** Full inventory-path and full-plaintext materialization are avoided, and each artifact validation has a finite plaintext-size limit. A global time, cumulative-byte or finding-count budget is not established. The cursor does not provide a transactionally consistent snapshot across concurrent repository/filesystem changes. #235 integrated verification remains pending.
+- **Current protection:** E-24 records incremental artifact enumeration, canonical path ownership, keyset-paged metadata with a maximum page size of 256, and finite per-artifact hash-only validation through `HashingWriteStream`. E-27 records the selected reconciliation/recovery regressions and full-suite results.
+
+- **Gap:** There is no global scan-time, cumulative-byte, or finding-count budget, and the cursor does not establish a transactionally consistent snapshot across concurrent repository/filesystem changes.
+
 - **Initial rating:** Likelihood 4 × Impact 3 = **12, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #272. Reconciliation semantics remain under #102.
-- **Verification:** E-24 records the executed focused reconciliation/recovery, repository, enumerator and integration test selections and the full-solution result. #235 must assess remaining aggregate-resource and concurrent-change risks and record integrated results. Preserve unrelated findings whenever safe continuation is possible.
+- **Verification:** E-24 records bounded paging, incremental enumeration and hash-only validation. E-27 selected Application reconciliation 50/50, Infrastructure 76/76 and Integration reconciliation/recovery 11/11. Global scan-time, cumulative-byte, finding-count and transactionally consistent snapshot guarantees are not established.
 
 ### DV-T-007 — Incomplete artifact validation is reported as successful
 
@@ -746,12 +813,14 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** Reconciliation content-read and result-classification logic that decides whether an artifact is `Matched`, unreadable, mismatched, or otherwise indeterminate.
 - **Plausible attack path:** A read, hash, I/O, cancellation, or resource-limit failure prevents all required checks from completing, but a failure path or coarse result mapping still reports success or suppresses other safe-to-collect findings.
 - **Potential impact:** False assurance of artifact integrity/consistency, missed findings, or incorrect decisions by users and downstream health/recovery workflows.
-- **Current protection:** E-24 records that reconciliation uses `ValidateContentHashAsync` and `HashingWriteStream` for complete incremental SHA-256 validation without retaining the full plaintext. Resource-limit and I/O failures that prevent completion remain unreadable-artifact outcomes; content mismatches remain distinct, cancellation remains cancellation, and `Matched` requires completed validation and hash comparison.
-- **Gap:** The historical caller-level missing limit is addressed. E-24 records current regression and solution-wide test evidence, but #235 integrated verification remains pending. Concurrent repository/filesystem changes are not observed through a transactional snapshot, and the final finding collection remains accumulated in memory.
+- **Current protection:** E-24 records distinct missing/orphaned/unreadable/path/content mismatch outcomes and requires complete hash validation before `Matched`; cancellation and validation failures remain non-success outcomes. E-27 records the selected reconciliation and integration regressions.
+
+- **Gap:** Safe continuation preserves unrelated findings in exercised cases, but final findings remain accumulated in memory and inventory validation is not transactionally snapshot-consistent during concurrent changes.
+
 - **Initial rating:** Likelihood 3 × Impact 4 = **12, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #272 for resource bounds and validation certainty; #102 for artifact lifecycle semantics.
-- **Verification:** E-24 records task-local reconciliation and related regression results. #235 must verify that Matched requires all mandatory checks to complete, that unrelated findings survive safe continuation, and that the documented residual consistency/resource risks are carried into the integrated evidence matrix.
+- **Verification:** E-24 records distinct incomplete-validation outcomes and the Matched certainty boundary. E-27 selected Application reconciliation 50/50, Infrastructure 76/76 and Integration 11/11. Unrelated findings were preserved in exercised cases; global aggregate and concurrent-snapshot guarantees remain unestablished.
 
 ### DV-T-008 — Sensitive filesystem artifacts lack effective access protection
 
@@ -763,12 +832,14 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** Creation and access of files under application-managed data, Documents, Security, database, logging, and temporary paths, including files created by dependent runtime libraries.
 - **Plausible attack path:** A sensitive file is created in an unexpected location or inherits effective Windows access permissions broader than intended; a local actor who has access to that path reads or alters it.
 - **Potential impact:** Disclosure or tampering with encrypted artifacts, database/key-related files, logs, or sensitive auxiliary data, depending on the actual contents and permissions.
-- **Current protection:** E-10 establishes application-managed path definitions; document encryption and key protection are existing controls.
-- **Gap:** Path definitions and directory creation do not establish effective Windows ACLs or protection for every actual file and auxiliary-artifact class.
+- **Current protection:** E-10 records application-managed paths; E-25 records the inspected host DACL, generated-artifact ACL checks for WAL, persistent rollback journal, migration staging and backup, plus three ACL negative controls. E-27 confirms the integrated Infrastructure/Integration suites passed.
+
+- **Gap:** The evidence is host- and artifact-specific and ACE-level. It does not calculate complete Windows effective access for every identity, group, privilege, host, or location.
+
 - **Initial rating:** Likelihood 3 × Impact 5 = **15, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #234 for auxiliary-artifact protection; #220 remains authoritative for key and encryption lifecycle.
-- **Verification:** Check effective Windows access protection for relevant directories/files, identify actual artifact locations and content sensitivity, and test failure to establish required protection.
+- **Verification:** E-25 records inspected host DACLs, synthetic/generated-artifact ACL checks and three negative controls. E-27 complete Infrastructure 395/395 and Integration 85/85 suites passed. This is host-specific ACE-level evidence, not a universal effective-access calculation.
 
 ### DV-T-009 — Interrupted database migration leaves exposed plaintext recovery material
 
@@ -780,12 +851,14 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** `DatabaseInitializer` plaintext-to-encrypted migration staging, promotion, backup retention, and recovery/cleanup paths.
 - **Plausible attack path:** Migration creates a plaintext recovery backup or staging artifact, then interruption or cleanup failure leaves the artifact behind; an actor with effective filesystem access can read it or it can interfere with later recovery.
 - **Potential impact:** Disclosure of database contents, integrity loss, failed startup, or loss of recoverability if cleanup or promotion destroys the authoritative state.
-- **Current protection:** E-09 shows migration validation, promotion, and cleanup/recovery behavior.
-- **Gap:** The contents and effective access protection of retained migration/backup files and SQLite runtime sidecars require evidence. Blanket deletion would be unsafe if it destroyed required recovery state.
+- **Current protection:** E-25 records plaintext migration staging and retained-backup contents, ACL checks, cancellation/failure recovery, successful retry/cleanup, SQLite marker checks, and provider bootstrap lifetime coverage. E-27 records the latest integrated Infrastructure/Integration results.
+
+- **Gap:** Not every SQLite sidecar, journal, TEMP, VACUUM, file-backed temporary, or provider-specific artifact was materialized. Tests do not simulate every process crash, power loss, filesystem failure, or concurrent state.
+
 - **Initial rating:** Likelihood 3 × Impact 5 = **15, High**.
 - **Treatment:** Mitigate.
 - **Owner:** #234 for artifact protection. Preserve the existing migration/recovery lifecycle.
-- **Verification:** Fault-inject failure around migration creation, validation, promotion, and cleanup. Inspect artifact contents and access; verify restart/recovery correctness and that required authoritative state remains available.
+- **Verification:** E-25 records WAL and persistent-journal marker checks, TEMP behavior, provider callback lifetime, migration staging/backup protection and retry recovery. E-27 selected artifact integrations passed 6/6, 9/9 and 8/8, with related Infrastructure selections 13/13. Unmaterialized variants and abrupt/concurrent states remain insufficiently evidenced.
 
 ### DV-T-010 — Copied-vault protection is assumed to exceed the actual guarantee
 
@@ -797,12 +870,14 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** Copying the encrypted document artifacts, encrypted database, and any protected key artifacts across profiles/devices, or reusing a copy in the original user context.
 - **Plausible attack path:** A user or attacker copies some or all vault files and assumes DPAPI `CurrentUser` guarantees universal device binding, or fails to account for whether the target context can access usable protected key material.
 - **Potential impact:** Incorrect security assumptions or unintended access to copied vault content under contexts where the required key material remains usable. Actual cross-profile/device behavior remains unverified.
-- **Current protection:** E-11 documents DPAPI `CurrentUser` key protection and the existing encryption/key lifecycle.
-- **Gap:** DPAPI `CurrentUser` is not, by itself, a universal device-binding guarantee. The actual profile/device copy behavior must be tested and documented.
+- **Current protection:** E-11 records DPAPI `CurrentUser` key protection and the existing #220 key lifecycle. E-27 confirms that no copied-vault scenario was executed and that existing DPAPI/key-service tests are not copy-vault tests.
+
+- **Gap:** Copy behavior remains unverified under the original profile, another Windows profile, and another device. DPAPI `CurrentUser` alone does not establish universal device binding.
+
 - **Initial rating:** Likelihood 2 × Impact 5 = **10, High**.
 - **Treatment:** Mitigate by documenting and verifying the existing boundary; do not invent a stronger guarantee.
 - **Owner:** #220 for key/encryption semantics; #235 records integrated evidence.
-- **Verification:** Test copies under the original profile, a different Windows profile, and another device where supported. Record actual results and conditions. Do not characterize same-user arbitrary code execution as prevented by these checks.
+- **Verification:** No copied-vault attempt was executed under the original profile, a different Windows profile or another device. Existing DPAPI/key-service tests are not copy-vault tests. DPAPI CurrentUser alone does not establish universal device binding.
 
 ### DV-T-011 — Interrupted or concurrent initialization establishes incorrect authoritative state
 
@@ -814,12 +889,14 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** Cross-process vault initialization, key/database provisioning, schema migration, migration staging/promotion, and recovery coordination.
 - **Plausible attack path:** Concurrent instances or interruption during initialization cause overlapping state inspection/publication/cleanup, potentially leaving competing temporary candidates or ambiguous database/key state.
 - **Potential impact:** Data becoming unreadable, inconsistent authoritative state, interrupted recovery, or startup failure. The existing mechanisms are not declared defective; required behavior must be verified.
-- **Current protection:** E-11 and E-12 document atomic key-publication and strict retrieval architecture for document/database keys.
-- **Gap:** The threat model does not declare this existing behavior defective; relevant concurrency and fault-injection evidence must demonstrate that its guarantees hold.
+- **Current protection:** E-11 and E-12 preserve the key/database lifecycle evidence; E-25 records provider bootstrap callback-lifetime validation and managed migration backup/staging recovery tests. E-27 records the integrated key/Infrastructure/Integration suite results.
+
+- **Gap:** The tests do not establish every competing-initialization, abrupt-crash, power-loss, filesystem-failure, or concurrent recovery state. Existing key authority, initialization coordination, and recovery ownership remain with #220, #214, and #234 as applicable.
+
 - **Initial rating:** Likelihood 2 × Impact 4 = **8, Moderate**.
 - **Treatment:** Verify and mitigate any demonstrated gap.
 - **Owner:** #220 for key lifecycle; #214 for active-vault concurrency; #234 for auxiliary-artifact protection as applicable.
-- **Verification:** Exercise competing initialization, interrupted publication, existing-key retrieval failure, and recovery scenarios. Missing or unusable key material must not silently authorize replacement.
+- **Verification:** E-25 records the provider callback-lifetime regression and managed migration staging/backup recovery. E-27 complete Infrastructure 395/395 and Integration 85/85 passed, along with selected key/provider/recovery regressions. Every competing-initialization, abrupt-crash, power-loss and concurrent recovery state was not exercised.
 
 ### DV-T-012 — Arbitrary same-user code execution exceeds the supported model
 
@@ -831,207 +908,278 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Entry point:** The Windows user security context, process memory containing plaintext, and filesystem/API operations already authorized to the compromised user.
 - **Plausible attack path:** Arbitrary code executes with the same user’s effective privileges and reads accessible vault files, inspects authorized process memory, or invokes operations available to that user.
 - **Potential impact:** Potential confidentiality/integrity/availability loss for assets accessible to that user. This capability is explicitly outside MVP2’s supported attacker model, not claimed as mitigated.
-- **Current protection:** Encryption at rest and DPAPI provide protection under their respective boundaries; they do not establish isolation from arbitrary same-user code.
-- **Gap:** This is an explicit limitation of the supported attacker model, not a threat claimed to be mitigated by MVP2.
+- **Current protection:** The existing encryption and DPAPI mechanisms provide only their documented at-rest and key-protection boundaries. E-27 does not claim isolation from arbitrary code executing with the same-user effective privileges.
+
+- **Gap:** This capability remains explicitly outside the supported MVP2 attacker model. A stronger same-user isolation requirement needs separately scoped product/security architecture and an explicit ADR decision.
+
 - **Initial rating:** Not scored; out of the supported attacker model.
 - **Treatment:** Document the limitation and avoid unsupported claims.
 - **Owner:** Product/security architecture. Any broader protection requirement needs separate scope and an explicit architectural review.
-- **Verification:** Review security claims to ensure file-encryption and copied-vault tests are not misrepresented as protection against same-user code execution.
-
----
+- **Verification:** Security claims were reviewed against the existing DPAPI and same-user threat boundary. Arbitrary code with the same-user effective privileges remains outside the supported MVP2 attacker model; no same-user isolation claim is made.
 
 ## 10. Threat-to-Control Traceability Matrix
 
-This matrix records the threat, affected assets, source-observed protection, current gap/status, accountable owner, and expected verification evidence for every cross-cutting control. The detailed control register in Section 11 provides the fuller implementation expectations.
+This is the integrated control-to-evidence matrix for all 16 stable controls. The detailed and authoritative implementation, verification, and residual-risk statuses are recorded once per control in Section 11. Historical evidence E-20 through E-26 remains task-specific; E-27 is the integrated #235 run.
 
-| Control | Threat(s) | Affected assets | Current protection / source evidence | Gap or status | Owner | Expected validation evidence |
+| Control | Threat(s) / security objective | Responsible task and preserved owner | Implementation and enforcement paths | Test identity and actual evidence | Merged PR / CI evidence | Remaining gap and follow-up owner |
 |---|---|---|---|---|---|---|
-| DV-SEC-001 - Configuration classification and secret handling | DV-T-001 | A-07, A-08, A-09 | E-02, E-20 and E-21: current configuration inventory, binding/consumer classification, five focused configuration-policy tests, and a bounded secret-pattern review; no recognized actual credential was identified in the reviewed configuration candidates | Current implementation evidence is available, but heuristic scans are not exhaustive and comprehensive deployment-artifact coverage is not claimed | #231 | Review setting classification and future-secret policy; inspect tracked/shipped configuration; run focused tests and relevant build validation; retain residual limitations explicitly |
-| DV-SEC-002 - Configuration-provider precedence | DV-T-001 | A-07 | E-20: the duplicate late JSON provider was removed; runtime tests verify that environment-variable overrides win over JSON defaults for Markdown policy and processing resource limits | Passed for the tested JSON/default and environment-variable override paths; other provider channels are not claimed as independently verified by these tests | #231 | Focused tests for content-root/default loading, environment-variable precedence for a security-sensitive rendering option and a processing resource limit, and required-file behavior |
-| DV-SEC-003 - Sensitive-data-safe diagnostics | DV-T-002 | A-01, A-04 to A-10 | E-19 (historical baseline) and E-22 (current implementation, representative regressions and project-suite results) | Shared safe-failure diagnostics, a real-sink regression, targeted source-to-sink checks, and full-solution validation are present; 1,339 solution tests passed with no failures or skips. The heuristic review found no confirmed leak in inspected paths but is not proof of all runtime dataflows | #232 | Audit all relevant logging and user-facing failure paths; assert synthetic sensitive values are absent from emitted output while safe severity, operation code, failure classification and messages remain useful; run full-solution validation |
-| DV-SEC-004 - Source-input and structural resource boundaries | DV-T-003 | A-01, A-02, A-06 | E-04 to E-06 record historical observations; E-23 records current per-format input, nesting, node, row, column, field, cell, line and entry limits (including INI section declarations) with final Application (741/741) and Integration (84/84) evidence | Implemented and tested for covered input and structural boundaries; a global CPU-time budget and strict total-process-memory guarantee are not established | #233 | Per-format boundary tests, malformed-input and cancellation coverage where applicable, focused parser regressions, and #235 integrated validation |
-| DV-SEC-005 - Parser intermediate-materialization bounds | DV-T-003 | A-02; application availability | E-23 records bounded input, format-specific structural preflight or guarded parsing, intermediate cardinality limits (including INI section fan-out), YAML alias-expansion regression coverage, and early rejection paths | Intermediate dimensions are bounded for the reviewed formats; exact parser-library memory overhead and a hard wall-clock work budget remain unverified | #233 | Parser-specific tests for large inputs, nesting, fan-out, rows/nodes/fields and early enforcement, followed by #235 integrated verification |
-| DV-SEC-006 - Processed-output limits and completeness | DV-T-003 | A-01, A-02, A-06; persisted processing state | E-23 records output-boundary and parser-failure evidence plus the real-SQLite regression proving preservation of previous successful chunks and generation after a later resource-limit failure | Tested resource-limit failure paths preserve complete-result semantics; the full-solution and cross-control acceptance review remains pending #235, and lifecycle ownership remains with #101 | #233; #101 owns lifecycle semantics | Assert returned outcomes and persisted state after output-limit breaches, parser failures and cancellation; verify no silent truncation as successful complete output and record integrated results under #235 |
-| DV-SEC-007 - Markdown markup and script policy | DV-T-005 | A-01, A-02, A-10 | E-03 is the historical baseline; E-26 records the Markdig pipeline, JavaScript-disabled WebView2 configuration, generated CSP, raw-HTML option behavior and executed regression evidence | Markup and generated-HTML policy tests passed; full solution passed 1,540/1,540; actual WebView2 runtime enforcement remains unverified pending #235 | #319; #235 for integrated verification | Verify disabled/enabled raw HTML, script restrictions and legitimate Markdown presentation; #235 must exercise the actual WebView2 runtime and record CSP/runtime behavior |
-| DV-SEC-008 - Markdown navigation scheme policy | DV-T-005 | A-01, A-02, A-10 | E-03 is the historical baseline; E-26 records absolute-URI validation, internal-document and HTTP/HTTPS navigation rules, user initiation, same-navigation-ID redirect authorization, frame cancellation, new-window handling, external-scheme cancellation and adversarial URI tests | Navigation policy tests passed; full solution passed 1,540/1,540; actual WebView2 navigation outcomes remain to be verified by #235 | #319; #235 for integrated verification | Test legitimate internal navigation, HTTP/HTTPS settings, user initiation, authorized redirects, malformed/local/custom schemes, frame navigation, new windows and external URI-scheme attempts in the actual runtime |
-| DV-SEC-009 - Markdown resource scheme policy | DV-T-005 | A-01, A-02, A-10 | E-03 is the historical baseline; E-26 records the independent HTTP/HTTPS resource policy, 403 rejection path, generated CSP restrictions and adversarial resource URI tests | Resource policy and CSP generation tests passed; full solution passed 1,540/1,540; actual WebView2 resource loading and CSP enforcement remain unverified pending #235 | #319; #235 for integrated verification | Test permitted/blocked HTTP/HTTPS resources, local-file and custom schemes, data/blob resources, malformed URIs and generated CSP enforcement in the actual runtime |
-| DV-SEC-010 - Ordinary document-read boundary | DV-T-004 | A-01, A-02, A-05 | E-07 and E-17 preserve historical caller-limit observations; E-24 records the finite configured limit and task-local regression evidence | Caller-level mitigation implemented and tested; peak allocation is not an exact memory cap; integrated evidence remains pending #235 | #272 | Ordinary-open limit, over-limit, cancellation, integrity and explicit-outcome regression evidence, followed by #235 integrated validation |
-| DV-SEC-011 - Bounded reconciliation and validation certainty | DV-T-006, DV-T-007 | A-03, A-04, A-12 | E-08 and E-17 preserve historical inventory/caller-limit observations; E-24 records keyset paging, incremental enumeration and finite hash-only validation | Task-local mitigation and tests are in place; global scan budgets and an atomic inventory snapshot are not established; integrated evidence remains pending #235 | #272; #102 owns lifecycle semantics | Reconciliation, repository, enumerator, failure-classification and safe-continuation regressions; assess residual aggregate-work and concurrent-change risks under #235 |
-| DV-SEC-012 - Filesystem artifact boundary | DV-T-008 | A-03, A-04, A-05, A-09, A-10 | E-10 preserves historical path observations; E-25 records the inspected data-root DACL, synthetic and generated-artifact ACL checks for WAL, persistent rollback journal, migration staging and backup, and three ACL negative controls including direct trusted-principal deny handling | Targeted location/ACL checks and task-local suites passed for the inspected host and exercised artifacts; comprehensive effective-access guarantees for every identity, group, host, location and artifact class are not established | #234 for auxiliary artifacts; existing owners retain artifact/key lifecycle | Verify actual locations and generated-artifact access rules; retain ACE-level limitations and complete integrated review under #235
-| DV-SEC-013 - SQLite and migration/recovery auxiliary-artifact protection | DV-T-008, DV-T-009, DV-T-011 | A-04, A-05, A-09 | E-09 and E-12 preserve historical migration/database observations; E-25 records provider version/temp-store evidence, one-time SQLite provider initialization and callback-lifetime regression, WAL and persistent-journal marker/ACL tests, TEMP-table/sort marker handling, and retained-backup/cancelled-staging recovery tests | Full solution passed 1,459/1,459; exercised WAL, persistent-journal, TEMP query, bootstrap callback, backup and staging cases passed focused or full-project validation. Remaining SQLite variants and abrupt-interruption/concurrency states remain unverified | #234 for auxiliary-artifact protection | Distinguish observed behavior from unmaterialized variants and retain residual crash/concurrency gaps for #235
-| DV-SEC-014 - Fail-closed behavior for security-sensitive uncertainty | DV-T-001 to DV-T-011 where applicable | Assets affected by each operation | Existing feature-specific failure/lifecycle mechanisms exist | No blanket cross-cutting pass is claimed; behavior/evidence is task-specific | Owner of affected operation; #235 integrates | Failure, cancellation, limit, invalid-input, key, reconciliation, rendering and filesystem-protection tests asserting visible/persisted outcomes |
-| DV-SEC-015 - Integrated verification and evidence completeness | All in-scope threats | All | This document defines the expected evidence contract | Integrated results have not been recorded by this document | #235 | Completed control-to-evidence matrix with execution details, actual results, status, remaining gaps and disposition |
-| DV-SEC-016 - Copied-vault boundary and attacker-model limitation | DV-T-010, DV-T-012 | A-01, A-03, A-04, A-05; all assets accessible within the same-user security context | E-11 records DPAPI `CurrentUser` key protection and the existing encryption/key lifecycle | Copy behavior is unverified; arbitrary same-user code execution is outside the supported attacker model and is not claimed to be mitigated | #220 for key/encryption semantics; #235 for integrated evidence; Product/security architecture for any stronger guarantee | Test copies under the original profile, a different profile, and another device where supported; record conditions, actual outcomes and residual risks; review claims for unsupported device-binding or same-user isolation guarantees |
+| DV-SEC-001 — Configuration classification and secret handling | DV-T-001; classify declarations, consumers, metadata, and genuine secrets. | #231; #220 retains key lifecycle. | `src/DeskVault.UI/Hosting/HostConfigurator.cs`; `src/DeskVault.UI/appsettings.json`; consumers classified in E-21. | `DeskVault.UI.Tests/HostConfigurationPolicyTests` 5/5; E-21 bounded configuration/secret-pattern inventory; E-27 full suites. | #325 merged; Build/Test run 329 succeeded. | Heuristic inventory is not exhaustive across every deployment artifact. #231 owns source/consumer policy; follow-up owner: #231 for configuration/consumer review; Product/security architecture must assign ownership before any broader deployment-artifact inventory is added to scope. |
+| DV-SEC-002 — Configuration-provider precedence | DV-T-001; effective settings follow the supported provider order. | #231. | `src/DeskVault.UI/Hosting/HostConfigurator.cs`; `src/DeskVault.UI/appsettings.json`; supported environment-variable override path. | `DeskVault.UI.Tests/HostConfigurationPolicyTests`: `CreateBuilder_LoadsConfigurationFromSpecifiedContentRoot`, `CreateBuilder_EnvironmentVariablesOverrideJsonSettings`, `CreateBuilder_EnvironmentVariablesOverrideJsonResourceLimits`, `CreateBuilder_ThrowsWhenAppsettingsFileIsMissing`; E-20 5/5; E-27 1,552/1,552 solution tests. | #325 merged; Build/Test run 329 succeeded. | Other provider channels and command-line overrides are not supported or claimed; `Args=[]`. Unsupported channels are out of scope, not failed tests. |
+| DV-SEC-003 — Sensitive-data-safe diagnostics | DV-T-002; protect content, metadata, paths, credentials, keys, and exception-carried data. | #232; existing feature owners retain their outcome/lifecycle contracts. | `src/DeskVault.Shared/Extensions/SafeFailureLoggingExtensions.cs`; `src/DeskVault.Shared/Extensions/DiagnosticFailureClassifier.cs`; `src/DeskVault.Shared/Resources/DiagnosticOperationCodes.cs`; reviewed Application, Infrastructure, UI callers and configured Serilog sink. | `DeskVault.Shared.Tests/SafeFailureLoggingExtensionsTests` 25/25; selected `DeskVault.Application.Tests` diagnostic paths 55/55; `DeskVault.Infrastructure.Tests/KeyServiceSafeLoggingTests` 4/4; `DeskVault.UI.Tests/SafeFailureLoggingSerilogSinkTests` 1/1; synthetic markers absent from exercised emitted output. | #326 merged; Build/Test run 331 succeeded. | Source-to-sink inventory is heuristic and not a proof of every runtime dataflow. #232 owns the shared diagnostic implementation; changed call sites require continued review. |
+| DV-SEC-004 — Source-input and structural resource boundaries | DV-T-003; prevent oversized/malformed input and structures from causing uncontrolled work. | #233; #101 retains processing lifecycle ownership. | `src/DeskVault.Application/Configurations/DocumentProcessingOptions.cs`; format extractors under `src/DeskVault.Application/Documents/Extraction/`; `src/DeskVault.Application/Documents/Parsing/Csv/CsvDocumentParser.cs`; `CsvResourceLimitTextReader.cs`; `src/DeskVault.Application/Documents/Processing/DocumentStructureLimitExceededException.cs`. | `DeskVault.Application.Tests` parser-boundary tests (`CsvResourceBoundaryTests`, `GeneratedParserResourceBoundaryTests`, `JsonResourceBoundaryTests`, `XmlResourceBoundaryTests`, `YamlResourceBoundaryTests`, `IniResourceBoundaryTests`); E-27 selected Application 72/72 and Integration 1/1; full Application 750/750 and Integration 85/85. | #327 merged; Build/Test run 333 succeeded. | No strict process-wide memory or CPU-time budget. #233 owns format-specific limits; #101 retains generations/cancellation/recovery. |
+| DV-SEC-005 — Parser intermediate-materialization bounds | DV-T-003; reject excessive nesting, fan-out, aliases, nodes and intermediates before unbounded construction. | #233; #101 retains lifecycle semantics. | Format-specific structural preflight/guarded parsing in CSV, JSON, XML, YAML and INI extractors; `CsvDocumentParser.cs`; `CsvResourceLimitTextReader.cs`. | The parser boundary test classes listed for DV-SEC-004; YAML alias-expansion, JSON BOM/structure, XML DTD/resolver and INI section-fan-out evidence in E-23; E-27 selected parser runs. | #327 merged; Build/Test run 333 succeeded. | Parser-library allocation overhead and a hard wall-clock CPU/work budget are not established. #233 owns the format controls. |
+| DV-SEC-006 — Processed-output limits and completeness | DV-T-003; incomplete parser results must not publish as complete or replace prior success. | #233; #101 owns generations, cancellation and recovery; #100 import compensation; #223 user-facing outcomes. | `src/DeskVault.Application/Documents/Commands/ProcessDocument/ProcessDocumentHandler.cs`; format extractors under `src/DeskVault.Application/Documents/Extraction/`; `DocumentStructureLimitExceededException.cs`; existing processing publication boundary. | `DeskVault.Application.Tests/ProcessDocumentHandlerTests`; `DeskVault.Integration.Tests/ProcessDocument_WhenParserResourceLimitIsExceededAfterPreviousSuccess_PreservesPreviousChunksAndGeneration`; E-27 full Application/Integration/solution suites. | #327 merged; Build/Test run 333 succeeded. | CPU/memory-wide bounds remain limited as above; lifecycle semantics remain under #101. |
+| DV-SEC-007 — Markdown markup and script policy | DV-T-005; untrusted markup cannot enable script/active content outside policy. | #319; #235 owns integrated runtime evidence; #193 retains viewing lifecycle. | `src/DeskVault.UI/Rendering/MarkdownDocumentRendering/MarkdownRenderingSecurityPolicy.cs`; `src/DeskVault.UI/Rendering/MarkdownDocumentRendering/MarkdownDocumentContentRenderer.cs`; Markdig raw-HTML option; WebView2 JavaScript setting; generated CSP. | `DeskVault.UI.Tests/MarkdownRenderingSecurityPolicyTests` 81/81; local #235 `DeskVault.UI.Tests/MarkdownWebView2RuntimeSecurityTests` 5/5; runtime initial-document/CSP/script checks. | #330 merged; Build/Test run 341 succeeded. | Runtime test uses `AllowRawHtml=true` and script markup, verifies JavaScript disabled/non-execution, but does not assert script-node retention in the generated DOM. #319 owns renderer policy; #235 records the residual runtime limit. |
+| DV-SEC-008 — Markdown navigation scheme policy | DV-T-005; only valid internal and authorized external navigation is allowed. | #319; #235 owns integrated runtime evidence. | `src/DeskVault.UI/Rendering/MarkdownDocumentRendering/MarkdownRenderingSecurityPolicy.cs`; `src/DeskVault.UI/Rendering/MarkdownDocumentRendering/MarkdownDocumentContentRenderer.cs`; `ConfigureSecurityAndNavigate`; `ConfigureExternalUriSchemeProtection`. | `DeskVault.UI.Tests/MarkdownRenderingSecurityPolicyTests` 81/81; local #235 `DeskVault.UI.Tests/MarkdownWebView2RuntimeSecurityTests` 5/5, including allowed HTTP/same-navigation-ID redirect, initial document, blocked frame, popup and `ms-settings:privacy` launching. | #330 merged; Build/Test run 341 succeeded. | Runtime navigation was initiated through `CoreWebView2.Navigate` (the initial event reported `IsUserInitiated=true`); an actual click on a rendered Markdown anchor and interactive fragment navigation were not exercised. Individual file/UNC, malformed/encoded, data/blob and other unsupported/custom URI variants remain policy-only. #319 owns policy; #235 records browser limitations. |
+| DV-SEC-009 — Markdown resource scheme policy | DV-T-005; resources are independent from navigation and constrained by policy/CSP. | #319; #235 owns integrated runtime evidence. | `src/DeskVault.UI/Rendering/MarkdownDocumentRendering/MarkdownRenderingSecurityPolicy.cs`; `src/DeskVault.UI/Rendering/MarkdownDocumentRendering/MarkdownDocumentContentRenderer.cs`; `WebResourceRequested` handling; generated CSP. | `DeskVault.UI.Tests/MarkdownRenderingSecurityPolicyTests` 81/81; local #235 runtime 5/5 observed production request rejection (403) and `img-src 'none'` blocking. | #330 merged; Build/Test run 341 succeeded. | Not every resource scheme/class or external-resource-enabled HTTP path was exercised in the browser. #319 owns policy; #235 records the unexecuted runtime variants. |
+| DV-SEC-010 — Ordinary document-read boundary | DV-T-004; ordinary open must return bounded, complete, authenticated and hash-valid plaintext. | #272; #193 retains viewing authorization and temporary plaintext lifecycle. | `src/DeskVault.Application/Documents/Queries/OpenDocument/OpenDocumentHandler.cs`; `src/DeskVault.Application/Interfaces/IDocumentReader.cs`; `src/DeskVault.Infrastructure/Services/EncryptedDocumentReader.cs`; configured `MaxDecryptedDocumentBytes`. | E-27 selected `DeskVault.Application.Tests` ordinary-read/reconciliation tests 50/50 (including `OpenDocumentHandlerTests`); `DeskVault.Infrastructure.Tests` read/reconciliation tests 76/76 (including `EncryptedDocumentReaderTests`); full Application 750/750 and Infrastructure 395/395. | #328 merged; Build/Test run 335 succeeded. | Plaintext-length limit is not an exact peak-memory bound. #193 remains owner of viewing lifecycle. |
+| DV-SEC-011 — Bounded reconciliation and validation certainty | DV-T-006, DV-T-007; no incomplete validation may return `Matched`. | #272; #102 retains artifact lifecycle/reconciliation semantics. | `src/DeskVault.Application/Documents/Queries/ReconcileDocumentArtifacts/ReconcileDocumentArtifactsHandler.cs`; `src/DeskVault.Application/Interfaces/IDocumentRepository.cs`; `src/DeskVault.Infrastructure/Repositories/SqliteDocumentRepository.cs`; `src/DeskVault.Infrastructure/Services/DocumentArtifactEnumerator.cs`; `src/DeskVault.Infrastructure/Services/HashingWriteStream.cs`. | `DeskVault.Application.Tests/ReconcileDocumentArtifactsHandlerTests`; `DeskVault.Infrastructure.Tests/DocumentArtifactEnumeratorTests` and `SqliteDocumentRepositoryTests`; `DeskVault.Integration.Tests/DocumentArtifactReconciliationIntegrationTests`; E-27 selected Application 50/50, Infrastructure 76/76, Integration 11/11. | #328 merged; Build/Test run 335 succeeded. | No global scan-time/cumulative-byte/finding-count budget or transactionally consistent inventory snapshot. #272 owns bounds; #102 retains semantics. |
+| DV-SEC-012 — Filesystem artifact boundary | DV-T-008; application-managed paths and exercised generated files retain intended host permission boundary. | #234; #220 retains key lifecycle; #102 retains artifact lifecycle. | `src/DeskVault.Infrastructure/Services/DeskVaultDataPaths.cs`; `src/DeskVault.Infrastructure/Services/FileSystemStorageService.cs`; `tests/DeskVault.Infrastructure.Tests/AuxiliaryArtifactAclAssertions.cs`. | `DeskVault.Infrastructure.Tests/AuxiliaryArtifactAclAssertions`; `DeskVault.Infrastructure.Tests/AuxiliaryArtifactProtectionIntegrationTests` 6/6; generated WAL, persistent rollback-journal, staging/backup checks and three ACL negative controls in E-25. | #329 merged; Build/Test run 339 succeeded. | ACE-level and host-specific evidence is not a complete effective-access calculation for every trustee/host/location. #234 owns artifact protection; stronger Windows access claims need explicit follow-up. |
+| DV-SEC-013 — SQLite and migration/recovery auxiliary-artifact protection | DV-T-008, DV-T-009, DV-T-011; protect actual sensitive sidecars/recovery state and provider lifetime. | #234; #220 key authority; #214 initialization/concurrency; existing recovery owners retain lifecycle. | `src/DeskVault.Infrastructure/Persistence/DatabaseInitializer.cs`; `src/DeskVault.Infrastructure/Services/SqliteDatabaseEncryptionMigrator.cs`; `src/DeskVault.Infrastructure/Persistence/SqliteProviderBootstrap.cs`; `src/DeskVault.Infrastructure/Persistence/EncryptedDeskVaultDbContextFactory.cs`; `src/DeskVault.Infrastructure/DependencyInjection.cs`. | `DeskVault.Infrastructure.Tests/EncryptedDatabasePipelineIntegrationTests` 9/9; `DeskVault.Infrastructure.Tests/PlaintextDatabaseMigrationIntegrationTests` 8/8; `DeskVault.Infrastructure.Tests/SqliteProviderBootstrapTests`; `DeskVault.Infrastructure.Tests/SqliteDatabaseEncryptionMigratorTests`; `DeskVault.Infrastructure.Tests/EncryptedDeskVaultDbContextFactoryTests`; E-27 selected Infrastructure 13/13 and Integration artifact selections. | #329 merged; Build/Test run 339 succeeded. | Unmaterialized SQLite variants, forced file-backed TEMP, exhaustive OS temp inspection, abrupt crash/power-loss and concurrent states remain unverified. #234 owns protection. |
+| DV-SEC-014 — Fail-closed behavior for security-sensitive uncertainty | DV-T-001 through DV-T-011 where applicable; incomplete/uncertain operations do not become success. | Follow-up owners by operation: #231 configuration/secrets; #232 diagnostics; #233 parser/source/structure/output boundaries, with #101 retaining processing lifecycle, #100 import compensation and #223 outcome semantics; #272 ordinary reads/reconciliation, with #193 retaining viewing/plaintext lifecycle and #102 retaining artifact lifecycle; #220 key authority; #214 initialization/concurrency; #319 Markdown renderer policy, with #193 retaining viewing lifecycle; #234 filesystem/SQLite auxiliary-artifact protection, with #220 retaining key authority and #214 retaining initialization/recovery responsibilities; #235 integrated evidence and PR/CI. Product/security architecture owns any separately approved stronger copied-vault or same-user isolation requirement. | Configuration, key retrieval, parser, ordinary-read, reconciliation, renderer, migration/recovery and diagnostic enforcement points listed above. | Representative failure-path tests include `DeskVault.UI.Tests/HostConfigurationPolicyTests`, `DeskVault.Shared.Tests/SafeFailureLoggingExtensionsTests`, `DeskVault.Integration.Tests/ProcessDocument_WhenParserResourceLimitIsExceededAfterPreviousSuccess_PreservesPreviousChunksAndGeneration`, `DeskVault.Application.Tests/OpenDocumentHandlerTests`, `DeskVault.Application.Tests/ReconcileDocumentArtifactsHandlerTests`, `DeskVault.Infrastructure.Tests/SqliteProviderBootstrapTests`, `DeskVault.Infrastructure.Tests/PlaintextDatabaseMigrationIntegrationTests`, and the local #235 `DeskVault.UI.Tests/MarkdownWebView2RuntimeSecurityTests`; all five full project suites passed. | Relevant merged PRs #325–#330 and successful Build/Test runs 329, 331, 333, 335, 339 and 341. | Evidence remains operation-specific; no blanket proof for every possible failure state. Each newly demonstrated defect returns to the mapped existing owner or a separately scoped follow-up. |
+| DV-SEC-015 — Integrated verification and evidence completeness | All 12 threats and all in-scope controls; no unverified control is reported as passed. | #235; no lower-level implementation ownership is transferred. | `docs/security/mvp2-threat-model.md`; E-27 integrated evidence; 16 control rows and corresponding implementation/test paths above. | Full-solution build succeeded; full solution 1,552/1,552; `DeskVault.Shared.Tests` 25, `DeskVault.Application.Tests` 750, `DeskVault.Infrastructure.Tests` 395, `DeskVault.Integration.Tests` 85, `DeskVault.UI.Tests` 297; Markdown policy 81/81; WebView2 runtime 5/5; renderer/new-file whitespace checks passed before document reconciliation. | Implementation PRs #325–#330 merged with successful Build/Test runs. #235 PR/CI not yet created. | The complete document diff was reviewed on 2026-11-02. The #235 PR/CI gate remains pending. #235 owns PR/CI completion and any evidence-driven matrix/documentation updates; no accepted residual risk is recorded. |
+| DV-SEC-016 — Copied-vault boundary and attacker-model limitation | DV-T-010, DV-T-012; describe DPAPI `CurrentUser` and same-user capability no more strongly than evidence supports. | #220 owns key/encryption semantics; #235 records evidence; Product/security architecture owns any stronger requirement. | `src/DeskVault.Infrastructure/Services/WindowsEncryptionKeyService.cs`; `src/DeskVault.Infrastructure/Services/WindowsDatabaseEncryptionKeyService.cs`; existing DPAPI `CurrentUser` key protection. | `DeskVault.Infrastructure.Tests/WindowsEncryptionKeyServiceTests` and `WindowsDatabaseEncryptionKeyServiceTests` are key-service tests, not copied-vault tests. No copy attempt was run under the original profile, a different profile, or another device. | Existing key lifecycle is outside #235 implementation ownership; no copied-vault PR/CI evidence. #235 PR/CI pending. | Copied-vault scenarios remain unexecuted. Do not claim universal device binding or protection against arbitrary same-user code. Follow-up owner: #220 for observed key behavior; Product/security architecture for any stronger requirement. |
 
----
+The matrix records execution evidence and residual gaps; it does not duplicate the authoritative three-field status in Section 11. No risk is treated as accepted without an explicit authorized decision.
 
 ## 11. Security Control Register
 
 The `DV-SEC-*` IDs are stable references used by the threat register and the integrated validation. An ID denotes a required security property; it does not mean that the control has been implemented or passed.
+
+Each control has three independent, authoritative status fields:
+- **Implementation status:** `Implemented`, `Partially implemented`, `Not implemented`, or `Not applicable`.
+- **Verification status:** `Passed`, `Failed`, `Unexecuted`, or `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`, `Accepted risk`, or `Out of scope`. `Accepted risk` requires an authorized decision-maker, decision date, rationale, and traceable decision reference; no accepted-risk decision is recorded by this assessment.
+
+**Integrated status tally (16 control records only):** implementation — 11 `Implemented`, 5 `Partially implemented`, 0 `Not implemented`, 0 `Not applicable`; verification — 7 `Passed`, 0 `Failed`, 8 `Insufficient evidence`, 1 `Unexecuted`; residual disposition — 15 `Open follow-up`, 1 `Out of scope`, 0 `Accepted risk`. The tally excludes this definition text.
+
+A verification result applies only to the behavior exercised. Where runtime scenarios, artifact variants, identities, or failure states were not exercised, the verification status must remain `Unexecuted` or `Insufficient evidence`; it must not be inferred from source inspection, test-file existence, or a different test scenario.
 
 ### DV-SEC-001 — Configuration classification and secret handling
 
 - **Threat:** DV-T-001.
 - **Assets:** A-07, A-08, A-09.
 - **Owner:** #231.
-- **Current evidence:** E-02, E-20 and E-21.
-- **Status:** Current configuration source and consumer classification has been documented, and the reviewed configuration candidates produced no recognized credential finding. The scan is heuristic and comprehensive deployment-artifact coverage is not claimed.
+- **Current evidence:** E-02, E-20, E-21, and integrated E-27. The current configuration/consumer classification and supported provider behavior are implemented; the secret scan is bounded and heuristic.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Classify settings according to purpose and sensitivity; distinguish ordinary configuration from potentially sensitive operational metadata and actual secret material; trace declarations to effective consumers; keep actual credentials out of shipped configuration; define the required sourcing, protection, access, lifecycle and diagnostic-exposure decisions before an in-scope capability introduces a genuine secret. Do not introduce a generic secret-management subsystem without a concrete requirement.
 - **Secret-handling policy:** Environment variables and ordinary configuration providers are value sources, not inherently protected secret stores. If an in-scope feature genuinely requires a secret, its source, protection mechanism, authorized access boundary, lifecycle, rotation/replacement requirements where applicable, and diagnostic exposure must be explicitly reviewed before implementation. Existing DPAPI-backed key protection, key identity, provisioning and retrieval remain under #220. AI-specific credentials remain outside MVP2.
-- **Verification:** E-20 records five passing focused configuration-policy tests and 200 passing UI regression tests on the task working tree. E-21 records the reviewed configuration candidates and the known `publicKeyToken` metadata false positives. Final full-solution validation and repository-diff checks remain required before task completion.
+- **Verification:** E-27 records `HostConfigurationPolicyTests` 5/5 and the full solution 1,552/1,552. The reviewed configuration candidates produced no recognized credential-value finding, but generated/deployment artifact coverage and unrecognized secret forms are not proven. Follow-up owner: #231 for configuration policy; deployment inventory scope requires explicit assignment if broadened.
 
 ### DV-SEC-002 — Configuration-provider precedence
 
 - **Threat:** DV-T-001.
 - **Assets:** A-07.
 - **Owner:** #231.
-- **Current evidence:** E-20.
-- **Status:** Passed for the tested composition and override paths. The content-root/default-loading behavior, required configuration-file behavior, and environment-variable precedence for a rendering-policy setting and a processing resource limit have automated regression coverage.
+- **Current evidence:** E-20 and integrated E-27. The supported content-root, required JSON defaults, and tested environment-variable overrides are implemented and regression-tested.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Passed`.
+- **Residual-risk disposition:** `Out of scope`.
+
 - **Required behavior:** The UI composition root must establish the content root explicitly, require the shipped `appsettings.json`, and preserve the intended host configuration-provider precedence. Environment variables override the shipped JSON defaults for the tested settings. Do not append a duplicate JSON provider after host defaults. Configuration sources not explicitly supported and tested by the application must not be represented as part of this task's verified override contract.
 - **Command-line boundary:** `HostApplicationBuilderSettings.Args` is initialized to an empty argument collection. This task does not introduce command-line configuration as an application override channel. Any future change to the supported sources must explicitly define and test its precedence.
-- **Verification:** E-20 records five passing focused configuration-policy tests and 200 passing UI regression tests. These tests establish the exercised paths, not every possible provider combination. Full-solution validation and final whitespace/diff validation remain pending.
+- **Verification:** E-20 records all five named `HostConfigurationPolicyTests` as passed. E-27 reran the host configuration selection 5/5 and full solution 1,552/1,552. `Args=[]`; command-line overrides and untested provider channels are not supported and remain out of scope.
 
 ### DV-SEC-003 — Sensitive-data-safe diagnostics
 
 - **Threat:** DV-T-002.
 - **Assets:** A-01, A-04 through A-10.
 - **Owner:** #232.
-- **Current evidence:** E-19 is the historical pre-#232 baseline. E-22 records `SafeFailureLoggingExtensions.LogSafeFailure`, stable `DiagnosticOperationCodes`, changes to the reviewed Application, Infrastructure and UI failure paths, representative sentinel-value tests, and a configured Serilog file-sink regression.
-- **Status:** Implementation and representative regressions are verified for the reviewed paths; all five project test suites and the full-solution test passed (1,339 passed, 0 failed, 0 skipped). E-22 records the 292-file inventory, 185 recognized logging-call candidates, classification of 30 dynamic-value candidates, and configured file-sink evidence. No confirmed disclosure was identified in the inspected paths. Residual limitation: pattern-based scanning is heuristic and does not prove every possible runtime dataflow safe. Rerun final status/diff checks after the current documentation reconciliation.
+- **Current evidence:** E-19 is the historical pre-#232 baseline; E-22 records the shared safe-failure helper, operation codes, source-to-sink review and actual Serilog file-sink regression; E-27 records integrated reruns.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Passed`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Use source-controlled safe messages and stable operation codes. Preserve the selected failure severity and a non-sensitive exception-type classification; do not forward raw exception objects, exception messages, inner-exception chains, or serialized exception details to the normal logging provider through the shared safe-failure helper. Treat document content/excerpts, key bytes and protected key material, credentials/secrets, paths/filenames, query text, parser details, and document-derived metadata as potentially sensitive by default. Do not insert runtime-sensitive values into safe messages or unreviewed structured properties. Retain useful non-sensitive operational context without changing lifecycle or user-facing outcome contracts owned by other tasks.
-- **Verification:** E-22 records passing project/full-solution tests, the reviewed logging-call inventory, dynamic-candidate classification, and configured file-sink evidence. The inspected paths and the candidates identified by the targeted inventory have been reconciled against their producers, tests, and presentation/logging consumers. `git diff --check` passed with only Git line-ending normalization warnings. This evidence does not prove every possible runtime dataflow safe; rerun status/diff validation after this documentation change.
+- **Verification:** E-27: `SafeFailureLoggingExtensionsTests` 25/25; selected Application diagnostic paths 55/55; `KeyServiceSafeLoggingTests` 4/4; `SafeFailureLoggingSerilogSinkTests` 1/1. The sink output retained safe context and excluded exercised synthetic sensitive markers. Pattern inventories remain heuristic; follow-up owner: #232 and each changed caller owner.
 
 ### DV-SEC-004 — Source-input and structural resource boundaries
 
 - **Threat:** DV-T-003.
 - **Assets:** A-01, A-02, A-06.
 - **Owner:** #233.
-- **Current evidence:** E-04 through E-06 are historical observations; E-23 is the current implementation and regression-test evidence.
-- **Status:** Implemented and tested for covered source-input and structural resource dimensions across CSV, JSON, XML, YAML, and INI. Full-solution and integrated security acceptance remain pending.
+- **Current evidence:** E-04 through E-06 are historical observations; E-23 records current parser source-input and structural limits; E-27 records integrated parser and full-suite runs.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Passed`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Enforce source-input, structural-complexity and output boundaries appropriate to each supported format, while preserving cancellation and complete-result semantics.
-- **Verification:** E-23 records the format-specific tests and passing Application and Integration project suites. The implementation has explicit byte, node, nesting, row, column, field, cell, line and entry dimensions. A global CPU-time quota and a strict total-process-memory budget are not established; retain these as limitations rather than claiming universal resource protection.
+- **Verification:** E-27 selected Application parser/resource tests 72/72 and Integration limit/preservation test 1/1; complete Application 750/750 and Integration 85/85. CSV, JSON, XML, YAML and INI boundaries are represented. There is no strict process-wide memory or CPU-time guarantee; owner: #233, with #101 retaining lifecycle semantics.
 
 ### DV-SEC-005 — Parser intermediate-materialization bounds
 
 - **Threat:** DV-T-003.
 - **Assets:** A-02 and application availability.
 - **Owner:** #233.
-- **Current evidence:** E-04 through E-06 are historical observations; E-23 records current guarded parsing, structural preflight and format-specific limits.
-- **Status:** Format-specific intermediate-materialization dimensions are bounded and tested. Exact parser-library allocation overhead and a hard wall-clock CPU/work budget are not established.
+- **Current evidence:** E-04 through E-06 are historical; E-23 records guarded parsing, structural preflight and format-specific intermediate limits; E-27 records integrated parser runs.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Passed`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Bound source input and relevant intermediate structure before excessive materialization or expansion. Do not treat a final output-byte limit as proof that every parser allocation or traversal is bounded.
-- **Verification:** E-23 records passing boundary tests, the full Application suite, and the full Integration suite. #235 must evaluate evidence across the complete MVP2 security-control baseline and record remaining gaps.
+- **Verification:** The parser boundary selections and complete Application/Integration suites passed. YAML alias expansion, JSON structural/BOM handling, XML DTD/resolver restrictions and INI section fan-out have task-level evidence. Exact parser-library allocation overhead and wall-clock CPU/work are not bounded; owner: #233.
 
 ### DV-SEC-006 — Processed-output limits and completeness
 
 - **Threat:** DV-T-003.
 - **Assets:** A-01, A-02, A-06 and persisted processing state.
 - **Owner:** #233 for extraction/resource behavior; #101 for processing lifecycle semantics.
-- **Current evidence:** E-04 through E-06 preserve the historical baseline; E-23 records current output-boundary behavior and the resource-limit lifecycle integration test.
-- **Status:** Tested for the covered resource-limit and parser-failure paths. Integrated MVP2 security acceptance and the full-solution validation gate remain pending #235.
+- **Current evidence:** E-04 through E-06 are historical; E-23 records processed-output and lifecycle preservation; E-27 records the integrated build/test run.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Passed`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Enforce processed-output limits without allowing malformed, partial, cancelled, or resource-limited input to be published as successful complete processing. A failed later processing attempt must preserve the previous successful derived result and its lineage.
-- **Verification:** E-23 records passing Application and Integration suites and a real-SQLite integration test confirming that a parser resource-limit failure does not replace previous successful chunks or the last successful processing generation. #235 must record final cross-control results; cancellation lifecycle ownership remains under #101.
+- **Verification:** `ProcessDocument_WhenParserResourceLimitIsExceededAfterPreviousSuccess_PreservesPreviousChunksAndGeneration` passed in Integration. Full Application 750/750, Integration 85/85 and solution 1,552/1,552 passed. No partial result is promoted as complete in the exercised failure case. Follow-up owner: #233; #101 retains generations/cancellation/recovery; #223 retains user-facing outcomes.
 
 ### DV-SEC-007 — Markdown markup and script policy
 
 - **Threat:** DV-T-005.
 - **Assets:** A-01, A-02, A-10.
 - **Owner:** #319.
-- **Current evidence:** E-03 is the historical baseline; E-26 records the current Markdig, WebView2 configuration and generated HTML policy.
-- **Status:** Implemented and tested at the Markdig pipeline and generated-HTML policy level. Raw HTML is disabled when `AllowRawHtml` is false; when explicitly enabled, Markdig preserves raw markup. WebView2 JavaScript remains disabled, and the generated CSP sets `script-src 'none'`. Actual WebView2 runtime enforcement remains to be verified by #235.
+- **Current evidence:** E-03 is historical; E-26 records Markdig raw-HTML behavior, disabled JavaScript, WebView2 settings and generated CSP; E-27 adds actual runtime evidence.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Treat imported Markdown as untrusted. Keep raw HTML disabled by default; make any relaxation explicit. Disabling JavaScript alone must not be treated as proof of a complete markup policy. Preserve independent restrictions on scripts, objects, frames, workers, connections and other active content, including when raw HTML is explicitly enabled.
-- **Verification:** E-26 records raw-HTML-disabled and enabled Markdig tests, CSP generation tests, rendered HTML wrapper tests, and 81/81 focused Markdown security tests. The full UI suite passed 292/292, and the full solution passed 1,540/1,540 tests with no failures or skips. The focused selection is included in the UI and full-solution totals. #235 must verify actual WebView2 runtime behavior and supported preview usability.
+- **Verification:** `MarkdownRenderingSecurityPolicyTests` 81/81 and `MarkdownWebView2RuntimeSecurityTests` 5/5 passed. The first runtime test configures `AllowRawHtml=true`, supplies script markup, and verifies JavaScript is disabled and the script marker does not execute. It does not assert that a script element remains in the generated DOM. Follow-up owner: #319 for renderer policy and #235 for integrated evidence.
 
 ### DV-SEC-008 — Markdown navigation scheme policy
 
 - **Threat:** DV-T-005.
 - **Assets:** A-01, A-02, A-10.
 - **Owner:** #319.
-- **Current evidence:** E-03 is the historical baseline; E-26 records the explicit URI policy and renderer event integration.
-- **Status:** Explicit policy-level allow-list implemented and tested. Internal `about:blank` document navigation (including fragments) is permitted. The renderer's initial `NavigateToString` HTML load is permitted as exactly one pending, non-user-initiated, non-redirected `data:text/html` navigation. All later `data:` navigation remains blocked. External navigation is restricted to absolute, well-formed HTTP/HTTPS URIs when `AllowExternalNavigation` is enabled and the initial navigation is user-initiated; redirects must belong to a previously authorized navigation ID. Unsupported schemes and malformed/local/custom references are rejected. Frame navigation, new-window requests and external URI-scheme launching are separately restricted. Broader runtime event behavior remains to be verified by #235.
+- **Current evidence:** E-03 is historical; E-26 records absolute-URI, scheme, internal-document, user-initiation and same-navigation-ID redirect policy; E-27 adds actual WebView2 event tests.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Permit only the renderer's one-time initial `data:text/html` document load while its host-side token is pending. Continue to reject subsequent `data:` navigation, unsupported schemes, local-file navigation and unapproved custom navigation. An enabled external-navigation option must not enable automatic navigation or turn the viewer into an unrestricted browser. Redirect authorization must remain associated with the original approved navigation.
-- **Verification:** E-26 records fixed and deterministic adversarial URI cases covering HTTP/HTTPS and scheme casing, malformed and encoded values, credentials, local-file/UNC paths, custom schemes, relative references and internal-document fragments, plus user-initiation and redirect-policy cases. The focused Markdown suite passed 81/81, the full UI suite passed 292/292, and the full solution passed 1,540/1,540 tests with no failures or skips. The focused selection is included in the UI and full-solution totals. #235 must verify navigation, redirect, frame, new-window and external-scheme behavior in the actual WebView2 runtime.
+- **Verification:** Policy suite 81/81 and runtime suite 5/5 passed, including permitted HTTP/redirect, initial load, frame/popup and external-scheme handling. The runtime HTTP and blocked-external-navigation checks use `CoreWebView2.Navigate`; the initial API navigation event reported `IsUserInitiated=true`, but no actual click on a rendered Markdown anchor or interactive fragment navigation was simulated. Every file/UNC, malformed/encoded, data/blob and unsupported/custom URI variant was not separately exercised in the browser. Owner: #319; #235 records the browser boundary.
 
 ### DV-SEC-009 — Markdown resource scheme policy
 
 - **Threat:** DV-T-005.
 - **Assets:** A-01, A-02, A-10.
 - **Owner:** #319.
-- **Current evidence:** E-03 is the historical baseline; E-26 records the explicit resource URI policy, WebView2 resource-request handler and generated CSP.
-- **Status:** Explicit policy-level resource allow-list and generated CSP are implemented and tested. Only absolute, well-formed HTTP/HTTPS resource URIs are permitted, and only when `AllowExternalResources` is enabled. `about:blank` is navigation-only. Unsupported schemes and local/malformed references are rejected by the policy; the generated CSP independently limits resource sources. Actual resource loading and CSP enforcement by WebView2 remain to be verified by #235.
+- **Current evidence:** E-03 is historical; E-26 records independent resource scheme policy and CSP construction; E-27 records actual WebView2 resource/CSP observations.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Define allowed resource schemes independently from navigation. Reject local-file and unsupported/custom/data/blob references. External-resource relaxation must not enable scripts, objects, frames, workers, connections or other resource classes that remain denied by CSP. Preserve legitimate supported Markdown presentation.
-- **Verification:** E-26 records the resource URI matrix, deterministic adversarial URI variants, independent option tests, CSP generator tests and generated HTML wrapper tests. The focused Markdown suite passed 81/81, the full UI suite passed 292/292, and the full solution passed 1,540/1,540 tests with no failures or skips. The focused selection is included in the UI and full-solution totals. #235 must verify actual WebView2 resource requests and CSP enforcement, including permitted and blocked resources.
+- **Verification:** Policy suite 81/81 and runtime suite 5/5 passed. Runtime evidence includes production resource rejection and a remote image blocked by `img-src 'none'`. It does not cover every resource class or all external-resource-enabled cases. Owner: #319; #235 records unexecuted variants.
 
 ### DV-SEC-010 — Ordinary document-read boundary
 
 - **Threat:** DV-T-004.
 - **Assets:** A-01, A-02, A-05.
 - **Owner:** #272.
-- **Current evidence:** E-07 and E-17 are historical source observations; E-24 records the current #272 implementation and executed regression-test evidence.
-- **Status:** The finite caller-supplied plaintext-size limit is implemented and task-local tests passed. The limit bounds accepted plaintext length, not exact peak memory allocation. Integrated security verification remains pending #235.
+- **Current evidence:** E-07 and E-17 are historical; E-24 records the caller-supplied positive `MaxDecryptedDocumentBytes` limit and encrypted-reader checks; E-27 records integrated selected tests and full suites.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Passed`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Apply an explicit finite read boundary or appropriate bounded strategy to ordinary open flows, preserving complete-document semantics.
-- **Verification:** E-24 records 50 passing focused Application tests, 76 passing focused Infrastructure tests, and a full-solution result of 1,446 passed, 0 failed and 0 skipped. These focused selections overlap the solution run and are not added again. #235 must complete the cross-control evidence review.
+- **Verification:** E-27 selected Application ordinary-read tests 50/50 and Infrastructure reader tests 76/76; complete Application 750/750, Infrastructure 395/395 and solution 1,552/1,552 passed. The length bound is not an exact peak-memory bound. #193 retains viewing authorization and temporary plaintext lifecycle.
 
 ### DV-SEC-011 — Bounded reconciliation and validation certainty
 
 - **Threats:** DV-T-006, DV-T-007.
 - **Assets:** A-03, A-04, A-12.
 - **Owner:** #272; #102 owns lifecycle/reconciliation semantics.
-- **Current evidence:** E-08 and E-17 are historical source observations; E-24 records the current #272 implementation and executed regression-test evidence.
-- **Status:** Implemented and tested for task-local coverage: per-artifact validation uses finite hash-only streaming; metadata reads use deterministic keyset paging with a maximum page size of 256; artifact enumeration is incremental; and incomplete validation cannot be classified as `Matched`. Global scan time, cumulative bytes, finding count and a transactional inventory snapshot are not guaranteed. Integrated verification remains pending #235.
+- **Current evidence:** E-08 and E-17 are historical; E-24 records incremental enumeration, keyset paging, hash-only validation and incomplete-result certainty; E-27 records integration tests.
+
+- **Implementation status:** `Implemented`.
+- **Verification status:** `Passed`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Bound inventory and artifact-content validation; do not report `Matched` unless all mandatory checks complete; preserve unrelated findings where safe continuation is possible.
-- **Verification:** E-24 records 76 passing focused Infrastructure tests, 41 passing focused Integration tests and a full-solution result of 1,446 passed, 0 failed and 0 skipped. The focused counts overlap the solution run. #235 must verify safe continuation, established consistency outcomes and documented aggregate-resource/snapshot limitations.
+- **Verification:** E-27 selected Application reconciliation 50/50, Infrastructure 76/76 and Integration 11/11 passed. The maximum page size is 256. Global scan time, cumulative bytes, finding count and a transactionally consistent snapshot remain unguaranteed. #272 owns bounds; #102 retains lifecycle/reconciliation semantics.
 
 ### DV-SEC-012 — Filesystem artifact boundary
 
 - **Threat:** DV-T-008.
 - **Assets:** A-03, A-04, A-05, A-09, A-10.
 - **Owner:** #234 for auxiliary artifacts; existing artifact/key lifecycle owners remain unchanged.
-- **Current evidence:** E-10 and E-25 record historical path observations, host-specific Windows ACL inspection, synthetic-path checks, generated-artifact ACL checks for WAL, persistent rollback journal, migration staging and backup, and three ACL negative controls including direct trusted-principal Deny handling.
-- **Status:** Targeted location/ACL checks and task-local suites passed for the inspected host and exercised artifacts. Comprehensive effective-access guarantees for every identity, group, host, location and artifact class are not established.
+- **Current evidence:** E-10 is historical path evidence; E-25 records host DACL inspection, generated-artifact ACL tests, negative controls and migration/sidecar checks; E-27 records the full Infrastructure/Integration suites.
+
+- **Implementation status:** `Partially implemented`.
+- **Verification status:** `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Verify intended locations and effective Windows access protections for the actual sensitive artifact classes. Preserve canonical ownership and recovery behavior.
-- **Verification:** E-25 records the inspected data-root and inherited DACLs, synthetic ACL checks, three negative controls, generated-artifact ACL checks, and final solution/project test results. #235 must verify integrated evidence and retain the stated access-calculation limitations.
+- **Verification:** `AuxiliaryArtifactProtectionIntegrationTests` 6/6 and the relevant complete suites passed. Evidence is limited to the inspected host, locations and artifacts and ACE-level assertions; it does not compute complete effective access for every trustee, group, privilege, host or location. Follow-up owner: #234; stronger Windows-access claims require explicit scope.
 
 ### DV-SEC-013 — SQLite and migration/recovery auxiliary-artifact protection
 
 - **Threats:** DV-T-008, DV-T-009, DV-T-011.
 - **Assets:** A-04, A-05, A-09.
 - **Owner:** #234 for auxiliary-artifact protection.
-- **Current evidence:** E-09 and E-12 preserve historical migration/database observations; E-25 records provider configuration, one-time provider initialization and callback-lifetime regression, WAL and rollback-journal marker/ACL tests, TEMP-table/sort marker handling, and migration-backup/staging ACL and recovery coverage.
-- **Status:** Full-solution build and all five project suites passed. The exercised WAL, persistent rollback-journal, TEMP-table/sort, bootstrap callback, retained-backup recovery and cancelled-staging recovery scenarios passed their recorded tests. Not every SQLite auxiliary-artifact variant or abrupt-interruption state has been materialized or tested.
+- **Current evidence:** E-09 and E-12 are historical; E-25 records provider bootstrap, WAL/journal/TEMP markers, migration staging/backup ACLs and recovery tests; E-27 records integrated selections.
+
+- **Implementation status:** `Partially implemented`.
+- **Verification status:** `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Classify and protect SQLite sidecars/journals, migration/recovery files, locks, and temporary artifacts according to their actual contents and lifecycle. Do not remove required recovery state solely to make the filesystem look clean.
-- **Verification:** E-25 records focused provider-configuration, WAL/journal and TEMP marker, ACL negative-control, bootstrap callback-lifetime, backup-recovery and staging-recovery evidence, plus the full-solution result of 1,459 passed, 0 failed, 0 skipped and individual project totals. #235 must complete the integrated review and retain unverified artifact and interruption scenarios as limitations.
+- **Verification:** E-27: `EncryptedDatabasePipelineIntegrationTests` 9/9; `PlaintextDatabaseMigrationIntegrationTests` 8/8; selected Infrastructure migrator/context/coordinator/provider-bootstrap tests 13/13. Not every SQLite variant, file-backed TEMP, OS temp location, crash, power-loss or concurrent state was exercised. Follow-up owner: #234; #220/#214 retain key and initialization ownership.
 
 ### DV-SEC-014 — Fail-closed behavior for security-sensitive uncertainty
 
 - **Threats:** DV-T-001 through DV-T-011 where applicable.
 - **Assets:** Assets affected by the relevant operation.
-- **Owner:** The Technical Task owning the affected operation; #235 validates integrated behavior.
-- **Current evidence:** Existing feature-specific failure/lifecycle mechanisms are documented, but no blanket pass is claimed.
-- **Status:** Required invariant; evidence is task-specific.
+- **Owner:** Existing operation owners retain follow-up responsibility: #231 for configuration/secret policy; #232 for diagnostics; #233 for parser/source/structure/output limits, with #101 retaining processing lifecycle, #100 import compensation and #223 outcome semantics; #272 for ordinary-read/reconciliation bounds, with #193 retaining viewing authorization/plaintext lifecycle and #102 retaining artifact lifecycle; #220 for key authority; #214 for initialization/concurrency; #319 for Markdown renderer policy, with #193 retaining viewing lifecycle; #234 for filesystem/SQLite auxiliary-artifact protection, with #220 retaining key authority and #214 retaining initialization/recovery responsibilities; #235 for integrated evidence and its PR/CI gate. Product/security architecture owns any separately approved stronger copied-vault or same-user isolation requirement.
+- **Current evidence:** Existing task-level failure/lifecycle evidence E-20 through E-26 plus integrated E-27 selections across configuration, diagnostics, parsing, reads, reconciliation, keys, rendering and filesystem/SQLite protection.
+
+- **Implementation status:** `Partially implemented`.
+- **Verification status:** `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Invalid security-sensitive configuration, failed key retrieval, exceeded mandatory resource limits, incomplete validation, or failure to establish required protection must not silently become success, complete, `Matched`, or healthy. Preserve required recovery state and avoid unsafe fallback.
-- **Verification:** Failure, cancellation, limit, invalid-input, key, reconciliation, rendering, and filesystem-protection tests assert externally visible and persisted outcomes.
+- **Verification:** The exercised failure paths and all five project suites passed. This is not a blanket proof for every possible failure, cancellation, crash, malformed state or concurrency condition. Any demonstrated gap returns to its existing operation owner; #235 integrates and records evidence.
 
 ### DV-SEC-015 — Integrated verification and evidence completeness
 
 - **Threats:** All in-scope threats.
 - **Assets:** All.
 - **Owner:** #235.
-- **Current evidence:** This threat model defines the required evidence; it is not the integrated test result.
-- **Status:** Pending.
+- **Current evidence:** E-27 is the integrated local evidence record; Sections 10 and 11 contain the per-control matrix and status register.
+
+- **Implementation status:** `Partially implemented`.
+- **Verification status:** `Insufficient evidence`.
+- **Residual-risk disposition:** `Open follow-up`.
+
 - **Required behavior:** Verify every in-scope control; record failures, unexecuted checks, insufficient evidence, and residual risks separately.
-- **Verification:** A completed evidence matrix with test identifiers, commands/scenarios, actual results, relevant output, control status, and remaining owner/disposition.
+- **Verification:** Full build succeeded; full solution 1,552/1,552; project totals Shared 25, Application 750, Infrastructure 395, Integration 85, UI 297; Markdown policy 81/81; WebView2 runtime 5/5. Post-document diff validation and the #235 PR/CI gate remain required. Owner: #235.
 
 ### DV-SEC-016 — Copied-vault boundary and attacker-model limitation
 
 - **Threats:** DV-T-010 and DV-T-012.
 - **Assets:** Encrypted document artifacts, encrypted database and protected key material, plus any assets accessible within the same-user security context.
 - **Owner:** #220 for existing key/encryption semantics; #235 for integrated evidence. Product/security architecture owns any decision to require stronger protection.
-- **Current evidence:** E-11 documents the existing DPAPI `CurrentUser` key-protection mechanism. That mechanism does not, by itself, establish universal device binding or isolation from arbitrary code running with the same user's effective privileges.
-- **Status:** Copy behavior remains unverified; arbitrary same-user code execution is explicitly outside the supported attacker model.
-- **Required behavior:** Describe the existing guarantee no more strongly than the evidence supports. Do not imply that copying a vault always makes it inaccessible, that DPAPI `CurrentUser` alone provides universal device binding, or that MVP2 prevents arbitrary same-user code from accessing data already available to that user. Do not change key semantics within #230.
-- **Verification:** Test copies under the original profile, a different Windows profile, and another device where supported. Record exact conditions and outcomes. Review all relevant security claims. Any requirement stronger than the demonstrated existing boundary requires separately scoped architectural review and explicit residual-risk disposition.
+- **Current evidence:** E-11 records DPAPI `CurrentUser` key protection and existing #220 key lifecycle. E-27 records the absence of copied-vault scenario execution.
 
----
+- **Implementation status:** `Partially implemented`.
+- **Verification status:** `Unexecuted`.
+- **Residual-risk disposition:** `Open follow-up`.
+
+- **Required behavior:** Describe the existing guarantee no more strongly than the evidence supports. Do not imply that copying a vault always makes it inaccessible, that DPAPI `CurrentUser` alone provides universal device binding, or that MVP2 prevents arbitrary same-user code from accessing data already available to that user. Do not change key semantics within #230.
+- **Verification:** No copy attempt was run under the original profile, another Windows profile, or another device. The inventory found zero additional non-special local profiles, which is not a copy test. Existing key-service tests are not copied-vault tests. Owner: #220 for existing key semantics; Product/security architecture for any stronger protection requirement.
 
 ## 12. Fail-Closed and Lifecycle Invariants
 
@@ -1069,143 +1217,122 @@ The following invariants must be preserved by applicable implementations. They c
 | #102 | Artifact lifecycle consistency and reconciliation semantics; #272 adds bounds and validation certainty without replacing these semantics. |
 | #223 | User-understandable processing outcomes; resource-limit failures must remain consistent with the outcome contract. |
 
-### 13.2 Remaining #221 tasks
+### 13.2 Completed cross-cutting implementation ownership
 
-| Technical Task | Non-overlapping implementation scope |
-|---|---|
-| #231 | Configuration classification, secret policy, supported override behavior, and effective configuration validation. |
-| #232 | Logging, exception-handling, and diagnostic safety. |
-| #233 | Input, parser/intermediate, structural-complexity, and processing-output resource boundaries. |
-| #272 | Ordinary document-read bounds and artifact-reconciliation resource bounds and validation certainty. |
-| #234 | Filesystem and SQLite auxiliary-artifact protection, not artifact lifecycle orchestration. |
-| #319 | Untrusted Markdown rendering, raw HTML, URI-scheme, navigation, and resource-loading policy. |
-| #235 | Integrated verification, evidence completeness, and recorded remaining risks. |
+The following implementation tasks are completed and their pull requests are merged. Their closure does not transfer the existing feature or lifecycle responsibilities listed in Section 13.1.
 
-One threat may involve multiple system boundaries, but each task must implement only the responsibilities established in its scope. Shared validation does not transfer feature ownership.
+| Completed Technical Task | Merged PR | Completed implementation responsibility | Ownership retained after merge |
+|---|---|---|---|
+| #231 | #325 | Configuration classification, secret-handling policy, supported override behavior, and effective configuration validation. | #231 remains the implementation provenance for this control; future changes must preserve the verified provider contract. |
+| #232 | #326 | Shared safe-failure logging, diagnostic operation codes, and reviewed Application/Infrastructure/UI failure paths. | Existing feature owners retain outcome contracts; changed call sites remain subject to safe-diagnostic review. |
+| #233 | #327 | Source-input, parser/intermediate, structural-complexity, and processed-output resource boundaries. | #101 retains processing generations, cancellation, retry and recovery semantics; #100 and #223 retain import/outcome ownership. |
+| #272 | #328 | Ordinary document-read bounds and bounded incremental artifact reconciliation/validation. | #193 retains viewing/temporary-plaintext lifecycle; #102 retains artifact lifecycle and reconciliation semantics. |
+| #234 | #329 | Filesystem and SQLite auxiliary-artifact protection, provider initialization lifetime, and migration/recovery artifact evidence. | #220 retains key lifecycle; #214 retains active-vault concurrency; existing recovery/artifact owners retain lifecycle. |
+| #319 | #330 | Untrusted Markdown markup, navigation, resource, WebView2 event, and generated-CSP policy. | #193 retains viewing authorization and temporary plaintext lifecycle. |
 
----
+#235 remains the integrated verification and threat-model reconciliation owner. Its local evidence is recorded in E-27; its own PR/CI completion gate remains open. Shared validation does not transfer feature ownership. A demonstrated implementation defect must be returned to its existing owner or proposed as a separately scoped follow-up; this integrated assessment does not silently expand #235 into a competing implementation task.
 
 ## 14. Copied-Vault Protection Boundary
 
-The existing encryption design provides at-rest protections with a documented key lifecycle. It must not be described as offering universal device binding or protection against a process with the same user's effective privileges.
+The existing encryption design provides at-rest protection with a documented key lifecycle. ADR-0004 and E-11 record DPAPI `CurrentUser` protection for key material. This mechanism does not, by itself, establish universal device binding or isolation from arbitrary code executing with the same user's effective privileges.
 
-ADR-0004 documents DPAPI `CurrentUser` protection for key material. Whether a copied vault can be opened depends on the files copied, the availability and usability of protected key material, and the target Windows security context.
+**Integrated test result:** No copied-vault attempt was executed during #235 under the original Windows profile, a different Windows profile, or another device. The host profile inventory found zero additional non-special local profiles. That inventory is not an attempted copy/open test. Existing DPAPI and key-service tests validate their own key-service contracts and must not be represented as copied-vault evidence.
 
-| Scenario | Required interpretation |
-|---|---|
-| Only encrypted document/database artifacts are copied and required keys are unavailable | The encrypted contents should remain inaccessible; verify the actual failure behavior. |
-| Vault and protected key artifacts are copied to another Windows profile | Expected access depends on whether that profile can unprotect the required key material; test and record the outcome. |
-| Vault and protected key artifacts are copied to another device | Do not claim device-bound protection solely from DPAPI `CurrentUser`; document the tested conditions. |
-| A copy is made and used under the original user context with usable protected key material | Do not assume the copied vault is inaccessible just because it is a copy. |
-| Arbitrary code runs with the same user's effective privileges | Outside the supported attacker model; no preventive claim is made. |
+| Scenario | #235 execution status | Required interpretation |
+|---|---|---|
+| Copy under the original user profile and attempt to open the copy | Unexecuted | Do not infer that a copy is inaccessible merely because it is a copy. |
+| Copy vault/key artifacts to a different Windows profile | Unexecuted; the host inventory found no additional non-special local profile to exercise | Do not infer cross-profile success or failure from DPAPI unit tests. |
+| Copy vault/key artifacts to another device | Unexecuted | Do not claim device binding from DPAPI `CurrentUser` alone. |
+| Run arbitrary code with the same user's effective privileges | Outside the supported attacker model | Encryption at rest and file permissions do not establish isolation from code already authorized as that user. |
 
-**Owner:** #220 owns the existing key/encryption semantics. #235 owns recording the integrated evidence and any residual issue. Any requirement stronger than the demonstrated protection boundary needs a separately scoped architecture decision.
+The exact copied files, target profile/device, attempted operation, and observed outcome must be recorded if these scenarios are executed in a separately available environment. Until then, copy behavior remains unverified.
 
----
+**Owner:** #220 owns the existing key/encryption semantics. #235 records the absence of copy-test evidence. Product/security architecture owns any decision to require stronger cross-profile, cross-device, or same-user protection; that requirement needs a separately scoped architecture decision.
 
 ## 15. ADR Impact Assessment
 
-This is the initial impact assessment for the reviewed baseline. It is not authorization to rewrite existing decisions or evidence that every architectural implication has been exhaustively validated.
+This assessment reconciles the current threat model with the relevant ADR decisions and the merged implementation. It records the actual ADR updates already made by the implementation owners; #235 does not propose replacement architectural decisions or unrelated ADR edits.
 
-| ADR | Relevant boundary | Impact decision |
+| ADR | Relevant boundary | Current decision and merged implementation impact |
 |---|---|---|
-| [ADR-0001 - Project Vision](../adr/0001-project-vision.md) | Offline-first operation, local data ownership, privacy-sensitive deployment goals, and future local AI | The baseline aligns with local-first operation. Future local AI is not treated as implemented MVP2 functionality. No architecture change proposed. |
-| [ADR-0002 - Vertical Slice Architecture](../adr/0002-vertical-slice-architecture.md) | Domain/Application/Infrastructure/UI boundaries and the composition root | No architecture redesign is proposed. #231 clarifies the configuration-composition invariant at the existing UI composition root: explicit content root, required shipped defaults, and supported override precedence. Dependency direction and existing key-management ownership remain unchanged. |
-| [ADR-0003 - Document Import Workflow](../adr/0003-document-import-workflow.md) | Import validation, storage, compensation and separation from processing | No redesign proposed. #233 hardens the parser/processing boundary while #100 remains authoritative for import reliability. |
-| [ADR-0004 - Document Encryption at Rest](../adr/0004-document-encryption-at-rest.md) | Document encryption, key protection, atomic publication and strict retrieval | #272 updates the existing ADR to document the finite ordinary-open limit and incremental hash-only reconciliation contract. Encryption, key lifecycle and encrypted-record framing remain unchanged. The copied-vault and same-user limitations remain; no universal device-binding guarantee is claimed. |
-| [ADR-0005 - Document Metadata Persistence](../adr/0005-document-metadata-persistence.md) | Metadata and derived-knowledge persistence | No persistence-contract redesign proposed. Treat metadata, processing state, chunks and provenance as potentially sensitive assets. |
-| [ADR-0006 - In-App Document Workspace](../adr/0006-in-app-document-workspace.md) | In-app document viewing | No change proposed. Viewing authorization and temporary plaintext lifecycle remain with #193. |
-| [ADR-0007 - Document Workspace UI and Interaction Model](../adr/0007-document-workspace-ui-and-interaction-model.md) | Workspace and renderer integration | ADR-0007 is updated in the current #319 change set to specify explicit navigation and resource URI policies, the navigation-only internal `about:blank` exception, user-initiated HTTP/HTTPS navigation and same-navigation-ID redirect authorization, independent resource settings, WebView2 frame/new-window/external-scheme restrictions, JavaScript restrictions and generated HTML CSP. The existing controlled HTML presentation shell and future theme seam remain documented under Markdown Rendering Strategy. Viewing authorization and temporary plaintext lifecycle remain with #193. |
-| [ADR-0008 - Document Semantic Preservation](../adr/0008-document-semantic-preservation-through-rendering-pipeline.md) | Extraction, structured representation and rendering semantics | No update required for #319. The renderer security policy does not change extraction, structured document semantics, source preservation, normalization, chunking or the persisted derived representation. Rendering remains a consumer of document content rather than the authority that defines its semantics. |
-| [ADR-0009 - Encrypted SQLite Database Provider](../adr/0009-encrypted-sqlite-database-provider.md) | Encrypted database and separate key handling | No provider redesign proposed. Key lifecycle remains under #220. Migration/recovery and runtime auxiliary-artifact protection require evidence under #234. |
-| [ADR-0010 - Reliable Document Processing Lifecycle](../adr/0010-reliable-document-processing-lifecycle.md) | Processing generations, cancellation, failure, retry and publication | Preserve lifecycle guarantees under #101. #233 must ensure resource limits do not permit incomplete or obsolete results to be published as successful. |
-| [ADR-0011 - Stable Document Chunk Identity and Provenance](../adr/0011-stable-document-chunk-identity-and-provenance.md) | Canonical chunks, identity and provenance | No identity redesign proposed. Recognize derived chunk contents and provenance as potentially sensitive. |
-| [ADR-0012 - Search Result and Relevance Boundary](../adr/0012-search-result-and-relevance-boundary.md) | Document-oriented search and pagination | No search-contract redesign proposed. Diagnostic query/result disclosure belongs to #232; bounded processing and reads must not redefine search semantics. |
-| [ADR-0013 - Reliable Document Removal Lifecycle](../adr/0013-reliable-document-removal-lifecycle.md) | Retry-convergent artifact/workspace/metadata cleanup | No removal-lifecycle redesign proposed. #234 protects auxiliary artifacts without assuming cleanup-ordering ownership; #102 retains artifact lifecycle consistency. |
+| [ADR-0001 - Project Vision](../adr/0001-project-vision.md) | Offline-first operation, local data ownership, privacy-sensitive deployment goals, and future local AI. | Reviewed. The baseline aligns with local-first operation. Future local AI is not treated as implemented MVP2 functionality. No update required. |
+| [ADR-0002 - Vertical Slice Architecture](../adr/0002-vertical-slice-architecture.md) | Layer boundaries and UI composition root. | Updated by #231 / PR #325 to document the explicit content-root, required shipped JSON configuration, and tested environment-variable precedence at the existing composition root. Dependency direction and key-management ownership are unchanged. |
+| [ADR-0003 - Document Import Workflow](../adr/0003-document-import-workflow.md) | Import validation, storage, compensation and separation from processing. | Reviewed. #233 hardens parser/processing boundaries while #100 remains authoritative for import reliability and compensation. No update required. |
+| [ADR-0004 - Document Encryption at Rest](../adr/0004-document-encryption-at-rest.md) | Document encryption, key protection, bounded reads, atomic publication and strict retrieval. | Updated by #272 / PR #328 to document the finite ordinary-open plaintext-size boundary and incremental hash-only reconciliation contract. Encryption, key lifecycle, encrypted-record framing and copied-vault limitations remain unchanged. |
+| [ADR-0005 - Document Metadata Persistence](../adr/0005-document-metadata-persistence.md) | Metadata and derived-knowledge persistence. | Reviewed. Metadata, processing state, chunks and provenance remain potentially sensitive. No persistence-contract redesign or ADR update required. |
+| [ADR-0006 - In-App Document Workspace](../adr/0006-in-app-document-workspace.md) | In-app document viewing. | Reviewed. Viewing authorization and temporary plaintext lifecycle remain with #193. The ordinary-read bound does not transfer view/cleanup ownership. No update required. |
+| [ADR-0007 - Document Workspace UI and Interaction Model](../adr/0007-document-workspace-ui-and-interaction-model.md) | Workspace and Markdown renderer integration. | Updated by #319 / PR #330 to specify explicit navigation/resource URI policy, internal `about:blank`, user-initiated HTTP/HTTPS navigation, same-navigation-ID redirects, WebView2 frame/new-window/external-scheme restrictions, JavaScript policy and generated CSP. #235 adds runtime test evidence without changing the ADR contract. |
+| [ADR-0008 - Document Semantic Preservation](../adr/0008-document-semantic-preservation-through-rendering-pipeline.md) | Extraction, structured representation and rendering semantics. | Updated by #233 / PR #327 to preserve the distinction between deliberate CSV preview completeness and complete-processing failure, document shared parser safety caps and format-specific parser boundaries. #319 does not change semantic extraction or the persisted derived representation. |
+| [ADR-0009 - Encrypted SQLite Database Provider](../adr/0009-encrypted-sqlite-database-provider.md) | Safe startup diagnostics, encrypted SQLite provider, initialization and auxiliary artifacts. | Updated by #232 / PR #326 to remove exception-bearing startup diagnostics and by #234 / PR #329 to document the process-wide `SqliteProviderBootstrap.EnsureInitialized()` lifetime/callback invariant. Provider selection, encryption and key lifecycle are unchanged. |
+| [ADR-0010 - Reliable Document Processing Lifecycle](../adr/0010-reliable-document-processing-lifecycle.md) | Processing generations, cancellation, failure, retry and publication. | Updated by #233 / PR #327 to document format-specific structural limits, failure-state preservation, and unit semantics for field/line-length limits. #101 remains lifecycle owner; resource-limit failures must not publish incomplete output as success. |
+| [ADR-0011 - Stable Document Chunk Identity and Provenance](../adr/0011-stable-document-chunk-identity-and-provenance.md) | Canonical chunks, identity and provenance. | Reviewed. No identity redesign proposed; derived chunk contents and provenance remain potentially sensitive. No update required. |
+| [ADR-0012 - Search Result and Relevance Boundary](../adr/0012-search-result-and-relevance-boundary.md) | Document-oriented search and pagination. | Reviewed. Diagnostic query/result disclosure remains under #232; parser/read bounds do not redefine search semantics. No update required. |
+| [ADR-0013 - Reliable Document Removal Lifecycle](../adr/0013-reliable-document-removal-lifecycle.md) | Retry-convergent artifact/workspace/metadata cleanup. | Reviewed. #234 protects auxiliary artifacts without taking cleanup-ordering ownership; #102 retains artifact lifecycle consistency. No update required. |
 
 ### 15.1 ADR decision rule
 
-No replacement encryption, key-management, database, viewing, recovery, or processing architecture is proposed by this baseline. The identified gaps can be assessed within the established #221 task ownership unless implementation evidence demonstrates otherwise.
+The reviewed ADR updates are the decisions made by the implementation-owning tasks. No new ADR change is justified by #235: the integrated work validates and documents the existing boundaries rather than replacing encryption, key management, database, viewing, recovery, processing, or removal architecture. If future evidence demonstrates a material contradiction, return it to the established owner and request an explicit architecture review; do not silently rewrite the decision.
 
-If an implementation task identifies a material contradiction between an existing ADR and a required security property, record the specific evidence and raise an explicit architecture review. Do not silently alter the contract or update unrelated ADRs.
+## 16. Integrated Verification Results and Remaining Checks
 
----
-
-## 16. Integrated Verification Plan
-
-Final integrated validation belongs to #235. Each implementation task must provide its focused evidence before the integrated review.
+The #235 integrated local validation was executed against the assessed revision and working-tree changes recorded in E-27. The results below distinguish completed executions from residual checks that were not performed or are not established by the available evidence.
 
 ### 16.1 Configuration and diagnostics
 
-- Verify effective configuration precedence for supported sources and security-sensitive settings.
-- Verify shipped configuration and relevant build artifacts for actual secrets.
-- Test diagnostic output using synthetic sensitive values in success and failure paths.
-- Verify that safe operational context remains available.
+- The supported content-root, required `appsettings.json`, JSON-default, and tested environment-variable precedence behavior has focused evidence in E-20 and the integrated `HostConfigurationPolicyTests` rerun (5/5).
+- Configuration declarations and consumers were classified in E-21. No recognized credential-value pattern was identified in the reviewed candidates; the scan remains heuristic and does not prove every deployment artifact is secret-free.
+- Safe failure logging preserves severity, safe message, operation code and exception-type classification. The actual configured Serilog file-sink regression passed and synthetic sensitive markers were absent from the exercised output. Pattern-based inventory is not proof of every runtime dataflow.
 
 ### 16.2 Parser and processing
 
-- Test every supported format against input, intermediate, structural, and output boundaries.
-- Include malformed inputs, oversized fields/rows/nodes, relevant nesting/fan-out, cancellation, and extraction failure.
-- Demonstrate that limits are enforced before excessive work occurs.
-- Verify that resource-limit failures and partial processing never produce a successful complete representation.
-- Verify preservation of processing-generation, cancellation, retry, and recovery semantics.
+- The reviewed CSV, JSON, XML, YAML and INI paths enforce applicable source-input, structural/intermediate and output boundaries. E-23 contains per-format implementation and task-level regression details.
+- CSV preview completeness (`CsvParsing:MaxRows` and `HasMoreRows`) remains separate from complete-processing success. XML DTD processing is prohibited and the resolver is disabled; YAML nesting/node/alias expansion is bounded; JSON structural preflight, depth and UTF-8 BOM behavior are covered; INI line/entry/section fan-out is bounded.
+- Resource-limit, malformed and cancellation outcomes must not publish partial results as successful complete processing. `ProcessDocument_WhenParserResourceLimitIsExceededAfterPreviousSuccess_PreservesPreviousChunksAndGeneration` passed, preserving the prior successful generation and chunks.
+- E-27 selected parser/processing runs passed: Application 72/72 and Integration 1/1. Complete Application passed 750/750 and Integration passed 85/85 as part of the five-project and full-solution runs.
+- Configured parser dimensions do not establish a strict process-wide memory ceiling or universal CPU-time quota.
 
 ### 16.3 Ordinary reads and reconciliation
 
-- Test the ordinary open caller path, supported size limits, maximum plus one byte, integrity failures, cancellation and I/O failures.
-- Test bounded artifact inventory and content validation.
-- Preserve regression coverage for missing, orphaned, unreadable, path-mismatched and content-mismatched artifacts.
-- Verify that incomplete validation cannot return `Matched`.
-- Verify safe continuation preserves unrelated findings.
+- `OpenDocumentHandler` supplies the finite positive `MaxDecryptedDocumentBytes` boundary to the encrypted reader. Authentication, record completeness and persisted-hash validation must succeed before a stream is returned. The length bound is not an exact peak-memory bound; #193 retains temporary viewing lifecycle ownership.
+- Reconciliation uses keyset metadata paging (maximum page size 256), incremental artifact enumeration, canonical path checks and finite per-artifact hash-only validation. Incomplete validation cannot become `Matched`; unrelated findings are preserved where safe continuation is possible.
+- E-27 selected read/reconciliation runs passed: Application 50/50, Infrastructure 76/76, Integration 11/11. These selections overlap the complete project suites and are not additional solution tests.
+- No global scan-time, cumulative-byte, finding-count or transactionally consistent inventory snapshot guarantee is established.
 
 ### 16.4 Markdown
 
-- Test raw HTML and script restrictions.
-- Test HTTP/HTTPS, file/local references, unsupported custom schemes, malformed URIs, navigation and resource-loading paths.
-- Verify the explicit secure policy while preserving supported Markdown presentation.
-- Exercise actual WebView2 runtime behavior for permitted and blocked navigation, user-initiated links, redirects, frames, new-window requests, external URI schemes, resource requests and generated CSP enforcement. Record the WebView2 runtime/environment and actual outcomes; policy-method and HTML-string tests alone do not establish runtime enforcement.
+- `MarkdownRenderingSecurityPolicyTests` passed 81/81. The tests cover raw-HTML enabled/disabled pipeline behavior, URI allow/deny policy, independent navigation/resource options, adversarial URI variants, initial-document policy, redirects, CSP generation and HTML wrapper placement.
+- The actual WebView2 runtime suite `MarkdownWebView2RuntimeSecurityTests` passed 5/5 using WebView2 Runtime 156.0.4314.50 on Windows with .NET 10.0.14 x64 and an STA WinForms thread. The five executed runtime behaviors and observations are itemized in E-27.
+- The initial-document runtime test used `AllowRawHtml=true` and script markup, verifying that JavaScript remained disabled and the script marker did not execute; it did not assert that a script element remained in the generated DOM. The HTTP and blocked external-navigation checks used `CoreWebView2.Navigate`; although the initial API navigation event reported `IsUserInitiated=true`, no actual user click on a rendered Markdown anchor was simulated. A separate interactive in-document fragment navigation was not exercised. Each file/UNC and malformed/encoded/data/blob/custom scheme variant, every resource class, and all external-resource-enabled paths were not individually executed in the browser. Policy-method tests are not substituted for those runtime checks.
+- Supported Markdown preview remained usable in the executed runtime render test and existing UI regression suite. The runtime coverage does not establish universal browser behavior beyond the observed scenarios.
 
 ### 16.5 Filesystem, key and SQLite artifacts
 
-- Inspect actual SQLite runtime sidecars, journals, migration/recovery artifacts, locks, temporaries and logs.
-- Verify effective Windows access protection for relevant paths and files.
-- Fault-inject failures during migration, promotion and cleanup.
-- Verify that required authoritative and recovery state remains intact.
-- Exercise copied-vault scenarios under the relevant Windows profile/device contexts.
-- Confirm that the observed security guarantee is stated no more strongly than the evidence supports.
+- E-25 records the inspected host data-root permissions, inherited DACL observations, synthetic ACL assertions, generated WAL and persistent rollback-journal checks, TEMP table/sort marker check, SQLite provider/runtime configuration, provider callback-lifetime regression, and migration staging/backup recovery tests.
+- Integrated artifact selections passed: `AuxiliaryArtifactProtectionIntegrationTests` 6/6, `EncryptedDatabasePipelineIntegrationTests` 9/9, `PlaintextDatabaseMigrationIntegrationTests` 8/8, and selected Infrastructure migrator/context/initialization-coordinator/provider-bootstrap tests 13/13.
+- Evidence applies to the host, paths and artifacts exercised. It is not a complete Windows effective-access calculation. Conditional/unmaterialized SQLite variants, forced file-backed TEMP and exhaustive OS temporary-directory inspection remain unverified. Abrupt crash, power-loss, filesystem-error and concurrent initialization/recovery states are not fully simulated.
+- No copied-vault attempt was made under the original profile, a different profile or another device. The profile inventory found no additional non-special local profile; this is not copied-vault test evidence. See Section 14.
 
-### 16.6 Evidence record
+### 16.6 Evidence record and status semantics
 
-For every `DV-SEC-*` control, #235 must record:
+For every `DV-SEC-*` control, Section 10 records the owner, implementation/enforcement paths, test names/projects, actual test results, task PR/CI provenance, integrated evidence, and follow-up owner. Section 11 is the single authoritative status register and records:
 
-| Field | Required information |
-|---|---|
-| Control ID | Stable `DV-SEC-*` identifier |
-| Threat mapping | Relevant `DV-T-*` identifiers |
-| Implementation owner | Assigned Technical Task |
-| Evidence identity | Test name, test ID, inspection, or scenario identifier |
-| Execution details | Actual command/scenario and environment where material |
-| Result | Actual output, assertion result, or other relevant evidence |
-| Status | `Passed`, `Failed`, `Unexecuted`, or `Insufficient evidence` |
-| Residual gap | Remaining risk or unverified requirement |
-| Disposition | Follow-up owner and explicit risk disposition where applicable |
+| Field | Allowed values | Interpretation |
+|---|---|---|
+| Implementation status | `Implemented`, `Partially implemented`, `Not implemented`, `Not applicable` | Describes the implementation state, not whether a test passed. |
+| Verification status | `Passed`, `Failed`, `Unexecuted`, `Insufficient evidence` | Describes only the actual evidence and scenarios exercised. |
+| Residual-risk disposition | `Open follow-up`, `Accepted risk`, `Out of scope` | `Accepted risk` requires an authorized decision-maker, date, rationale and traceable reference. No accepted-risk decision is recorded here. |
 
-A test file merely existing in the repository does not make a control passed. A code change without a relevant executed validation result does not justify a `Passed` status. A control with insufficient evidence remains insufficiently evidenced.
+A test file merely existing does not make a control passed. Source inspection, successful CI for a different PR, or a task-level historical count is not a substitute for the #235 integrated execution. E-20 through E-26 remain historical; E-27 is the integrated local result.
 
-### 16.7 Exit criteria
+### 16.7 Exit criteria and remaining gates
 
-The integrated security review can be considered complete only when:
-
-- every in-scope threat maps to explicit controls and implementation ownership;
-- the relevant implementations and regression tests have been completed and their results recorded;
-- failures, partial results, and unsupported assumptions have not been silently treated as success;
-- effective configuration, diagnostic safety, parser/read/reconciliation limits, renderer policy, and auxiliary-artifact protection have evidence appropriate to their claims;
-- the copied-vault boundary is documented without unsupported device-binding claims;
-- every unmitigated or insufficiently evidenced risk has a named follow-up owner or an explicit risk disposition.
+- **Completed locally:** full-solution build succeeded; full solution passed 1,552/1,552; all five complete project suites passed; focused Markdown policy and actual WebView2 runtime selections passed; merged implementation PRs #325–#330 have successful Build and Test workflows; pre-document tracked and new-file whitespace checks passed; both the V4 guarded document write and this AC-reconciliation correction passed their post-write `git diff --check` gates.
+- **Documented limitations:** heuristic secret/logging inventories; no process-wide CPU/memory ceiling; no global reconciliation aggregate/snapshot guarantee; partial WebView2 runtime variant coverage; host/ACE-level rather than universal effective-access evidence; unmaterialized SQLite and untested abrupt/concurrent states; copied-vault scenarios unexecuted; arbitrary same-user code execution outside the supported attacker model.
+- **Document integrity:** This revision passed strict UTF-8 decoding and its post-write `git diff --check`. These checks establish encoding and whitespace quality only; final full-solution validation and the #235 pull-request/CI gate remain separate requirements.
+- **Document diff review:** Completed on 2026-11-02. The review confirmed that threat/control mapping, evidence counts, ownership boundaries, limitations, and status fields are internally consistent.
+- **Still required:** create the #235 pull request and verify its own required CI checks. Until that gate completes, DV-SEC-015 remains partially implemented with an open follow-up and no blanket security acceptance is claimed.
 
 The goal is not to claim zero risk. The goal is to ensure that the security posture is transparent, technically defensible, testable, and aligned with the actual DeskVault product.
-
----
 
 ## 17. Maintenance
 
