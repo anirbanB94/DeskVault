@@ -79,118 +79,142 @@ public sealed class MarkdownDocumentContentRenderer
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            webView.CoreWebView2.Settings.IsScriptEnabled = false;
-
-            var authorizedExternalNavigationIds = new HashSet<ulong>();
-
-            // The token is set immediately before NavigateToString and
-            // consumed by the first subsequent top-level navigation event.
-            bool initialDocumentNavigationPending = false;
-
-            webView.CoreWebView2.AddWebResourceRequestedFilter(
-                "*",
-                CoreWebView2WebResourceContext.All,
-                CoreWebView2WebResourceRequestSourceKinds.Document);
-
-            webView.CoreWebView2.WebResourceRequested +=
-                (_, args) =>
-                {
-                    if (MarkdownRenderingSecurityPolicy.IsResourceAllowed(
-                            args.Request.Uri,
-                            _options.AllowExternalResources))
-                    {
-                        return;
-                    }
-
-                    args.Response =
-                        webView.CoreWebView2.Environment
-                            .CreateWebResourceResponse(
-                                null,
-                                403,
-                                "Blocked",
-                                "Content-Type: text/plain");
-                };
-
-            webView.CoreWebView2.NavigationStarting +=
-                (_, args) =>
-                {
-                    bool previouslyAuthorized =
-                        authorizedExternalNavigationIds.Contains(
-                            args.NavigationId);
-
-                    bool isInitialDocumentNavigation =
-                        initialDocumentNavigationPending
-                        && MarkdownRenderingSecurityPolicy.IsInitialDocumentNavigationAllowed(
-                            args.Uri,
-                            initialDocumentNavigationPending,
-                            args.IsUserInitiated,
-                            args.IsRedirected);
-
-                    // Consume the token on the first navigation event,
-                    // whether or not that event matches the expected HTML load.
-                    initialDocumentNavigationPending = false;
-
-                    bool allowed =
-                        isInitialDocumentNavigation
-                        || MarkdownRenderingSecurityPolicy.IsNavigationRequestAllowed(
-                            args.Uri,
-                            _options.AllowExternalNavigation,
-                            args.IsUserInitiated,
-                            args.IsRedirected,
-                            previouslyAuthorized);
-
-                    args.Cancel = !allowed;
-
-                    if (!allowed)
-                    {
-                        authorizedExternalNavigationIds.Remove(
-                            args.NavigationId);
-                    }
-                    else if (!args.IsRedirected
-                             && args.IsUserInitiated)
-                    {
-                        authorizedExternalNavigationIds.Add(
-                            args.NavigationId);
-                    }
-                };
-
-            webView.CoreWebView2.NavigationCompleted +=
-                (_, args) =>
-                {
-                    authorizedExternalNavigationIds.Remove(
-                        args.NavigationId);
-                };
-
-            webView.CoreWebView2.FrameCreated +=
-                (_, args) =>
-                {
-                    args.Frame.NavigationStarting +=
-                        (_, frameArgs) =>
-                        {
-                            frameArgs.Cancel = true;
-                        };
-                };
-
-            webView.CoreWebView2.NewWindowRequested +=
-                (_, args) =>
-                {
-                    args.Handled = true;
-                };
-
-            webView.CoreWebView2.LaunchingExternalUriScheme +=
-                (_, args) =>
-                {
-                    args.Cancel = true;
-                };
-
-            initialDocumentNavigationPending = true;
-            webView.NavigateToString(html);
+            ConfigureSecurityAndNavigate(webView, html);
         }
         catch
         {
             webView.Dispose();
             throw;
         }
+    }
+
+    internal void ConfigureSecurityAndNavigate(
+        WebView2 webView,
+        string html)
+    {
+        ArgumentNullException.ThrowIfNull(webView);
+        ArgumentNullException.ThrowIfNull(html);
+
+        CoreWebView2 coreWebView2 =
+            webView.CoreWebView2
+            ?? throw new InvalidOperationException(
+                "WebView2 must be initialized before its security policy is configured.");
+
+        coreWebView2.Settings.IsScriptEnabled = false;
+
+        var authorizedExternalNavigationIds =
+            new HashSet<ulong>();
+
+        // The token is set immediately before NavigateToString and
+        // consumed by the first subsequent top-level navigation event.
+        bool initialDocumentNavigationPending = false;
+
+        coreWebView2.AddWebResourceRequestedFilter(
+            "*",
+            CoreWebView2WebResourceContext.All,
+            CoreWebView2WebResourceRequestSourceKinds.Document);
+
+        coreWebView2.WebResourceRequested +=
+            (_, args) =>
+            {
+                if (MarkdownRenderingSecurityPolicy.IsResourceAllowed(
+                        args.Request.Uri,
+                        _options.AllowExternalResources))
+                {
+                    return;
+                }
+
+                args.Response =
+                    coreWebView2.Environment
+                        .CreateWebResourceResponse(
+                            null,
+                            403,
+                            "Blocked",
+                            "Content-Type: text/plain");
+            };
+
+        coreWebView2.NavigationStarting +=
+            (_, args) =>
+            {
+                bool previouslyAuthorized =
+                    authorizedExternalNavigationIds.Contains(
+                        args.NavigationId);
+
+                bool isInitialDocumentNavigation =
+                    initialDocumentNavigationPending
+                    && MarkdownRenderingSecurityPolicy.IsInitialDocumentNavigationAllowed(
+                        args.Uri,
+                        initialDocumentNavigationPending,
+                        args.IsUserInitiated,
+                        args.IsRedirected);
+
+                // Consume the token on the first navigation event,
+                // whether or not that event matches the expected HTML load.
+                initialDocumentNavigationPending = false;
+
+                bool allowed =
+                    isInitialDocumentNavigation
+                    || MarkdownRenderingSecurityPolicy.IsNavigationRequestAllowed(
+                        args.Uri,
+                        _options.AllowExternalNavigation,
+                        args.IsUserInitiated,
+                        args.IsRedirected,
+                        previouslyAuthorized);
+
+                args.Cancel = !allowed;
+
+                if (!allowed)
+                {
+                    authorizedExternalNavigationIds.Remove(
+                        args.NavigationId);
+                }
+                else if (!args.IsRedirected
+                         && args.IsUserInitiated)
+                {
+                    authorizedExternalNavigationIds.Add(
+                        args.NavigationId);
+                }
+            };
+
+        coreWebView2.NavigationCompleted +=
+            (_, args) =>
+            {
+                authorizedExternalNavigationIds.Remove(
+                    args.NavigationId);
+            };
+
+        coreWebView2.FrameCreated +=
+            (_, args) =>
+            {
+                args.Frame.NavigationStarting +=
+                    (_, frameArgs) =>
+                    {
+                        frameArgs.Cancel = true;
+                    };
+            };
+
+        coreWebView2.NewWindowRequested +=
+            (_, args) =>
+            {
+                args.Handled = true;
+            };
+
+        ConfigureExternalUriSchemeProtection(coreWebView2);
+
+        initialDocumentNavigationPending = true;
+        webView.NavigateToString(html);
+    }
+
+    internal static void ConfigureExternalUriSchemeProtection(
+        CoreWebView2 coreWebView2)
+    {
+        ArgumentNullException.ThrowIfNull(coreWebView2);
+
+        coreWebView2.LaunchingExternalUriScheme +=
+            (_, args) =>
+            {
+                args.Cancel = true;
+            };
     }
 
     internal static string WrapHtmlDocument(
