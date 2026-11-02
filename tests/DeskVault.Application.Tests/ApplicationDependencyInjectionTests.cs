@@ -11,9 +11,10 @@ using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Extraction.XmlDocument;
 using DeskVault.Application.Documents.Extraction.YamlDocument;
 using DeskVault.Application.Documents.Normalization;
-using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Documents.Processing;
+using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 
@@ -249,5 +250,59 @@ public sealed class ApplicationDependencyInjectionTests
                 configuredLimit,
                 exception.LimitBytes);
         }
+    }
+
+    [Fact]
+    public void AddApplication_RegistersApplicationSecuritySessionAsSingleton()
+    {
+        // Arrange
+        var services =
+            new ServiceCollection();
+
+        // Act
+        services.AddApplication();
+
+        // Assert
+        Assert.Contains(
+            services,
+            descriptor =>
+                descriptor.ServiceType ==
+                    typeof(IApplicationSecuritySession)
+                && descriptor.ImplementationType ==
+                    typeof(ApplicationSecuritySession)
+                && descriptor.Lifetime ==
+                    ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddApplication_ResolvesSameApplicationSecuritySessionInstance()
+    {
+        // Arrange
+        var services =
+            new ServiceCollection();
+
+        services.AddApplication();
+
+        using ServiceProvider serviceProvider =
+            services.BuildServiceProvider();
+
+        // Act
+        IApplicationSecuritySession first =
+            serviceProvider.GetRequiredService<IApplicationSecuritySession>();
+
+        IApplicationSecuritySession second =
+            serviceProvider.GetRequiredService<IApplicationSecuritySession>();
+
+        // Assert
+        Assert.Same(
+            first,
+            second);
+
+        Assert.IsType<ApplicationSecuritySession>(
+            first);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Unauthenticated,
+            first.CurrentSnapshot.State);
     }
 }

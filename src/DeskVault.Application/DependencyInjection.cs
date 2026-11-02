@@ -20,6 +20,7 @@ using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Application.Workspaces;
 using DeskVault.Application.Workspaces.Commands.ActivateWorkspace;
 using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
@@ -125,6 +126,8 @@ public static class DependencyInjection
                     options.MaxChunkSize,
                     options.ChunkOverlap);
             });
+
+        services.AddSingleton<IApplicationSecuritySession, ApplicationSecuritySession>();
 
         services.AddSingleton<IActiveWorkspaceRegistry, ActiveWorkspaceRegistry>();
 
