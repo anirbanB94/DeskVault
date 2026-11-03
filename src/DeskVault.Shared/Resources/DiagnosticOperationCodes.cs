@@ -27,11 +27,20 @@ public static class DiagnosticOperationCodes
 
     public const string DocumentStorageCleanupFailure =
         "document-storage.cleanup-failure";
-    public const string DatabaseInitializationFailure = "database-initialization.operation-failure";
-    public const string DocumentChunkReplacementFailure = "document-chunk-replacement.operation-failure";
-    public const string DocumentSearchStoreFailure = "document-search-store.operation-failure";
-    public const string DocumentHashFailure = "document-hash.operation-failure";
+    public const string DatabaseInitializationFailure =
+        "database-initialization.operation-failure";
 
+    public const string ApplicationAuthenticationProviderFailure =
+        "application-authentication.provider-failure";
+
+    public const string DocumentChunkReplacementFailure =
+        "document-chunk-replacement.operation-failure";
+
+    public const string DocumentSearchStoreFailure =
+        "document-search-store.operation-failure";
+
+    public const string DocumentHashFailure =
+        "document-hash.operation-failure";
 
     public const string DocumentImportUnexpectedFailure =
         "document-import.unexpected-failure";
@@ -89,6 +98,7 @@ public static class DiagnosticOperationCodes
 
     public const string DocumentOpenFailure =
         "document-open.failure";
+
     public const string DocumentWorkspaceOpenFailure =
         "document-workspace.open.failure";
 
@@ -100,7 +110,6 @@ public static class DiagnosticOperationCodes
 
     public const string DocumentWorkspaceRemovalConfirmationFailure =
         "document-workspace.removal-confirmation.failure";
-
 
     public const string WorkspacePresentationDocumentOpenFailure =
         "workspace-presentation.document-open";

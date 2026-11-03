@@ -20,6 +20,7 @@ using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.Sessions;
 using DeskVault.Application.Workspaces;
 using DeskVault.Application.Workspaces.Commands.ActivateWorkspace;
@@ -128,6 +129,8 @@ public static class DependencyInjection
             });
 
         services.AddSingleton<IApplicationSecuritySession, ApplicationSecuritySession>();
+
+        services.AddSingleton<IApplicationAuthenticationService, ApplicationAuthenticationService>();
 
         services.AddSingleton<IActiveWorkspaceRegistry, ActiveWorkspaceRegistry>();
 

@@ -14,8 +14,12 @@ using DeskVault.Application.Documents.Normalization;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.Sessions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using System.Text;
 
 namespace DeskVault.Application.Tests;
@@ -304,5 +308,52 @@ public sealed class ApplicationDependencyInjectionTests
         Assert.Equal(
             ApplicationSecuritySessionState.Unauthenticated,
             first.CurrentSnapshot.State);
+    }
+
+    [Fact]
+    public void AddApplication_RegistersApplicationAuthenticationServiceAsSingleton()
+    {
+        // Arrange
+        var services =
+            new ServiceCollection();
+
+        services.AddSingleton<ILogger<ApplicationAuthenticationService>>(
+            NullLogger<ApplicationAuthenticationService>.Instance);
+
+        services.AddSingleton<IApplicationAuthenticationProvider>(
+            Mock.Of<IApplicationAuthenticationProvider>());
+
+        services.AddApplication();
+
+        // Act
+        using ServiceProvider serviceProvider =
+            services.BuildServiceProvider();
+
+        IApplicationAuthenticationService first =
+            serviceProvider.GetRequiredService<IApplicationAuthenticationService>();
+
+        IApplicationAuthenticationService second =
+            serviceProvider.GetRequiredService<IApplicationAuthenticationService>();
+
+        // Assert
+        Assert.Contains(
+            services,
+            descriptor =>
+                descriptor.ServiceType ==
+                    typeof(IApplicationAuthenticationService)
+                && descriptor.ImplementationType ==
+                    typeof(ApplicationAuthenticationService)
+                && descriptor.Lifetime ==
+                    ServiceLifetime.Singleton);
+
+        Assert.Same(
+            first,
+            second);
+
+        Assert.IsType<ApplicationAuthenticationService>(
+            first);
+
+        Assert.IsType<ApplicationSecuritySession>(
+            serviceProvider.GetRequiredService<IApplicationSecuritySession>());
     }
 }

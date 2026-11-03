@@ -5,6 +5,9 @@ public static class LogMessages
     public const string ApplicationStarting =
         "DeskVault application starting.";
 
+    public const string StartupAuthenticationFailed =
+        "Startup authentication could not be completed.";
+
     public const string MainWorkspaceInitializationStarted =
         "Main workspace initialization started.";
 
