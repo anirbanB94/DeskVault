@@ -356,4 +356,45 @@ public sealed class ApplicationDependencyInjectionTests
         Assert.IsType<ApplicationSecuritySession>(
             serviceProvider.GetRequiredService<IApplicationSecuritySession>());
     }
+
+    [Fact]
+    public void AddApplication_RegistersApplicationSecuritySessionLifecycleServiceAsSingleton()
+    {
+        // Arrange
+        var services =
+            new ServiceCollection();
+
+        services.AddSingleton<ILogger<ApplicationAuthenticationService>>(
+            NullLogger<ApplicationAuthenticationService>.Instance);
+
+        services.AddSingleton<IApplicationAuthenticationProvider>(
+            Mock.Of<IApplicationAuthenticationProvider>());
+
+        services.AddApplication();
+
+        // Act
+        using ServiceProvider serviceProvider =
+            services.BuildServiceProvider();
+
+        IApplicationSecuritySessionLifecycleService first =
+            serviceProvider.GetRequiredService<IApplicationSecuritySessionLifecycleService>();
+
+        IApplicationSecuritySessionLifecycleService second =
+            serviceProvider.GetRequiredService<IApplicationSecuritySessionLifecycleService>();
+
+        // Assert
+        Assert.Contains(
+            services,
+            descriptor =>
+                descriptor.ServiceType ==
+                    typeof(IApplicationSecuritySessionLifecycleService)
+                && descriptor.ImplementationType ==
+                    typeof(ApplicationSecuritySessionLifecycleService)
+                && descriptor.Lifetime ==
+                    ServiceLifetime.Singleton);
+
+        Assert.Same(first, second);
+
+        Assert.IsType<ApplicationSecuritySessionLifecycleService>(first);
+    }
 }

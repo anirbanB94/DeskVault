@@ -182,6 +182,22 @@ synchronization context. UI consumers are responsible for marshaling
 presentation updates to the appropriate thread and must compare snapshot
 revisions before applying state.
 
+A transition may be committed and its notification queued while another
+thread is already draining the notification queue. In that situation,
+the operation that commits the transition does not wait for the existing
+dispatcher to finish processing all queued notifications. The active
+dispatcher continues to deliver the queued snapshots in revision order.
+
+Consequently, a lock operation can return after the authoritative session
+has become `Locked` even when its notification is still queued behind an
+earlier notification. A subsequent lifecycle operation may begin after
+the lock operation returns. Its state transitions and notifications are
+still committed and delivered in revision order after the lock transition.
+
+Notification delivery is therefore an ordered observation mechanism,
+not a requirement that every observer finish processing a transition
+before another valid session transition may begin.
+
 ### Authentication and Cryptographic Responsibilities
 
 The security session represents runtime authorization state. It does not
@@ -221,12 +237,55 @@ The session coordinator establishes the shared authorization state, but
 it does not by itself implement every enforcement action required when
 access is withdrawn.
 
-Authentication-provider integration, application lock and unlock
-lifecycle, protected document and database key availability,
-automatic-lock policy, Windows workstation security transitions,
-in-app presentation cleanup, suppression of late asynchronous results,
-and integrated verification of the complete access boundary remain
-separate responsibilities.
+The Application layer provides
+`IApplicationSecuritySessionLifecycleService`, implemented by
+`ApplicationSecuritySessionLifecycleService`. It coordinates runtime
+lock and unlock operations using the authoritative session and the
+existing `IApplicationAuthenticationService`. The service is registered
+as a singleton through the Application composition root.
+
+The lifecycle service does not introduce another authorization state or
+replace the session's state-transition rules. Its operation generation is
+private coordination state used only to determine whether an unlock
+operation has been superseded by a newer lock request.
+
+A lock request advances that generation even when the session is already
+`Locked` or remains `Unavailable`. It invalidates and cancels any active
+unlock operation before applying `IApplicationSecuritySession.Lock()`.
+
+A competing unlock is rejected while the lifecycle lock request is
+executing. This includes notification dispatch performed synchronously
+within that lock call. The lock operation does not, however, wait for an
+already-active notification dispatcher to finish draining notifications
+that were queued by the lock transition.
+
+Once the lifecycle lock call returns, another unlock may begin even if
+the lock notification remains queued. The authoritative session state
+has already been committed, and the session notification coordinator
+preserves revision-ordered delivery of the lock and subsequent unlock
+transitions.
+
+Unlock is permitted only from `Locked` or `Unavailable` and delegates
+verification to the existing authentication service. That service remains
+responsible for provider availability, authentication-attempt creation,
+outcome mapping, and session completion. A failed or cancelled
+re-authentication therefore remains non-authorized. Recovery from
+`Unavailable` still requires restoration to `Locked` followed by a new
+successful authentication.
+
+An unlock result is accepted by the lifecycle service only while its
+operation generation remains current. A late success from an operation
+superseded by a newer lock request is reported as superseded and cannot be
+treated as completion of the current unlock operation. Cancellation is a
+coordination signal; the authoritative session's attempt identity and
+state-transition rules remain the final protection against stale
+authentication completion.
+
+The lifecycle service does not own protected document or database key
+availability, automatic-lock policy, Windows workstation security
+events, in-app presentation cleanup, suppression of late asynchronous
+presentation results, or integrated verification of the complete access
+boundary. Those remain separate responsibilities.
 
 ## Architectural Boundaries
 
@@ -236,31 +295,49 @@ The intended Application boundary is:
 Application Composition Root
         |
         +-- IApplicationSecuritySession
+        |       |
+        |       +-- CurrentSnapshot
+        |       +-- StateChanged
+        |       +-- BeginAuthentication
+        |       +-- TryCompleteAuthentication
+        |       +-- Lock
+        |       +-- MarkUnavailable
+        |       +-- RestoreAvailability
+        |               |
+        |               v
+        |     ApplicationSecuritySession
+        |       +-- Authoritative state
+        |       +-- Monotonic revision
+        |       +-- Active attempt identity
+        |       +-- Serialized transitions
+        |       +-- Ordered notifications
+        |
+        +-- IApplicationAuthenticationService
+        |       |
+        |       +-- Provider availability and verification
+        |       +-- Session-bound authentication completion
+        |
+        +-- IApplicationSecuritySessionLifecycleService
                 |
-                +-- CurrentSnapshot
-                +-- StateChanged
-                +-- BeginAuthentication
-                +-- TryCompleteAuthentication
                 +-- Lock
-                +-- MarkUnavailable
-                +-- RestoreAvailability
-                        |
-                        v
-              ApplicationSecuritySession
-                        |
-                        +-- Authoritative state
-                        +-- Monotonic revision
-                        +-- Active attempt identity
-                        +-- Serialized transitions
-                        +-- Ordered notifications
+                +-- UnlockAsync
+                +-- Unlock-operation generation
+                +-- Active unlock cancellation
+                +-- Delegates state changes to the session
+                +-- Delegates verification to authentication
 ```
+
+Runtime lock/unlock orchestration delegates authoritative state changes
+to the Application session and authentication to the existing
+authentication service. The lifecycle service does not own a separate
+authorization state.
 
 Authentication integration supplies outcomes to the Application session.
 Protected-access consumers observe the resulting authoritative state
 through the Application contract.
 
-The Application session does not depend on Infrastructure or UI
-implementations.
+The Application session and lifecycle service do not depend on
+Infrastructure or UI implementations.
 
 ## Alternatives Considered
 
@@ -388,7 +465,20 @@ The implementation must:
   new application session;
 - keep authentication-provider, workstation-monitoring, automatic-lock,
   protected-key, and UI-enforcement responsibilities at their respective
-  architectural boundaries.
+  architectural boundaries;
+- use the lifecycle service for runtime lock/unlock coordination while
+  keeping the authoritative authorization state in the session;
+- advance the lifecycle operation generation for every lock request,
+  including a repeated request that does not change the session state;
+- invalidate and cancel an active unlock before applying the session lock;
+- reject a competing unlock while a lifecycle lock request is executing,
+  including any state-change notification dispatch performed
+  synchronously within that lock call;
+- preserve revision-ordered state transitions and notification delivery
+  when a lock notification is queued behind an already-active dispatcher;
+- permit runtime unlock only from `Locked` or `Unavailable`;
+- accept an unlock result only while its lifecycle operation remains
+  current, and never treat a superseded result as authorization.
 
 ## Verification
 
@@ -413,7 +503,24 @@ tests for:
 - observer failure isolation;
 - invalid authentication outcomes and null attempt arguments;
 - singleton registration and resolution through Application dependency
-  injection.
+  injection;
+- lifecycle lock and unlock coordination through the Application
+  lifecycle service;
+- lock invalidation of an unlock still checking provider availability,
+  before a session-bound authentication attempt exists;
+- lock invalidation of an active authentication attempt and rejection of
+  its delayed successful completion;
+- repeated lock requests superseding an unlock even when the authoritative
+  session remains in the same state;
+- rejection of a competing unlock during synchronous lock-notification
+  dispatch;
+- unlock and subsequent state transitions while the lock notification
+  is queued behind an already-active notification dispatcher;
+- revision-ordered delivery of queued lock and subsequent unlock
+  notifications;
+- successful runtime re-authentication and failed, cancelled, and
+  unavailable re-authentication through the production Windows Hello
+  composition.
 
 Automated Application tests cover the security-session state transitions,
 authentication-attempt invalidation, concurrency behavior, notification
@@ -436,6 +543,8 @@ concerns.
 - ADR-0009 establishes encrypted SQLite and database-key management.
 - ADR-0010 establishes document-processing generation authority and
   stale-result protection for document processing.
+- ADR-0015 establishes Windows Hello as the selected authentication
+  provider and its integration with the Application security session.
 
 ## Result
 
@@ -453,5 +562,7 @@ returns to `Locked` so that successful authentication is still required.
 
 The resulting boundary preserves the existing document and database
 encryption architecture while providing a deterministic foundation for
-authentication, locking, key-availability, workstation, and presentation
-integrations.
+authentication, runtime lock/unlock orchestration, key availability,
+workstation transitions, and presentation protection. Runtime lock
+requests supersede earlier unlock operations without changing the
+authoritative session-state contract.
