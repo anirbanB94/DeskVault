@@ -92,6 +92,20 @@ A failed retrieval must not create the security directory as a side effect of re
 and does not inherit or expose provisioning capability. `DatabaseInitializer` owns the supported provisioning contexts: initial vault setup before document data exists, and compatibility initialization of an existing empty database when there is no document metadata and no managed document artifact. Ordinary document encryption and normal document
 decryption must use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. If the expected key is missing or unusable, a document write or read fails; ordinary document operations must not provision a new key.
 
+#### Session-Authorized Strict Document-Key Retrieval
+
+Production Infrastructure composition exposes strict document-key retrieval through `SessionAuthorizedEncryptionKeyService`, which implements only `IEncryptionKeyService`. The wrapper delegates to the existing strict `WindowsEncryptionKeyService.GetKeyAsync()` implementation; it does not change how the canonical `master.key` is read, unprotected, or validated. The underlying Windows service is constructed inside the production registration and is not registered as a concrete DI service. The separate `WindowsEncryptionKeyProvisioningService` exposes only `IEncryptionKeyProvisioningService`; the dual-capability Windows implementation is therefore not published from the production container as an unguarded retrieval service.
+
+Before invoking the underlying strict retrieval, the wrapper reads the authoritative `IApplicationSecuritySession.CurrentSnapshot`. Protected retrieval is permitted only when the snapshot is `Authenticated`, and the wrapper captures that snapshot's `Revision`. `Unauthenticated`, `Authenticating`, `Locked`, and `Unavailable` states deny retrieval before the underlying key service is invoked.
+
+After the asynchronous strict retrieval completes, the wrapper checks cancellation and reads the current session snapshot again. It returns the acquired material only when the session remains `Authenticated` and the current revision equals the captured revision. If authorization is no longer available or the revision changed, the wrapper clears the locally acquired `EncryptionKeyMaterial.KeyBytes` buffer with `CryptographicOperations.ZeroMemory` and throws `UnauthorizedAccessException` rather than returning the key.
+
+The revision check rejects a retrieval that overlaps a lock even when a later unlock or re-authentication has completed before the underlying read finishes. A transition away from and back to `Authenticated` is a different session revision and does not restore authorization to the earlier in-flight retrieval. Cancellation after material has been acquired also prevents return and clears the locally acquired buffer.
+
+The final snapshot check is the retrieval authorization point and the retrieval's linearization point. It prevents a key obtained by a pending retrieval from being authorized after a session transition that occurred before that check. A lock committed after the final snapshot read is later than that retrieval authorization point; it cannot revoke key material already authorized at that point, even if the caller observes asynchronous task completion afterward. The check cannot erase copies already handed to independent operations or cancel work that has already consumed returned material. Those limits do not change the caller's responsibility to clear the exact buffer it owns after use.
+
+This enforcement occurs at the Infrastructure retrieval boundary used by production consumers, including `DocumentEncryptionService`; it is not a UI-only or caller-only check. When the session is not `Authenticated` at the initial authorization check, strict retrieval is denied before the underlying `WindowsEncryptionKeyService.GetKeyAsync()` call. If a retrieval starts under an authenticated revision but cancellation or a session transition prevents successful post-retrieval revalidation, any locally acquired key buffer is cleared and no key material is returned. This boundary never invokes or falls back to `IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()`.
+
 Key-related failure diagnostics must not disclose plaintext key bytes, protected key blobs, decrypted document content, or credentials. Failures are surfaced through the existing Infrastructure exception and logging boundary without silent key recovery.
 
 ### Key Identity and Version Semantics
@@ -332,6 +346,9 @@ The Application layer must not construct or accept physical managed artifact pat
 - Concurrent first-time master-key initialization converges on one authoritative persisted key rather than allowing a losing initializer to overwrite the canonical key.
 - Existing-key retrieval continues to use the protected persisted key.
 - Ordinary document encryption and normal document decryption retrieve the established master key rather than silently provisioning a replacement when the expected key is unavailable.
+- Session-authorized strict retrieval denies key access unless the authoritative application security session is authenticated, and rejects an in-flight read if the session revision changes before retrieval authorization completes.
+- The production DI registration exposes the session-authorized retrieval interface separately from the provisioning-only capability and does not register the raw dual-capability Windows service as a concrete service.
+- An unreturnable acquired key buffer is cleared on cancellation or failed post-retrieval authorization; a buffer already returned to a caller cannot be revoked by a later lock.
 - Document-owned artifact operations have one canonical identity and cannot intentionally select another document's managed artifact by supplying an arbitrary path.
 - Reconciliation can distinguish readable content from an actually owned and content-consistent artifact.
 - Format-3 records authenticate document identity, chunk sequence, declared data-chunk lengths, and whole-document completion.
@@ -400,6 +417,10 @@ Recovery must not expose document contents or cryptographic material through log
 - A missing, invalid, unreadable, or unavailable expected key must result in explicit failure rather than fallback to provisioning.
 - Explicit initial provisioning is owned by `DatabaseInitializer` and is limited to authorized first-use/empty-vault contexts. `IEncryptionKeyProvisioningService.GetOrCreateKeyAsync()` is not a fallback for ordinary document writes or for an established vault with missing key material.
 - The retrieval-only `IEncryptionKeyService` does not expose or inherit provisioning capability.
+- Production DI resolves `IEncryptionKeyService` to `SessionAuthorizedEncryptionKeyService`; the raw `WindowsEncryptionKeyService` is not registered as a concrete service or exposed to production consumers as the strict retrieval interface.
+- Retrieval requires an `Authenticated` session snapshot before the underlying strict read and the same `Authenticated` revision after the awaited read. `Unauthenticated`, `Authenticating`, `Locked`, `Unavailable`, or any intervening revision change denies the operation.
+- If authorization fails after key material has been acquired, the retrieval boundary clears that locally acquired key buffer before throwing; it does not invoke provisioning or modify canonical key state.
+- The revision fence rejects a retrieval spanning a lock even when the session is authenticated again before the read completes. It cannot revoke key material returned before a later lock or erase independent copies already consumed by other operations.
 - Key-related logs must not contain plaintext key bytes, protected key blobs, decrypted document content, or credentials.
 - Cancellation remains cancellation and must not be converted into a cryptographic key-failure result.
 
@@ -486,6 +507,14 @@ It does not introduce a replacement-key hierarchy or define key rotation policy.
 Vault initialization provisions the document key through `IEncryptionKeyProvisioningService`, which is injected into the authorized `DatabaseInitializer` lifecycle boundary. Ordinary document encryption and document decryption use `IEncryptionKeyService.GetKeyAsync()` to retrieve the established key. The retrieval-only `IEncryptionKeyService` exposes only `GetKeyAsync()` and does not inherit provisioning capability.
 Missing or invalid master-key state fails explicitly without provisioning a replacement or modifying the stored key state. The initializer permits document-key provisioning for a new vault before existing document data is present, and for an existing empty database only when document metadata and managed document artifacts are both absent. An established vault with document metadata or stored artifacts cannot be treated as an initial-provisioning context.
 
+### Session-Authorized Document-Key Retrieval
+
+The production Infrastructure registration resolves `IEncryptionKeyService` to `SessionAuthorizedEncryptionKeyService`. The adapter checks the authoritative application security session before and after asynchronous strict key retrieval and delegates only to the existing `WindowsEncryptionKeyService.GetKeyAsync()` implementation. It is not a provisioning service, and the raw dual-capability Windows implementation is not registered as a concrete production DI service. The provisioning capability is registered separately through `WindowsEncryptionKeyProvisioningService`, which exposes only `IEncryptionKeyProvisioningService`.
+
+The adapter requires `Authenticated` state and captures the current session revision before starting the underlying read. After the read, it requires the state to remain `Authenticated` at that same revision. Any non-authenticated state or revision change denies return; if a key buffer was acquired, the adapter clears it before throwing. Thus, a lock during retrieval remains authoritative even if re-authentication completes before the pending retrieval finishes. The final check cannot revoke key material already returned before a later lock or copies already consumed by independent operations.
+
+`DocumentEncryptionService` remains the production document-key consumer and retains responsibility for clearing the exact caller-owned key buffer after each encryption/decryption operation. The session wrapper adds authorization at the Infrastructure retrieval boundary without changing encryption, key metadata, DPAPI protection, or document-record compatibility.
+
 ### Operation-Owned Document-Key Buffer Cleanup
 
 `EncryptionKeyMaterial.KeyBytes` is caller-owned. `DocumentEncryptionService` must clear the exact key buffer returned by `IEncryptionKeyService.GetKeyAsync()` after each encryption and decryption operation, including success, exceptions, stream failures, authentication failures, and cancellation after acquisition.
@@ -509,7 +538,13 @@ Infrastructure
     ↓
 Canonical artifact resolution from DocumentId
     ↓
+Authenticated application-session snapshot and revision fence
+    ↓
+SessionAuthorizedEncryptionKeyService
+    ↓
 Strict retrieval of existing protected key
+    ↓
+Post-retrieval session revision check
     ↓
 AES-GCM authentication and decryption
     ↓
@@ -591,7 +626,7 @@ Master-key initialization publishes one canonical protected key without allowing
 a concurrent losing initializer to overwrite it or return a competing key as
 authoritative. Subsequent retrieval uses the persisted protected key.
 
-Ordinary document encryption and normal document decryption retrieve the established master key without provisioning a replacement. Missing or invalid key material results in explicit failure, and a failed operation does not modify the stored key state.
+Ordinary document encryption and normal document decryption retrieve the established master key without provisioning a replacement. Production strict retrieval additionally requires an authenticated application security-session snapshot and an unchanged revision across the asynchronous read. Missing or invalid key material, failed session authorization, or a session transition during retrieval results in explicit failure without modifying stored key state or provisioning a replacement.
 
 New document writes use format 3. Its authenticated per-chunk metadata binds protected bytes to the expected document, key identity/version, and chunk position, and its mandatory authenticated final record establishes
 the expected whole-record completion boundary. Exact end-of-file is required after that final record.

@@ -3,6 +3,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
@@ -2612,6 +2613,18 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
         }
     }
 
+    private static void AuthenticateSession(
+        IApplicationSecuritySession securitySession)
+    {
+        ApplicationSecuritySessionAttempt attempt =
+            securitySession.BeginAuthentication();
+
+        Assert.True(
+            securitySession.TryCompleteAuthentication(
+                attempt,
+                ApplicationAuthenticationOutcome.Succeeded));
+    }
+
     private static ServiceProvider BuildServiceProvider(
         string rootDirectory,
         byte[] databaseKey,
@@ -2658,7 +2671,13 @@ public sealed class PlaintextDatabaseMigrationIntegrationTests
                 databaseEncryptionMigratorOverride);
         }
 
-        return services.BuildServiceProvider();
+        ServiceProvider serviceProvider =
+            services.BuildServiceProvider();
+
+        AuthenticateSession(
+            serviceProvider.GetRequiredService<IApplicationSecuritySession>());
+
+        return serviceProvider;
     }
 
     private static bool IsPlaintextSqliteDatabase(

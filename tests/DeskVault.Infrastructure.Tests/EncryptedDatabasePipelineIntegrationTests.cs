@@ -5,6 +5,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Commands.ImportDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Domain.Documents;
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
@@ -1377,7 +1378,13 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         services.AddSingleton<IDatabaseEncryptionKeyProvisioningService>(
             testDatabaseEncryptionKeyService);
 
-        return services.BuildServiceProvider();
+        ServiceProvider serviceProvider =
+            services.BuildServiceProvider();
+
+        AuthenticateSession(
+            serviceProvider.GetRequiredService<IApplicationSecuritySession>());
+
+        return serviceProvider;
     }
 
     private static ServiceProvider BuildProductionServiceProvider(
@@ -1404,7 +1411,25 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
         services.AddInfrastructure(
             configuration);
 
-        return services.BuildServiceProvider();
+        ServiceProvider serviceProvider =
+            services.BuildServiceProvider();
+
+        AuthenticateSession(
+            serviceProvider.GetRequiredService<IApplicationSecuritySession>());
+
+        return serviceProvider;
+    }
+
+    private static void AuthenticateSession(
+        IApplicationSecuritySession securitySession)
+    {
+        ApplicationSecuritySessionAttempt attempt =
+            securitySession.BeginAuthentication();
+
+        Assert.True(
+            securitySession.TryCompleteAuthentication(
+                attempt,
+                ApplicationAuthenticationOutcome.Succeeded));
     }
 
     private static async Task<byte[]> ReadDatabaseHeaderAsync(

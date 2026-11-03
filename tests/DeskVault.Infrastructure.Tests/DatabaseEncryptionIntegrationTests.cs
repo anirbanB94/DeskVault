@@ -1,12 +1,12 @@
-using DeskVault.Infrastructure;
+using DeskVault.Application;
+using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using System.Security.Cryptography;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -33,6 +33,8 @@ public sealed class DatabaseEncryptionIntegrationTests
                 new DeskVaultDataPaths(
                     rootDirectory));
 
+            services.AddApplication();
+
             services.AddInfrastructure(
                 configuration);
 
@@ -51,10 +53,16 @@ public sealed class DatabaseEncryptionIntegrationTests
                     "Security",
                     "database.key");
 
+            // Follow production startup ordering:
+            // authenticate before database initialization.
+            AuthenticateSession(
+                serviceProvider.GetRequiredService<IApplicationSecuritySession>());
+
             var initializer =
                 serviceProvider.GetRequiredService<DatabaseInitializer>();
 
-            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
+            await initializer.InitializeAsync(
+                TestContext.Current.CancellationToken);
 
             Assert.True(
                 File.Exists(databasePath));
@@ -63,7 +71,9 @@ public sealed class DatabaseEncryptionIntegrationTests
                 File.Exists(databaseKeyPath));
 
             byte[] protectedDatabaseKey =
-                await File.ReadAllBytesAsync(databaseKeyPath, TestContext.Current.CancellationToken);
+                await File.ReadAllBytesAsync(
+                    databaseKeyPath,
+                    TestContext.Current.CancellationToken);
 
             Assert.NotEmpty(
                 protectedDatabaseKey);
@@ -73,10 +83,12 @@ public sealed class DatabaseEncryptionIntegrationTests
                     IDbContextFactory<DeskVaultDbContext>>();
 
             await using var dbContext =
-                await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
+                await factory.CreateDbContextAsync(
+                    TestContext.Current.CancellationToken);
 
             Assert.True(
-                await dbContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
+                await dbContext.Database.CanConnectAsync(
+                    TestContext.Current.CancellationToken));
 
             await dbContext.Database.CloseConnectionAsync();
         }
@@ -122,6 +134,8 @@ public sealed class DatabaseEncryptionIntegrationTests
                 new DeskVaultDataPaths(
                     rootDirectory));
 
+            services.AddApplication();
+
             services.AddInfrastructure(
                 configuration);
 
@@ -131,15 +145,21 @@ public sealed class DatabaseEncryptionIntegrationTests
             DatabaseInitializer initializer =
                 serviceProvider.GetRequiredService<DatabaseInitializer>();
 
+            // Authenticate before either initialization attempt.
+            AuthenticateSession(
+                serviceProvider.GetRequiredService<IApplicationSecuritySession>());
+
             // Act
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () =>
-                    initializer.InitializeAsync(TestContext.Current.CancellationToken));
+                    initializer.InitializeAsync(
+                        TestContext.Current.CancellationToken));
 
             File.Delete(
                 migrationPath);
 
-            await initializer.InitializeAsync(TestContext.Current.CancellationToken);
+            await initializer.InitializeAsync(
+                TestContext.Current.CancellationToken);
 
             // Assert
             Assert.True(
@@ -165,10 +185,12 @@ public sealed class DatabaseEncryptionIntegrationTests
                     IDbContextFactory<DeskVaultDbContext>>();
 
             await using DeskVaultDbContext dbContext =
-                await factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
+                await factory.CreateDbContextAsync(
+                    TestContext.Current.CancellationToken);
 
             Assert.True(
-                await dbContext.Database.CanConnectAsync(TestContext.Current.CancellationToken));
+                await dbContext.Database.CanConnectAsync(
+                    TestContext.Current.CancellationToken));
 
             await dbContext.Database.CloseConnectionAsync();
         }
@@ -177,6 +199,18 @@ public sealed class DatabaseEncryptionIntegrationTests
             DeleteTemporaryDirectory(
                 rootDirectory);
         }
+    }
+
+    private static void AuthenticateSession(
+        IApplicationSecuritySession securitySession)
+    {
+        ApplicationSecuritySessionAttempt attempt =
+            securitySession.BeginAuthentication();
+
+        Assert.True(
+            securitySession.TryCompleteAuthentication(
+                attempt,
+                ApplicationAuthenticationOutcome.Succeeded));
     }
 
     private static string CreateTemporaryDirectory()

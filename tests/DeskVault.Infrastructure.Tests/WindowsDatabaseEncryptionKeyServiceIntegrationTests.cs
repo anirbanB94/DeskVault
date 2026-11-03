@@ -1,4 +1,6 @@
-using System.Security.Cryptography;
+using DeskVault.Application;
+using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Services;
@@ -6,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -51,6 +54,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     .Build();
 
             services.AddSingleton(dataPaths);
+            services.AddApplication();
             services.AddInfrastructure(configuration);
 
             await using ServiceProvider serviceProvider =
@@ -142,6 +146,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     .Build();
 
             services.AddSingleton(dataPaths);
+            services.AddApplication();
             services.AddInfrastructure(configuration);
 
             await using ServiceProvider serviceProvider =
@@ -150,6 +155,9 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             var initializer =
                 serviceProvider.GetRequiredService<
                     DatabaseInitializer>();
+
+            AuthenticateSession(
+                serviceProvider.GetRequiredService<IApplicationSecuritySession>());
 
             // Act: initialize a new vault through the production boundary.
             await initializer.InitializeAsync(TestContext.Current.CancellationToken);
@@ -361,6 +369,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     .Build();
 
             services.AddSingleton(dataPaths);
+            services.AddApplication();
             services.AddInfrastructure(configuration);
 
             await using ServiceProvider serviceProvider =
@@ -369,6 +378,9 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             var initializer =
                 serviceProvider.GetRequiredService<
                     DatabaseInitializer>();
+
+            AuthenticateSession(
+                serviceProvider.GetRequiredService<IApplicationSecuritySession>());
 
             // Act: initialization must recognize this as an empty vault
             // without treating an unusable existing key as replaceable.
@@ -562,11 +574,16 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             services.AddSingleton(
                 dataPaths);
 
+            services.AddApplication();
+
             services.AddInfrastructure(
                 configuration);
 
             await using ServiceProvider serviceProvider =
                 services.BuildServiceProvider();
+
+            AuthenticateSession(
+                serviceProvider.GetRequiredService<IApplicationSecuritySession>());
 
             var databaseKeyService =
                 serviceProvider.GetRequiredService<
@@ -701,7 +718,7 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
                     .Build();
 
             services.AddSingleton(dataPaths);
-
+            services.AddApplication();
             services.AddInfrastructure(configuration);
 
             await using ServiceProvider serviceProvider =
@@ -726,6 +743,9 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             // Arrange: create an encrypted database using the current key.
             provisionedKey =
                 await databaseKeyProvisioningService.GetOrCreateKeyAsync(TestContext.Current.CancellationToken);
+
+            AuthenticateSession(
+                serviceProvider.GetRequiredService<IApplicationSecuritySession>());
 
             await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
@@ -881,6 +901,8 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             services.AddSingleton(
                 dataPaths);
 
+            services.AddApplication();
+
             services.AddInfrastructure(
                 configuration);
 
@@ -890,6 +912,9 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             var initializer =
                 serviceProvider.GetRequiredService<
                     DatabaseInitializer>();
+
+            AuthenticateSession(
+                serviceProvider.GetRequiredService<IApplicationSecuritySession>());
 
             await initializer.InitializeAsync(TestContext.Current.CancellationToken);
 
@@ -962,6 +987,18 @@ public sealed class WindowsDatabaseEncryptionKeyServiceIntegrationTests
             DeleteTemporaryDirectory(
                 rootDirectory);
         }
+    }
+
+    private static void AuthenticateSession(
+        IApplicationSecuritySession securitySession)
+    {
+        ApplicationSecuritySessionAttempt attempt =
+            securitySession.BeginAuthentication();
+
+        Assert.True(
+            securitySession.TryCompleteAuthentication(
+                attempt,
+                ApplicationAuthenticationOutcome.Succeeded));
     }
 
     private static string CreateTemporaryDirectory()
