@@ -132,6 +132,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IApplicationAuthenticationService, ApplicationAuthenticationService>();
 
+        services.AddSingleton<IApplicationSecuritySessionLifecycleService, ApplicationSecuritySessionLifecycleService>();
+
         services.AddSingleton<IActiveWorkspaceRegistry, ActiveWorkspaceRegistry>();
 
         services.AddSingleton<CreateWorkspaceHandler>();

@@ -125,6 +125,159 @@ public sealed class WindowsHelloAuthenticationIntegrationTests
             platformApi.LastVerificationMessage);
     }
 
+    [Fact]
+    public async Task UnlockAsync_AfterLock_UsesWindowsHelloAndRestoresAuthenticatedSession()
+    {
+        // Arrange
+        var platformApi =
+            new StubWindowsHelloPlatformApi(
+                UserConsentVerifierAvailability.Available,
+                UserConsentVerificationResult.Verified);
+
+        var windowHandleProvider =
+            new StubWindowsHelloWindowHandleProvider(
+                TestWindowHandle);
+
+        using ServiceProvider serviceProvider =
+            CreateServiceProvider(
+                platformApi,
+                windowHandleProvider);
+
+        IApplicationAuthenticationService authenticationService =
+            serviceProvider.GetRequiredService<IApplicationAuthenticationService>();
+
+        IApplicationSecuritySession session =
+            serviceProvider.GetRequiredService<IApplicationSecuritySession>();
+
+        IApplicationSecuritySessionLifecycleService lifecycle =
+            serviceProvider.GetRequiredService<IApplicationSecuritySessionLifecycleService>();
+
+        // Act
+        ApplicationAuthenticationServiceResult initialResult =
+            await authenticationService.AuthenticateAsync(
+                TestContext.Current.CancellationToken);
+
+        ApplicationSecuritySessionSnapshot lockedSnapshot =
+            lifecycle.Lock();
+
+        ApplicationAuthenticationServiceResult unlockResult =
+            await lifecycle.UnlockAsync(
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            ApplicationAuthenticationServiceResult.Succeeded,
+            initialResult);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Locked,
+            lockedSnapshot.State);
+
+        Assert.False(
+            lockedSnapshot.IsProtectedAccessAvailable);
+
+        Assert.Equal(
+            ApplicationAuthenticationServiceResult.Succeeded,
+            unlockResult);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Authenticated,
+            session.CurrentSnapshot.State);
+
+        Assert.True(
+            session.CurrentSnapshot.IsProtectedAccessAvailable);
+
+        Assert.Equal(2, platformApi.AvailabilityRequestCount);
+        Assert.Equal(2, platformApi.VerificationRequestCount);
+        Assert.Equal(2, windowHandleProvider.RequestCount);
+
+        Assert.Equal(
+            TestWindowHandle,
+            platformApi.LastWindowHandle);
+
+        Assert.Equal(
+            WindowsHelloAuthenticationProvider.VerificationMessage,
+            platformApi.LastVerificationMessage);
+    }
+
+    [Theory]
+    [InlineData(
+        UserConsentVerificationResult.RetriesExhausted,
+        ApplicationAuthenticationServiceResult.Failed,
+        ApplicationSecuritySessionState.Locked)]
+    [InlineData(
+        UserConsentVerificationResult.Canceled,
+        ApplicationAuthenticationServiceResult.Cancelled,
+        ApplicationSecuritySessionState.Locked)]
+    [InlineData(
+        UserConsentVerificationResult.DeviceNotPresent,
+        ApplicationAuthenticationServiceResult.Unavailable,
+        ApplicationSecuritySessionState.Unavailable)]
+    public async Task UnlockAsync_AfterLock_WhenReauthenticationDoesNotSucceed_LeavesSessionNonAuthorized(
+        UserConsentVerificationResult verificationResult,
+        ApplicationAuthenticationServiceResult expectedResult,
+        ApplicationSecuritySessionState expectedState)
+    {
+        // Arrange
+        var platformApi =
+            new StubWindowsHelloPlatformApi(
+                UserConsentVerifierAvailability.Available,
+                [
+                    UserConsentVerificationResult.Verified,
+                verificationResult
+                ]);
+
+        var windowHandleProvider =
+            new StubWindowsHelloWindowHandleProvider(
+                TestWindowHandle);
+
+        using ServiceProvider serviceProvider =
+            CreateServiceProvider(
+                platformApi,
+                windowHandleProvider);
+
+        IApplicationAuthenticationService authenticationService =
+            serviceProvider.GetRequiredService<IApplicationAuthenticationService>();
+
+        IApplicationSecuritySession session =
+            serviceProvider.GetRequiredService<IApplicationSecuritySession>();
+
+        IApplicationSecuritySessionLifecycleService lifecycle =
+            serviceProvider.GetRequiredService<IApplicationSecuritySessionLifecycleService>();
+
+        // Act
+        ApplicationAuthenticationServiceResult initialResult =
+            await authenticationService.AuthenticateAsync(
+                TestContext.Current.CancellationToken);
+
+        ApplicationSecuritySessionSnapshot lockedSnapshot =
+            lifecycle.Lock();
+
+        ApplicationAuthenticationServiceResult unlockResult =
+            await lifecycle.UnlockAsync(
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            ApplicationAuthenticationServiceResult.Succeeded,
+            initialResult);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Locked,
+            lockedSnapshot.State);
+
+        Assert.Equal(expectedResult, unlockResult);
+
+        Assert.Equal(expectedState, session.CurrentSnapshot.State);
+
+        Assert.False(
+            session.CurrentSnapshot.IsProtectedAccessAvailable);
+
+        Assert.Equal(2, platformApi.AvailabilityRequestCount);
+        Assert.Equal(2, platformApi.VerificationRequestCount);
+        Assert.Equal(2, windowHandleProvider.RequestCount);
+    }
+
     [Theory]
     [InlineData(UserConsentVerifierAvailability.DeviceNotPresent)]
     [InlineData(UserConsentVerifierAvailability.NotConfiguredForUser)]
@@ -339,23 +492,41 @@ public sealed class WindowsHelloAuthenticationIntegrationTests
     private sealed class StubWindowsHelloPlatformApi
         : IWindowsHelloPlatformApi
     {
+        private readonly UserConsentVerificationResult[] _verificationResults;
+
         private int _availabilityRequestCount;
         private int _verificationRequestCount;
 
         public StubWindowsHelloPlatformApi(
             UserConsentVerifierAvailability availability,
             UserConsentVerificationResult verificationResult)
+            : this(
+                availability,
+                [verificationResult])
         {
-            Availability =
-                availability;
+        }
 
-            VerificationResult =
-                verificationResult;
+        public StubWindowsHelloPlatformApi(
+            UserConsentVerifierAvailability availability,
+            IReadOnlyList<UserConsentVerificationResult> verificationResults)
+        {
+            ArgumentNullException.ThrowIfNull(verificationResults);
+
+            if (verificationResults.Count == 0)
+            {
+                throw new ArgumentException(
+                    "At least one verification result is required.",
+                    nameof(verificationResults));
+            }
+
+            Availability = availability;
+            _verificationResults = verificationResults.ToArray();
         }
 
         public UserConsentVerifierAvailability Availability { get; }
 
-        public UserConsentVerificationResult VerificationResult { get; }
+        public UserConsentVerificationResult VerificationResult =>
+            _verificationResults[0];
 
         public int AvailabilityRequestCount =>
             Volatile.Read(ref _availabilityRequestCount);
@@ -372,25 +543,27 @@ public sealed class WindowsHelloAuthenticationIntegrationTests
             Interlocked.Increment(
                 ref _availabilityRequestCount);
 
-            return Task.FromResult(
-                Availability);
+            return Task.FromResult(Availability);
         }
 
         public Task<UserConsentVerificationResult> RequestVerificationForWindowAsync(
             IntPtr windowHandle,
             string message)
         {
-            Interlocked.Increment(
-                ref _verificationRequestCount);
+            int requestNumber =
+                Interlocked.Increment(
+                    ref _verificationRequestCount);
 
-            LastWindowHandle =
-                windowHandle;
+            LastWindowHandle = windowHandle;
+            LastVerificationMessage = message;
 
-            LastVerificationMessage =
-                message;
+            int resultIndex =
+                Math.Min(
+                    requestNumber - 1,
+                    _verificationResults.Length - 1);
 
             return Task.FromResult(
-                VerificationResult);
+                _verificationResults[resultIndex]);
         }
     }
 
