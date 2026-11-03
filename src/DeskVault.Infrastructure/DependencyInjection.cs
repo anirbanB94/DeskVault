@@ -2,6 +2,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Repositories;
+using DeskVault.Infrastructure.Security.Authentication;
 using DeskVault.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -19,6 +20,10 @@ public static class DependencyInjection
         SqliteProviderBootstrap.EnsureInitialized();
 
         services.AddSingleton<IApplicationInfoService, ApplicationInfoService>();
+
+        services.AddSingleton<IWindowsHelloPlatformApi, WindowsHelloPlatformApi>();
+
+        services.AddSingleton<IApplicationAuthenticationProvider, WindowsHelloAuthenticationProvider>();
 
         services.TryAddSingleton<DeskVaultDataPaths>();
 

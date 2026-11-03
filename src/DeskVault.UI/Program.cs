@@ -1,4 +1,3 @@
-using DeskVault.Infrastructure.Persistence;
 using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
 using DeskVault.UI.Forms;
@@ -19,13 +18,27 @@ internal static class Program
 
         using var host = HostConfigurator.Build();
 
-        var databaseInitializer =
-            host.Services.GetRequiredService<DatabaseInitializer>();
+        WindowsForms.DialogResult authenticationResult;
+
+        using (var startupAuthenticationForm =
+            host.Services.GetRequiredService<StartupAuthenticationForm>())
+        {
+            authenticationResult =
+                startupAuthenticationForm.ShowDialog();
+        }
+
+        if (authenticationResult != WindowsForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        var startupCoordinator =
+            host.Services.GetRequiredService<DeskVaultStartupCoordinator>();
 
         try
         {
-            databaseInitializer
-                .InitializeAsync()
+            startupCoordinator
+                .InitializeDatabaseAsync()
                 .GetAwaiter()
                 .GetResult();
         }
@@ -49,7 +62,8 @@ internal static class Program
 
         Log.Information(Resources.LogMessages.ApplicationStarting);
 
-        var mainForm = host.Services.GetRequiredService<MainForm>();
+        var mainForm =
+            host.Services.GetRequiredService<MainForm>();
 
         WindowsForms.Application.Run(mainForm);
     }

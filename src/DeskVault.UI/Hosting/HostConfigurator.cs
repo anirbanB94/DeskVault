@@ -3,7 +3,10 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Parsing.Csv;
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
+using DeskVault.Application.Interfaces;
 using DeskVault.Infrastructure;
+using DeskVault.Infrastructure.Persistence;
+using DeskVault.Infrastructure.Security.Authentication;
 using DeskVault.UI.Forms;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Rendering;
@@ -119,7 +122,32 @@ internal static class HostConfigurator
         // Infrastructure
         services.AddInfrastructure(configuration);
 
+        // Windows Hello window ownership
+        services.AddSingleton<
+            IActiveWindowsHelloFormAccessor,
+            WinFormsActiveWindowsHelloFormAccessor>();
+
+        services.AddSingleton<
+            IWindowsHelloWindowHandleProvider,
+            WindowsHelloWindowHandleProvider>();
+
         // UI
+        services.AddSingleton<DeskVaultStartupCoordinator>(
+            provider =>
+                new DeskVaultStartupCoordinator(
+                    provider.GetRequiredService<IApplicationSecuritySession>(),
+                    async cancellationToken =>
+                    {
+                        await provider
+                            .GetRequiredService<IApplicationAuthenticationService>()
+                            .AuthenticateAsync(cancellationToken);
+                    },
+                    cancellationToken =>
+                        provider
+                            .GetRequiredService<DatabaseInitializer>()
+                            .InitializeAsync(cancellationToken)));
+
+        services.AddTransient<StartupAuthenticationForm>();
         services.AddTransient<MainForm>();
         services.AddTransient<IMainFormPresenterFactory, MainFormPresenterFactory>();
         services.AddTransient<DocumentViewForm>();

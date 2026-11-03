@@ -19,6 +19,28 @@ public static class UiMessages
         "DeskVault could not initialize its local database. " +
         "The application will now close.";
 
+    public const string WindowsHelloAuthenticationTitle =
+        "Unlock DeskVault";
+
+    public const string WindowsHelloAuthenticationDescription =
+        "Verify your identity with Windows Hello to unlock your protected vault. " +
+        "Windows Hello is required to continue.";
+
+    public const string WindowsHelloAuthenticationButton =
+        "Verify with Windows Hello";
+
+    public const string WindowsHelloAuthenticationReady =
+        "DeskVault is waiting for Windows Hello verification.";
+
+    public const string WindowsHelloAuthenticationInProgress =
+        "Complete the Windows Hello prompt to continue.";
+
+    public const string WindowsHelloAuthenticationFailed =
+        "Windows Hello did not authorize access. Try again or close DeskVault.";
+
+    public const string WindowsHelloAuthenticationCancelling =
+        "Cancelling Windows Hello authentication...";
+
 
     // Common UI
 

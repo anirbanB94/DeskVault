@@ -1,9 +1,11 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Infrastructure.Repositories;
+using DeskVault.Infrastructure.Security.Authentication;
 using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Moq;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -135,10 +137,49 @@ public sealed class InfrastructureDependencyInjectionTests
             typeof(IDatabaseEncryptionKeyProvisioningService).GetInterfaces());
     }
 
+    [Fact]
+    public void AddInfrastructure_RegistersWindowsHelloAuthenticationProviderAndPlatformApiAsSingletons()
+    {
+        // Arrange
+        using ServiceProvider serviceProvider =
+            CreateServiceProvider();
+
+        // Act
+        IApplicationAuthenticationProvider firstProvider =
+            serviceProvider.GetRequiredService<IApplicationAuthenticationProvider>();
+
+        IApplicationAuthenticationProvider secondProvider =
+            serviceProvider.GetRequiredService<IApplicationAuthenticationProvider>();
+
+        IWindowsHelloPlatformApi firstPlatformApi =
+            serviceProvider.GetRequiredService<IWindowsHelloPlatformApi>();
+
+        IWindowsHelloPlatformApi secondPlatformApi =
+            serviceProvider.GetRequiredService<IWindowsHelloPlatformApi>();
+
+        // Assert
+        Assert.IsType<WindowsHelloAuthenticationProvider>(
+            firstProvider);
+
+        Assert.Same(
+            firstProvider,
+            secondProvider);
+
+        Assert.IsType<WindowsHelloPlatformApi>(
+            firstPlatformApi);
+
+        Assert.Same(
+            firstPlatformApi,
+            secondPlatformApi);
+    }
+
     private static ServiceProvider CreateServiceProvider()
     {
         var services =
             new ServiceCollection();
+
+        services.AddSingleton<IWindowsHelloWindowHandleProvider>(
+            Mock.Of<IWindowsHelloWindowHandleProvider>());
 
         IConfiguration configuration =
             new ConfigurationBuilder()
