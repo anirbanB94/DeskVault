@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace DeskVault.Infrastructure;
 
@@ -41,25 +42,35 @@ public static class DependencyInjection
 
         services.AddSingleton<IHashService, Sha256HashService>();
 
-        services.AddSingleton<WindowsEncryptionKeyService>();
-
         services.AddSingleton<IEncryptionKeyService>(
             serviceProvider =>
-                serviceProvider.GetRequiredService<WindowsEncryptionKeyService>());
+            {
+                var innerService =
+                    new WindowsEncryptionKeyService(
+                        serviceProvider.GetRequiredService<DeskVaultDataPaths>(),
+                        serviceProvider.GetRequiredService<ILogger<WindowsEncryptionKeyService>>());
 
-        services.AddSingleton<IEncryptionKeyProvisioningService>(
-            serviceProvider =>
-                serviceProvider.GetRequiredService<WindowsEncryptionKeyService>());
+                return new SessionAuthorizedEncryptionKeyService(
+                    innerService,
+                    serviceProvider.GetRequiredService<IApplicationSecuritySession>());
+            });
 
-        services.AddSingleton<WindowsDatabaseEncryptionKeyService>();
+        services.AddSingleton<IEncryptionKeyProvisioningService, WindowsEncryptionKeyProvisioningService>();
 
         services.AddSingleton<IDatabaseEncryptionKeyService>(
             serviceProvider =>
-                serviceProvider.GetRequiredService<WindowsDatabaseEncryptionKeyService>());
+            {
+                var innerService =
+                    new WindowsDatabaseEncryptionKeyService(
+                        serviceProvider.GetRequiredService<DeskVaultDataPaths>(),
+                        serviceProvider.GetRequiredService<ILogger<WindowsDatabaseEncryptionKeyService>>());
 
-        services.AddSingleton<IDatabaseEncryptionKeyProvisioningService>(
-            serviceProvider =>
-                serviceProvider.GetRequiredService<WindowsDatabaseEncryptionKeyService>());
+                return new SessionAuthorizedDatabaseEncryptionKeyService(
+                    innerService,
+                    serviceProvider.GetRequiredService<IApplicationSecuritySession>());
+            });
+
+        services.AddSingleton<IDatabaseEncryptionKeyProvisioningService, WindowsDatabaseEncryptionKeyProvisioningService>();
 
         services.AddSingleton<IDatabaseFormatDetector, SqliteDatabaseFormatDetector>();
 
