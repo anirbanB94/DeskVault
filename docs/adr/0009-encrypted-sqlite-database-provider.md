@@ -218,6 +218,20 @@ factory creation, checking key-buffer cleanup on success and construction failur
 independent key-service state, confirming successful database connectivity, and checking that
 the tested construction exception does not contain the Base64-encoded key.
 
+#### Session-Authorized Strict Database-Key Retrieval
+
+Production Infrastructure composition exposes strict database-key retrieval through `SessionAuthorizedDatabaseEncryptionKeyService`, which implements only `IDatabaseEncryptionKeyService`. The wrapper delegates to the existing strict `WindowsDatabaseEncryptionKeyService.GetKeyAsync()` implementation; it does not change how the canonical `database.key` is read, unprotected, or validated. The underlying Windows service is constructed inside the production registration and is not registered as a concrete DI service. The separate `WindowsDatabaseEncryptionKeyProvisioningService` exposes only `IDatabaseEncryptionKeyProvisioningService`; the dual-capability Windows implementation is therefore not published from the production container as an unguarded retrieval service.
+
+Before invoking the underlying strict retrieval, the wrapper reads the authoritative `IApplicationSecuritySession.CurrentSnapshot`. Protected retrieval is permitted only when the snapshot is `Authenticated`, and the wrapper captures that snapshot's `Revision`. `Unauthenticated`, `Authenticating`, `Locked`, and `Unavailable` states deny retrieval before the underlying database-key service is invoked.
+
+After the asynchronous strict retrieval completes, the wrapper checks cancellation and reads the current session snapshot again. It returns the acquired material only when the session remains `Authenticated` and the current revision equals the captured revision. If authorization is no longer available or the revision changed, the wrapper clears the locally acquired `EncryptionKeyMaterial.KeyBytes` buffer with `CryptographicOperations.ZeroMemory` and throws `UnauthorizedAccessException` rather than returning the key.
+
+The revision check rejects a retrieval that overlaps a lock even when a later unlock or re-authentication has completed before the underlying read finishes. A transition away from and back to `Authenticated` is a different session revision and does not restore authorization to the earlier in-flight retrieval. Cancellation after material has been acquired also prevents return and clears the locally acquired buffer.
+
+The final snapshot check is the retrieval authorization point and the retrieval's linearization point. It prevents a key obtained by a pending retrieval from being authorized after a session transition that occurred before that check. A lock committed after the final snapshot read is later than that retrieval authorization point; it cannot revoke key material already authorized at that point, even if the caller observes asynchronous task completion afterward. The check cannot erase copies already handed to independent operations or cancel work that has already consumed returned material. Those limits do not change the context factory's responsibility to clear the exact buffer it owns after connection configuration.
+
+This enforcement occurs at the Infrastructure retrieval boundary used by the production `EncryptedDeskVaultDbContextFactory`; it is not a UI-only or caller-only check. When the session is not `Authenticated` at the initial authorization check, strict retrieval is denied before the underlying `WindowsDatabaseEncryptionKeyService.GetKeyAsync()` call. If a retrieval starts under an authenticated revision but cancellation or a session transition prevents successful post-retrieval revalidation, any locally acquired key buffer is cleared and no database key material is returned. This boundary never invokes or falls back to `IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync()`.
+
 ### Atomic Database Encryption Key Provisioning
 
 `IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync` is the
@@ -597,6 +611,12 @@ Strict existing-key retrieval remains separate from provisioning.
 Missing or invalid existing keys result in controlled failure rather
 than silently triggering replacement-key creation in the read path.
 
+Database context creation additionally requires a currently authenticated application security session. The registered `SessionAuthorizedDatabaseEncryptionKeyService` captures the authenticated session revision before strict retrieval and revalidates the authenticated state and same revision after the asynchronous read. A lock or other session transition that occurs before the final check prevents return and causes the acquired key buffer to be cleared. The check does not revoke database-key material returned before a later lock or copies already consumed by independent operations.
+
+The production DI composition resolves `IDatabaseEncryptionKeyService` to the session-authorized retrieval adapter and resolves `IDatabaseEncryptionKeyProvisioningService` to a provisioning-only adapter. The underlying dual-capability Windows key service is not registered as a concrete DI service, so production consumers cannot obtain an unguarded retrieval service from the container by resolving that concrete type or by casting the provisioning adapter to the retrieval interface.
+
+Unauthorized retrieval does not invoke the strict underlying key service, create or replace canonical key state, call the provisioning API, or fall back to an unencrypted database. Provisioning remains a separate capability and continues to be invoked by the explicitly authorized initialization lifecycle.
+
 Incorrect or unavailable database keys result in controlled database
 initialization failure rather than silently falling back to an unencrypted
 database.
@@ -719,6 +739,21 @@ The provider-level migration spike established the following behavior:
   remain unchanged; and temporary candidate files are cleaned up.
   Strict retrieval remains fail-fast when the canonical key file is held
   open.
+- Session-authorized retrieval tests verify rejection of `Unauthenticated`,
+  `Authenticating`, `Locked`, and `Unavailable` snapshots; successful
+  retrieval from an unchanged authenticated revision; denial and buffer
+  clearing when a lock occurs during retrieval; denial when a lock and
+  re-authentication change the revision before a pending read completes;
+  and buffer clearing when cancellation occurs after material acquisition.
+- Infrastructure DI tests verify that `IEncryptionKeyService` and
+  `IDatabaseEncryptionKeyService` resolve to their session-authorized
+  adapters, provisioning interfaces resolve to provisioning-only adapters,
+  raw Windows key-service concrete types are not registered, and protected
+  retrieval is denied before authentication.
+- Production-path integration coverage verifies authenticated database
+  initialization, retrieval of the persisted authoritative database key,
+  successful encrypted database connectivity, and document/database
+  pipeline behavior through the registered Infrastructure services.
 - Database-key provisioning integration coverage verifies concurrent
   first-time initialization, retrieval of the persisted authoritative
   key through the registered Infrastructure service, successful database
