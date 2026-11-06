@@ -33,6 +33,7 @@ public sealed class MainFormPresenterFactory :
     private readonly DocumentTextExtractorResolver _documentTextExtractorResolver;
     private readonly ILogger<MainFormPresenter> _logger;
     private readonly IOptions<SearchOptions> _searchOptions;
+    private readonly IApplicationSecuritySession _applicationSecuritySession;
 
     public MainFormPresenterFactory(
         ImportDocumentHandler importDocumentHandler,
@@ -48,7 +49,8 @@ public sealed class MainFormPresenterFactory :
         IDocumentProcessingService documentProcessingService,
         DocumentTextExtractorResolver documentTextExtractorResolver,
         ILogger<MainFormPresenter> logger,
-        IOptions<SearchOptions> searchOptions)
+        IOptions<SearchOptions> searchOptions,
+        IApplicationSecuritySession applicationSecuritySession)
     {
         ArgumentNullException.ThrowIfNull(importDocumentHandler);
         ArgumentNullException.ThrowIfNull(removeDocumentHandler);
@@ -64,6 +66,7 @@ public sealed class MainFormPresenterFactory :
         ArgumentNullException.ThrowIfNull(documentTextExtractorResolver);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(searchOptions);
+        ArgumentNullException.ThrowIfNull(applicationSecuritySession);
 
         _importDocumentHandler = importDocumentHandler;
         _removeDocumentHandler = removeDocumentHandler;
@@ -79,6 +82,7 @@ public sealed class MainFormPresenterFactory :
         _documentTextExtractorResolver = documentTextExtractorResolver;
         _logger = logger;
         _searchOptions = searchOptions;
+        _applicationSecuritySession = applicationSecuritySession;
     }
 
     public MainFormPresenter Create(
@@ -101,6 +105,7 @@ public sealed class MainFormPresenterFactory :
             _documentProcessingService,
             _documentTextExtractorResolver,
             _logger,
-            _searchOptions);
+            _searchOptions,
+            _applicationSecuritySession);
     }
 }

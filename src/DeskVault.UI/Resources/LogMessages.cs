@@ -107,6 +107,9 @@ public static class LogMessages
     public const string DocumentSearchFailed =
         "Document search failed.";
 
+    public const string DocumentSearchCancellationCallbackFailed =
+        "Document search cancellation callback failed.";
+
     public const string DocumentListRefreshStarted =
         "Document list refresh started.";
 
@@ -133,6 +136,12 @@ public static class LogMessages
 
     public const string DocumentWorkspaceOpenFailed =
         "Document workspace open failed.";
+
+    public const string DocumentWorkspaceCancellationCallbackFailed =
+        "Document workspace cancellation callback failed.";
+
+    public const string DocumentWorkspacePendingStreamCleanupFailed =
+        "Pending document workspace stream cleanup failed.";
 
     public const string DocumentWorkspaceOpenExternallySkipped =
         "Open externally skipped because no document is currently open.";
@@ -319,6 +328,9 @@ public static class LogMessages
 
     public const string WorkspacePresentationDisposed =
         "Workspace presentation {WorkspaceId} disposed.";
+
+    public const string WorkspacePresentationCleanupFailed =
+        "Workspace presentation cleanup failed during protected-state clearing.";
 
     public const string WorkspacePresentationAddDocumentsOperation =
         "add documents";

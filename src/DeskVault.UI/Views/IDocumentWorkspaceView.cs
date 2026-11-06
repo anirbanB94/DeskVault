@@ -24,10 +24,16 @@ public interface IDocumentWorkspaceView
         string fileType,
         DateTime importedAt,
         string status,
-        string sha256Hash);
+        string sha256Hash,
+        long expectedSessionRevision = 0);
 
     bool ConfirmRemoval(
-        string fileName);
+        string fileName,
+        long expectedSessionRevision = 0);
+
+    void ClearPresentation();
+
+    void PostToUi(Action action);
 
     void ActivateWorkspace();
 
@@ -35,5 +41,6 @@ public interface IDocumentWorkspaceView
 
     void ShowError(
         string message,
-        string title);
+        string title,
+        long expectedSessionRevision = 0);
 }

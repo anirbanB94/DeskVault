@@ -6,5 +6,6 @@ public interface IWorkspaceDocumentPresentationFactory
 {
     WorkspaceDocumentPresentation Create(
         Guid workspaceId,
-        Guid documentId);
+        Guid documentId,
+        long securitySessionRevision);
 }

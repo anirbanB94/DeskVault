@@ -4,23 +4,24 @@ using DeskVault.Application.Documents.Extraction;
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Application.Workspaces.Commands.CloseWorkspace;
 using DeskVault.Application.Workspaces.Commands.CreateWorkspace;
 using DeskVault.Application.Workspaces.Commands.DeleteWorkspace;
 using DeskVault.Application.Workspaces.Commands.OpenWorkspace;
 using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
 using DeskVault.Shared.Extensions;
-using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.UI.Presenters;
 
-public sealed class MainFormPresenter
+public sealed class MainFormPresenter : IDisposable
 {
     private readonly IMainFormView _view;
     private readonly ImportDocumentHandler _importDocumentHandler;
@@ -41,6 +42,11 @@ public sealed class MainFormPresenter
     private SearchDocumentsContinuation? _currentSearchContinuation;
     private CancellationTokenSource? _searchCancellationTokenSource;
     private long _searchOperationVersion;
+    private readonly IApplicationSecuritySession _applicationSecuritySession;
+    private long _lastAppliedSecuritySessionRevision;
+    private bool _isProtectedAccessAvailable;
+    private long _latestObservedRevocationRevision;
+    private bool _disposed;
 
     public MainFormPresenter(
         IMainFormView view,
@@ -57,7 +63,8 @@ public sealed class MainFormPresenter
         IDocumentProcessingService documentProcessingService,
         DocumentTextExtractorResolver documentTextExtractorResolver,
         ILogger<MainFormPresenter> logger,
-        IOptions<SearchOptions> searchOptions)
+        IOptions<SearchOptions> searchOptions,
+        IApplicationSecuritySession applicationSecuritySession)
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(importDocumentHandler);
@@ -74,6 +81,7 @@ public sealed class MainFormPresenter
         ArgumentNullException.ThrowIfNull(documentTextExtractorResolver);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(searchOptions);
+        ArgumentNullException.ThrowIfNull(applicationSecuritySession);
 
         _view = view;
         _importDocumentHandler = importDocumentHandler;
@@ -99,6 +107,20 @@ public sealed class MainFormPresenter
                 "Search page size must be greater than zero.");
         }
 
+        _applicationSecuritySession = applicationSecuritySession;
+
+        ApplicationSecuritySessionSnapshot initialSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        _lastAppliedSecuritySessionRevision =
+            initialSnapshot.Revision;
+
+        _isProtectedAccessAvailable =
+            initialSnapshot.IsProtectedAccessAvailable;
+
+        _applicationSecuritySession.StateChanged +=
+            OnApplicationSecuritySessionStateChanged;
+
         _view.ImportRequested += OnImportRequested;
         _view.OpenRequested += OnOpenRequested;
         _view.RemoveRequested += OnRemoveRequested;
@@ -112,17 +134,359 @@ public sealed class MainFormPresenter
         _view.WorkspaceRemoveRequested += OnWorkspaceRemoveRequested;
     }
 
+    private void OnApplicationSecuritySessionStateChanged(
+        ApplicationSecuritySessionSnapshot notification)
+    {
+        if (!notification.IsProtectedAccessAvailable)
+        {
+            long observedRevision =
+                Volatile.Read(ref _latestObservedRevocationRevision);
+
+            while (notification.Revision > observedRevision)
+            {
+                long previousRevision =
+                    Interlocked.CompareExchange(
+                        ref _latestObservedRevocationRevision,
+                        notification.Revision,
+                        observedRevision);
+
+                if (previousRevision == observedRevision)
+                {
+                    break;
+                }
+
+                observedRevision = previousRevision;
+            }
+
+            InvalidateSearchOperationImmediately();
+        }
+
+        _view.PostToUi(
+            () => ApplyLatestApplicationSecuritySessionSnapshot(notification));
+    }
+
+    private void ApplyLatestApplicationSecuritySessionSnapshot(
+        ApplicationSecuritySessionSnapshot notification)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (currentSnapshot.Revision < notification.Revision)
+        {
+            return;
+        }
+
+        long latestObservedRevocationRevision =
+            Volatile.Read(ref _latestObservedRevocationRevision);
+
+        bool hasUnappliedRevocation =
+            latestObservedRevocationRevision >
+            _lastAppliedSecuritySessionRevision;
+
+        bool hasUnappliedNotification =
+            notification.Revision >
+            _lastAppliedSecuritySessionRevision;
+
+        bool hasNewerSnapshot =
+            currentSnapshot.Revision >
+            _lastAppliedSecuritySessionRevision;
+
+        if (!hasUnappliedRevocation &&
+            !hasUnappliedNotification &&
+            !hasNewerSnapshot &&
+            currentSnapshot.IsProtectedAccessAvailable ==
+                _isProtectedAccessAvailable)
+        {
+            return;
+        }
+
+        bool wasProtectedAccessAvailable =
+            _isProtectedAccessAvailable;
+
+        bool mustClearPresentation =
+            hasUnappliedRevocation ||
+            (hasUnappliedNotification &&
+             !notification.IsProtectedAccessAvailable) ||
+            !currentSnapshot.IsProtectedAccessAvailable;
+
+        _lastAppliedSecuritySessionRevision =
+            Math.Max(
+                currentSnapshot.Revision,
+                Math.Max(
+                    notification.Revision,
+                    latestObservedRevocationRevision));
+
+        _isProtectedAccessAvailable =
+            currentSnapshot.IsProtectedAccessAvailable;
+
+        if (mustClearPresentation)
+        {
+            ClearProtectedPresentation();
+
+            if (_isProtectedAccessAvailable)
+            {
+                _ = InitializeAsync();
+            }
+
+            return;
+        }
+
+        if (!wasProtectedAccessAvailable &&
+            _isProtectedAccessAvailable)
+        {
+            _ = InitializeAsync();
+        }
+    }
+
+    private bool TryBeginAuthorizedInitialization()
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long latestObservedRevocationRevision =
+            Volatile.Read(ref _latestObservedRevocationRevision);
+
+        bool hasUnappliedRevocation =
+            latestObservedRevocationRevision >
+            _lastAppliedSecuritySessionRevision;
+
+        _lastAppliedSecuritySessionRevision =
+            Math.Max(
+                _lastAppliedSecuritySessionRevision,
+                Math.Max(
+                    currentSnapshot.Revision,
+                    latestObservedRevocationRevision));
+
+        _isProtectedAccessAvailable =
+            currentSnapshot.IsProtectedAccessAvailable;
+
+        if (!_isProtectedAccessAvailable ||
+            hasUnappliedRevocation)
+        {
+            ClearProtectedPresentation();
+
+            if (!_isProtectedAccessAvailable)
+            {
+                return false;
+            }
+        }
+
+        _view.ShowAuthenticatedState();
+
+        return true;
+    }
+
+    private bool EnsureProtectedAccessAvailable()
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long latestObservedRevocationRevision =
+            Volatile.Read(ref _latestObservedRevocationRevision);
+
+        bool hasUnappliedRevocation =
+            latestObservedRevocationRevision >
+            _lastAppliedSecuritySessionRevision;
+
+        bool wasProtectedAccessAvailable =
+            _isProtectedAccessAvailable;
+
+        if (!currentSnapshot.IsProtectedAccessAvailable ||
+            hasUnappliedRevocation)
+        {
+            _lastAppliedSecuritySessionRevision =
+                Math.Max(
+                    _lastAppliedSecuritySessionRevision,
+                    Math.Max(
+                        currentSnapshot.Revision,
+                        latestObservedRevocationRevision));
+
+            _isProtectedAccessAvailable =
+                currentSnapshot.IsProtectedAccessAvailable;
+
+            ClearProtectedPresentation();
+
+            if (!_isProtectedAccessAvailable)
+            {
+                return false;
+            }
+
+            _view.ShowAuthenticatedState();
+
+            // The session is authenticated again, but the earlier presentation
+            // was invalidated. Start a fresh load; never restore old content.
+            _ = InitializeAsync();
+
+            return true;
+        }
+
+        if (currentSnapshot.Revision >
+            _lastAppliedSecuritySessionRevision)
+        {
+            _lastAppliedSecuritySessionRevision =
+                currentSnapshot.Revision;
+
+            _isProtectedAccessAvailable = true;
+
+            if (!wasProtectedAccessAvailable)
+            {
+                _view.ShowAuthenticatedState();
+                _ = InitializeAsync();
+            }
+        }
+
+        return true;
+    }
+
+    private bool IsAuthorizedSessionRevisionCurrent(
+        long expectedRevision)
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long latestObservedRevocationRevision =
+            Volatile.Read(ref _latestObservedRevocationRevision);
+
+        long lastAppliedRevision =
+            Volatile.Read(ref _lastAppliedSecuritySessionRevision);
+
+        return currentSnapshot.IsProtectedAccessAvailable &&
+               currentSnapshot.Revision == expectedRevision &&
+               lastAppliedRevision == expectedRevision &&
+               latestObservedRevocationRevision <= lastAppliedRevision;
+    }
+
+    private void InvalidateSearchState()
+    {
+        _currentSearchText = null;
+        _currentSearchContinuation = null;
+
+        Interlocked.Increment(
+            ref _searchOperationVersion);
+
+        CancelSearchOperation(
+            Volatile.Read(ref _searchCancellationTokenSource));
+    }
+
+    private void InvalidateSearchOperationImmediately()
+    {
+        Interlocked.Increment(
+            ref _searchOperationVersion);
+
+        CancelSearchOperation(
+            Volatile.Read(ref _searchCancellationTokenSource));
+    }
+
+    private void CancelSearchOperation(
+        CancellationTokenSource? cancellationTokenSource)
+    {
+        if (cancellationTokenSource is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cancellationTokenSource.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The search completed and disposed its source concurrently.
+        }
+        catch (AggregateException exception)
+        {
+            // Cancellation is already requested. A failing callback must not
+            // prevent security-session invalidation or protected-view cleanup.
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.DocumentSearchCancellationCallbackFailure,
+                LogMessages.DocumentSearchCancellationCallbackFailed,
+                exception);
+        }
+    }
+
+    private void ClearProtectedPresentation()
+    {
+        InvalidateSearchState();
+
+        // Lock the main application surface before disposing child workspace views.
+        _view.ShowLockedState();
+
+        // Attempt workspace cleanup without allowing disposal failures to
+        // interrupt security-session processing.
+        try
+        {
+            _workspacePresentationManager.CloseAll();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspacePresentationCleanupFailure,
+                LogMessages.WorkspacePresentationCleanupFailed,
+                exception);
+        }
+    }
+
     public async Task InitializeAsync()
     {
+        if (!TryBeginAuthorizedInitialization())
+        {
+            return;
+        }
+
+        // Capture the revision after the authorization gate has been applied.
+        ApplicationSecuritySessionSnapshot initializationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long initializationRevision =
+            initializationSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(initializationRevision))
+        {
+            return;
+        }
+
         _logger.LogInformation(
             LogMessages.MainWorkspaceInitializationStarted);
 
         try
         {
             var documentCount =
-                await RefreshDocumentsAsync();
+                await RefreshDocumentsAsync(
+                    initializationRevision);
 
-            await RefreshWorkspacesAsync();
+            if (!IsAuthorizedSessionRevisionCurrent(initializationRevision))
+            {
+                return;
+            }
+
+            await RefreshWorkspacesAsync(initializationRevision);
+
+            if (!IsAuthorizedSessionRevisionCurrent(initializationRevision))
+            {
+                return;
+            }
 
             if (documentCount == 0)
             {
@@ -139,6 +503,11 @@ public sealed class MainFormPresenter
 
             UpdateReprocessEnabled();
 
+            if (!IsAuthorizedSessionRevisionCurrent(initializationRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 $"{documentCount} document(s) imported.");
 
@@ -148,6 +517,12 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
+            // Do not expose stale errors or status updates after revocation.
+            if (!IsAuthorizedSessionRevisionCurrent(initializationRevision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.MainWorkspaceInitializationFailure,
@@ -159,15 +534,68 @@ public sealed class MainFormPresenter
 
             _view.ShowError(
                 UiMessages.UnableToLoadDocuments,
-                UiMessages.DeskVaultTitle);
+                UiMessages.DeskVaultTitle,
+                initializationRevision);
         }
     }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        _applicationSecuritySession.StateChanged -=
+            OnApplicationSecuritySessionStateChanged;
+
+        _view.ImportRequested -= OnImportRequested;
+        _view.OpenRequested -= OnOpenRequested;
+        _view.RemoveRequested -= OnRemoveRequested;
+        _view.DocumentSelectionChanged -= OnDocumentSelectionChanged;
+        _view.SearchRequested -= OnSearchRequested;
+        _view.LoadMoreSearchResultsRequested -= OnLoadMoreSearchResultsRequested;
+        _view.ReprocessRequested -= OnReprocessRequested;
+        _view.WorkspaceSelectionChanged -= OnWorkspaceSelectionChanged;
+        _view.WorkspaceCreateRequested -= OnWorkspaceCreateRequested;
+        _view.WorkspaceOpenRequested -= OnWorkspaceOpenRequested;
+        _view.WorkspaceRemoveRequested -= OnWorkspaceRemoveRequested;
+
+        InvalidateSearchState();
+        _workspacePresentationManager.CloseAll();
+    }
+
 
     private async void OnImportRequested(
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        ApplicationSecuritySessionSnapshot importSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long importSessionRevision =
+            importSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+        {
+            return;
+        }
+
         string? filePath = _view.SelectedFilePath;
+
+        // The native file picker may return after protected access has been withdrawn.
+        // Discard its selection rather than starting an import from the earlier session.
+        if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+        {
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(filePath))
         {
@@ -193,6 +621,12 @@ public sealed class MainFormPresenter
             var result =
                 await _importDocumentHandler.HandleAsync(command);
 
+            // Do not continue an import from a revoked or superseded session.
+            if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+            {
+                return;
+            }
+
             if (result.Status ==
                 ImportDocumentResultStatus.Success)
             {
@@ -208,8 +642,18 @@ public sealed class MainFormPresenter
                 if (_documentTextExtractorResolver.CanResolve(
                     fileName))
                 {
+                    if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+                    {
+                        return;
+                    }
+
                     await _documentProcessingService.ProcessAsync(
                         documentId);
+
+                    if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+                    {
+                        return;
+                    }
                 }
                 else
                 {
@@ -218,25 +662,51 @@ public sealed class MainFormPresenter
                         Path.GetExtension(fileName));
                 }
 
-                await RefreshDocumentsAsync();
+                await RefreshDocumentsAsync(importSessionRevision);
+
+                if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+                {
+                    return;
+                }
 
                 _view.SetSelectedDocumentId(
                     result.DocumentId);
 
+                if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+                {
+                    return;
+                }
+
                 _view.SetOpenEnabled(
                     result.DocumentId.HasValue);
 
+                if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+                {
+                    return;
+                }
+
                 UpdateReprocessEnabled();
+
+                if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+                {
+                    return;
+                }
 
                 _view.SetStatus(
                     result.Description);
+
+                if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+                {
+                    return;
+                }
 
                 _logger.LogInformation(
                     LogMessages.DocumentImportCompleted);
 
                 _view.ShowInformation(
                     result.Description,
-                    UiMessages.ImportCompleteTitle);
+                    UiMessages.ImportCompleteTitle,
+                    importSessionRevision);
 
                 return;
             }
@@ -244,12 +714,23 @@ public sealed class MainFormPresenter
             _logger.LogWarning(
                 LogMessages.DocumentImportRejected);
 
+            if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 result.Description);
 
+            if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+            {
+                return;
+            }
+
             _view.ShowWarning(
                 result.Description,
-                UiMessages.ImportFailedTitle);
+                UiMessages.ImportFailedTitle,
+                importSessionRevision);
         }
         catch (Exception ex)
         {
@@ -259,23 +740,56 @@ public sealed class MainFormPresenter
                 LogMessages.DocumentImportFailed,
                 ex);
 
+            if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 UiMessages.UnexpectedImportError);
 
+            if (!IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.UnexpectedImportError,
-                UiMessages.DeskVaultTitle);
+                UiMessages.DeskVaultTitle,
+                importSessionRevision);
         }
         finally
         {
-            _view.SetImportEnabled(true);
+            // An old operation must not re-enable controls in a locked
+            // or newly authenticated session.
+            if (IsAuthorizedSessionRevisionCurrent(importSessionRevision))
+            {
+                _view.SetImportEnabled(true);
+            }
         }
     }
+
 
     private async void OnOpenRequested(
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        ApplicationSecuritySessionSnapshot openSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long openSessionRevision =
+            openSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+        {
+            return;
+        }
+
         if (_view.SelectedDocumentId is not Guid documentId)
         {
             _logger.LogDebug(
@@ -297,9 +811,19 @@ public sealed class MainFormPresenter
                 _workspacePresentationManager.FindTemporaryByDocument(
                     documentId);
 
+            if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                return;
+            }
+
             if (existingTemporaryPresentation is not null)
             {
                 existingTemporaryPresentation.Activate();
+
+                if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+                {
+                    return;
+                }
 
                 _view.SetStatus(
                     UiMessages.DocumentOpenedStatus);
@@ -318,6 +842,12 @@ public sealed class MainFormPresenter
                         IsPersistent: false,
                         DocumentIds: [documentId]));
 
+            // Workspace creation may complete after session revocation.
+            if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                return;
+            }
+
             if (workspaceResult.Status !=
                 CreateWorkspaceResultStatus.Success ||
                 workspaceResult.Workspace is null)
@@ -325,12 +855,23 @@ public sealed class MainFormPresenter
                 _logger.LogWarning(
                     LogMessages.TemporaryWorkspaceCreationFailed);
 
+                if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+                {
+                    return;
+                }
+
                 _view.SetStatus(
                     workspaceResult.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+                {
+                    return;
+                }
+
                 _view.ShowError(
                     workspaceResult.Description,
-                    UiMessages.OpenDocumentTitle);
+                    UiMessages.OpenDocumentTitle,
+                    openSessionRevision);
 
                 return;
             }
@@ -340,17 +881,38 @@ public sealed class MainFormPresenter
                     workspaceResult.Workspace.Id,
                     workspaceResult.Workspace.TypeOfWorkspace,
                     workspaceResult.Workspace.Name,
-                    workspaceResult.Workspace.Description);
+                    workspaceResult.Workspace.Description,
+                    openSessionRevision);
+
+            if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                return;
+            }
 
             SubscribeWorkspacePresentation(
                 presentation);
+
+            if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                return;
+            }
 
             await presentation.SetWorkspaceDocumentsAsync(
                 workspaceResult.Workspace.Memberships.Select(
                     membership => membership.DocumentId));
 
+            if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                return;
+            }
+
             await presentation.OpenDocumentAsync(
                 documentId);
+
+            if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                return;
+            }
 
             _view.SetStatus(
                 UiMessages.DocumentOpenedStatus);
@@ -366,19 +928,34 @@ public sealed class MainFormPresenter
                 LogMessages.DocumentOpenFailed,
                 ex);
 
+            if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 UiMessages.UnableToOpenDocumentStatus);
 
+            if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.UnableToOpenDocument,
-                UiMessages.OpenDocumentTitle);
+                UiMessages.OpenDocumentTitle,
+                openSessionRevision);
         }
         finally
         {
-            _view.SetOpenEnabled(
-                _view.SelectedDocumentId.HasValue);
+            // Do not restore controls for a revoked or superseded session.
+            if (IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+            {
+                _view.SetOpenEnabled(
+                    _view.SelectedDocumentId.HasValue);
 
-            UpdateReprocessEnabled();
+                UpdateReprocessEnabled();
+            }
         }
     }
 
@@ -386,6 +963,11 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
         if (_view.SelectedWorkspaceId is not Guid workspaceId)
         {
             _view.SetWorkspaceOpenEnabled(false);
@@ -406,11 +988,32 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        ApplicationSecuritySessionSnapshot createSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long createSessionRevision =
+            createSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+        {
+            return;
+        }
+
         _logger.LogInformation(
             LogMessages.WorkspaceCreationRequested);
 
         WorkspaceCreateRequest? request =
             _view.ShowCreateWorkspaceDialog();
+
+        if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+        {
+            return;
+        }
 
         if (request is null)
         {
@@ -427,6 +1030,11 @@ public sealed class MainFormPresenter
                         IsPersistent: true,
                         DocumentIds: []));
 
+            if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+            {
+                return;
+            }
+
             if (result.Status !=
                 CreateWorkspaceResultStatus.Success ||
                 result.Workspace is null)
@@ -435,23 +1043,50 @@ public sealed class MainFormPresenter
                     LogMessages.WorkspaceCreationFailed,
                     result.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+                {
+                    return;
+                }
+
                 _view.SetStatus(
                     result.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+                {
+                    return;
+                }
+
                 _view.ShowWarning(
                     result.Description,
-                    UiMessages.CreateWorkspaceTitle);
+                    UiMessages.CreateWorkspaceTitle,
+                    createSessionRevision);
 
                 return;
             }
 
-            await RefreshWorkspacesAsync();
+            await RefreshWorkspacesAsync(createSessionRevision);
+
+            if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+            {
+                return;
+            }
 
             _view.SetSelectedWorkspaceId(
                 result.Workspace.Id);
 
+            if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+            {
+                return;
+            }
+
             await OpenWorkspaceAsync(
-                result.Workspace.Id);
+                result.Workspace.Id,
+                createSessionRevision);
+
+            if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+            {
+                return;
+            }
 
             _logger.LogInformation(
                 LogMessages.WorkspaceCreatedAndOpened,
@@ -465,12 +1100,23 @@ public sealed class MainFormPresenter
                 LogMessages.WorkspaceCreationUnexpectedFailure,
                 ex);
 
+            if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 UiMessages.UnableToCreateWorkspace);
 
+            if (!IsAuthorizedSessionRevisionCurrent(createSessionRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.UnableToCreateWorkspace,
-                UiMessages.CreateWorkspaceTitle);
+                UiMessages.CreateWorkspaceTitle,
+                createSessionRevision);
         }
     }
 
@@ -478,6 +1124,22 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        ApplicationSecuritySessionSnapshot openSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long openSessionRevision =
+            openSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(openSessionRevision))
+        {
+            return;
+        }
+
         if (_view.SelectedWorkspaceId is not Guid workspaceId)
         {
             _logger.LogDebug(
@@ -486,13 +1148,20 @@ public sealed class MainFormPresenter
             return;
         }
 
-        await OpenWorkspaceAsync(workspaceId);
+        await OpenWorkspaceAsync(
+            workspaceId,
+            openSessionRevision);
     }
 
     private async void OnWorkspaceRemoveRequested(
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
         if (_view.SelectedWorkspaceId is not Guid workspaceId)
         {
             _logger.LogDebug(
@@ -515,25 +1184,65 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
-        await RefreshWorkspacesAsync();
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        if (sender is not WorkspacePresentation presentation ||
+            !IsAuthorizedSessionRevisionCurrent(
+                presentation.SecuritySessionRevision))
+        {
+            return;
+        }
+
+        await RefreshWorkspacesAsync(
+            presentation.SecuritySessionRevision);
     }
 
     private async void OnWorkspaceDetailsUpdated(
         object? sender,
         EventArgs e)
     {
-        await RefreshWorkspacesAsync();
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        if (sender is not WorkspacePresentation presentation ||
+            !IsAuthorizedSessionRevisionCurrent(
+                presentation.SecuritySessionRevision))
+        {
+            return;
+        }
+
+        await RefreshWorkspacesAsync(
+            presentation.SecuritySessionRevision);
     }
 
     private async void OnWorkspaceDeleteRequested(
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
         if (sender is not WorkspacePresentation presentation)
         {
             _logger.LogWarning(
                 LogMessages.WorkspaceDeletionUnexpectedSender);
 
+            return;
+        }
+
+        long expectedSessionRevision =
+            presentation.SecuritySessionRevision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(
+                expectedSessionRevision))
+        {
             return;
         }
 
@@ -543,18 +1252,34 @@ public sealed class MainFormPresenter
                 UiMessages.CurrentWorkspaceFallbackName,
             clearMainWorkspaceSelection:
                 _view.SelectedWorkspaceId ==
-                presentation.WorkspaceId);
+                presentation.WorkspaceId,
+            expectedSecuritySessionRevision:
+                expectedSessionRevision);
     }
 
     private async void OnWorkspaceCloseRequested(
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
         if (sender is not WorkspacePresentation presentation)
         {
             _logger.LogWarning(
                 LogMessages.WorkspaceCloseUnexpectedSender);
 
+            return;
+        }
+
+        long closeSessionRevision =
+            presentation.SecuritySessionRevision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(
+                closeSessionRevision))
+        {
             return;
         }
 
@@ -572,6 +1297,11 @@ public sealed class MainFormPresenter
                     new CloseWorkspaceCommand(
                         workspaceId));
 
+            if (!IsAuthorizedSessionRevisionCurrent(closeSessionRevision))
+            {
+                return;
+            }
+
             if (result.Status !=
                 CloseWorkspaceResultStatus.Success)
             {
@@ -583,15 +1313,26 @@ public sealed class MainFormPresenter
                 _view.SetStatus(
                     result.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(closeSessionRevision))
+                {
+                    return;
+                }
+
                 _view.ShowWarning(
                     result.Description,
-                    UiMessages.CloseWorkspace);
+                    UiMessages.CloseWorkspace,
+                    closeSessionRevision);
 
                 return;
             }
 
             _workspacePresentationManager.Close(
                 workspaceId);
+
+            if (!IsAuthorizedSessionRevisionCurrent(closeSessionRevision))
+            {
+                return;
+            }
 
             _view.SetStatus(
                 result.Description);
@@ -602,6 +1343,11 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
+            if (!IsAuthorizedSessionRevisionCurrent(closeSessionRevision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.WorkspaceCloseFailure,
@@ -611,24 +1357,55 @@ public sealed class MainFormPresenter
             _view.SetStatus(
                 UiMessages.UnableToCloseWorkspace);
 
+            if (!IsAuthorizedSessionRevisionCurrent(closeSessionRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.UnableToCloseWorkspace,
-                UiMessages.CloseWorkspace);
+                UiMessages.CloseWorkspace,
+                closeSessionRevision);
         }
     }
 
     private async Task DeleteWorkspaceAsync(
         Guid workspaceId,
         string workspaceName,
-        bool clearMainWorkspaceSelection)
+        bool clearMainWorkspaceSelection,
+        long? expectedSecuritySessionRevision = null)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long operationRevision =
+            expectedSecuritySessionRevision ??
+            operationSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
         if (!_view.ConfirmWorkspaceRemoval(
-            workspaceName))
+            workspaceName,
+            operationRevision))
         {
             _logger.LogInformation(
                 LogMessages.WorkspaceRemovalCancelled,
                 workspaceId);
 
+            return;
+        }
+
+        // The session may have changed while confirmation was open.
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
             return;
         }
 
@@ -642,6 +1419,11 @@ public sealed class MainFormPresenter
                 await _openWorkspaceHandler.HandleAsync(
                     new OpenWorkspaceCommand(workspaceId));
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             if (openResult.Status !=
                     OpenWorkspaceResultStatus.Activated &&
                 openResult.Status !=
@@ -652,19 +1434,41 @@ public sealed class MainFormPresenter
                     workspaceId,
                     openResult.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    return;
+                }
+
                 _view.SetStatus(
                     openResult.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    return;
+                }
+
                 _view.ShowWarning(
                     openResult.Description,
-                    UiMessages.DeleteWorkspace);
+                    UiMessages.DeleteWorkspace,
+                    operationRevision);
 
+                return;
+            }
+
+            // Revalidate immediately before starting the delete operation.
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
                 return;
             }
 
             var result =
                 await _deleteWorkspaceHandler.HandleAsync(
                     new DeleteWorkspaceCommand(workspaceId));
+
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
 
             if (result.Status !=
                 DeleteWorkspaceResultStatus.Success)
@@ -674,24 +1478,56 @@ public sealed class MainFormPresenter
                     workspaceId,
                     result.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    return;
+                }
+
                 _view.SetStatus(
                     result.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    return;
+                }
+
                 _view.ShowWarning(
                     result.Description,
-                    UiMessages.DeleteWorkspace);
+                    UiMessages.DeleteWorkspace,
+                    operationRevision);
 
+                return;
+            }
+
+            // Domain deletion succeeded. Do not publish stale presentation state.
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
                 return;
             }
 
             _workspacePresentationManager.Close(
                 workspaceId);
 
-            await RefreshWorkspacesAsync();
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
+            await RefreshWorkspacesAsync(operationRevision);
+
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
 
             if (clearMainWorkspaceSelection)
             {
                 _view.SetSelectedWorkspaceId(null);
+            }
+
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
             }
 
             _view.SetStatus(
@@ -703,24 +1539,46 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.WorkspaceRemovalFailure,
                 LogMessages.WorkspaceRemovalUnexpectedFailure,
                 ex);
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 UiMessages.UnableToRemoveWorkspace);
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.UnableToRemoveWorkspace,
-                UiMessages.DeleteWorkspace);
+                UiMessages.DeleteWorkspace,
+                operationRevision);
         }
     }
 
     private async Task OpenWorkspaceAsync(
-        Guid workspaceId)
+        Guid workspaceId,
+        long expectedSessionRevision)
     {
+        if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+        {
+            return;
+        }
+
         _logger.LogInformation(
             LogMessages.WorkspaceOpenStarted,
             workspaceId);
@@ -731,6 +1589,12 @@ public sealed class MainFormPresenter
                 await _openWorkspaceHandler.HandleAsync(
                     new OpenWorkspaceCommand(workspaceId));
 
+            // The handler may finish after the initiating session was revoked.
+            if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+            {
+                return;
+            }
+
             if (result.Status != OpenWorkspaceResultStatus.Activated &&
                 result.Status != OpenWorkspaceResultStatus.AlreadyActive)
             {
@@ -739,12 +1603,23 @@ public sealed class MainFormPresenter
                     workspaceId,
                     result.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+                {
+                    return;
+                }
+
                 _view.SetStatus(
                     result.Description);
 
+                if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+                {
+                    return;
+                }
+
                 _view.ShowWarning(
                     result.Description,
-                    UiMessages.OpenWorkspaceTitle);
+                    UiMessages.OpenWorkspaceTitle,
+                    expectedSessionRevision);
 
                 return;
             }
@@ -756,9 +1631,20 @@ public sealed class MainFormPresenter
                     workspaceId,
                     result.MissingDocumentIds.Count);
 
+                if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+                {
+                    return;
+                }
+
                 _view.ShowWarning(
                     result.Description,
-                    UiMessages.OpenWorkspaceTitle);
+                    UiMessages.OpenWorkspaceTitle,
+                    expectedSessionRevision);
+            }
+
+            if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+            {
+                return;
             }
 
             if (result.Workspace is null)
@@ -772,31 +1658,75 @@ public sealed class MainFormPresenter
                     result.Workspace.Id,
                     result.Workspace.TypeOfWorkspace,
                     result.Workspace.Name,
-                    result.Workspace.Description);
+                    result.Workspace.Description,
+                    expectedSessionRevision);
+
+            if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+            {
+                return;
+            }
 
             SubscribeWorkspacePresentation(
                 presentation);
+
+            if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+            {
+                return;
+            }
 
             await presentation.SetWorkspaceDocumentsAsync(
                 result.Workspace.Memberships.Select(
                     membership => membership.DocumentId));
 
+            if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+            {
+                return;
+            }
+
             foreach (var membership in
                      result.Workspace.Memberships.OrderBy(
                          membership => membership.Order))
             {
-                if (!presentation.ContainsDocument(
-                        membership.DocumentId))
+                if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+                {
+                    return;
+                }
+
+                bool documentAlreadyPresented =
+                    presentation.ContainsDocument(
+                        membership.DocumentId);
+
+                if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+                {
+                    return;
+                }
+
+                if (!documentAlreadyPresented)
                 {
                     await presentation.OpenDocumentAsync(
                         membership.DocumentId);
+
+                    if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+                    {
+                        return;
+                    }
                 }
             }
 
             if (result.Workspace.LastActiveDocumentId is Guid lastActiveDocumentId)
             {
+                if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+                {
+                    return;
+                }
+
                 presentation.ActivateDocument(
                     lastActiveDocumentId);
+            }
+
+            if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+            {
+                return;
             }
 
             _view.SetStatus(
@@ -814,12 +1744,23 @@ public sealed class MainFormPresenter
                 LogMessages.WorkspaceOpenUnexpectedFailure,
                 ex);
 
+            if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 UiMessages.UnableToOpenWorkspace);
 
+            if (!IsAuthorizedSessionRevisionCurrent(expectedSessionRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.UnableToOpenWorkspace,
-                UiMessages.OpenWorkspaceTitle);
+                UiMessages.OpenWorkspaceTitle,
+                expectedSessionRevision);
         }
     }
 
@@ -861,6 +1802,22 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long operationRevision =
+            operationSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
         if (_view.SelectedDocumentId is not Guid documentId)
         {
             _logger.LogDebug(
@@ -880,7 +1837,18 @@ public sealed class MainFormPresenter
             return;
         }
 
-        if (!_view.ConfirmRemoval(fileName))
+        bool confirmed =
+            _view.ConfirmRemoval(
+                fileName,
+                operationRevision);
+
+        // Confirmation is modal; the session may have locked while it was open.
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
+        if (!confirmed)
         {
             _logger.LogDebug(
                 LogMessages.DocumentRemovalCancelled);
@@ -891,12 +1859,16 @@ public sealed class MainFormPresenter
         _logger.LogInformation(
             LogMessages.DocumentRemovalStarted);
 
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
         _view.SetRemoveEnabled(false);
         _view.SetOpenEnabled(false);
         _view.SetImportEnabled(false);
         _view.SetReprocessEnabled(false);
-        _view.SetStatus(
-            UiMessages.RemovingDocumentStatus);
+        _view.SetStatus(UiMessages.RemovingDocumentStatus);
 
         try
         {
@@ -904,20 +1876,42 @@ public sealed class MainFormPresenter
                 await _removeDocumentHandler.HandleAsync(
                     new RemoveDocumentCommand(documentId));
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             if (result.Status ==
                 RemoveDocumentResultStatus.Success)
             {
-                await RefreshDocumentsAsync();
-                await RefreshWorkspacesAsync();
+                await RefreshDocumentsAsync(operationRevision);
+
+                if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    return;
+                }
+
+                await RefreshWorkspacesAsync(operationRevision);
+
+                if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    return;
+                }
 
                 _view.SetStatus(result.Message);
+
+                if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    return;
+                }
 
                 _logger.LogInformation(
                     LogMessages.DocumentRemovalCompleted);
 
                 _view.ShowInformation(
                     result.Message,
-                    UiMessages.DocumentRemovedTitle);
+                    UiMessages.DocumentRemovedTitle,
+                    operationRevision);
 
                 return;
             }
@@ -925,38 +1919,79 @@ public sealed class MainFormPresenter
             _logger.LogWarning(
                 LogMessages.DocumentRemovalRejected);
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(result.Message);
+
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
 
             _view.ShowWarning(
                 result.Message,
-                UiMessages.RemoveFailedTitle);
+                UiMessages.RemoveFailedTitle,
+                operationRevision);
         }
         catch (Exception ex)
         {
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.DocumentRemovalUnexpectedFailure,
                 LogMessages.DocumentRemovalFailed,
                 ex);
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 UiMessages.UnableToRemoveDocumentStatus);
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.UnableToRemoveDocument,
-                UiMessages.DeskVaultTitle);
+                UiMessages.DeskVaultTitle,
+                operationRevision);
         }
         finally
         {
-            _view.SetImportEnabled(true);
+            // Do not restore enabled controls after the session has been revoked.
+            if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                _view.SetImportEnabled(true);
 
-            bool hasSelection =
-                _view.SelectedDocumentId.HasValue;
+                if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    bool hasSelection =
+                        _view.SelectedDocumentId.HasValue;
 
-            _view.SetOpenEnabled(hasSelection);
-            _view.SetRemoveEnabled(hasSelection);
+                    _view.SetOpenEnabled(hasSelection);
 
-            UpdateReprocessEnabled();
+                    if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+                    {
+                        _view.SetRemoveEnabled(hasSelection);
+
+                        if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+                        {
+                            UpdateReprocessEnabled();
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -964,6 +1999,22 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long operationRevision =
+            operationSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
         if (_view.SelectedDocumentId is not Guid documentId)
         {
             _logger.LogDebug(
@@ -980,7 +2031,10 @@ public sealed class MainFormPresenter
             _logger.LogDebug(
                 LogMessages.DocumentReprocessSkippedWithoutFileName);
 
-            _view.SetReprocessEnabled(false);
+            if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                _view.SetReprocessEnabled(false);
+            }
 
             return;
         }
@@ -991,8 +2045,16 @@ public sealed class MainFormPresenter
                 LogMessages.DocumentReprocessSkippedWithoutTextExtractor,
                 Path.GetExtension(fileName));
 
-            _view.SetReprocessEnabled(false);
+            if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                _view.SetReprocessEnabled(false);
+            }
 
+            return;
+        }
+
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
             return;
         }
 
@@ -1000,9 +2062,33 @@ public sealed class MainFormPresenter
             LogMessages.DocumentReprocessStarted);
 
         _view.SetReprocessEnabled(false);
+
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
         _view.SetOpenEnabled(false);
+
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
         _view.SetRemoveEnabled(false);
+
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
         _view.SetImportEnabled(false);
+
+        if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+        {
+            return;
+        }
+
         _view.SetStatus(
             UiMessages.ReprocessingDocumentStatus);
 
@@ -1011,43 +2097,102 @@ public sealed class MainFormPresenter
             await _documentProcessingService.ProcessAsync(
                 documentId);
 
-            await RefreshDocumentsAsync();
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
+            await RefreshDocumentsAsync(operationRevision);
+
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
 
             _view.SetStatus(
                 UiMessages.DocumentReprocessedStatus);
+
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
 
             _logger.LogInformation(
                 LogMessages.DocumentReprocessCompleted);
 
             _view.ShowInformation(
                 UiMessages.DocumentReprocessedStatus,
-                UiMessages.ReprocessDocumentTitle);
+                UiMessages.ReprocessDocumentTitle,
+                operationRevision);
         }
         catch (Exception ex)
         {
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.DocumentReprocessFailure,
                 LogMessages.DocumentReprocessFailed,
                 ex);
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 UiMessages.UnableToReprocessDocumentStatus);
 
+            if (!IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.UnableToReprocessDocument,
-                UiMessages.ReprocessDocumentTitle);
+                UiMessages.ReprocessDocumentTitle,
+                operationRevision);
         }
         finally
         {
-            bool hasSelection =
-                _view.SelectedDocumentId.HasValue;
+            // Do not re-enable protected controls for a stale operation.
+            if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+            {
+                _view.SetImportEnabled(true);
 
-            _view.SetImportEnabled(true);
-            _view.SetOpenEnabled(hasSelection);
-            _view.SetRemoveEnabled(hasSelection);
+                if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+                {
+                    bool hasSelection =
+                        _view.SelectedDocumentId.HasValue;
 
-            UpdateReprocessEnabled();
+                    _view.SetOpenEnabled(hasSelection);
+
+                    if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+                    {
+                        _view.SetRemoveEnabled(hasSelection);
+
+                        if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+                        {
+                            string? selectedFileName =
+                                _view.SelectedDocumentFileName;
+
+                            bool canReprocess =
+                                hasSelection &&
+                                !string.IsNullOrWhiteSpace(selectedFileName) &&
+                                _documentTextExtractorResolver.CanResolve(
+                                    selectedFileName);
+
+                            if (IsAuthorizedSessionRevisionCurrent(operationRevision))
+                            {
+                                _view.SetReprocessEnabled(canReprocess);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1055,6 +2200,19 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        long searchSessionRevision =
+            _applicationSecuritySession.CurrentSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(searchSessionRevision))
+        {
+            return;
+        }
+
         var operation =
             BeginSearchOperation();
 
@@ -1080,12 +2238,15 @@ public sealed class MainFormPresenter
                 _logger.LogDebug(
                     LogMessages.DocumentSearchCleared);
 
-                if (!IsCurrentSearchOperation(operationVersion))
+                if (!IsCurrentSearchOperation(
+                        operationVersion,
+                        searchSessionRevision))
                 {
                     return;
                 }
 
-                await RefreshDocumentsAsync();
+                await RefreshDocumentsAsync(
+                    searchSessionRevision);
 
                 return;
             }
@@ -1115,7 +2276,9 @@ public sealed class MainFormPresenter
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!IsCurrentSearchOperation(operationVersion))
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
             {
                 return;
             }
@@ -1125,15 +2288,37 @@ public sealed class MainFormPresenter
 
             if (searchResults.Count == 0)
             {
+                if (!IsCurrentSearchOperation(
+                        operationVersion,
+                        searchSessionRevision))
+                {
+                    return;
+                }
+
                 _logger.LogInformation(
                     LogMessages.DocumentSearchCompletedWithoutResults);
 
                 _view.ShowEmptyState();
+
+                if (!IsCurrentSearchOperation(
+                        operationVersion,
+                        searchSessionRevision))
+                {
+                    return;
+                }
+
                 _view.SetOpenEnabled(false);
                 _view.SetRemoveEnabled(false);
                 _view.SetReprocessEnabled(false);
                 _view.SetLoadMoreEnabled(false);
 
+                return;
+            }
+
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
                 return;
             }
 
@@ -1147,14 +2332,43 @@ public sealed class MainFormPresenter
             _view.ShowSearchResults(
                 searchResults);
 
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _view.SetLoadMoreEnabled(
                 page.HasMore);
 
             bool hasSelection =
                 _view.SelectedDocumentId.HasValue;
 
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _view.SetOpenEnabled(hasSelection);
+
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _view.SetRemoveEnabled(hasSelection);
+
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
 
             UpdateReprocessEnabled();
         }
@@ -1166,7 +2380,9 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            if (!IsCurrentSearchOperation(operationVersion))
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
             {
                 return;
             }
@@ -1177,12 +2393,27 @@ public sealed class MainFormPresenter
                 LogMessages.DocumentSearchFailed,
                 ex);
 
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _view.SetStatus(
                 UiMessages.SearchFailedStatus);
 
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.SearchFailedMessage,
-                UiMessages.DeskVaultTitle);
+                UiMessages.DeskVaultTitle,
+                searchSessionRevision);
         }
         finally
         {
@@ -1195,10 +2426,26 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
+        long searchSessionRevision =
+            _applicationSecuritySession.CurrentSnapshot.Revision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(searchSessionRevision))
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_currentSearchText) ||
             _currentSearchContinuation is null)
         {
-            _view.SetLoadMoreEnabled(false);
+            if (IsAuthorizedSessionRevisionCurrent(searchSessionRevision))
+            {
+                _view.SetLoadMoreEnabled(false);
+            }
 
             return;
         }
@@ -1217,6 +2464,13 @@ public sealed class MainFormPresenter
 
         try
         {
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _logger.LogInformation(
                 LogMessages.DocumentSearchStarted);
 
@@ -1247,7 +2501,9 @@ public sealed class MainFormPresenter
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!IsCurrentSearchOperation(operationVersion))
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
             {
                 return;
             }
@@ -1257,14 +2513,36 @@ public sealed class MainFormPresenter
 
             if (searchResults.Count == 0)
             {
+                if (!IsCurrentSearchOperation(
+                        operationVersion,
+                        searchSessionRevision))
+                {
+                    return;
+                }
+
                 _currentSearchContinuation = null;
+
                 _view.SetLoadMoreEnabled(false);
 
                 return;
             }
 
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _view.AppendSearchResults(
                 searchResults);
+
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
 
             _currentSearchContinuation =
                 page.Continuation;
@@ -1282,7 +2560,9 @@ public sealed class MainFormPresenter
             _logger.LogDebug(
                 LogMessages.DocumentSearchSuperseded);
 
-            if (IsCurrentSearchOperation(operationVersion))
+            if (IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
             {
                 _view.SetLoadMoreEnabled(
                     _currentSearchContinuation is not null);
@@ -1290,7 +2570,9 @@ public sealed class MainFormPresenter
         }
         catch (Exception ex)
         {
-            if (!IsCurrentSearchOperation(operationVersion))
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
             {
                 return;
             }
@@ -1301,14 +2583,36 @@ public sealed class MainFormPresenter
                 LogMessages.DocumentSearchFailed,
                 ex);
 
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _view.SetLoadMoreEnabled(true);
+
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
 
             _view.SetStatus(
                 UiMessages.SearchFailedStatus);
 
+            if (!IsCurrentSearchOperation(
+                    operationVersion,
+                    searchSessionRevision))
+            {
+                return;
+            }
+
             _view.ShowError(
                 UiMessages.SearchFailedMessage,
-                UiMessages.DeskVaultTitle);
+                UiMessages.DeskVaultTitle,
+                searchSessionRevision);
         }
         finally
         {
@@ -1321,13 +2625,14 @@ public sealed class MainFormPresenter
         CancellationTokenSource CancellationTokenSource,
         long Version) BeginSearchOperation()
     {
-        _searchCancellationTokenSource?.Cancel();
+        CancelSearchOperation(
+            Volatile.Read(ref _searchCancellationTokenSource));
 
-        CancellationTokenSource current =
-            new();
+        CancellationTokenSource current = new();
 
-        _searchCancellationTokenSource =
-            current;
+        Volatile.Write(
+            ref _searchCancellationTokenSource,
+            current);
 
         long version =
             Interlocked.Increment(
@@ -1341,19 +2646,47 @@ public sealed class MainFormPresenter
     private bool IsCurrentSearchOperation(
         long operationVersion)
     {
-        return operationVersion ==
-            Volatile.Read(
-                ref _searchOperationVersion);
+        if (_disposed ||
+            operationVersion !=
+                Volatile.Read(ref _searchOperationVersion))
+        {
+            return false;
+        }
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        long latestObservedRevocationRevision =
+            Volatile.Read(ref _latestObservedRevocationRevision);
+
+        long lastAppliedSecuritySessionRevision =
+            Volatile.Read(ref _lastAppliedSecuritySessionRevision);
+
+        return currentSnapshot.IsProtectedAccessAvailable &&
+               currentSnapshot.Revision ==
+                   lastAppliedSecuritySessionRevision &&
+               latestObservedRevocationRevision <=
+                   lastAppliedSecuritySessionRevision;
+    }
+
+    private bool IsCurrentSearchOperation(
+        long operationVersion,
+        long expectedSessionRevision)
+    {
+        return IsCurrentSearchOperation(operationVersion) &&
+               IsAuthorizedSessionRevisionCurrent(expectedSessionRevision);
     }
 
     private void CompleteSearchOperation(
         CancellationTokenSource cancellationTokenSource)
     {
         if (ReferenceEquals(
-            _searchCancellationTokenSource,
-            cancellationTokenSource))
+                Volatile.Read(ref _searchCancellationTokenSource),
+                cancellationTokenSource))
         {
-            _searchCancellationTokenSource = null;
+            Volatile.Write(
+                ref _searchCancellationTokenSource,
+                null);
         }
 
         cancellationTokenSource.Dispose();
@@ -1376,8 +2709,36 @@ public sealed class MainFormPresenter
             .ToList();
     }
 
-    private async Task<int> RefreshDocumentsAsync()
+    private async Task<int> RefreshDocumentsAsync(
+        long? expectedSecuritySessionRevision = null)
     {
+        long sessionRevision;
+
+        if (expectedSecuritySessionRevision is long expectedRevision)
+        {
+            sessionRevision = expectedRevision;
+
+            if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+            {
+                return 0;
+            }
+        }
+        else
+        {
+            if (!EnsureProtectedAccessAvailable())
+            {
+                return 0;
+            }
+
+            sessionRevision =
+                _applicationSecuritySession.CurrentSnapshot.Revision;
+
+            if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+            {
+                return 0;
+            }
+        }
+
         _logger.LogDebug(
             LogMessages.DocumentListRefreshStarted);
 
@@ -1385,10 +2746,21 @@ public sealed class MainFormPresenter
             await _listDocumentsHandler.HandleAsync(
                 new ListDocumentsQuery());
 
+        // Reject results belonging to an earlier or revoked session.
+        if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+        {
+            return 0;
+        }
+
         if (documents.Count == 0)
         {
             _logger.LogDebug(
                 LogMessages.DocumentListRefreshCompletedWithoutDocuments);
+
+            if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+            {
+                return 0;
+            }
 
             _view.ShowEmptyState();
             _view.SetDocumentsCount(0);
@@ -1413,6 +2785,12 @@ public sealed class MainFormPresenter
                 document.ProcessingState.ToString()))
             .ToList();
 
+        // Validate again immediately before exposing the retrieved metadata.
+        if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+        {
+            return 0;
+        }
+
         _view.ShowDocuments(items);
         _view.SetDocumentsCount(documents.Count);
 
@@ -1424,6 +2802,11 @@ public sealed class MainFormPresenter
 
         UpdateReprocessEnabled();
 
+        if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+        {
+            return 0;
+        }
+
         _logger.LogDebug(
             LogMessages.DocumentListRefreshCompleted,
             documents.Count);
@@ -1431,8 +2814,36 @@ public sealed class MainFormPresenter
         return documents.Count;
     }
 
-    private async Task RefreshWorkspacesAsync()
+    private async Task RefreshWorkspacesAsync(
+        long? expectedSecuritySessionRevision = null)
     {
+        long sessionRevision;
+
+        if (expectedSecuritySessionRevision is long expectedRevision)
+        {
+            sessionRevision = expectedRevision;
+
+            if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+            {
+                return;
+            }
+        }
+        else
+        {
+            if (!EnsureProtectedAccessAvailable())
+            {
+                return;
+            }
+
+            sessionRevision =
+                _applicationSecuritySession.CurrentSnapshot.Revision;
+
+            if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+            {
+                return;
+            }
+        }
+
         _logger.LogDebug(
             LogMessages.WorkspaceListRefreshStarted);
 
@@ -1440,15 +2851,27 @@ public sealed class MainFormPresenter
             await _getWorkspacesHandler.HandleAsync(
                 new GetWorkspacesQuery());
 
+        // Do not expose stale workspace results or failure messages.
+        if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+        {
+            return;
+        }
+
         if (result.Status != GetWorkspacesResultStatus.Success)
         {
             _logger.LogWarning(
                 LogMessages.WorkspaceListRefreshFailed,
                 result.Description);
 
+            if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+            {
+                return;
+            }
+
             _view.ShowWarning(
                 result.Description,
-                UiMessages.Workspaces);
+                UiMessages.Workspaces,
+                sessionRevision);
 
             return;
         }
@@ -1456,6 +2879,12 @@ public sealed class MainFormPresenter
         var documents =
             await _listDocumentsHandler.HandleAsync(
                 new ListDocumentsQuery());
+
+        // Document names are also protected metadata.
+        if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+        {
+            return;
+        }
 
         var documentNames =
             documents.ToDictionary(
@@ -1483,6 +2912,12 @@ public sealed class MainFormPresenter
                 workspace.LastUpdated))
             .ToList();
 
+        // Final revision check before presenting workspace metadata.
+        if (!IsAuthorizedSessionRevisionCurrent(sessionRevision))
+        {
+            return;
+        }
+
         _view.ShowWorkspaces(items);
         _view.SetWorkspacesCount(items.Count);
 
@@ -1495,6 +2930,11 @@ public sealed class MainFormPresenter
         object? sender,
         EventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
         bool hasSelection =
             _view.SelectedDocumentId.HasValue;
 
@@ -1506,6 +2946,11 @@ public sealed class MainFormPresenter
 
     private void UpdateReprocessEnabled()
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
         if (_view.SelectedDocumentId is not Guid)
         {
             _view.SetReprocessEnabled(false);
@@ -1528,6 +2973,11 @@ public sealed class MainFormPresenter
         object? sender,
         DocumentRemovedEventArgs e)
     {
+        if (!EnsureProtectedAccessAvailable())
+        {
+            return;
+        }
+
         _logger.LogDebug(
             LogMessages.DocumentWorkspaceRemovalNotificationReceived);
 

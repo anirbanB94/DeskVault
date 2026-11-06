@@ -13,6 +13,7 @@ using DeskVault.UI.Rendering;
 using DeskVault.UI.Rendering.CsvDocumentRendering;
 using DeskVault.UI.Rendering.MarkdownDocumentRendering;
 using DeskVault.UI.Rendering.TextDocumentRendering;
+using DeskVault.UI.Services.Dialogs;
 using DeskVault.UI.Services.Document;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
@@ -158,6 +159,7 @@ internal static class HostConfigurator
         services.AddTransient<IWorkspacePresentationFactory, WorkspacePresentationFactory>();
         services.AddTransient<IWorkspaceDialogService, WorkspaceDialogService>();
         services.AddSingleton<IWorkspacePresentationManager, WorkspacePresentationManager>();
+        services.AddSingleton<ISessionBoundDialogCoordinator, SessionBoundDialogCoordinator>();
         services.AddTransient<GetDocumentHandler>();
 
         // Document rendering

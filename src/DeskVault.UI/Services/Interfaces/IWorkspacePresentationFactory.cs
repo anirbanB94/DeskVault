@@ -9,5 +9,6 @@ public interface IWorkspacePresentationFactory
         Guid workspaceId,
         WorkspaceType workspaceType,
         string? workspaceName,
-        string? description);
+        string? description,
+        long securitySessionRevision);
 }

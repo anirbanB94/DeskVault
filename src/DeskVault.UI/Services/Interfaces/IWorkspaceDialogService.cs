@@ -7,14 +7,17 @@ public interface IWorkspaceDialogService
     WorkspaceDetailsDialogResult? ShowWorkspaceDetails(
         string workspaceName,
         string? workspaceDescription,
-        string title);
+        string title,
+        long expectedSessionRevision = 0);
 
     WorkspaceDocumentSelectionResult? ShowDocumentPicker(
         IReadOnlyList<DomainDocument> documents,
-        IEnumerable<Guid> workspaceDocumentIds);
+        IEnumerable<Guid> workspaceDocumentIds,
+        long expectedSessionRevision = 0);
 
     WorkspaceDocumentSelectionResult? ShowDocumentRemoval(
-        IReadOnlyList<DomainDocument> documents);
+        IReadOnlyList<DomainDocument> documents,
+        long expectedSessionRevision = 0);
 }
 
 public sealed record WorkspaceDetailsDialogResult(

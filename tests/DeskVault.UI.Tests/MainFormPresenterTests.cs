@@ -8,6 +8,7 @@ using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
 using DeskVault.Application.Workspaces.Commands.CloseWorkspace;
 using DeskVault.Application.Workspaces.Commands.CreateWorkspace;
@@ -20,23 +21,928 @@ using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
 using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
-using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Presenters;
-using DeskVault.UI.Tests.TestDoubles;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
+using DeskVault.UI.Tests.TestDoubles;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
+using System.Reflection;
 using System.Text;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.UI.Tests;
 
 public sealed class MainFormPresenterTests
 {
+    [Fact]
+    public async Task SecuritySessionLocked_CancelsPendingSearchAndClearsMainPresentation()
+    {
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var searchStarted =
+            new TaskCompletionSource<CancellationToken>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var searchCompletion =
+            new TaskCompletionSource<IReadOnlyList<SearchDocumentsResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                SearchDocumentsQuery _,
+                SearchDocumentsRankingKey? _,
+                int _,
+                CancellationToken cancellationToken) =>
+            {
+                searchStarted.TrySetResult(cancellationToken);
+
+                return searchCompletion.Task;
+            });
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns("security");
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                searchStore,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession);
+
+        // Arrange: start a search that has not returned yet.
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        CancellationToken searchToken =
+            await searchStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        // Act: the authoritative session transitions to Locked.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        // Assert: pending search work is invalidated and the main view is cleared.
+        Assert.True(searchToken.IsCancellationRequested);
+
+        searchCompletion.SetResult(
+            CreateSearchResults(
+                Guid.NewGuid(),
+                Guid.NewGuid()));
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.Once);
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.AppendSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SearchCompletion_BeforeQueuedLockNotificationIsApplied_DoesNotRestoreProtectedResults()
+    {
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var searchStarted =
+            new TaskCompletionSource<CancellationToken>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var searchCompletion =
+            new TaskCompletionSource<IReadOnlyList<SearchDocumentsResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                SearchDocumentsQuery _,
+                SearchDocumentsRankingKey? _,
+                int _,
+                CancellationToken cancellationToken) =>
+            {
+                searchStarted.TrySetResult(cancellationToken);
+
+                return searchCompletion.Task;
+            });
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns("security");
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        var postedActions =
+            new List<Action>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                searchStore,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession,
+                postToUi: postedActions.Add);
+
+        // Arrange: start a search and keep its result pending.
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        CancellationToken searchToken =
+            await searchStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        // Act: lock the authoritative session, but do not dispatch the UI callback.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        Assert.Single(postedActions);
+
+        // Revocation is observed, but UI cleanup has not run yet.
+        Assert.True(searchToken.IsCancellationRequested);
+
+        // Complete the search while the lock notification is still queued.
+        searchCompletion.SetResult(
+            CreateSearchResults(
+                Guid.NewGuid(),
+                Guid.NewGuid()));
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert: the late search must not restore protected search results.
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.AppendSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        // Now apply the queued UI notification.
+        Action postedAction =
+            Assert.Single(postedActions);
+
+        postedAction();
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.Once);
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task StaleSessionNotification_AppliesLatestSnapshotAndReloadsFreshMetadata()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document document =
+            Document.Restore(
+                documentId,
+                "security-policy.md",
+                "Security Policy",
+                "test-hash",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([document]);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                workspaceRepository: workspaceRepository,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession);
+
+        // Queue session notifications so the test controls when the UI applies them.
+        var postedActions =
+            new List<Action>();
+
+        view
+            .Setup(x => x.PostToUi(It.IsAny<Action>()))
+            .Callback<Action>(postedActions.Add);
+
+        // Arrange: the presenter starts while the session is locked.
+        await presenter.InitializeAsync();
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.Once);
+
+        // The session has since authenticated at revision 3.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Authenticated,
+                3);
+
+        // Act: a delayed notification for the older Locked revision arrives.
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                2));
+
+        Action postedAction =
+            Assert.Single(postedActions);
+
+        postedAction();
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert: the latest authoritative snapshot wins.
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.Exactly(2));
+
+        view.Verify(
+            x => x.ShowAuthenticatedState(),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.Is<IReadOnlyList<DocumentListItem>>(
+                    items =>
+                        items.Count == 1 &&
+                        items[0].Id == documentId &&
+                        items[0].FileName == "security-policy.md")),
+            Times.Once);
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.Exactly(2));
+
+        view.Verify(
+            x => x.ShowWorkspaces(
+                It.Is<IReadOnlyList<WorkspaceListItem>>(
+                    items => items.Count == 0)),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.AppendSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        workspaceRepository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_UnsubscribesFromSecuritySessionAndView()
+    {
+        var view =
+            new Mock<IMainFormView>();
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    0));
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                searchStore,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession);
+
+        // Act: dispose twice to verify idempotence.
+        presenter.Dispose();
+        presenter.Dispose();
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.Once);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1));
+
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        // Assert: neither the session nor the view can call back into the presenter.
+        view.Verify(
+            x => x.PostToUi(It.IsAny<Action>()),
+            Times.Never);
+
+        searchStore.Verify(
+            x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task LockAndReauthenticationBeforeUiDispatch_ClearsOldPresentationAndReloadsFreshMetadata()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document document =
+            Document.Restore(
+                documentId,
+                "security-policy.md",
+                "Security Policy",
+                "test-hash",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([document]);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                workspaceRepository: workspaceRepository,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession);
+
+        // Arrange: display protected metadata while authenticated.
+        await presenter.InitializeAsync();
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.Is<IReadOnlyList<DocumentListItem>>(
+                    items =>
+                        items.Count == 1 &&
+                        items[0].Id == documentId &&
+                        items[0].FileName == "security-policy.md")),
+            Times.Once);
+
+        // Queue UI callbacks so both session transitions occur before dispatch.
+        var postedActions =
+            new List<Action>();
+
+        view
+            .Setup(x => x.PostToUi(It.IsAny<Action>()))
+            .Callback<Action>(postedActions.Add);
+
+        // Act: lock and re-authenticate before the UI processes either notification.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Authenticated,
+                2);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        Assert.Equal(2, postedActions.Count);
+
+        foreach (Action action in postedActions)
+        {
+            action();
+        }
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert: old presentation was cleared and metadata was freshly retrieved.
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowAuthenticatedState(),
+            Times.Exactly(2));
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.Is<IReadOnlyList<DocumentListItem>>(
+                    items =>
+                        items.Count == 1 &&
+                        items[0].Id == documentId &&
+                        items[0].FileName == "security-policy.md")),
+            Times.Exactly(2));
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.AppendSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenSessionLocksDuringDocumentRefresh_DoesNotShowStaleDocuments()
+    {
+        Guid documentId = Guid.NewGuid();
+
+        Document document =
+            Document.Restore(
+                documentId,
+                "security-policy.md",
+                "Security Policy",
+                "test-hash",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var refreshStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var refreshCompletion =
+            new TaskCompletionSource<IReadOnlyList<Document>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .Callback<CancellationToken>(
+                _ => refreshStarted.TrySetResult())
+            .Returns(refreshCompletion.Task);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                searchStore,
+                repository: repository,
+                applicationSecuritySession: securitySession);
+
+        // Arrange: initialization starts loading protected document metadata.
+        Task initializationTask =
+            presenter.InitializeAsync();
+
+        await refreshStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Act: lock the session before the repository returns.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        // The repository deliberately completes with stale data.
+        refreshCompletion.SetResult([document]);
+
+        await initializationTask;
+
+        // Assert: the authenticated-era document metadata must not be presented.
+        view.Verify(
+            x => x.ShowDocuments(
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenSessionLocksDuringWorkspaceLookup_DoesNotShowStaleWorkspaces()
+    {
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                Guid.NewGuid(),
+                "Confidential Workspace",
+                "Sensitive workspace description");
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var workspaceLookupStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var workspaceLookupCompletion =
+            new TaskCompletionSource<IReadOnlyList<Workspace>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        workspaceRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                workspaceLookupStarted.TrySetResult();
+
+                return workspaceLookupCompletion.Task;
+            });
+
+        var view =
+            new Mock<IMainFormView>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                workspaceRepository: workspaceRepository,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession);
+
+        // Arrange: initialize documents and begin workspace retrieval.
+        Task initializationTask =
+            presenter.InitializeAsync();
+
+        await workspaceLookupStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Act: lock while workspace metadata is being retrieved.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        // Complete the repository operation with authenticated-era data.
+        workspaceLookupCompletion.SetResult([workspace]);
+
+        await initializationTask;
+
+        // Assert: stale workspace metadata must never reach the main view.
+        view.Verify(
+            x => x.ShowWorkspaces(
+                It.IsAny<IReadOnlyList<WorkspaceListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.AtLeastOnce);
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenSessionLocksDuringWorkspaceDocumentLookup_DoesNotShowStaleWorkspaces()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document document =
+            Document.Restore(
+                documentId,
+                "security-policy.md",
+                "Security Policy",
+                "test-hash",
+                "document.dvault",
+                DateTime.UtcNow,
+                DocumentStatus.Available);
+
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                Guid.NewGuid(),
+                "Confidential Workspace",
+                "Sensitive workspace description");
+
+        workspace.AddDocument(documentId);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var documentLookupStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var documentLookupCompletion =
+            new TaskCompletionSource<IReadOnlyList<Document>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        int documentLookupCount = 0;
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                int invocation =
+                    Interlocked.Increment(
+                        ref documentLookupCount);
+
+                if (invocation == 1)
+                {
+                    return Task.FromResult<IReadOnlyList<Document>>([]);
+                }
+
+                documentLookupStarted.TrySetResult();
+
+                return documentLookupCompletion.Task;
+            });
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([workspace]);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                workspaceRepository: workspaceRepository,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession);
+
+        // Arrange: initial document refresh is empty.
+        // Workspace retrieval succeeds and the second document lookup is delayed.
+        Task initializationTask =
+            presenter.InitializeAsync();
+
+        await documentLookupStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, documentLookupCount);
+
+        // Act: lock while document names for workspace memberships are pending.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        // The delayed lookup deliberately completes after the lock.
+        documentLookupCompletion.SetResult([document]);
+
+        await initializationTask;
+
+        // Assert: neither workspace metadata nor membership filenames are presented.
+        view.Verify(
+            x => x.ShowWorkspaces(
+                It.IsAny<IReadOnlyList<WorkspaceListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.AtLeastOnce);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
     [Fact]
     public async Task SearchRequested_MatchingChunks_DisplaysSearchResults()
     {
@@ -1202,6 +2108,16 @@ public sealed class MainFormPresenterTests
         var workspaceId =
             Guid.NewGuid();
 
+        var applicationSecuritySession =
+            new Mock<IApplicationSecuritySession>();
+
+        applicationSecuritySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    0));
+
         var workspacePresenter =
             new DocumentWorkspacePresenter(
                 workspaceId,
@@ -1210,7 +2126,9 @@ public sealed class MainFormPresenterTests
                 getDocumentHandler,
                 openDocumentHandler,
                 removeDocumentHandler,
-                NullLogger<DocumentWorkspacePresenter>.Instance);
+                NullLogger<DocumentWorkspacePresenter>.Instance,
+                applicationSecuritySession.Object,
+                0L);
 
         var documentPresentation =
             new WorkspaceDocumentPresentation(
@@ -1224,7 +2142,8 @@ public sealed class MainFormPresenterTests
         documentPresentationFactory
             .Setup(x => x.Create(
                 workspaceId,
-                documentId))
+                documentId,
+                0L))
             .Returns(documentPresentation);
 
         var workspacePresentationView =
@@ -1291,7 +2210,9 @@ public sealed class MainFormPresenterTests
                 updateWorkspaceDescriptionHandler,
                 workspaceDialogService.Object,
                 workspacePresentationView.Object,
-                NullLogger<WorkspacePresentation>.Instance);
+                NullLogger<WorkspacePresentation>.Instance,
+                applicationSecuritySession.Object,
+                0L);
 
         var workspacePresentationManager =
             new Mock<IWorkspacePresentationManager>();
@@ -1301,7 +2222,8 @@ public sealed class MainFormPresenterTests
                 It.IsAny<Guid>(),
                 It.IsAny<WorkspaceType>(),
                 It.IsAny<string?>(),
-                It.IsAny<string?>()))
+                It.IsAny<string?>(),
+                It.IsAny<long>()))
             .Returns(workspacePresentation);
 
         _ =
@@ -1311,7 +2233,9 @@ public sealed class MainFormPresenterTests
                 repository,
                 documentReader,
                 workspacePresentationManager:
-                    workspacePresentationManager);
+                    workspacePresentationManager,
+                applicationSecuritySession:
+                    applicationSecuritySession);
 
         view.Raise(
             x => x.OpenRequested += null,
@@ -1335,10 +2259,142 @@ public sealed class MainFormPresenterTests
                 It.IsAny<Guid>(),
                 It.IsAny<WorkspaceType>(),
                 It.IsAny<string?>(),
-                It.IsAny<string?>()),
+                It.IsAny<string?>(),
+                It.IsAny<long>()),
             Times.Once);
 
     }
+
+
+    [Fact]
+    public async Task OpenRequested_WhenSessionLocksDuringWorkspaceCreation_DoesNotCreatePresentation()
+    {
+        Guid documentId = Guid.NewGuid();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var workspaceCreationStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var workspaceCreationCompletion =
+            new TaskCompletionSource<Document?>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => workspaceCreationStarted.TrySetResult())
+            .Returns(workspaceCreationCompletion.Task);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                workspacePresentationManager: workspacePresentationManager,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                applicationSecuritySession: securitySession);
+
+        // Arrange: begin opening a document and pause workspace creation
+        // while the document metadata lookup is pending.
+        view.Raise(
+            x => x.OpenRequested += null,
+            EventArgs.Empty);
+
+        await workspaceCreationStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Act: revoke access before the workspace creation handler completes.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        // Complete the handler with authenticated-era document metadata.
+        workspaceCreationCompletion.SetResult(
+            Document.Create(
+                documentId,
+                "security-policy.md",
+                "Security Policy",
+                "test-hash",
+                "document.dvault"));
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert: the stale continuation must not create a presentation.
+        workspacePresentationManager.Verify(
+            x => x.GetOrCreate(
+                It.IsAny<Guid>(),
+                It.IsAny<WorkspaceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<long>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.DocumentOpenedStatus),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.UnableToOpenDocumentStatus),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowError(
+                It.IsAny<string>(),
+                It.IsAny<string>()),
+            Times.Never);
+
+        // The operation's finally block must not re-enable Open.
+        view.Verify(
+            x => x.SetOpenEnabled(true),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.AtLeastOnce);
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.AtLeastOnce);
+    }
+
 
     [Fact]
     public async Task OpenRequested_WhenTemporaryPresentationAlreadyExists_ActivatesExistingPresentationWithoutCreatingAnother()
@@ -1417,6 +2473,16 @@ public sealed class MainFormPresenterTests
         var workspaceDialogService =
             new Mock<IWorkspaceDialogService>();
 
+        var applicationSecuritySession =
+            new Mock<IApplicationSecuritySession>();
+
+        applicationSecuritySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    0));
+
         var workspacePresentation =
             new WorkspacePresentation(
                 workspaceId,
@@ -1432,7 +2498,9 @@ public sealed class MainFormPresenterTests
                 updateWorkspaceDescriptionHandler,
                 workspaceDialogService.Object,
                 workspacePresentationView.Object,
-                NullLogger<WorkspacePresentation>.Instance);
+                NullLogger<WorkspacePresentation>.Instance,
+                applicationSecuritySession.Object,
+                0L);
 
         var workspacePresentationManager =
             new Mock<IWorkspacePresentationManager>();
@@ -1448,7 +2516,9 @@ public sealed class MainFormPresenterTests
                 searchStore,
                 repository,
                 workspacePresentationManager:
-                    workspacePresentationManager);
+                    workspacePresentationManager,
+                applicationSecuritySession:
+                    applicationSecuritySession);
 
         view.Raise(
             x => x.OpenRequested += null,
@@ -1467,7 +2537,8 @@ public sealed class MainFormPresenterTests
                     It.IsAny<Guid>(),
                     It.IsAny<WorkspaceType>(),
                     It.IsAny<string?>(),
-                    It.IsAny<string?>()),
+                    It.IsAny<string?>(),
+                    It.IsAny<long>()),
             Times.Never);
 
         workspacePresentationView.Verify(
@@ -1951,6 +3022,173 @@ public sealed class MainFormPresenterTests
         view.Verify(
             x => x.SetImportEnabled(true),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ImportRequested_WhenSessionLocksDuringImport_DoesNotContinueProtectedWork()
+    {
+        const string filePath =
+            @"C:\Documents\security-policy.md";
+
+        const string hash =
+            "locked-import-hash";
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedFilePath)
+            .Returns(filePath);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                hash,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var importSaveStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var importSaveCompletion =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (_, _) => importSaveStarted.TrySetResult())
+            .Returns(() => importSaveCompletion.Task);
+
+        var hashService =
+            new Mock<IHashService>();
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                filePath,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(hash);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                filePath,
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                hash))
+            .ReturnsAsync("document.dvault");
+
+        var processingService =
+            new Mock<IDocumentProcessingService>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                hashService: hashService,
+                storageService: storageService,
+                processingService: processingService,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession);
+
+        // Arrange: begin importing and pause the repository save.
+        view.Raise(
+            x => x.ImportRequested += null,
+            EventArgs.Empty);
+
+        await importSaveStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Act: revoke protected access while the import is still pending.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        // Complete the import operation after the session has been locked.
+        importSaveCompletion.SetResult();
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert: the import may finish its already-started persistence,
+        // but protected follow-up work must not continue.
+        repository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetSelectedDocumentId(
+                It.IsAny<Guid?>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetStatus(
+                "Document imported successfully."),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowInformation(
+                "Document imported successfully.",
+                UiMessages.ImportCompleteTitle),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.AtLeastOnce);
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.AtLeastOnce);
     }
 
     [Theory]
@@ -2582,6 +3820,135 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
+    public async Task ReprocessRequested_WhenSessionLocksDuringProcessing_DoesNotPublishStaleSuccessOrReenableControls()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        view
+            .SetupGet(x => x.SelectedDocumentFileName)
+            .Returns("security-policy.md");
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var processingStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var processingCompletion =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var processingService =
+            new Mock<IDocumentProcessingService>();
+
+        processingService
+            .Setup(x => x.ProcessAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => processingStarted.TrySetResult())
+            .Returns(processingCompletion.Task);
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository,
+                processingService: processingService,
+                applicationSecuritySession: securitySession);
+
+        view.Raise(
+            x => x.ReprocessRequested += null,
+            EventArgs.Empty);
+
+        await processingStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Lock the session while processing is still in flight.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        processingCompletion.SetResult();
+
+        await WaitForBackgroundOperationAsync();
+
+        processingService.Verify(
+            x => x.ProcessAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.AtLeastOnce);
+
+        view.Verify(
+            x => x.SetStatus(
+                UiMessages.DocumentReprocessedStatus),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowInformation(
+                UiMessages.DocumentReprocessedStatus,
+                UiMessages.ReprocessDocumentTitle),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetImportEnabled(true),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetOpenEnabled(true),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetRemoveEnabled(true),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetReprocessEnabled(true),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ReprocessRequested_UnsupportedDocument_DisablesReprocessAndDoesNotProcess()
     {
         Guid documentId =
@@ -2804,6 +4171,9 @@ public sealed class MainFormPresenterTests
         var workspaceView =
             new Mock<IWorkspacePresentationView>();
 
+        var closeWorkspaceSecuritySession =
+            new Mock<IApplicationSecuritySession>();
+
         WorkspacePresentation presentation =
             CreateWorkspacePresentationForCloseTesting(
                 workspaceId,
@@ -2811,7 +4181,8 @@ public sealed class MainFormPresenterTests
                 workspace.Description,
                 workspaceView,
                 workspaceRepository,
-                activeWorkspaceRegistry);
+                activeWorkspaceRegistry,
+                closeWorkspaceSecuritySession);
 
         var workspacePresentationManager =
             new Mock<IWorkspacePresentationManager>();
@@ -2821,7 +4192,8 @@ public sealed class MainFormPresenterTests
                 workspaceId,
                 WorkspaceType.Persistent,
                 workspace.Name,
-                workspace.Description))
+                workspace.Description,
+                0L))
             .Returns(presentation);
 
         var view =
@@ -2840,6 +4212,7 @@ public sealed class MainFormPresenterTests
             workspacePresentationManager: workspacePresentationManager,
             workspaceRepository: workspaceRepository,
             activeWorkspaceRegistry: activeWorkspaceRegistry,
+            applicationSecuritySession: closeWorkspaceSecuritySession,
             logger: logger);
 
         // Open the workspace so the presenter subscribes to its close event.
@@ -2932,7 +4305,8 @@ public sealed class MainFormPresenterTests
         string? description,
         Mock<IWorkspacePresentationView> view,
         Mock<IWorkspaceRepository> workspaceRepository,
-        Mock<IActiveWorkspaceRegistry> activeWorkspaceRegistry)
+        Mock<IActiveWorkspaceRegistry> activeWorkspaceRegistry,
+        Mock<IApplicationSecuritySession> workspaceSecuritySession)
     {
         var dialogService =
             new Mock<IWorkspaceDialogService>();
@@ -2984,6 +4358,13 @@ public sealed class MainFormPresenterTests
                 activeWorkspaceRegistry.Object,
                 NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
 
+        workspaceSecuritySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    0));
+
         return new WorkspacePresentation(
             workspaceId,
             WorkspaceType.Persistent,
@@ -2998,7 +4379,9 @@ public sealed class MainFormPresenterTests
             updateWorkspaceDescriptionHandler,
             dialogService.Object,
             view.Object,
-            NullLogger<WorkspacePresentation>.Instance);
+            NullLogger<WorkspacePresentation>.Instance,
+            workspaceSecuritySession.Object,
+            0L);
     }
 
     [Fact]
@@ -3142,6 +4525,95 @@ public sealed class MainFormPresenterTests
                 value?.ToString() ?? string.Empty);
         }
     }
+
+    [Fact]
+    public async Task RemoveRequested_WhenSessionLocksDuringConfirmation_DoesNotInvokeRemovalHandler()
+    {
+        Guid documentId = Guid.NewGuid();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    "Removal handler must not run after session lock."));
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedDocumentId)
+            .Returns(documentId);
+
+        view
+            .SetupGet(x => x.SelectedDocumentFileName)
+            .Returns("security-policy.md");
+
+        view
+            .Setup(x => x.ConfirmRemoval("security-policy.md"))
+            .Callback(() =>
+            {
+                currentSnapshot =
+                    new ApplicationSecuritySessionSnapshot(
+                        ApplicationSecuritySessionState.Locked,
+                        1);
+
+                securitySession.Raise(
+                    x => x.StateChanged += null,
+                    currentSnapshot);
+            })
+            .Returns(true);
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                applicationSecuritySession: securitySession);
+
+        view.Raise(
+            x => x.RemoveRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Verify(
+            x => x.ConfirmRemoval("security-policy.md"),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToRemoveDocument,
+                UiMessages.DeskVaultTitle),
+            Times.Never);
+    }
+
     [Fact]
     public async Task WorkspaceRemoveRequested_WhenDeletionThrows_LogsSafeDiagnosticAndShowsGenericError()
     {
@@ -3281,6 +4753,231 @@ public sealed class MainFormPresenterTests
                 workspaceId.ToString(),
                 value?.ToString() ?? string.Empty);
         }
+    }
+
+    [Fact]
+    public async Task WorkspaceRemoveRequested_WhenSessionLocksDuringConfirmation_DoesNotDeleteWorkspace()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                workspaceId,
+                "Workspace");
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.DeleteAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns(workspace);
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedWorkspaceId)
+            .Returns(workspaceId);
+
+        view
+            .SetupGet(x => x.SelectedWorkspaceName)
+            .Returns("Workspace");
+
+        view
+            .Setup(x => x.ConfirmWorkspaceRemoval("Workspace"))
+            .Callback(() =>
+            {
+                currentSnapshot =
+                    new ApplicationSecuritySessionSnapshot(
+                        ApplicationSecuritySessionState.Locked,
+                        1);
+
+                securitySession.Raise(
+                    x => x.StateChanged += null,
+                    currentSnapshot);
+            })
+            .Returns(true);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                workspacePresentationManager: workspacePresentationManager,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                applicationSecuritySession: securitySession);
+
+        view.Raise(
+            x => x.WorkspaceRemoveRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        view.Verify(
+            x => x.ConfirmWorkspaceRemoval("Workspace"),
+            Times.Once);
+
+        workspaceRepository.Verify(
+            x => x.DeleteAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        workspacePresentationManager.Verify(
+            x => x.Close(workspaceId),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task WorkspaceOpenRequested_WhenSessionLocksDuringWorkspaceLookup_DoesNotCreatePresentation()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                workspaceId,
+                "Confidential Workspace",
+                "Sensitive workspace description");
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var workspaceLookupStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var workspaceLookupCompletion =
+            new TaskCompletionSource<Workspace?>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        workspaceRepository
+            .Setup(x => x.GetByIdAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => workspaceLookupStarted.TrySetResult())
+            .Returns(() => workspaceLookupCompletion.Task);
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns((Workspace?)null);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedWorkspaceId)
+            .Returns(workspaceId);
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                workspacePresentationManager: workspacePresentationManager,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                applicationSecuritySession: securitySession);
+
+        // Arrange: start workspace opening and pause its repository lookup.
+        view.Raise(
+            x => x.WorkspaceOpenRequested += null,
+            EventArgs.Empty);
+
+        await workspaceLookupStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Act: lock the session before the workspace lookup completes.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        // Complete the lookup with authenticated-era workspace metadata.
+        workspaceLookupCompletion.SetResult(workspace);
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert: the old operation must not create a workspace presentation.
+        workspacePresentationManager.Verify(
+            x => x.GetOrCreate(
+                workspaceId,
+                WorkspaceType.Persistent,
+                workspace.Name,
+                workspace.Description,
+                0L),
+            Times.Never);
+
+        view.Verify(
+            x => x.SetStatus(
+                "The workspace was opened."),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowWarning(
+                It.IsAny<string>(),
+                UiMessages.OpenWorkspaceTitle),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowError(
+                It.IsAny<string>(),
+                UiMessages.OpenWorkspaceTitle),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.AtLeastOnce);
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.AtLeastOnce);
     }
 
     [Fact]
@@ -3503,6 +5200,340 @@ public sealed class MainFormPresenterTests
         }
     }
 
+    [Fact]
+    public async Task LockNotification_WhenSearchCancellationCallbackThrows_StillPostsLockedStateForUiApplication()
+    {
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var searchStarted =
+            new TaskCompletionSource<CancellationToken>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var searchCompletion =
+            new TaskCompletionSource<IReadOnlyList<SearchDocumentsResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        CancellationTokenRegistration cancellationRegistration = default;
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                SearchDocumentsQuery _,
+                SearchDocumentsRankingKey? _,
+                int _,
+                CancellationToken cancellationToken) =>
+            {
+                cancellationRegistration =
+                    cancellationToken.Register(
+                        static () => throw new InvalidOperationException(
+                            "Search cancellation callback failed."));
+
+                searchStarted.TrySetResult(cancellationToken);
+
+                return searchCompletion.Task;
+            });
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns("security");
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        var postedActions =
+            new List<Action>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                searchStore,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession,
+                postToUi: postedActions.Add);
+
+        // Arrange: start a search whose cancellation callback will throw.
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        CancellationToken searchToken =
+            await searchStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        // Act: lock the authoritative session.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        Exception? notificationException =
+            Record.Exception(
+                () => securitySession.Raise(
+                    x => x.StateChanged += null,
+                    currentSnapshot));
+
+        try
+        {
+            // Revocation must be processed even when search cancellation callbacks fail.
+            Assert.Null(notificationException);
+            Assert.True(searchToken.IsCancellationRequested);
+
+            Action postedAction =
+                Assert.Single(postedActions);
+
+            postedAction();
+
+            view.Verify(
+                x => x.ShowLockedState(),
+                Times.Once);
+
+            workspacePresentationManager.Verify(
+                x => x.CloseAll(),
+                Times.Once);
+
+            searchCompletion.SetResult(
+                CreateSearchResults(
+                    Guid.NewGuid(),
+                    Guid.NewGuid()));
+
+            await WaitForBackgroundOperationAsync();
+
+            view.Verify(
+                x => x.ShowSearchResults(
+                    It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+                Times.Never);
+        }
+        finally
+        {
+            cancellationRegistration.Dispose();
+
+            searchCompletion.TrySetResult([]);
+
+            presenter.Dispose();
+        }
+    }
+
+    [Fact]
+    public void LockNotification_WhenWorkspaceDisposalThrows_StillCompletesProtectedUiCleanup()
+    {
+        var view =
+            new Mock<IMainFormView>();
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        int closeAllInvocationCount = 0;
+
+        workspacePresentationManager
+            .Setup(x => x.CloseAll())
+            .Callback(() =>
+            {
+                if (Interlocked.Increment(ref closeAllInvocationCount) == 1)
+                {
+                    throw new InvalidOperationException(
+                        "Workspace presentation disposal failed.");
+                }
+            });
+
+        var postedActions =
+            new List<Action>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                searchStore,
+                workspacePresentationManager: workspacePresentationManager,
+                applicationSecuritySession: securitySession,
+                postToUi: postedActions.Add);
+
+        // Arrange: the authoritative session transitions to Locked.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        Action postedAction =
+            Assert.Single(postedActions);
+
+        // Act: apply the lock notification on the UI thread.
+        Exception? cleanupException =
+            Record.Exception(postedAction);
+
+        // Assert: disposal failure must not escape the lock-cleanup callback.
+        Assert.Null(cleanupException);
+
+        view.Verify(
+            x => x.ShowLockedState(),
+            Times.Once);
+
+        workspacePresentationManager.Verify(
+            x => x.CloseAll(),
+            Times.Once);
+
+        // Allow presenter teardown to run independently of the simulated lock-cleanup failure.
+        workspacePresentationManager
+            .Setup(x => x.CloseAll());
+
+        presenter.Dispose();
+    }
+
+    [Fact]
+    public void WorkspaceDeleteRequested_WhenSenderBelongsToSupersededSession_DoesNotShowConfirmation()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        var session =
+            new PresentationSessionRevisionTestSupport.SecuritySessionHarness(
+                ApplicationSecuritySessionState.Authenticated,
+                revision: 150);
+
+        WorkspacePresentation stalePresentation =
+            PresentationSessionRevisionTestSupport.CreateWorkspacePresentation(
+                workspaceId,
+                session,
+                revision: 150);
+
+        var view = new Mock<IMainFormView>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                applicationSecuritySession: session.Session);
+
+        // The old presentation still exists, but a newer authenticated session
+        // is already authoritative.
+        session.Set(
+            ApplicationSecuritySessionState.Authenticated,
+            revision: 152);
+
+        MethodInfo handler =
+            typeof(MainFormPresenter).GetMethod(
+                "OnWorkspaceDeleteRequested",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        handler.Invoke(
+            presenter,
+            new object?[]
+            {
+            stalePresentation,
+            EventArgs.Empty
+            });
+
+        view.Verify(
+            x => x.ConfirmWorkspaceRemoval(
+                It.IsAny<string>(),
+                It.IsAny<long>()),
+            Times.Never);
+
+        stalePresentation.Dispose();
+    }
+
+    [Fact]
+    public void WorkspaceCloseRequested_WhenSenderBelongsToSupersededSession_DoesNotStartClose()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        var session =
+            new PresentationSessionRevisionTestSupport.SecuritySessionHarness(
+                ApplicationSecuritySessionState.Authenticated,
+                revision: 160);
+
+        WorkspacePresentation stalePresentation =
+            PresentationSessionRevisionTestSupport.CreateWorkspacePresentation(
+                workspaceId,
+                session,
+                revision: 160);
+
+        var view = new Mock<IMainFormView>();
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                applicationSecuritySession: session.Session);
+
+        session.Set(
+            ApplicationSecuritySessionState.Authenticated,
+            revision: 162);
+
+        MethodInfo handler =
+            typeof(MainFormPresenter).GetMethod(
+                "OnWorkspaceCloseRequested",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        handler.Invoke(
+            presenter,
+            new object?[]
+            {
+            stalePresentation,
+            EventArgs.Empty
+            });
+
+        activeWorkspaceRegistry.Verify(
+            x => x.Remove(workspaceId),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowWarning(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowError(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>()),
+            Times.Never);
+
+        stalePresentation.Dispose();
+    }
+
     private static void AssertSafeSearchFailureLog(
         RecordingLogger<MainFormPresenter> logger,
         string operationCode,
@@ -3661,7 +5692,9 @@ public sealed class MainFormPresenterTests
         Mock<IWorkspacePresentationManager>? workspacePresentationManager = null,
         Mock<IWorkspaceRepository>? workspaceRepository = null,
         Mock<IActiveWorkspaceRegistry>? activeWorkspaceRegistry = null,
-        ILogger<MainFormPresenter>? logger = null)
+        ILogger<MainFormPresenter>? logger = null,
+        Mock<IApplicationSecuritySession>? applicationSecuritySession = null,
+        Action<Action>? postToUi = null)
     {
         repository ??=
             new Mock<IDocumentRepository>();
@@ -3760,6 +5793,33 @@ public sealed class MainFormPresenterTests
                     PageSize = SearchOptions.DefaultPageSize
                 });
 
+        if (applicationSecuritySession is null)
+        {
+            applicationSecuritySession =
+                new Mock<IApplicationSecuritySession>();
+
+            applicationSecuritySession
+                .SetupGet(x => x.CurrentSnapshot)
+                .Returns(
+                    new ApplicationSecuritySessionSnapshot(
+                        ApplicationSecuritySessionState.Authenticated,
+                        0));
+        }
+
+        view
+            .Setup(x => x.PostToUi(It.IsAny<Action>()))
+            .Callback<Action>(action =>
+            {
+                if (postToUi is null)
+                {
+                    action();
+                }
+                else
+                {
+                    postToUi(action);
+                }
+            });
+
         return new MainFormPresenter(
             view.Object,
             importDocumentHandler,
@@ -3775,7 +5835,8 @@ public sealed class MainFormPresenterTests
             processingService.Object,
             documentTextExtractorResolver,
             logger ?? NullLogger<MainFormPresenter>.Instance,
-            searchOptions);
+            searchOptions,
+            applicationSecuritySession.Object);
     }
 
     private static MemoryStream CreateContentStream(

@@ -1,4 +1,6 @@
 using DeskVault.Application.Documents.Queries.ListDocuments;
+using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
 using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
@@ -6,11 +8,12 @@ using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
 using DeskVault.Domain.Workspaces;
 using DeskVault.Shared.Extensions;
-using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
+using DeskVaultDocument = DeskVault.Domain.Documents.Document;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.UI.Services.Workspace;
 
@@ -29,6 +32,8 @@ public sealed class WorkspacePresentation : IDisposable
     private readonly Dictionary<Guid, WorkspaceDocumentPresentation> _documentPresentations = [];
     private readonly HashSet<Guid> _workspaceDocumentIds = [];
     private bool _disposed;
+    private readonly IApplicationSecuritySession _applicationSecuritySession;
+    private readonly long _securitySessionRevision;
 
     public WorkspacePresentation(
         Guid workspaceId,
@@ -44,7 +49,9 @@ public sealed class WorkspacePresentation : IDisposable
         UpdateWorkspaceDescriptionHandler updateWorkspaceDescriptionHandler,
         IWorkspaceDialogService dialogService,
         IWorkspacePresentationView view,
-        ILogger<WorkspacePresentation> logger)
+        ILogger<WorkspacePresentation> logger,
+        IApplicationSecuritySession applicationSecuritySession,
+        long? securitySessionRevision = null)
     {
         ArgumentNullException.ThrowIfNull(documentPresentationFactory);
         ArgumentNullException.ThrowIfNull(listDocumentsHandler);
@@ -56,6 +63,7 @@ public sealed class WorkspacePresentation : IDisposable
         ArgumentNullException.ThrowIfNull(dialogService);
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(applicationSecuritySession);
 
         WorkspaceId = workspaceId;
         WorkspaceType = workspaceType;
@@ -71,6 +79,10 @@ public sealed class WorkspacePresentation : IDisposable
         _dialogService = dialogService;
         _view = view;
         _logger = logger;
+        _applicationSecuritySession = applicationSecuritySession;
+        _securitySessionRevision =
+            securitySessionRevision ??
+            applicationSecuritySession.CurrentSnapshot.Revision;
 
         if (IsTemporary)
         {
@@ -95,6 +107,19 @@ public sealed class WorkspacePresentation : IDisposable
         _view.DeleteWorkspaceRequested += OnDeleteWorkspaceRequested;
         _view.CloseWorkspaceRequested += OnCloseWorkspaceRequested;
         _view.CloseDocumentRequested += OnCloseDocumentRequested;
+
+        _applicationSecuritySession.StateChanged +=
+            OnApplicationSecuritySessionStateChanged;
+
+        // Close the construction race: the owning revision may have been
+        // revoked between factory validation and event subscription.
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (!IsSessionRevisionCurrent(_securitySessionRevision))
+        {
+            OnApplicationSecuritySessionStateChanged(currentSnapshot);
+        }
     }
 
     public Guid WorkspaceId { get; }
@@ -121,6 +146,8 @@ public sealed class WorkspacePresentation : IDisposable
 
     public IReadOnlyCollection<WorkspaceDocumentPresentation> DocumentPresentations =>
         _documentPresentations.Values;
+
+    internal long SecuritySessionRevision => _securitySessionRevision;
 
     public event EventHandler<DocumentRemovedEventArgs> DocumentRemoved = null!;
 
@@ -165,6 +192,16 @@ public sealed class WorkspacePresentation : IDisposable
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(documentIds);
 
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+        {
+            throw new OperationCanceledException(
+                "Workspace presentation is not authorized for its owning session revision.",
+                cancellationToken);
+        }
+
         Guid[] workspaceDocumentIds =
             [.. documentIds];
 
@@ -178,25 +215,37 @@ public sealed class WorkspacePresentation : IDisposable
             }
         }
 
+        HashSet<Guid> requestedDocumentIds =
+            workspaceDocumentIds.ToHashSet();
+
+        IReadOnlyList<DeskVaultDocument> documents =
+            await _listDocumentsHandler.HandleAsync(
+                new ListDocumentsQuery(),
+                cancellationToken);
+
+        // Workspace disposal can occur while the document lookup is pending.
+        // A result obtained under an older session revision must never
+        // be published, including when the user has since re-authenticated.
+        if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+        {
+            return;
+        }
+
+        Dictionary<Guid, string> workspaceDocuments =
+            documents
+                .Where(document =>
+                    requestedDocumentIds.Contains(document.Id))
+                .ToDictionary(
+                    document => document.Id,
+                    document => document.FileName);
+
+        // Commit membership only after the session revision is verified.
         _workspaceDocumentIds.Clear();
 
         foreach (Guid documentId in workspaceDocumentIds)
         {
             _workspaceDocumentIds.Add(documentId);
         }
-
-        IReadOnlyList<DeskVault.Domain.Documents.Document> documents =
-            await _listDocumentsHandler.HandleAsync(
-                new ListDocumentsQuery(),
-                cancellationToken);
-
-        Dictionary<Guid, string> workspaceDocuments =
-            documents
-                .Where(document =>
-                    _workspaceDocumentIds.Contains(document.Id))
-                .ToDictionary(
-                    document => document.Id,
-                    document => document.FileName);
 
         _view.SetWorkspaceDocuments(
             workspaceDocuments);
@@ -207,6 +256,16 @@ public sealed class WorkspacePresentation : IDisposable
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
+
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+        {
+            throw new OperationCanceledException(
+                "Workspace presentation is not authorized for its owning session revision.",
+                cancellationToken);
+        }
 
         bool presentationCreated = false;
 
@@ -231,6 +290,33 @@ public sealed class WorkspacePresentation : IDisposable
             await presentation.Presenter.OpenAsync(
                 documentId,
                 cancellationToken);
+
+            // The workspace may have been locked, re-authenticated,
+            // or disposed while the child document was being opened.
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                throw new OperationCanceledException(
+                    "The workspace document-open operation was invalidated.",
+                    cancellationToken);
+            }
+
+            if (IsTemporary &&
+                !string.IsNullOrWhiteSpace(presentation.FileName))
+            {
+                _view.SetTemporaryDocumentPresentation(
+                    presentation.FileName);
+            }
+
+            _view.AddDocumentPresentation(
+                presentation);
+
+            ActivateDocumentPresentation(
+                documentId);
+
+            _logger.LogInformation(
+                LogMessages.WorkspacePresentationDocumentOpened,
+                WorkspaceId,
+                documentId);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -260,30 +346,18 @@ public sealed class WorkspacePresentation : IDisposable
 
             throw;
         }
-
-        if (IsTemporary &&
-            !string.IsNullOrWhiteSpace(presentation.FileName))
-        {
-            _view.SetTemporaryDocumentPresentation(
-                presentation.FileName);
-        }
-
-        _view.AddDocumentPresentation(
-            presentation);
-
-        ActivateDocumentPresentation(
-            documentId);
-
-        _logger.LogInformation(
-            LogMessages.WorkspacePresentationDocumentOpened,
-            WorkspaceId,
-            documentId);
     }
 
     public WorkspaceDocumentPresentation OpenDocument(
         Guid documentId)
     {
         ThrowIfDisposed();
+
+        if (!IsProtectedAccessAvailable())
+        {
+            throw new OperationCanceledException(
+                "Workspace presentation is not authorized for the current session.");
+        }
 
         WorkspaceDocumentPresentation presentation =
             GetOrCreateDocumentPresentation(documentId);
@@ -301,6 +375,11 @@ public sealed class WorkspacePresentation : IDisposable
     {
         ThrowIfDisposed();
 
+        if (!IsProtectedAccessAvailable())
+        {
+            return false;
+        }
+
         if (!_documentPresentations.ContainsKey(documentId))
         {
             return false;
@@ -316,6 +395,11 @@ public sealed class WorkspacePresentation : IDisposable
     {
         ThrowIfDisposed();
 
+        if (!IsProtectedAccessAvailable())
+        {
+            return false;
+        }
+
         _view.ActivateWorkspace();
 
         if (ActiveDocumentId is not Guid documentId)
@@ -330,6 +414,11 @@ public sealed class WorkspacePresentation : IDisposable
         WorkspacePresentationNavigationMode navigationMode)
     {
         ThrowIfDisposed();
+
+        if (!IsProtectedAccessAvailable())
+        {
+            return;
+        }
 
         if (IsTemporary)
         {
@@ -401,57 +490,94 @@ public sealed class WorkspacePresentation : IDisposable
 
         _disposed = true;
 
-        _view.DocumentActivated -=
-            OnDocumentActivated;
+        Exception? disposalException = null;
 
-        _view.NavigationModeChanged -=
-            OnNavigationModeChanged;
-
-        _view.AddDocumentsRequested -=
-            OnAddDocumentsRequested;
-
-        _view.RemoveDocumentsRequested -=
-            OnRemoveDocumentsRequested;
-
-        _view.RemoveDocumentRequested -=
-            OnRemoveDocumentRequested;
-
-        _view.UpdateWorkspaceDetailsRequested -=
-            OnUpdateWorkspaceDetailsRequested;
-
-        _view.SaveAsWorkspaceRequested -=
-            OnSaveAsWorkspaceRequested;
-
-        _view.DocumentInformationRequested -=
-            OnDocumentInformationRequested;
-
-        _view.DeleteWorkspaceRequested -=
-            OnDeleteWorkspaceRequested;
-
-        _view.CloseWorkspaceRequested -=
-            OnCloseWorkspaceRequested;
-
-        _view.CloseDocumentRequested -=
-            OnCloseDocumentRequested;
-
-        foreach (WorkspaceDocumentPresentation presentation in
-                 _documentPresentations.Values)
+        void TryCleanup(Action cleanup)
         {
-            presentation.Presenter.DocumentRemoved -=
-                OnDocumentRemoved;
-
-            presentation.Dispose();
+            try
+            {
+                cleanup();
+            }
+            catch (Exception exception)
+            {
+                disposalException ??= exception;
+            }
         }
+
+        // Detach workspace event handlers independently.
+        TryCleanup(() =>
+            _applicationSecuritySession.StateChanged -=
+                OnApplicationSecuritySessionStateChanged);
+
+        TryCleanup(() =>
+            _view.DocumentActivated -= OnDocumentActivated);
+
+        TryCleanup(() =>
+            _view.NavigationModeChanged -= OnNavigationModeChanged);
+
+        TryCleanup(() =>
+            _view.AddDocumentsRequested -= OnAddDocumentsRequested);
+
+        TryCleanup(() =>
+            _view.RemoveDocumentsRequested -= OnRemoveDocumentsRequested);
+
+        TryCleanup(() =>
+            _view.RemoveDocumentRequested -= OnRemoveDocumentRequested);
+
+        TryCleanup(() =>
+            _view.UpdateWorkspaceDetailsRequested -= OnUpdateWorkspaceDetailsRequested);
+
+        TryCleanup(() =>
+            _view.SaveAsWorkspaceRequested -= OnSaveAsWorkspaceRequested);
+
+        TryCleanup(() =>
+            _view.DocumentInformationRequested -= OnDocumentInformationRequested);
+
+        TryCleanup(() =>
+            _view.DeleteWorkspaceRequested -= OnDeleteWorkspaceRequested);
+
+        TryCleanup(() =>
+            _view.CloseWorkspaceRequested -= OnCloseWorkspaceRequested);
+
+        TryCleanup(() =>
+            _view.CloseDocumentRequested -= OnCloseDocumentRequested);
+
+        // Snapshot and clear retained workspace state before disposing children.
+        WorkspaceDocumentPresentation[] documentPresentations =
+            _documentPresentations.Values.ToArray();
 
         _documentPresentations.Clear();
         _workspaceDocumentIds.Clear();
-        ActiveDocumentId = null;
 
-        _view.CloseWorkspace();
+        ActiveDocumentId = null;
+        WorkspaceName = null;
+        WorkspaceDescription = null;
+
+        // One failing document presentation must not prevent cleanup of others.
+        foreach (WorkspaceDocumentPresentation presentation
+            in documentPresentations)
+        {
+            TryCleanup(() =>
+                presentation.Presenter.DocumentRemoved -= OnDocumentRemoved);
+
+            TryCleanup(presentation.Dispose);
+        }
+
+        // Always attempt workspace-view cleanup and disposal.
+        TryCleanup(_view.ClearPresentation);
+        TryCleanup(_view.Dispose);
 
         _logger.LogDebug(
             LogMessages.WorkspacePresentationDisposed,
             WorkspaceId);
+
+        // Preserve the original exception and stack trace.
+        if (disposalException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(disposalException)
+                .Throw();
+        }
     }
 
     private WorkspaceDocumentPresentation GetOrCreateDocumentPresentation(
@@ -467,7 +593,8 @@ public sealed class WorkspacePresentation : IDisposable
         WorkspaceDocumentPresentation presentation =
             _documentPresentationFactory.Create(
                 WorkspaceId,
-                documentId);
+                documentId,
+                _securitySessionRevision);
 
         presentation.Presenter.DocumentRemoved +=
             OnDocumentRemoved;
@@ -514,23 +641,36 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+            _disposed ||
+            IsTemporary)
+        {
+            return;
+        }
+
         try
         {
-            if (IsTemporary)
-            {
-                return;
-            }
-
             IReadOnlyList<DeskVault.Domain.Documents.Document> documents =
                 await _listDocumentsHandler.HandleAsync(
                     new ListDocumentsQuery());
 
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
+
             WorkspaceDocumentSelectionResult? result =
                 _dialogService.ShowDocumentPicker(
                     documents,
-                    _workspaceDocumentIds);
+                    _workspaceDocumentIds,
+                    operationSnapshot.Revision);
 
-            if (result is null)
+            // A modal picker may have remained open across a lock transition.
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+                result is null)
             {
                 return;
             }
@@ -539,11 +679,21 @@ public sealed class WorkspacePresentation : IDisposable
 
             foreach (Guid documentId in result.SelectedDocumentIds)
             {
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
+
                 AddDocumentToWorkspaceResult addResult =
                     await _addDocumentToWorkspaceHandler.HandleAsync(
                         new AddDocumentToWorkspaceCommand(
                             WorkspaceId,
                             documentId));
+
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
 
                 if (addResult.Status !=
                     AddDocumentToWorkspaceResultStatus.Success)
@@ -565,7 +715,8 @@ public sealed class WorkspacePresentation : IDisposable
                     documentId);
             }
 
-            if (addedDocumentIds.Count == 0)
+            if (addedDocumentIds.Count == 0 ||
+                !IsSessionRevisionCurrent(operationSnapshot.Revision))
             {
                 return;
             }
@@ -573,18 +724,41 @@ public sealed class WorkspacePresentation : IDisposable
             await SetWorkspaceDocumentsAsync(
                 _workspaceDocumentIds);
 
-            foreach (Guid documentId in addedDocumentIds)
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
             {
-                await OpenDocumentAsync(
-                    documentId);
+                return;
             }
 
-            WorkspaceDocumentsUpdated?.Invoke(
-                this,
-                EventArgs.Empty);
+            foreach (Guid documentId in addedDocumentIds)
+            {
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
+
+                await OpenDocumentAsync(documentId);
+
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
+            }
+
+            if (IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                WorkspaceDocumentsUpdated?.Invoke(
+                    this,
+                    EventArgs.Empty);
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            // Do not report an obsolete operation as a current-session failure.
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.WorkspacePresentationAddDocumentsFailure,
@@ -600,16 +774,26 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+            _disposed ||
+            IsTemporary)
+        {
+            return;
+        }
+
         try
         {
-            if (IsTemporary)
-            {
-                return;
-            }
-
             IReadOnlyList<DeskVault.Domain.Documents.Document> documents =
                 await _listDocumentsHandler.HandleAsync(
                     new ListDocumentsQuery());
+
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
 
             IReadOnlyList<DeskVault.Domain.Documents.Document> workspaceDocuments =
                 documents
@@ -620,20 +804,33 @@ public sealed class WorkspacePresentation : IDisposable
 
             WorkspaceDocumentSelectionResult? result =
                 _dialogService.ShowDocumentRemoval(
-                    workspaceDocuments);
+                    workspaceDocuments,
+                    operationSnapshot.Revision);
 
-            if (result is null)
+            // A modal dialog may return after the session has changed.
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+                result is null)
             {
                 return;
             }
 
             foreach (Guid documentId in result.SelectedDocumentIds)
             {
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
+
                 RemoveDocumentFromWorkspaceResult removeResult =
                     await _removeDocumentFromWorkspaceHandler.HandleAsync(
                         new RemoveDocumentFromWorkspaceCommand(
                             WorkspaceId,
                             documentId));
+
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
 
                 if (removeResult.Status !=
                     RemoveDocumentFromWorkspaceResultStatus.Success)
@@ -657,8 +854,18 @@ public sealed class WorkspacePresentation : IDisposable
                     documentId);
             }
 
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
+
             await SetWorkspaceDocumentsAsync(
                 _workspaceDocumentIds);
+
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
 
             WorkspaceDocumentsUpdated?.Invoke(
                 this,
@@ -666,6 +873,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.WorkspacePresentationRemoveDocumentsFailure,
@@ -681,7 +893,8 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
-        if (!IsTemporary)
+        if (!IsProtectedAccessAvailable() ||
+            !IsTemporary)
         {
             return;
         }
@@ -701,13 +914,18 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+            _disposed ||
+            !IsTemporary)
+        {
+            return;
+        }
+
         try
         {
-            if (!IsTemporary)
-            {
-                return;
-            }
-
             string currentName =
                 WorkspaceName ?? string.Empty;
 
@@ -715,9 +933,12 @@ public sealed class WorkspacePresentation : IDisposable
                 _dialogService.ShowWorkspaceDetails(
                     currentName,
                     WorkspaceDescription,
-                    UiMessages.SaveAsWorkspace);
+                    UiMessages.SaveAsWorkspace,
+                    operationSnapshot.Revision);
 
-            if (dialogResult is null)
+            // The session may have changed while the modal dialog was open.
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+                dialogResult is null)
             {
                 return;
             }
@@ -728,6 +949,11 @@ public sealed class WorkspacePresentation : IDisposable
                         WorkspaceId,
                         dialogResult.WorkspaceName,
                         dialogResult.WorkspaceDescription));
+
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
 
             if (result.Status !=
                 SaveTemporaryWorkspaceResultStatus.Success ||
@@ -763,6 +989,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.WorkspacePresentationSaveAsWorkspaceFailure,
@@ -778,6 +1009,11 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
+        if (!IsProtectedAccessAvailable())
+        {
+            return;
+        }
+
         WorkspaceDocumentPresentation? presentation =
             GetActiveDocumentPresentation();
 
@@ -788,7 +1024,8 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
-        if (IsTemporary)
+        if (!IsProtectedAccessAvailable() ||
+            IsTemporary)
         {
             return;
         }
@@ -798,6 +1035,15 @@ public sealed class WorkspacePresentation : IDisposable
 
     private async void UpdateWorkspaceDetailsAsync()
     {
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+            _disposed)
+        {
+            return;
+        }
+
         try
         {
             string currentName =
@@ -807,9 +1053,12 @@ public sealed class WorkspacePresentation : IDisposable
                 _dialogService.ShowWorkspaceDetails(
                     currentName,
                     WorkspaceDescription,
-                    UiMessages.UpdateWorkspaceDetailsTitle);
+                    UiMessages.UpdateWorkspaceDetailsTitle,
+                    operationSnapshot.Revision);
 
-            if (dialogResult is null)
+            // The session may have changed while the modal dialog was open.
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+                dialogResult is null)
             {
                 return;
             }
@@ -847,6 +1096,11 @@ public sealed class WorkspacePresentation : IDisposable
                             WorkspaceId,
                             updatedName));
 
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
+
                 if (renameResult.Status ==
                     RenameWorkspaceResultStatus.Success)
                 {
@@ -861,11 +1115,21 @@ public sealed class WorkspacePresentation : IDisposable
 
             if (descriptionChanged)
             {
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
+
                 UpdateWorkspaceDescriptionResult descriptionResult =
                     await _updateWorkspaceDescriptionHandler.HandleAsync(
                         new UpdateWorkspaceDescriptionCommand(
                             WorkspaceId,
                             updatedDescription));
+
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
 
                 if (descriptionResult.Status ==
                     UpdateWorkspaceDescriptionResultStatus.Success)
@@ -877,6 +1141,11 @@ public sealed class WorkspacePresentation : IDisposable
                 {
                     updateSucceeded = false;
                 }
+            }
+
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
             }
 
             _view.SetWorkspaceIdentity(
@@ -902,6 +1171,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.WorkspacePresentationUpdateDetailsFailure,
@@ -917,7 +1191,8 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
-        if (IsTemporary)
+        if (!IsProtectedAccessAvailable() ||
+            IsTemporary)
         {
             return;
         }
@@ -931,6 +1206,11 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
+        if (!IsProtectedAccessAvailable())
+        {
+            return;
+        }
+
         WorkspaceCloseRequested?.Invoke(
             this,
             EventArgs.Empty);
@@ -940,7 +1220,8 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         EventArgs e)
     {
-        if (!IsTemporary)
+        if (!IsProtectedAccessAvailable() ||
+            !IsTemporary)
         {
             return;
         }
@@ -954,11 +1235,25 @@ public sealed class WorkspacePresentation : IDisposable
         object? sender,
         DocumentActivatedEventArgs e)
     {
+        ApplicationSecuritySessionSnapshot operationSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+            _disposed)
+        {
+            return;
+        }
+
         try
         {
             if (_documentPresentations.ContainsKey(
                     e.DocumentId))
             {
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+                {
+                    return;
+                }
+
                 ActiveDocumentId = e.DocumentId;
                 return;
             }
@@ -969,11 +1264,21 @@ public sealed class WorkspacePresentation : IDisposable
                 return;
             }
 
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
+
             await OpenDocumentAsync(
                 e.DocumentId);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
+            {
+                return;
+            }
+
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.WorkspacePresentationActivateDocumentFailure,
@@ -1053,6 +1358,72 @@ public sealed class WorkspacePresentation : IDisposable
 
         return GetDocumentPresentation(
             documentId);
+    }
+
+    private void OnApplicationSecuritySessionStateChanged(
+        ApplicationSecuritySessionSnapshot notification)
+    {
+        // Ignore notifications that predate the presentation's owning session.
+        if (notification.Revision < _securitySessionRevision ||
+            (notification.Revision == _securitySessionRevision &&
+             notification.IsProtectedAccessAvailable))
+        {
+            return;
+        }
+
+        try
+        {
+            _view.PostToUi(() =>
+            {
+                if (_disposed ||
+                    IsSessionRevisionCurrent(_securitySessionRevision))
+                {
+                    return;
+                }
+
+                try
+                {
+                    // A workspace presentation is permanently bound to the
+                    // revision that created it. Dispose it on its owning UI
+                    // thread rather than leaving stale tabs or metadata visible.
+                    Dispose();
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(
+                        "Workspace presentation cleanup after session revocation failed. FailureType={FailureType}",
+                        exception.GetType().Name);
+                }
+            });
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                "Workspace presentation could not schedule session-revocation cleanup. FailureType={FailureType}",
+                exception.GetType().Name);
+        }
+    }
+
+    private bool IsProtectedAccessAvailable()
+    {
+        return IsSessionRevisionCurrent(
+            _securitySessionRevision);
+    }
+
+    private bool IsSessionRevisionCurrent(
+        long expectedRevision)
+    {
+        if (_disposed ||
+            expectedRevision != _securitySessionRevision)
+        {
+            return false;
+        }
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            _applicationSecuritySession.CurrentSnapshot;
+
+        return currentSnapshot.IsProtectedAccessAvailable &&
+               currentSnapshot.Revision == _securitySessionRevision;
     }
 
     private void ThrowIfDisposed()

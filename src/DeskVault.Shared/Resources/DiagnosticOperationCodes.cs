@@ -75,6 +75,9 @@ public static class DiagnosticOperationCodes
     public const string DocumentSearchFailure =
         "document-search.failure";
 
+    public const string DocumentSearchCancellationCallbackFailure =
+        "document-search.cancellation-callback-failure";
+
     public const string DocumentSearchLoadMoreFailure =
         "document-search.load-more-failure";
 
@@ -102,6 +105,12 @@ public static class DiagnosticOperationCodes
     public const string DocumentWorkspaceOpenFailure =
         "document-workspace.open.failure";
 
+    public const string DocumentWorkspaceCancellationCallbackFailure =
+        "document-workspace.cancellation-callback.failure";
+
+    public const string DocumentWorkspacePendingStreamCleanupFailure =
+        "document-workspace.pending-stream-cleanup.failure";
+
     public const string DocumentWorkspaceOpenExternallyFailure =
         "document-workspace.open-externally.failure";
 
@@ -128,6 +137,9 @@ public static class DiagnosticOperationCodes
 
     public const string WorkspacePresentationActivateDocumentFailure =
         "workspace-presentation.activate-document";
+
+    public const string WorkspacePresentationCleanupFailure =
+        "workspace-presentation.cleanup-failure";
 
     public const string DocumentArtifactPathNormalizationFailure =
         "document-artifact.path-normalization-failure";
