@@ -176,6 +176,9 @@ The current implementation includes:
 - TXT, Markdown, and CSV in-app rendering
 - an explicit user-controlled fallback for unsupported formats
 - renderer lifecycle and resource ownership boundaries
+- protected presentation invalidation when the application security session withdraws access
+- session-revision checks that prevent stale workspace operations from publishing protected presentation state
+- cleanup of retained document and workspace presentation resources when protected access is withdrawn
 
 The following capabilities remain future or deferred scope:
 
@@ -547,6 +550,18 @@ The workspace should avoid unnecessarily persisting plaintext document content o
 
 Future multi-document AI processing must also preserve the existing security boundaries around document storage and encryption.
 
+## Protected Presentation Lifecycle
+
+The in-app workspace is a protected presentation boundary. Its authorization is governed by the authoritative `IApplicationSecuritySession` contract defined by ADR-0014; the workspace and its presenters must not establish an independent authoritative authentication state.
+
+Before beginning a protected presentation operation, a consumer must observe the current immutable security-session snapshot and require protected access to be available. Asynchronous presentation operations must retain the snapshot revision under which they began and re-check the authoritative current snapshot before publishing results or attaching presentation resources. A delayed or out-of-order notification must not cause an older authorization observation to replace a newer authoritative snapshot.
+
+When the session withdraws protected access, active in-app workspace and document presentations are invalidated. The application shell enters its locked presentation state, pending search and document-open work is invalidated or cancelled, retained workspace/document presentation state is cleared, and owned in-app presentation resources and document streams are disposed through their respective lifecycle owners. Cleanup must attempt all managed presentations and resources even when an individual disposal operation fails; a cleanup failure must not prevent the application from remaining in its locked state.
+
+A completion from an operation started under an earlier session revision must not restore document content, workspace metadata, search results, selection state, or another protected presentation after revocation. Re-authentication permits a new authorized initialization using the current session snapshot; it does not restore a presentation that was invalidated by the earlier lock.
+
+This presentation lifecycle does not revoke document or database encryption keys, change encrypted storage, or replace the external-viewing temporary plaintext artifact lifecycle described above. Those responsibilities remain governed by their existing Application, Infrastructure, and viewer boundaries.
+
 ## Alternatives Considered
 
 ### Continue using the external default application
@@ -615,6 +630,9 @@ The rendering boundary allows document-format support to grow independently.
 - Document rendering can scale through independent renderer implementations.
 - External document launching can be replaced incrementally.
 - The architecture provides a foundation for future search, RAG, and local AI capabilities.
+- Protected workspace content is invalidated when the authoritative application security session withdraws access.
+- Session-revision fencing prevents stale asynchronous presentation work from publishing content after revocation.
+- Workspace and document presentation cleanup is performed independently of workspace membership and persistent document data.
 
 ### Negative
 
@@ -625,6 +643,7 @@ The rendering boundary allows document-format support to grow independently.
 - AI workspace functionality will require additional Application and AI-layer capabilities.
 - Multi-document AI processing will require retrieval and context-management infrastructure.
 - Some document formats may initially require fallback handling through external applications.
+- Protected presentation consumers must observe session snapshots, compare revisions, invalidate stale operations, and coordinate resource cleanup when access is withdrawn.
 
 These trade-offs are acceptable because the decisions align with DeskVault's long-term product direction.
 

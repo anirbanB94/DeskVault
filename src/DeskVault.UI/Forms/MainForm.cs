@@ -1,11 +1,12 @@
 using DeskVault.Application.Documents;
 using DeskVault.Application.Interfaces;
 using DeskVault.Shared.Extensions;
-using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
+using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
+using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using Timer = System.Windows.Forms.Timer;
 
 namespace DeskVault.UI.Forms;
@@ -17,20 +18,27 @@ public partial class MainForm : Form, IMainFormView
     private readonly ILogger<MainForm> _logger;
     private readonly Timer _searchDebounceTimer;
     private readonly List<SearchResultListItem> _searchResults = [];
-
     private bool _isUpdatingDocumentGrid;
     private bool _isUpdatingWorkspaceGrid;
+    private readonly ISessionBoundDialogCoordinator _dialogCoordinator;
 
     public MainForm(
         IApplicationInfoService applicationInfo,
         IMainFormPresenterFactory presenterFactory,
-        ILogger<MainForm> logger)
+        ILogger<MainForm> logger,
+        ISessionBoundDialogCoordinator dialogCoordinator)
     {
+        ArgumentNullException.ThrowIfNull(applicationInfo);
+        ArgumentNullException.ThrowIfNull(presenterFactory);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(dialogCoordinator);
+
         InitializeComponent();
 
         _applicationInfo = applicationInfo;
         _presenter = presenterFactory.Create(this);
         _logger = logger;
+        _dialogCoordinator = dialogCoordinator;
 
         _searchDebounceTimer = new Timer
         {
@@ -315,6 +323,7 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         FormClosedEventArgs e)
     {
+        _presenter.Dispose();
         _searchDebounceTimer.Dispose();
     }
 
@@ -456,6 +465,117 @@ public partial class MainForm : Form, IMainFormView
         loadMoreButton.Visible = enabled;
     }
 
+    public void PostToUi(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        // The form-load initialization reads CurrentSnapshot, so a notification
+        // received before handle creation does not need to be queued here.
+        if (IsDisposed || Disposing || !IsHandleCreated)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            try
+            {
+                BeginInvoke(action);
+            }
+            catch (InvalidOperationException)
+                when (IsDisposed || Disposing || !IsHandleCreated)
+            {
+                // The form is closing or its handle is no longer available.
+            }
+
+            return;
+        }
+
+        action();
+    }
+
+    public void ShowLockedState()
+    {
+        _searchDebounceTimer.Stop();
+
+        searchTextBox.Clear();
+
+        // TextChanged can restart the debounce timer while clearing the input.
+        _searchDebounceTimer.Stop();
+
+        searchFileTypeComboBox.SelectedIndex = 0;
+
+        _isUpdatingDocumentGrid = true;
+
+        try
+        {
+            _searchResults.Clear();
+
+            documentGridView.DataSource = null;
+            documentGridView.Columns.Clear();
+            documentGridView.ClearSelection();
+            documentGridView.Visible = false;
+
+            emptyStateLabel.Visible = true;
+        }
+        finally
+        {
+            _isUpdatingDocumentGrid = false;
+        }
+
+        _isUpdatingWorkspaceGrid = true;
+
+        try
+        {
+            workspaceGridView.DataSource = null;
+            workspaceGridView.Columns.Clear();
+            workspaceGridView.ClearSelection();
+            workspaceGridView.Visible = false;
+
+            workspaceEmptyStateLabel.Visible = true;
+        }
+        finally
+        {
+            _isUpdatingWorkspaceGrid = false;
+        }
+
+        SetDocumentsCount(0);
+        SetWorkspacesCount(0);
+
+        SetImportEnabled(false);
+        SetOpenEnabled(false);
+        SetRemoveEnabled(false);
+        SetReprocessEnabled(false);
+        SetLoadMoreEnabled(false);
+        SetWorkspaceOpenEnabled(false);
+        SetWorkspaceRemoveEnabled(false);
+
+        searchTextBox.Enabled = false;
+        searchFileTypeComboBox.Enabled = false;
+        searchButton.Enabled = false;
+        clearSearchButton.Enabled = false;
+        createWorkspaceButton.Enabled = false;
+
+        SetStatus(UiMessages.LockedSessionStatus);
+    }
+
+    public void ShowAuthenticatedState()
+    {
+        searchTextBox.Enabled = true;
+        searchFileTypeComboBox.Enabled = true;
+        searchButton.Enabled = true;
+        clearSearchButton.Enabled = true;
+        createWorkspaceButton.Enabled = true;
+
+        SetImportEnabled(true);
+        SetOpenEnabled(false);
+        SetRemoveEnabled(false);
+        SetReprocessEnabled(false);
+        SetLoadMoreEnabled(false);
+        SetWorkspaceOpenEnabled(false);
+        SetWorkspaceRemoveEnabled(false);
+    }
+
     public void SetStatus(string message)
     {
         statusLabel.Text = message;
@@ -473,64 +593,91 @@ public partial class MainForm : Form, IMainFormView
 
     public void ShowInformation(
         string message,
-        string title)
+        string title,
+        long expectedSessionRevision = 0)
     {
-        MessageBox.Show(
-            this,
+        ShowSessionBoundMessage(
             message,
             title,
             MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+            MessageBoxIcon.Information,
+            expectedSessionRevision);
     }
 
     public void ShowWarning(
         string message,
-        string title)
+        string title,
+        long expectedSessionRevision = 0)
     {
-        MessageBox.Show(
-            this,
+        ShowSessionBoundMessage(
             message,
             title,
             MessageBoxButtons.OK,
-            MessageBoxIcon.Warning);
+            MessageBoxIcon.Warning,
+            expectedSessionRevision);
     }
 
     public void ShowError(
         string message,
-        string title)
+        string title,
+        long expectedSessionRevision = 0)
     {
-        MessageBox.Show(
-            this,
+        ShowSessionBoundMessage(
             message,
             title,
             MessageBoxButtons.OK,
-            MessageBoxIcon.Error);
+            MessageBoxIcon.Error,
+            expectedSessionRevision);
     }
 
-    public bool ConfirmRemoval(string fileName)
+    public bool ConfirmRemoval(
+        string fileName,
+        long expectedSessionRevision = 0)
     {
-        var result = MessageBox.Show(
-            this,
-            UiMessages.ConfirmRemoveDocument(fileName),
-            UiMessages.RemoveDocumentTitle,
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
+        DialogResult result =
+            ShowSessionBoundMessage(
+                UiMessages.ConfirmRemoveDocument(fileName),
+                UiMessages.RemoveDocumentTitle,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                expectedSessionRevision);
 
         return result == DialogResult.Yes;
     }
 
-    public bool ConfirmWorkspaceRemoval(string workspaceName)
+    public bool ConfirmWorkspaceRemoval(
+        string workspaceName,
+        long expectedSessionRevision = 0)
     {
-        var result = MessageBox.Show(
-            this,
-            UiMessages.ConfirmDeleteWorkspace(workspaceName),
-            UiMessages.DeleteWorkspace,
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
+        DialogResult result =
+            ShowSessionBoundMessage(
+                UiMessages.ConfirmDeleteWorkspace(workspaceName),
+                UiMessages.DeleteWorkspace,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                expectedSessionRevision);
 
         return result == DialogResult.Yes;
+    }
+
+    private DialogResult ShowSessionBoundMessage(
+        string message,
+        string title,
+        MessageBoxButtons buttons,
+        MessageBoxIcon icon,
+        long expectedSessionRevision)
+    {
+        using SessionBoundMessageDialog dialog =
+            new(
+                message,
+                title,
+                buttons,
+                icon);
+
+        return _dialogCoordinator.ShowDialog(
+            dialog,
+            expectedSessionRevision,
+            this);
     }
 
     public void ShowDocuments(

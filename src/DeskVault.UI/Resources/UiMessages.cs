@@ -65,6 +65,15 @@ public static class UiMessages
     public const string View =
         "View";
 
+    public const string OkButtonText =
+        "OK";
+
+    public const string YesButtonText =
+        "Yes";
+
+    public const string NoButtonText =
+        "No";
+
 
     // Document list and import
 
@@ -145,6 +154,9 @@ public static class UiMessages
 
     public const string ReadyStatus =
         "Ready";
+
+    public const string LockedSessionStatus =
+        "DeskVault is locked. Authenticate to access protected content.";
 
     public const string UnableToLoadDocumentsStatus =
         "Unable to load documents.";

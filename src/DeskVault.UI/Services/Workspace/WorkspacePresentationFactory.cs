@@ -1,4 +1,5 @@
 using DeskVault.Application.Documents.Queries.ListDocuments;
+using DeskVault.Application.Interfaces;
 using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
 using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
@@ -22,6 +23,7 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
     private readonly SaveTemporaryWorkspaceHandler _saveTemporaryWorkspaceHandler;
     private readonly UpdateWorkspaceDescriptionHandler _updateWorkspaceDescriptionHandler;
     private readonly IWorkspaceDialogService _dialogService;
+    private readonly IApplicationSecuritySession _applicationSecuritySession;
 
     public WorkspacePresentationFactory(
         IWorkspaceDocumentPresentationFactory documentPresentationFactory,
@@ -31,7 +33,8 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
         RenameWorkspaceHandler renameWorkspaceHandler,
         SaveTemporaryWorkspaceHandler saveTemporaryWorkspaceHandler,
         UpdateWorkspaceDescriptionHandler updateWorkspaceDescriptionHandler,
-        IWorkspaceDialogService dialogService)
+        IWorkspaceDialogService dialogService,
+        IApplicationSecuritySession applicationSecuritySession)
     {
         ArgumentNullException.ThrowIfNull(documentPresentationFactory);
         ArgumentNullException.ThrowIfNull(listDocumentsHandler);
@@ -41,6 +44,7 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
         ArgumentNullException.ThrowIfNull(saveTemporaryWorkspaceHandler);
         ArgumentNullException.ThrowIfNull(updateWorkspaceDescriptionHandler);
         ArgumentNullException.ThrowIfNull(dialogService);
+        ArgumentNullException.ThrowIfNull(applicationSecuritySession);
 
         _documentPresentationFactory = documentPresentationFactory;
         _listDocumentsHandler = listDocumentsHandler;
@@ -50,13 +54,15 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
         _saveTemporaryWorkspaceHandler = saveTemporaryWorkspaceHandler;
         _updateWorkspaceDescriptionHandler = updateWorkspaceDescriptionHandler;
         _dialogService = dialogService;
+        _applicationSecuritySession = applicationSecuritySession;
     }
 
     public WorkspacePresentation Create(
         Guid workspaceId,
         WorkspaceType workspaceType,
         string? workspaceName,
-        string? description)
+        string? description,
+        long securitySessionRevision)
     {
         IWorkspacePresentationView view =
             new WorkspaceViewForm();
@@ -75,6 +81,8 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
             _updateWorkspaceDescriptionHandler,
             _dialogService,
             view,
-            NullLogger<WorkspacePresentation>.Instance);
+            NullLogger<WorkspacePresentation>.Instance,
+            _applicationSecuritySession,
+            securitySessionRevision);
     }
 }

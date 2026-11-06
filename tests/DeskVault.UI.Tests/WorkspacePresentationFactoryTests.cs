@@ -1,5 +1,6 @@
 using DeskVault.Application.Documents.Queries.ListDocuments;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
 using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
@@ -23,12 +24,13 @@ public sealed class WorkspacePresentationFactoryTests
         WorkspacePresentationFactory factory =
             CreateFactory();
 
-        WorkspacePresentation presentation =
+        using WorkspacePresentation presentation =
             factory.Create(
                 workspaceId,
                 WorkspaceType.Persistent,
                 "Workspace",
-                "Description");
+                "Description",
+                0);
 
         Assert.Equal(
             workspaceId,
@@ -58,12 +60,13 @@ public sealed class WorkspacePresentationFactoryTests
         WorkspacePresentationFactory factory =
             CreateFactory();
 
-        WorkspacePresentation presentation =
+        using WorkspacePresentation presentation =
             factory.Create(
                 workspaceId,
                 WorkspaceType.Temporary,
                 null,
-                null);
+                null,
+                0);
 
         Assert.Equal(
             workspaceId,
@@ -89,12 +92,13 @@ public sealed class WorkspacePresentationFactoryTests
         WorkspacePresentationFactory factory =
             CreateFactory();
 
-        WorkspacePresentation presentation =
+        using WorkspacePresentation presentation =
             factory.Create(
                 Guid.NewGuid(),
                 WorkspaceType.Persistent,
                 "Workspace",
-                null);
+                null,
+                0);
 
         Assert.Equal(
             "Workspace",
@@ -102,6 +106,34 @@ public sealed class WorkspacePresentationFactoryTests
 
         Assert.Null(
             presentation.WorkspaceDescription);
+    }
+
+    [Fact]
+    public void Create_UsesTheSessionRevisionSuppliedByTheCaller()
+    {
+        const long sessionSnapshotRevision = 41;
+        const long expectedPresentationRevision = 42;
+
+        IApplicationSecuritySession applicationSecuritySession =
+            CreateAuthenticatedApplicationSecuritySession(
+                sessionSnapshotRevision);
+
+        WorkspacePresentationFactory factory =
+            CreateFactory(applicationSecuritySession);
+
+        // Isolate factory pass-through: manager tests verify that the supplied
+        // revision matches the authoritative session snapshot before creation.
+        using WorkspacePresentation presentation =
+            factory.Create(
+                Guid.NewGuid(),
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                expectedPresentationRevision);
+
+        Assert.Equal(
+            expectedPresentationRevision,
+            presentation.SecuritySessionRevision);
     }
 
     [Fact]
@@ -116,7 +148,8 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
-                new Mock<IWorkspaceDialogService>().Object));
+                new Mock<IWorkspaceDialogService>().Object,
+                CreateAuthenticatedApplicationSecuritySession()));
     }
 
     [Fact]
@@ -131,7 +164,8 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
-                new Mock<IWorkspaceDialogService>().Object));
+                new Mock<IWorkspaceDialogService>().Object,
+                CreateAuthenticatedApplicationSecuritySession()));
     }
 
     [Fact]
@@ -146,7 +180,8 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
-                new Mock<IWorkspaceDialogService>().Object));
+                new Mock<IWorkspaceDialogService>().Object,
+                CreateAuthenticatedApplicationSecuritySession()));
     }
 
     [Fact]
@@ -161,7 +196,8 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
-                new Mock<IWorkspaceDialogService>().Object));
+                new Mock<IWorkspaceDialogService>().Object,
+                CreateAuthenticatedApplicationSecuritySession()));
     }
 
     [Fact]
@@ -176,7 +212,8 @@ public sealed class WorkspacePresentationFactoryTests
                 null!,
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
-                new Mock<IWorkspaceDialogService>().Object));
+                new Mock<IWorkspaceDialogService>().Object,
+                CreateAuthenticatedApplicationSecuritySession()));
     }
 
     [Fact]
@@ -191,7 +228,8 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 null!,
                 CreateUpdateWorkspaceDescriptionHandler(),
-                new Mock<IWorkspaceDialogService>().Object));
+                new Mock<IWorkspaceDialogService>().Object,
+                CreateAuthenticatedApplicationSecuritySession()));
     }
 
     [Fact]
@@ -206,7 +244,8 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 null!,
-                new Mock<IWorkspaceDialogService>().Object));
+                new Mock<IWorkspaceDialogService>().Object,
+                CreateAuthenticatedApplicationSecuritySession()));
     }
 
     [Fact]
@@ -221,10 +260,28 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
+                null!,
+                CreateAuthenticatedApplicationSecuritySession()));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsWhenApplicationSecuritySessionIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => new WorkspacePresentationFactory(
+                new Mock<IWorkspaceDocumentPresentationFactory>().Object,
+                CreateListDocumentsHandler(),
+                CreateAddDocumentToWorkspaceHandler(),
+                CreateRemoveDocumentFromWorkspaceHandler(),
+                CreateRenameWorkspaceHandler(),
+                CreateSaveTemporaryWorkspaceHandler(),
+                CreateUpdateWorkspaceDescriptionHandler(),
+                new Mock<IWorkspaceDialogService>().Object,
                 null!));
     }
 
-    private static WorkspacePresentationFactory CreateFactory()
+    private static WorkspacePresentationFactory CreateFactory(
+        IApplicationSecuritySession? applicationSecuritySession = null)
     {
         return new WorkspacePresentationFactory(
             new Mock<IWorkspaceDocumentPresentationFactory>().Object,
@@ -234,7 +291,25 @@ public sealed class WorkspacePresentationFactoryTests
             CreateRenameWorkspaceHandler(),
             CreateSaveTemporaryWorkspaceHandler(),
             CreateUpdateWorkspaceDescriptionHandler(),
-            new Mock<IWorkspaceDialogService>().Object);
+            new Mock<IWorkspaceDialogService>().Object,
+            applicationSecuritySession ??
+                CreateAuthenticatedApplicationSecuritySession());
+    }
+
+    private static IApplicationSecuritySession CreateAuthenticatedApplicationSecuritySession(
+        long revision = 0)
+    {
+        var applicationSecuritySession =
+            new Mock<IApplicationSecuritySession>();
+
+        applicationSecuritySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    revision));
+
+        return applicationSecuritySession.Object;
     }
 
     private static ListDocumentsHandler CreateListDocumentsHandler()
@@ -245,8 +320,7 @@ public sealed class WorkspacePresentationFactoryTests
         repository
             .Setup(x => x.GetAllAsync(
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                []);
+            .ReturnsAsync([]);
 
         return new ListDocumentsHandler(
             repository.Object,

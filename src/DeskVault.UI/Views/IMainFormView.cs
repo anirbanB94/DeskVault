@@ -66,21 +66,26 @@ public interface IMainFormView
 
     void ShowInformation(
         string message,
-        string title);
+        string title,
+        long expectedSessionRevision = 0);
 
     void ShowWarning(
         string message,
-        string title);
+        string title,
+        long expectedSessionRevision = 0);
 
     bool ConfirmRemoval(
-        string fileName);
+        string fileName,
+        long expectedSessionRevision = 0);
 
     bool ConfirmWorkspaceRemoval(
-        string workspaceName);
+        string workspaceName,
+        long expectedSessionRevision = 0);
 
     void ShowError(
         string message,
-        string title);
+        string title,
+        long expectedSessionRevision = 0);
 
     void ShowDocuments(
         IReadOnlyList<DocumentListItem> documents);
@@ -93,6 +98,12 @@ public interface IMainFormView
 
     void ShowWorkspaces(
         IReadOnlyList<WorkspaceListItem> workspaces);
+
+    void PostToUi(Action action);
+
+    void ShowLockedState();
+
+    void ShowAuthenticatedState();
 
     void ShowEmptyState();
 }

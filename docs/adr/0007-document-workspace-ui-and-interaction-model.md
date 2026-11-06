@@ -574,6 +574,7 @@ The Markdown renderer remains an implementation detail behind
 `IDocumentContentRenderer`. These security controls do not move WebView2
 into the workspace presenter or view contract and do not change the
 renderer-owned resource lifecycle.
+
 ### Markdown Renderer Lifecycle and Ownership
 
 The Markdown renderer owns the WebView2 control it creates for document presentation, while the workspace remains responsible for the host control and overall workspace lifecycle.
@@ -789,6 +790,163 @@ added again.
 
 Removing a document from a persistent workspace is therefore distinct from
 deleting the underlying document.
+
+## Protected In-App Presentation During Locked Sessions
+
+An authenticated application security session is required to present protected
+document content and session-bound workspace information inside the
+application. Workspace and document presentations consume the authoritative
+Application-owned `IApplicationSecuritySession` contract; they do not
+establish an independent authorization state and must not infer authorization
+from an open form, retained presentation, previously rendered content, or
+cached metadata.
+
+The authoritative authorization observation is
+`IApplicationSecuritySession.CurrentSnapshot`. The immutable
+`ApplicationSecuritySessionSnapshot` includes the session state and revision.
+Presentation operations that can retain, create, or publish protected
+workspace content are bound to the revision under which they begin.
+
+Session-state notifications are delivered synchronously by the Application
+session notification mechanism, but a notification may already be older than
+the current authoritative snapshot by the time a UI consumer processes it.
+UI consumers therefore marshal presentation changes to the UI thread and
+re-read the authoritative current snapshot before applying a notification.
+The notification payload alone is not sufficient authority to apply a
+locked or authenticated presentation state.
+
+For a protected document or workspace operation, the presentation consumer
+must verify that protected access remains available and that the authoritative
+current snapshot still has the same revision captured when the operation
+started. This check applies to synchronous presentation entry points and to
+asynchronous operations after every awaited boundary that precedes publishing
+protected state. An operation from an older revision must not create or
+attach a document presentation, activate a document or workspace, publish
+workspace metadata or document content, restore prior view state, show a
+success result based on stale protected data, or re-enable controls for a
+revoked or superseded session.
+
+The main application shell and workspace presentation have coordinated but
+distinct responsibilities:
+
+- `MainFormPresenter` observes the authoritative application security
+  session, immediately invalidates pending search operations, clears
+  retained search state, and marshals the latest authoritative snapshot to
+  the main view.
+- The main application view enters its locked presentation state when the
+  current authoritative session is not authenticated.
+- The workspace presentation manager owns all application-managed temporary
+  and persistent workspace presentations and closes the managed
+  presentations when protected access is withdrawn.
+- Each workspace presentation clears its workspace identity, document
+  membership presentation, navigation state and document presentations.
+- Each document workspace presenter invalidates in-flight open operations,
+  clears the document view, and releases its owned active and pending
+  document streams.
+
+Locking is an in-memory presentation invalidation boundary. It does not
+delete canonical documents, delete persistent workspaces, or remove
+persisted workspace membership. Those durable objects continue to be owned
+by their existing Application and persistence workflows.
+
+After a successful re-authentication, the application does not restore the
+previous in-memory workspace or document presentation. Main application
+metadata and workspace metadata are loaded again through the existing
+Application query boundaries. A fresh workspace/document presentation is
+created only under the newly authenticated session revision. Persistent
+workspace membership may therefore be presented again from authoritative
+repository data without reusing the disposed presentation objects.
+
+The document renderer remains responsible for its renderer-owned resources,
+and the workspace/document presentation lifecycle remains responsible for
+its own views and streams. A renderer must not become a new authorization
+authority. The renderer is invoked only through a document presentation
+operation that has passed the workspace/document authorization checks.
+
+Disposal is a best-effort cleanup operation. Cancellation callback failures
+must not prevent the document presenter from attempting to clear its view and
+dispose active and pending streams. A failure while disposing one document
+presentation must not prevent the workspace presentation from attempting
+cleanup of its remaining document presentations and its workspace view. A
+failure while disposing one workspace must not prevent the workspace
+presentation manager from attempting cleanup of the remaining managed
+workspaces and clearing its registry.
+
+Cleanup failures are safely logged at the application security-session
+presentation boundary so that a workspace-disposal exception does not prevent
+the main application from remaining locked. Disposal code may surface the
+first failure after attempting the remaining cleanup operations; the
+security-session consumer contains and records that failure rather than
+allowing it to interrupt lock-state application.
+
+These rules define the in-app presentation lifecycle only. They do not
+redesign the Application security-session state machine, encryption/key
+lifecycle, document persistence, or external-viewing lifecycle. In particular,
+this ADR does not claim that a lock can revoke plaintext or temporary
+artifacts already handed to an external application, nor does it claim
+cryptographic zeroization of all copies of content that may have existed in
+process memory. The implementation minimizes retained in-app presentation
+state and disposes resources it owns within the established ownership
+boundaries.
+
+### Session-Bound Modal Dialogs
+
+Information, warning, error, and confirmation dialogs are protected
+in-app presentation surfaces. Their lifetime must not extend beyond
+the authenticated session revision that authorized their display.
+
+The presenter requesting a dialog supplies the exact
+`ApplicationSecuritySessionSnapshot.Revision` captured by the operation
+that initiated the request. The dialog must not acquire a new session
+revision at display time, because doing so could associate a result
+from an earlier operation with a later authenticated session.
+
+The UI delegates modal dialog lifetime to
+`ISessionBoundDialogCoordinator`, implemented by
+`SessionBoundDialogCoordinator`. The coordinator is registered as a
+singleton in the UI composition root and owns the lifetime of active
+session-bound modal forms.
+
+Before displaying a dialog, the coordinator verifies that:
+
+- the authoritative current snapshot permits protected access; and
+- the current snapshot revision exactly matches the revision supplied
+  by the requesting operation.
+
+The coordinator registers active dialogs and subscribes to
+`IApplicationSecuritySession.StateChanged` while at least one
+session-bound dialog is active. It re-reads the authoritative
+`CurrentSnapshot` when processing notifications because a notification
+may already be older than the current session state when delivered.
+
+A dialog is invalidated when protected access is withdrawn or the
+authoritative session revision differs from the revision that authorized
+the dialog. Any newer revision invalidates the dialog, including a
+newer authenticated revision. Re-authentication must not revive an
+existing dialog or preserve an earlier confirmation request.
+
+Invalidated dialogs are closed on the coordinator's owning WinForms UI
+thread. Multiple active or nested dialogs are tracked and closed during
+revocation cleanup. The coordinator assigns `DialogResult.Cancel` when
+requesting closure and returns `Cancel` when the dialog's owning
+revision is no longer current.
+
+The coordinator also revalidates the registration after the modal
+dialog loop returns. Consequently, an affirmative result that races
+with a lock or newer session transition is converted to a non-affirmative
+result and cannot authorize the operation that requested the dialog.
+
+The in-app message form supports the required OK and Yes/No interaction
+patterns. Confirmation defaults to the non-affirmative choice. The
+calling presenter remains responsible for revalidating its captured
+session revision after a confirmation returns and before continuing
+with the protected operation.
+
+The dialog coordinator is a presentation-lifecycle component only.
+It does not authenticate users, own authorization state, or replace
+the authoritative Application security-session contract. It does not
+change the Application, Infrastructure, encryption/key-management,
+document persistence, or external-viewing lifecycle boundaries.
 
 ## Primary Document Removal
 
@@ -1153,6 +1311,12 @@ The architecture will support multiple workspaces, but the first implementation 
 - Markdown security/resource policy remains inside the renderer boundary.
 - Rendering and future extraction/AI processing remain separate concerns.
 - The current implementation remains intentionally scoped.
+- Protected in-app document and workspace presentations are bound to the authoritative application security-session state and revision.
+- Locking invalidates pending presentation operations and removes retained in-app protected presentation state.
+- Stale asynchronous results cannot republish document or workspace content after their authorization revision is superseded.
+- Re-authentication creates fresh presentation state from authoritative repositories rather than restoring prior in-memory presentations.
+- Persistent document and workspace data remain separate from the in-memory presentation cleanup lifecycle.
+- Presentation and manager disposal attempt remaining cleanup operations when an individual resource disposal fails.
 
 ### Negative
 
@@ -1167,6 +1331,9 @@ The architecture will support multiple workspaces, but the first implementation 
 - Markdown rendering requires an explicit security policy for HTML, links, and remote resources.
 - Structured document representations add parsing and testing complexity before rendering.
 - Bounded previews require explicit signaling so the UI does not mistake a partial representation for a complete document.
+- Session-revision checks add lifecycle coordination to asynchronous presentation operations.
+- Lock-time teardown requires coordinated cleanup across the main application view, workspace presentations, document presentations, and their owned streams.
+- Best-effort disposal must preserve failure diagnostics while ensuring that one cleanup failure does not prevent attempts to release other owned resources.
 
 These trade-offs are acceptable because they establish a scalable foundation while keeping the first implementation focused.
 

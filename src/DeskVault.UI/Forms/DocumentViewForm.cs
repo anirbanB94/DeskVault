@@ -1,5 +1,6 @@
 using DeskVault.UI.Rendering;
 using DeskVault.UI.Resources;
+using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
 
 namespace DeskVault.UI.Forms;
@@ -9,13 +10,27 @@ public partial class DocumentViewForm :
     IDocumentWorkspaceView
 {
     private readonly IDocumentContentRendererResolver _rendererResolver;
+    private long _presentationOperationVersion;
+    private readonly int _uiThreadId;
+    private readonly SynchronizationContext _uiSynchronizationContext;
+    private readonly ISessionBoundDialogCoordinator _dialogCoordinator;
 
     public DocumentViewForm(
-        IDocumentContentRendererResolver rendererResolver)
+        IDocumentContentRendererResolver rendererResolver,
+        ISessionBoundDialogCoordinator dialogCoordinator)
     {
+        ArgumentNullException.ThrowIfNull(rendererResolver);
+        ArgumentNullException.ThrowIfNull(dialogCoordinator);
+
+        _uiThreadId = Environment.CurrentManagedThreadId;
+        _uiSynchronizationContext =
+            SynchronizationContext.Current ??
+            new WindowsFormsSynchronizationContext();
+
         InitializeComponent();
 
         _rendererResolver = rendererResolver;
+        _dialogCoordinator = dialogCoordinator;
 
         Text = UiMessages.DocumentWorkspaceTitle;
         StartPosition = FormStartPosition.CenterParent;
@@ -35,26 +50,77 @@ public partial class DocumentViewForm :
         string fileName,
         CancellationToken cancellationToken = default)
     {
-        documentTitleLabel.Text = fileName;
-        documentMetadataLabel.Text =
-            UiMessages.DocumentWorkspaceMetadata;
+        long presentationVersion =
+            Interlocked.Increment(
+                ref _presentationOperationVersion);
 
-        unsupportedPreviewPanel.Visible = false;
-        documentContentPanel.Visible = true;
-        documentContentPanel.BringToFront();
+        Panel? renderHost = null;
+        bool presentationCommitted = false;
 
-        IDocumentContentRenderer renderer =
-            _rendererResolver.Resolve(fileName);
+        try
+        {
+            DocumentContentHost.Clear(
+                documentContentPanel);
 
-        await renderer.RenderAsync(
-            documentContentPanel,
-            documentStream,
-            fileName,
-            cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
 
-        Show();
-        BringToFront();
-        Activate();
+            documentTitleLabel.Text = fileName;
+
+            documentMetadataLabel.Text =
+                UiMessages.DocumentWorkspaceMetadata;
+
+            unsupportedPreviewPanel.Visible = false;
+            documentContentPanel.Visible = true;
+            documentContentPanel.BringToFront();
+
+            IDocumentContentRenderer renderer =
+                _rendererResolver.Resolve(fileName);
+
+            renderHost = new Panel
+            {
+                Dock = DockStyle.Fill
+            };
+
+            documentContentPanel.Controls.Add(renderHost);
+
+            await renderer.RenderAsync(
+                renderHost,
+                documentStream,
+                fileName,
+                cancellationToken);
+
+            if (cancellationToken.IsCancellationRequested ||
+                presentationVersion !=
+                    Volatile.Read(ref _presentationOperationVersion))
+            {
+                throw new OperationCanceledException(
+                    "The document presentation operation was invalidated.",
+                    cancellationToken);
+            }
+
+            presentationCommitted = true;
+
+            Show();
+            BringToFront();
+            Activate();
+        }
+        catch (OperationCanceledException)
+        {
+            if (presentationVersion ==
+                Volatile.Read(ref _presentationOperationVersion))
+            {
+                ClearPresentationCore();
+            }
+
+            throw;
+        }
+        finally
+        {
+            if (!presentationCommitted)
+            {
+                renderHost?.Dispose();
+            }
+        }
     }
 
     public void ShowDocumentInformation(
@@ -63,33 +129,58 @@ public partial class DocumentViewForm :
         string fileType,
         DateTime importedAt,
         string status,
-        string sha256Hash)
+        string sha256Hash,
+        long expectedSessionRevision = 0)
     {
-        MessageBox.Show(
-            this,
+        string message =
             $"{UiMessages.DisplayNameLabel} {displayName}{Environment.NewLine}" +
             $"{UiMessages.DocumentFileNameLabel} {fileName}{Environment.NewLine}" +
             $"{UiMessages.DocumentFileTypeLabel} {fileType}{Environment.NewLine}" +
             $"{UiMessages.ImportedAtLabel} {importedAt.ToLocalTime():g}{Environment.NewLine}" +
             $"{UiMessages.StatusLabel} {status}{Environment.NewLine}" +
-            $"{UiMessages.Sha256Label} {sha256Hash}",
+            $"{UiMessages.Sha256Label} {sha256Hash}";
+
+        ShowSessionBoundMessage(
+            message,
             UiMessages.DocumentInformation,
             MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+            MessageBoxIcon.Information,
+            expectedSessionRevision);
     }
 
     public bool ConfirmRemoval(
-        string fileName)
+        string fileName,
+        long expectedSessionRevision = 0)
     {
-        var result = MessageBox.Show(
-            this,
-            UiMessages.ConfirmRemoveDocument(fileName),
-            UiMessages.RemoveDocumentTitle,
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
+        DialogResult result =
+            ShowSessionBoundMessage(
+                UiMessages.ConfirmRemoveDocument(fileName),
+                UiMessages.RemoveDocumentTitle,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                expectedSessionRevision);
 
         return result == DialogResult.Yes;
+    }
+
+    private DialogResult ShowSessionBoundMessage(
+        string message,
+        string title,
+        MessageBoxButtons buttons,
+        MessageBoxIcon icon,
+        long expectedSessionRevision)
+    {
+        using SessionBoundMessageDialog dialog =
+            new(
+                message,
+                title,
+                buttons,
+                icon);
+
+        return _dialogCoordinator.ShowDialog(
+            dialog,
+            expectedSessionRevision,
+            this);
     }
 
     public void ShowUnsupportedPreview(
@@ -107,6 +198,80 @@ public partial class DocumentViewForm :
         Activate();
     }
 
+    public void PostToUi(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        if (Environment.CurrentManagedThreadId == _uiThreadId)
+        {
+            action();
+            return;
+        }
+
+        if (IsHandleCreated)
+        {
+            try
+            {
+                BeginInvoke(action);
+                return;
+            }
+            catch (InvalidOperationException) when (IsDisposed || Disposing)
+            {
+                return;
+            }
+            catch (InvalidOperationException) when (!IsHandleCreated)
+            {
+                // Fall back to the synchronization context captured by this form.
+            }
+        }
+
+        _uiSynchronizationContext.Post(
+            _ =>
+            {
+                if (!IsDisposed && !Disposing)
+                {
+                    action();
+                }
+            },
+            null);
+    }
+
+    public void ClearPresentation()
+    {
+        Interlocked.Increment(
+            ref _presentationOperationVersion);
+
+        ClearPresentationCore();
+    }
+
+    private void ClearPresentationCore()
+    {
+        workspaceContextMenu.Close(
+            ToolStripDropDownCloseReason.CloseCalled);
+
+        DocumentContentHost.Clear(
+            documentContentPanel);
+
+        documentTitleLabel.Text =
+            string.Empty;
+
+        documentMetadataLabel.Text =
+            string.Empty;
+
+        unsupportedDocumentPreviewMessageLabel.Text =
+            string.Empty;
+
+        documentContentPanel.Visible = true;
+        unsupportedPreviewPanel.Visible = false;
+
+        Hide();
+    }
+
     public void ActivateWorkspace()
     {
         Show();
@@ -121,14 +286,15 @@ public partial class DocumentViewForm :
 
     public void ShowError(
         string message,
-        string title)
+        string title,
+        long expectedSessionRevision = 0)
     {
-        MessageBox.Show(
-            this,
+        ShowSessionBoundMessage(
             message,
             title,
             MessageBoxButtons.OK,
-            MessageBoxIcon.Error);
+            MessageBoxIcon.Error,
+            expectedSessionRevision);
     }
 
     protected override void OnParentChanged(

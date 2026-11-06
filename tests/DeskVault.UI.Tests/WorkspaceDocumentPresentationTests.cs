@@ -3,6 +3,7 @@ using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
@@ -120,6 +121,9 @@ public sealed class WorkspaceDocumentPresentationTests
 
         Assert.Throws<ObjectDisposedException>(
             () => presentation.Activate());
+
+        Assert.True(view.IsPresentationCleared);
+        Assert.True(view.IsDisposed);
     }
 
     [Fact]
@@ -180,6 +184,8 @@ public sealed class WorkspaceDocumentPresentationTests
         IDocumentWorkspaceView,
         IDisposable
     {
+        public bool IsPresentationCleared { get; private set; }
+
         public event EventHandler OpenExternallyRequested
         {
             add { }
@@ -224,13 +230,21 @@ public sealed class WorkspaceDocumentPresentationTests
             string fileType,
             DateTime importedAt,
             string status,
-            string sha256Hash)
+            string sha256Hash,
+            long expectedSessionRevision = 0)
         {
         }
 
-        public bool ConfirmRemoval(string fileName)
+        public bool ConfirmRemoval(
+            string fileName,
+            long expectedSessionRevision = 0)
         {
             return false;
+        }
+
+        public void ClearPresentation()
+        {
+            IsPresentationCleared = true;
         }
 
         public void ActivateWorkspace()
@@ -243,8 +257,15 @@ public sealed class WorkspaceDocumentPresentationTests
 
         public void ShowError(
             string message,
-            string title)
+            string title,
+            long expectedSessionRevision = 0)
         {
+        }
+
+        public void PostToUi(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            action();
         }
 
         public void Dispose()
@@ -286,7 +307,23 @@ public sealed class WorkspaceDocumentPresentationTests
             getDocumentHandler,
             openDocumentHandler,
             removeDocumentHandler,
-            NullLogger<DocumentWorkspacePresenter>.Instance);
+            NullLogger<DocumentWorkspacePresenter>.Instance,
+            CreateAuthenticatedApplicationSecuritySession());
+    }
+
+    private static IApplicationSecuritySession CreateAuthenticatedApplicationSecuritySession()
+    {
+        var applicationSecuritySession =
+            new Mock<IApplicationSecuritySession>();
+
+        applicationSecuritySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    0));
+
+        return applicationSecuritySession.Object;
     }
 
     private static DocumentWorkspacePresenter CreatePresenter(
@@ -324,6 +361,7 @@ public sealed class WorkspaceDocumentPresentationTests
             getDocumentHandler,
             openDocumentHandler,
             removeDocumentHandler,
-            NullLogger<DocumentWorkspacePresenter>.Instance);
+            NullLogger<DocumentWorkspacePresenter>.Instance,
+            CreateAuthenticatedApplicationSecuritySession());
     }
 }

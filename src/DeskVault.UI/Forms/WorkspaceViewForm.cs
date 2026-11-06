@@ -14,9 +14,16 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
     private bool _synchronizingNavigationMode;
     private bool _isTemporaryPresentation;
     private Guid? _sidebarDocumentId;
+    private readonly int _uiThreadId;
+    private readonly SynchronizationContext _uiSynchronizationContext;
 
     public WorkspaceViewForm()
     {
+        _uiThreadId = Environment.CurrentManagedThreadId;
+        _uiSynchronizationContext =
+            SynchronizationContext.Current ??
+            new WindowsFormsSynchronizationContext();
+
         InitializeComponent();
 
         Text = UiMessages.DeskVaultWorkspaceTitle;
@@ -151,6 +158,119 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
         }
 
         UpdateEmptyStateVisibility();
+    }
+
+
+    public void PostToUi(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        if (Environment.CurrentManagedThreadId == _uiThreadId)
+        {
+            action();
+            return;
+        }
+
+        if (IsHandleCreated)
+        {
+            try
+            {
+                BeginInvoke(action);
+                return;
+            }
+            catch (InvalidOperationException) when (IsDisposed || Disposing)
+            {
+                return;
+            }
+            catch (InvalidOperationException) when (!IsHandleCreated)
+            {
+                // Fall back to the synchronization context captured by this form.
+            }
+        }
+
+        _uiSynchronizationContext.Post(
+            _ =>
+            {
+                if (!IsDisposed && !Disposing)
+                {
+                    action();
+                }
+            },
+            null);
+    }
+
+    public void ClearPresentation()
+    {
+        _synchronizingDocumentSelection = true;
+        _synchronizingNavigationMode = true;
+
+        try
+        {
+            workspaceContextMenu.Close(
+                ToolStripDropDownCloseReason.CloseCalled);
+
+            documentListBox.Items.Clear();
+
+            TabPage[] tabPages =
+                documentTabControl.TabPages
+                    .Cast<TabPage>()
+                    .ToArray();
+
+            documentTabControl.TabPages.Clear();
+
+            foreach (TabPage tabPage in tabPages)
+            {
+                tabPage.Dispose();
+            }
+
+            foreach (Control control in
+                     documentSidebarContentPanel.Controls
+                         .Cast<Control>()
+                         .ToArray())
+            {
+                documentSidebarContentPanel.Controls.Remove(
+                    control);
+
+                control.Dispose();
+            }
+
+            _documentTabs.Clear();
+            _sidebarDocumentId = null;
+
+            workspaceTitleLabel.Text =
+                UiMessages.Workspace;
+
+            workspaceMetadataLabel.Text =
+                string.Empty;
+
+            backButton.Text =
+                UiMessages.BackToWorkspaces;
+
+            _isTemporaryPresentation = false;
+
+            aiConversationTextBox.Clear();
+            aiInputTextBox.Clear();
+
+            aiPanel.Visible = false;
+            aiButton.Text = UiMessages.AiButton;
+
+            ConfigurePersistentPresentationMenu();
+
+            tabsNavigationButton.Visible = true;
+            sidebarNavigationButton.Visible = true;
+
+            ApplyTabsNavigationMode();
+        }
+        finally
+        {
+            _synchronizingNavigationMode = false;
+            _synchronizingDocumentSelection = false;
+        }
     }
 
     public void AddDocumentPresentation(

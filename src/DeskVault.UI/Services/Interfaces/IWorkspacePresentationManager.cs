@@ -14,11 +14,14 @@ public interface IWorkspacePresentationManager
         Guid workspaceId,
         WorkspaceType workspaceType,
         string? workspaceName,
-        string? description);
+        string? description,
+        long expectedSessionRevision);
 
     bool Contains(Guid workspaceId);
 
     bool Activate(Guid workspaceId);
 
     bool Close(Guid workspaceId);
+
+    void CloseAll();
 }

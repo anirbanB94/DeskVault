@@ -47,11 +47,16 @@ public sealed class WorkspaceDocumentPresentation : IDisposable
 
         _disposed = true;
 
-        Presenter.Dispose();
-
-        if (_view is IDisposable disposableView)
+        try
         {
-            disposableView.Dispose();
+            Presenter.Dispose();
+        }
+        finally
+        {
+            if (_view is IDisposable disposableView)
+            {
+                disposableView.Dispose();
+            }
         }
     }
 

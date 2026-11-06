@@ -2,7 +2,7 @@ using DeskVault.UI.Services.Workspace;
 
 namespace DeskVault.UI.Views;
 
-public interface IWorkspacePresentationView
+public interface IWorkspacePresentationView : IDisposable
 {
     event EventHandler<DocumentActivatedEventArgs> DocumentActivated;
 
@@ -49,6 +49,10 @@ public interface IWorkspacePresentationView
         WorkspacePresentationNavigationMode navigationMode);
 
     void ActivateWorkspace();
+
+    void ClearPresentation();
+
+    void PostToUi(Action action);
 
     void CloseWorkspace();
 }

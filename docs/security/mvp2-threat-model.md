@@ -5,7 +5,7 @@
 | Property | Value |
 |---|---|
 | Document | MVP2 Security Threat Model and Integrated Control Evidence |
-| Status | Integrated assessment completed and merged; control-specific evidence limitations and open follow-ups remain explicit in Sections 10, 11, 14 and E-27/E-28. |
+| Status | Integrated #235 assessment completed and merged; control-specific evidence limitations and open follow-ups remain explicit in Sections 10, 11, 14 and E-27/E-28. Subsequent #189 and #320 task-local evidence is recorded separately in E-29 and E-30. |
 | Baseline Technical Task | #230 — Establish MVP2 threat model and security control baseline |
 | Integrated verification task | #235 — Validate MVP2 security controls against the threat model |
 | Parent PBI | #221 — Strengthen DeskVault Security Against Common Threats |
@@ -22,9 +22,10 @@
 | Completed implementation PRs | #325, #326, #327, #328, #329 and #330 are merged; their Build and Test workflows succeeded. |
 | Integrated verification PR | #341 is merged; its five reported PR checks passed (E-28). |
 | Integrated verification owner | #235 |
+| Supplementary task-local implementation evidence | #189 strict document/database key retrieval (E-29); #320 in-app presentation protection (E-30). These records do not replace or extend the #235 integrated assessment. |
 | Intended audience | Product engineering, architecture, security review, and portfolio reviewers |
 
-This document is the authoritative MVP2 threat model and cross-cutting security control baseline for DeskVault. E-01 through E-19 retain historical source observations; E-20 through E-26 retain task-level implementation evidence; E-27 records the distinct integrated assessment for #235.
+This document is the authoritative MVP2 threat model and cross-cutting security control baseline for DeskVault. E-01 through E-19 retain historical source observations; E-20 through E-26 retain task-level implementation evidence; E-27 records the distinct integrated assessment for #235; E-28 records its post-merge verification; E-29 and E-30 record subsequent task-local evidence for #189 and #320 respectively.
 
 It documents the supported security model, sensitive assets, trust boundaries, attacker assumptions, threat scenarios, risk-prioritization decisions, implementation ownership, executed validation evidence, unresolved gaps, and residual-risk disposition.
 
@@ -37,6 +38,8 @@ It is an engineering threat model and evidence assessment, not a penetration-tes
 DeskVault is a local-first knowledge platform for storing, processing, searching, and viewing sensitive documents. The MVP2 security baseline now has completed implementation changes for configuration composition and secret handling, sensitive-data-safe diagnostics, parser resource boundaries, ordinary document reads and reconciliation, filesystem/SQLite auxiliary-artifact protection, and untrusted Markdown rendering. Their implementation pull requests #325 through #330 are merged.
 
 The integrated local verification for #235 succeeded: the full solution build completed, and the full solution test suite passed **1,552 tests, 0 failed, 0 skipped**. Each of the five test projects also passed its complete suite; the exact counts, focused security selections, runtime observations, and merged-PR CI evidence are preserved in E-27. These results are not added to or substituted for the historical task-level counts in E-20 through E-26.
+
+Subsequent application-session security work under parent PBI #185 is recorded as supplementary task-local evidence. E-29 documents #189 session-authorized strict document/database key retrieval. E-30 documents #320 protection of retained in-app presentation state during session locking and session-revision changes. These results are separate from the historical #235 execution and do not constitute integrated PR/CI evidence for #185. Integrated locked-session boundary verification remains assigned to #192.
 
 The integrated assessment does not declare every control fully verified. The control register in Section 11 is authoritative for each control's separate implementation, verification, and residual-risk status. In particular:
 
@@ -85,7 +88,7 @@ The following remain under their existing product or Technical Task ownership:
 
 | Item | Existing owner |
 |---|---|
-| Application access, active-session locking, and session-authorized strict document/database key retrieval | #185 (implementation: #189; integrated locked-session boundary verification: #192) |
+| Application access, authentication, active-session locking, strict document/database key retrieval, and in-app presentation protection | #185 (session contract: #186; authentication integration: #187; lock/unlock lifecycle: #188; strict key retrieval: #189; automatic lock: #190; workstation transitions: #191; integrated verification: #192; in-app presentation invalidation and cleanup: #320) |
 | Document-viewing authorization and temporary plaintext lifecycle | #193 |
 | Vault backup and restore | #202 |
 | Vault-health detection and health-result semantics | #208 |
@@ -95,6 +98,18 @@ The following remain under their existing product or Technical Task ownership:
 | Processing lifecycle, generations, cancellation, and recovery semantics | #101 |
 | Artifact lifecycle consistency and reconciliation semantics | #102 |
 | User-understandable processing outcomes | #223 |
+
+**Related #185 boundary - protected in-app presentation (#320):**
+
+The risk that previously rendered document/workspace content, sensitive metadata, cached search results, presenter-owned streams, modal interactions, or pending presentation results remain usable across a lock or security-session revision change is addressed by #320.
+
+#320 owns UI-side presentation invalidation and clearing, suppression of stale asynchronous presentation results, session-revision-bound workspace interactions, session-bound modal dialogs, and disposal or release of presentation-owned resources where their lifecycle permits.
+
+This is a related but out-of-scope boundary for the #221 threat assessment. It is not added to the DV-T or DV-SEC registers and does not change the #235 control tally.
+
+The authoritative session contract and lock lifecycle remain under #186 and #188. Authentication integration remains under #187. Strict document/database key retrieval remains under #189. Automatic-lock timing and workstation security-transition integration remain under #190 and #191. Integrated locked-session boundary verification remains assigned to #192.
+
+External document viewing and temporary plaintext lifecycle remain under #193. Clearing managed presentation state must not be described as forensic erasure of every process-memory copy or as revocation of plaintext already handed to an external viewer.
 
 Future AI-specific prompt injection, retrieval authorization, embedding protection, model-selection security, and AI credential policy are outside MVP2 scope. They require threat modeling when the relevant AI capabilities and trust boundaries are introduced.
 
@@ -121,7 +136,7 @@ This is an iterative baseline. Threat IDs and control IDs are stable references;
 
 ### 4.1 Logical architecture
 
-The following diagram is a security-oriented view of the assessed MVP2 implementation. Flow labels identify the transferred data and the relevant enforcement boundary; the diagram is not a substitute for the complete application architecture.
+The following diagram is a security-oriented view of the assessed MVP2 implementation and its adjacent application-session boundaries. The #185 session-authorized retrieval and #320 in-app presentation elements are shown as contextual security boundaries; their broader parent-PBI integration is not part of the #221 assessment. Flow labels identify transferred data and the relevant enforcement boundary; the diagram is not a substitute for the complete application architecture.
 
 ```mermaid
 flowchart TD
@@ -129,6 +144,7 @@ flowchart TD
     CFG["Configuration providers\nrequired JSON defaults and supported environment overrides"]
     HOST["DeskVault UI composition root and application use cases"]
     SESSION["Authoritative application security session\nAuthenticated state and monotonic revision (#186/#188)"]
+    PRESENTATION["In-app presentation layer\nMain, document and workspace views; session-bound dialogs (#320)"]
     PARSER["Format extractors and parsers\nsource, structural and intermediate limits"]
     PROCESS["Normalization, chunking and bounded processed output\nexisting generation lifecycle"]
     DOCSTORE["Encrypted .dvault document artifacts"]
@@ -150,6 +166,8 @@ flowchart TD
     HOST -->|"Authoritative application session"| SESSION
     SESSION -->|"Authenticated state; same revision revalidated after strict retrieval"| DOC_KEY
     SESSION -->|"Authenticated state; same revision revalidated after strict retrieval"| DB_KEY
+    HOST -->|"Search results, workspace metadata and presentation operations"| PRESENTATION
+    SESSION -->|"Authenticated state, owning revision and transition notifications"| PRESENTATION
     HOST -->|"Bounded document input"| PARSER
     PARSER -->|"Bounded structures and complete/failed outcome"| PROCESS
     PROCESS -->|"Derived chunks, metadata and processing state"| DB
@@ -160,7 +178,8 @@ flowchart TD
     DOC_KEY -->|"Strict existing document-key retrieval"| READ
     DB_KEY -->|"Strict existing database-key retrieval"| DB
     READ -->|"Authenticated, bounded plaintext stream"| MEMORY
-    MEMORY -->|"Untrusted Markdown content"| RENDER
+    MEMORY -->|"Document content for in-app presentation"| PRESENTATION
+    PRESENTATION -->|"Untrusted Markdown content"| RENDER
     RENDER -->|"CSP-wrapped HTML"| WEBVIEW
     HOST -->|"Safe failure context; no raw exception serialization"| DIAG
     DIAG -->|"Reviewed structured diagnostic event"| LOG
@@ -179,6 +198,7 @@ flowchart TD
 |---|---|
 | Configuration providers | `HostConfigurator` establishes the content root and required shipped JSON configuration; tested environment-variable overrides take precedence for the covered settings. Unsupported provider channels are not part of the verified contract. |
 | Application use cases | Orchestrate document import, processing, reading, search, removal, reconciliation, and other workflows while preserving their existing lifecycle owners. |
+| In-app presentation | #320 binds main, document and workspace presentation to the authoritative session revision. Session transitions invalidate retained presentation state, suppress stale asynchronous results and interactions, coordinate session-bound dialogs, and dispose or release presentation-owned resources where their lifecycle permits. |
 | Parsers and extractors | Consume untrusted document structures. Source-input, format-specific structural/intermediate, and processed-output limits are enforced for the reviewed CSV, JSON, XML, YAML, INI, text, and Markdown paths as applicable. |
 | Processed knowledge | Derived text, chunks, metadata, and provenance remain potentially sensitive. A parser/resource failure must not publish incomplete output as successful complete processing or replace a previous successful generation. |
 | Encrypted artifact storage | Stores document contents outside the SQLite metadata boundary under the existing document/key lifecycle. |
@@ -205,6 +225,7 @@ flowchart TD
 | TB-08 | SQLite and filesystem lifecycle → auxiliary files | Classify actual artifacts and protect them without destroying required recovery state; retain unmaterialized-variant limitations. |
 | TB-09 | Initialization and recovery across processes | Preserve authoritative key/database state during concurrency, cancellation, interruption, and recovery; do not claim untested crash/concurrent-state guarantees. |
 | TB-10 | Authoritative application security session -> strict document/database key retrieval | Permit strict retrieval only from `Authenticated`; capture the session revision before the asynchronous read and revalidate both authenticated state and the same revision after it. Clear acquired key material if authorization is withdrawn before the retrieval authorization point. A later lock cannot revoke material already authorized/returned. |
+| TB-11 | Authoritative application security session -> in-app presentation | Bind each protected presentation to its owning authenticated session revision. On an unauthorized state or revision transition, invalidate retained presentation state and pending operations. A result or interaction from an earlier revision must not become valid merely because a later session is authenticated. New presentation requires a fresh authorized operation. Managed UI cleanup does not establish forensic erasure of every process-memory copy. |
 
 ## 5. Assets and Security Goals
 
@@ -717,9 +738,58 @@ The scan is heuristic. Its result is evidence about the reviewed files and patte
 - **Focused tests:** `SessionAuthorizedKeyRetrievalTests` passed 8/8; `SessionAuthorizedKeyServicesTests` passed 6/6; `SessionAuthorizedKeyAvailabilityIntegrationTests` passed 2/2; `InfrastructureDependencyInjectionTests` passed 18/18; `DatabaseEncryptionIntegrationTests` passed 2/2; `WindowsDatabaseEncryptionKeyServiceIntegrationTests` passed 6/6; `EncryptedDatabasePipelineIntegrationTests` passed 9/9; and `PlaintextDatabaseMigrationIntegrationTests` passed 8/8. The latest DI, adapter, and session-availability counts supersede the earlier `InfrastructureDependencyInjectionTests` 9/9 and combined `FullyQualifiedName~SessionAuthorizedKey` 12/12 selections.
 - **Pre-addition project-regression baseline:** Before the latest #189 focused test additions, the complete `DeskVault.Infrastructure.Tests` project passed 429/429, the complete `DeskVault.Integration.Tests` project passed 104/104, and `dotnet build src/DeskVault.UI/DeskVault.UI.csproj` succeeded. These are historical regression results, not final full-project or full-solution validation of the current working tree; the Infrastructure count in particular predates the latest test additions.
 - **Evidence limits:** Focused selection counts are reported independently and must not be added together. The pre-addition project totals above do not include the latest #189 focused test additions. These are user-executed task-local working-tree results; no #189 PR, CI, merge, or post-merge result is claimed. They do not establish final parent-PBI #185 acceptance, workstation transition behavior, automatic-lock behavior, retained UI-content protection, or #192 integrated locked-session boundary verification. The final snapshot read is the retrieval authorization point; key bytes already authorized/returned or independently consumed cannot be revoked by a later lock.
+
+### E-30 -- Protected in-app presentation during locked sessions (#320)
+
+**Evidence type:** Task-local implementation and regression evidence from the #320 working branch on 2026-11-06. This entry records local working-tree validation; it does not represent merged PR/CI evidence.
+
+- **Parent PBI:** #185 - Protect Vault Access During an Active DeskVault Session.
+- **Technical Task:** #320 - Protect In-App Presentation During Locked Sessions.
+- **Branch:** `feat/320-protect-in-app-presentation-during-locked-sessions`.
+- **Base revision:** `99a3ce8f1247568d02c307775405bc867176e4db`.
+
+- **Implementation:** The in-app presentation layer consumes the authoritative `IApplicationSecuritySession` state and revision. Main application, document and workspace presentations are bound to the session revision under which they were created. Unauthorized transitions and revision changes invalidate retained presentation state and prevent stale operations from presenting content in a later session.
+
+- **Main presentation enforcement paths:**
+  - `MainFormPresenter` - session-transition handling, main-view clearing, cached search invalidation, managed workspace closure, and revision-scoped asynchronous operations.
+  - `DocumentWorkspacePresenter` - immutable session-revision binding, pending-operation cancellation/invalidation, pending and current stream cleanup, and document-view clearing.
+  - `WorkspacePresentation` - session-revision-bound workspace operations, retained presentation cleanup, and rejection of stale workspace interactions and event callbacks.
+  - `WorkspacePresentationManager` - expected-revision validation, stale presentation rejection, managed presentation closure, and resource disposal.
+  - `ISessionBoundDialogCoordinator` and `SessionBoundDialogCoordinator` - coordination and invalidation of session-bound modal dialogs.
+  - `MainForm`, `DocumentViewForm`, and `WorkspaceViewForm` - clearing or disposing retained view controls and presentation state.
+  - `HostConfigurator` - production registration of the session-bound dialog coordinator.
+
+- **Session and presentation behavior:** Presentation operations are authorized against the current authenticated session revision. Locking, becoming unavailable, or changing the session revision invalidates operations and retained UI state associated with the previous revision. Cancellation is supplemented by revision and operation-generation checks; it is not relied upon as the sole stale-result protection. A later successful authentication does not authorize a result or workspace interaction originating from an earlier revision. New presentation requires a fresh authorized operation.
+
+- **Cleanup boundary:** Presentation-owned document streams, child controls, renderer controls, metadata, workspace membership/state, cached search results, and other mutable presentation state are cleared, closed, disposed, or released according to their ownership and lifecycle. This is managed application cleanup; it is not a claim of forensic erasure of all managed-memory copies or revocation of plaintext already handed to an external viewer.
+
+- **Focused regression evidence:** The focused session-revocation and stale-revision selections passed **122 tests, 0 failed, 0 skipped**. Coverage includes session-bound dialogs, presentation cleanup, document presenter revision changes, workspace presentation revision checks, manager/factory behavior, stale workspace interactions, stream cleanup, and main-form session-transition handling. Relevant test files include `SessionBoundDialogCoordinatorTests`, `SessionRevocationPresentationCleanupTests`, `DocumentWorkspacePresenterSessionRevisionTests`, `DocumentWorkspacePresenterRemovalRevocationTests`, `WorkspacePresentationSessionRevisionTests`, `WorkspacePresentationManagerSessionRevisionTests`, `WorkspacePresentationFactorySessionRevisionTests`, `WorkspaceDialogServiceTests`, and `MainFormDialogTests`, alongside updated existing presenter, view and workspace regression tests.
+
+- **Complete UI suite:** `DeskVault.UI.Tests` - **416 passed, 0 failed, 0 skipped**.
+
+- **Full-solution build:** `dotnet build --no-restore` - succeeded.
+
+- **Full-solution tests:** `dotnet test --no-restore` - **1,814 passed, 0 failed, 0 skipped** across all five test projects.
+
+- **Acceptance criteria:** All 16 acceptance criteria for #320 were assessed against the implementation and task-local regression evidence and recorded as satisfied.
+
+- **ADR impact:** ADR-0006 and ADR-0007 were updated to record the in-app presentation lifecycle, session-revision-bound workspace/document behavior, stale interaction suppression, retained-content cleanup and session-bound modal dialogs. No new ADR or replacement session architecture was introduced.
+
+- **Repository-quality validation:** `git diff --check` passed. Non-fatal line-ending warnings were observed for files with LF/CRLF differences.
+
+- **Evidence limitations and ownership:**
+  - These are local task-level results; no #320 PR, hosted CI, merge or post-merge verification is claimed.
+  - E-30 does not complete #192 integrated verification of the broader #185 session boundary.
+  - The authoritative session contract remains under #186; authentication integration remains under #187; lock/unlock lifecycle remains under #188; strict document/database key retrieval remains under #189.
+  - Automatic-lock timing and workstation security-transition integration remain under #190 and #191.
+  - External document viewing and temporary plaintext lifecycle remain under #193.
+  - Managed presentation cleanup does not establish forensic erasure of all process-memory copies.
+
+- **Overall interpretation:** E-30 records the completed #320 in-app presentation implementation and its task-local validation. It supplements the adjacent #185 evidence in E-29 but does not change the historical #235 integrated execution, its PR/CI results, the #221 threat register, or the existing 16-control status tally.
+
 ## 9. Threat Register
 
-The scenarios, initial ratings, and implementation ownership below remain the threat baseline. The **Verification** field in each threat describes the evidence criteria for that threat; actual control-execution results and their authoritative status are recorded in Sections 10 and 11, with integrated local evidence in E-27 and later task-local #189 evidence in E-29; post-merge PR/CI and repository-state evidence is recorded in E-28. The three status fields in Section 11 are authoritative; historical task counts in E-20 through E-26 are not current integrated counts.
+The scenarios, initial ratings, and implementation ownership below remain the #221 threat baseline. The **Verification** field in each threat describes the evidence criteria for that threat; actual control-execution results and their authoritative status are recorded in Sections 10 and 11, with integrated local evidence in E-27 and post-merge PR/CI and repository-state evidence in E-28. E-29 and E-30 record subsequent task-local #189 and #320 evidence for adjacent #185 security boundaries; they do not add threats to this register or change the #235 integrated assessment. The three status fields in Section 11 are authoritative; historical task counts in E-20 through E-26 are not current integrated counts.
 
 
 ### DV-T-001 — Configuration overrides weaken security-sensitive behavior
@@ -960,7 +1030,7 @@ The scenarios, initial ratings, and implementation ownership below remain the th
 
 ## 10. Threat-to-Control Traceability Matrix
 
-This is the integrated control-to-evidence matrix for all 16 stable controls. The detailed and authoritative implementation, verification, and residual-risk statuses are recorded once per control in Section 11. Historical evidence E-20 through E-26 remains task-specific; E-27 is the integrated #235 run.
+This is the integrated control-to-evidence matrix for all 16 stable #221 controls. The detailed and authoritative implementation, verification, and residual-risk statuses are recorded once per control in Section 11. Historical evidence E-20 through E-26 remains task-specific; E-27 is the integrated #235 run. E-30 is supplementary task-local evidence for the adjacent #185/#320 presentation boundary and is not a seventeenth control or part of this matrix.
 
 | Control | Threat(s) / security objective | Responsible task and preserved owner | Implementation and enforcement paths | Test identity and actual evidence | Merged PR / CI evidence | Remaining gap and follow-up owner |
 |---|---|---|---|---|---|---|
@@ -992,7 +1062,7 @@ Each control has three independent, authoritative status fields:
 - **Verification status:** `Passed`, `Failed`, `Unexecuted`, or `Insufficient evidence`.
 - **Residual-risk disposition:** `Open follow-up`, `Accepted risk`, or `Out of scope`. `Accepted risk` requires an authorized decision-maker, decision date, rationale, and traceable decision reference; no accepted-risk decision is recorded by this assessment.
 
-**Integrated status tally (16 control records only):** implementation — 12 `Implemented`, 4 `Partially implemented`, 0 `Not implemented`, 0 `Not applicable`; verification — 8 `Passed`, 0 `Failed`, 7 `Insufficient evidence`, 1 `Unexecuted`; residual disposition — 15 `Open follow-up`, 1 `Out of scope`, 0 `Accepted risk`. DV-SEC-015 is now implemented and passed because the 16-control evidence reconciliation and PR/CI gate are complete; the seven insufficient-evidence controls and one unexecuted control remain unchanged. The tally excludes this definition text.
+**Integrated status tally (16 control records only):** implementation — 12 `Implemented`, 4 `Partially implemented`, 0 `Not implemented`, 0 `Not applicable`; verification — 8 `Passed`, 0 `Failed`, 7 `Insufficient evidence`, 1 `Unexecuted`; residual disposition — 15 `Open follow-up`, 1 `Out of scope`, 0 `Accepted risk`. DV-SEC-015 is now implemented and passed because the 16-control evidence reconciliation and PR/CI gate are complete; the seven insufficient-evidence controls and one unexecuted control remain unchanged. The tally excludes this definition text. The supplementary #189 and #320 evidence in E-29 and E-30 concerns adjacent #185 responsibilities and does not add controls or change these historical #221 counts.
 
 A verification result applies only to the behavior exercised. Where runtime scenarios, artifact variants, identities, or failure states were not exercised, the verification status must remain `Unexecuted` or `Insufficient evidence`; it must not be inferred from source inspection, test-file existence, or a different test scenario.
 
@@ -1247,7 +1317,8 @@ The following invariants must be preserved by applicable implementations. They c
 
 | Work item | Responsibility preserved by this threat model |
 |---|---|
-| #185 | Application access and session locking; child #189 enforces the authenticated-session/revision boundary at production strict document/database key retrieval, and #192 owns integrated locked-session boundary verification. This document does not redesign the session state machine or key lifecycle. |
+| #185 | Application access and session locking; #186 defines the session contract, #187 integrates authentication, #188 owns lock/unlock lifecycle, #189 enforces session-authorized strict document/database key retrieval, #190 owns automatic-lock timing, #191 owns workstation security transitions, #192 owns integrated locked-session boundary verification, and #320 owns in-app presentation protection. This document does not redesign the session state machine or key lifecycle. |
+| #320 | In-app document and workspace presentation protection during session locking and revision changes. Owns retained-content clearing, stale asynchronous presentation suppression, session-revision-bound workspace interactions, session-bound modal dialogs, and presentation-owned resource cleanup where lifecycle permits. The authoritative session, authentication, key-retrieval, automatic-lock, workstation-transition and integrated verification responsibilities remain under #186 through #192. External viewing and temporary plaintext lifecycle remain under #193. Task-local evidence is recorded in E-30. |
 | #193 | Document viewing and temporary plaintext lifecycle; ordinary-read limits do not transfer viewing authorization or cleanup ownership. |
 | #202 | Backup and restore; auxiliary-artifact hardening must preserve required recovery behavior. |
 | #208 | Vault health and diagnostic-result semantics; this document does not redefine health results. |
@@ -1292,7 +1363,7 @@ The exact copied files, target profile/device, attempted operation, and observed
 
 ## 15. ADR Impact Assessment
 
-This assessment reconciles the current threat model with the relevant ADR decisions and the merged implementation. It records the actual ADR updates already made by the implementation owners; #235 does not propose replacement architectural decisions or unrelated ADR edits.
+This assessment reconciles the current threat model with the relevant ADR decisions and the implementation changes reviewed for the existing security boundaries. It records the ADR updates made by the implementation-owning tasks; it does not propose replacement architectural decisions or unrelated ADR edits.
 
 | ADR | Relevant boundary | Current decision and merged implementation impact |
 |---|---|---|
@@ -1301,8 +1372,8 @@ This assessment reconciles the current threat model with the relevant ADR decisi
 | [ADR-0003 - Document Import Workflow](../adr/0003-document-import-workflow.md) | Import validation, storage, compensation and separation from processing. | Reviewed. #233 hardens parser/processing boundaries while #100 remains authoritative for import reliability and compensation. No update required. |
 | [ADR-0004 - Document Encryption at Rest](../adr/0004-document-encryption-at-rest.md) | Document encryption, key protection, bounded reads, atomic publication and strict retrieval. | Updated by #272 / PR #328 to document the finite ordinary-open plaintext-size boundary and incremental hash-only reconciliation contract. Encryption, key lifecycle, encrypted-record framing and copied-vault limitations remain unchanged. |
 | [ADR-0005 - Document Metadata Persistence](../adr/0005-document-metadata-persistence.md) | Metadata and derived-knowledge persistence. | Reviewed. Metadata, processing state, chunks and provenance remain potentially sensitive. No persistence-contract redesign or ADR update required. |
-| [ADR-0006 - In-App Document Workspace](../adr/0006-in-app-document-workspace.md) | In-app document viewing. | Reviewed. Viewing authorization and temporary plaintext lifecycle remain with #193. The ordinary-read bound does not transfer view/cleanup ownership. No update required. |
-| [ADR-0007 - Document Workspace UI and Interaction Model](../adr/0007-document-workspace-ui-and-interaction-model.md) | Workspace and Markdown renderer integration. | Updated by #319 / PR #330 to specify explicit navigation/resource URI policy, internal `about:blank`, user-initiated HTTP/HTTPS navigation, same-navigation-ID redirects, WebView2 frame/new-window/external-scheme restrictions, JavaScript policy and generated CSP. #235 adds runtime test evidence without changing the ADR contract. |
+| [ADR-0006 - In-App Document Workspace](../adr/0006-in-app-document-workspace.md) | In-app document viewing and presentation lifecycle. | Updated under #320 to document protected in-app presentation invalidation, retained document-content cleanup and session-revision-bound presentation behavior. External viewing authorization and temporary plaintext lifecycle remain with #193. The in-app changes do not transfer external viewing ownership. |
+| [ADR-0007 - Document Workspace UI and Interaction Model](../adr/0007-document-workspace-ui-and-interaction-model.md) | Workspace, document presentation, modal interactions and Markdown renderer integration. | Updated by #319 / PR #330 to specify explicit navigation/resource URI policy, internal `about:blank`, user-initiated HTTP/HTTPS navigation, same-navigation-ID redirects, WebView2 frame/new-window/external-scheme restrictions, JavaScript policy and generated CSP. Further updated under #320 to document session-revision-bound workspace/document presentation, stale interaction suppression, retained presentation cleanup and session-bound modal dialogs. |
 | [ADR-0008 - Document Semantic Preservation](../adr/0008-document-semantic-preservation-through-rendering-pipeline.md) | Extraction, structured representation and rendering semantics. | Updated by #233 / PR #327 to preserve the distinction between deliberate CSV preview completeness and complete-processing failure, document shared parser safety caps and format-specific parser boundaries. #319 does not change semantic extraction or the persisted derived representation. |
 | [ADR-0009 - Encrypted SQLite Database Provider](../adr/0009-encrypted-sqlite-database-provider.md) | Safe startup diagnostics, encrypted SQLite provider, initialization and auxiliary artifacts. | Updated by #232 / PR #326 to remove exception-bearing startup diagnostics and by #234 / PR #329 to document the process-wide `SqliteProviderBootstrap.EnsureInitialized()` lifetime/callback invariant. Provider selection, encryption and key lifecycle are unchanged. |
 | [ADR-0010 - Reliable Document Processing Lifecycle](../adr/0010-reliable-document-processing-lifecycle.md) | Processing generations, cancellation, failure, retry and publication. | Updated by #233 / PR #327 to document format-specific structural limits, failure-state preservation, and unit semantics for field/line-length limits. #101 remains lifecycle owner; resource-limit failures must not publish incomplete output as success. |
@@ -1312,7 +1383,7 @@ This assessment reconciles the current threat model with the relevant ADR decisi
 
 ### 15.1 ADR decision rule
 
-The reviewed ADR updates are the decisions made by the implementation-owning tasks. No new ADR change is justified by #235: the integrated work validates and documents the existing boundaries rather than replacing encryption, key management, database, viewing, recovery, processing, or removal architecture. If future evidence demonstrates a material contradiction, return it to the established owner and request an explicit architecture review; do not silently rewrite the decision.
+The reviewed ADR updates are the decisions made by the implementation-owning tasks. The #320 updates to ADR-0006 and ADR-0007 document the in-app presentation lifecycle within the existing document/workspace architecture; no new ADR is introduced. The work does not replace encryption, key management, database, external viewing, recovery, processing, or removal architecture. If future evidence demonstrates a material contradiction, return it to the established owner and request an explicit architecture review; do not silently rewrite the decision.
 
 ## 16. Integrated Verification Results and Remaining Checks
 
@@ -1363,7 +1434,7 @@ For every `DV-SEC-*` control, Section 10 records the owner, implementation/enfor
 | Verification status | `Passed`, `Failed`, `Unexecuted`, `Insufficient evidence` | Describes only the actual evidence and scenarios exercised. |
 | Residual-risk disposition | `Open follow-up`, `Accepted risk`, `Out of scope` | `Accepted risk` requires an authorized decision-maker, date, rationale and traceable reference. No accepted-risk decision is recorded here. |
 
-A test file merely existing does not make a control passed. Source inspection, successful CI for a different PR, or a task-level historical count is not a substitute for the #235 integrated execution. E-20 through E-26 remain historical; E-27 records the integrated local execution; E-28 records the separate post-merge PR/CI and repository-state verification. E-29 records later unmerged #189 task-local implementation and regression evidence only; it does not replace E-27/E-28, constitute PR/CI evidence, or complete the broader #185 locked-session boundary verification assigned to #192. The control-specific evidence limits recorded in E-27 remain in force.
+A test file merely existing does not make a control passed. Source inspection, successful CI for a different PR, or a task-level historical count is not a substitute for the #235 integrated execution. E-20 through E-26 remain historical; E-27 records the integrated local execution; E-28 records the separate post-merge PR/CI and repository-state verification. E-29 records later #189 task-local implementation and regression evidence for session-authorized strict key retrieval. E-30 records later #320 task-local implementation and regression evidence for in-app presentation invalidation and cleanup. Neither E-29 nor E-30 replaces E-27/E-28, constitutes PR/CI evidence, or completes the broader #185 locked-session boundary verification assigned to #192. E-30 is outside the #221 threat/control assessment and does not alter its 16-control status tally. The control-specific evidence limits recorded in E-27 remain in force.
 
 ### 16.7 Exit criteria and remaining gates
 
