@@ -33,6 +33,9 @@ public static class DiagnosticOperationCodes
     public const string ApplicationAuthenticationProviderFailure =
         "application-authentication.provider-failure";
 
+    public const string AutomaticLockEvaluationFailure =
+        "automatic-lock.evaluation-failure";
+
     public const string DocumentChunkReplacementFailure =
         "document-chunk-replacement.operation-failure";
 

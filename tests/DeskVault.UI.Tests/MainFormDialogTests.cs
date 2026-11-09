@@ -141,6 +141,9 @@ public sealed class MainFormDialogTests
                     ApplicationSecuritySessionState.Authenticated,
                     0));
 
+        var userActivityService =
+            new Mock<IApplicationUserActivityService>();
+
         var importDocumentHandler =
             new ImportDocumentHandler(
                 importValidator.Object,
@@ -231,6 +234,8 @@ public sealed class MainFormDialogTests
 
         return new MainForm(
             applicationInfo.Object,
+            securitySession.Object,
+            userActivityService.Object,
             presenterFactory,
             NullLogger<MainForm>.Instance,
             dialogCoordinator);

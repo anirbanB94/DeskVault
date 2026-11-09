@@ -4,7 +4,9 @@ using DeskVault.UI.Forms;
 using DeskVault.UI.Hosting;
 using DeskVault.UI.Resources;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Serilog;
+using System.Diagnostics;
 using WindowsForms = System.Windows.Forms;
 
 namespace DeskVault.UI;
@@ -16,55 +18,126 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        using var host = HostConfigurator.Build();
+        IHost? host = TryBuildHost(
+            HostConfigurator.Build,
+            static (message, title) =>
+            {
+                WindowsForms.MessageBox.Show(
+                    message,
+                    title,
+                    WindowsForms.MessageBoxButtons.OK,
+                    WindowsForms.MessageBoxIcon.Error);
+            });
 
-        WindowsForms.DialogResult authenticationResult;
-
-        using (var startupAuthenticationForm =
-            host.Services.GetRequiredService<StartupAuthenticationForm>())
-        {
-            authenticationResult =
-                startupAuthenticationForm.ShowDialog();
-        }
-
-        if (authenticationResult != WindowsForms.DialogResult.OK)
+        if (host is null)
         {
             return;
         }
 
-        var startupCoordinator =
-            host.Services.GetRequiredService<DeskVaultStartupCoordinator>();
+        var hostLifetime = new DeskVaultHostLifetime(host);
 
         try
         {
-            startupCoordinator
-                .InitializeDatabaseAsync()
+            // Start all hosted services before startup authentication.
+            // Keep Main synchronous so execution remains on the STA thread.
+            hostLifetime
+                .StartAsync()
                 .GetAwaiter()
                 .GetResult();
+
+            WindowsForms.DialogResult authenticationResult;
+
+            using (var startupAuthenticationForm =
+                host.Services.GetRequiredService<StartupAuthenticationForm>())
+            {
+                authenticationResult =
+                    startupAuthenticationForm.ShowDialog();
+            }
+
+            if (authenticationResult != WindowsForms.DialogResult.OK)
+            {
+                return;
+            }
+
+            var startupCoordinator =
+                host.Services.GetRequiredService<DeskVaultStartupCoordinator>();
+
+            try
+            {
+                startupCoordinator
+                    .InitializeDatabaseAsync()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(
+                    "{SafeMessage} OperationCode={OperationCode} FailureType={FailureType} FailureCategory={FailureCategory}.",
+                    Shared.Resources.LogMessages.DatabaseInitializationFailed,
+                    DiagnosticOperationCodes.DatabaseInitializationFailure,
+                    ex.GetType().Name,
+                    DiagnosticFailureClassifier.Classify(ex));
+
+                WindowsForms.MessageBox.Show(
+                    UiMessages.UnableToInitializeDatabase,
+                    UiMessages.DatabaseInitializationFailedTitle,
+                    WindowsForms.MessageBoxButtons.OK,
+                    WindowsForms.MessageBoxIcon.Error);
+
+                return;
+            }
+
+            Log.Information(Resources.LogMessages.ApplicationStarting);
+
+            var mainForm =
+                host.Services.GetRequiredService<MainForm>();
+
+            WindowsForms.Application.Run(mainForm);
         }
-        catch (Exception ex)
+        finally
         {
-            Log.Error(
-                "{SafeMessage} OperationCode={OperationCode} FailureType={FailureType} FailureCategory={FailureCategory}.",
-                Shared.Resources.LogMessages.DatabaseInitializationFailed,
-                DiagnosticOperationCodes.DatabaseInitializationFailure,
-                ex.GetType().Name,
-                DiagnosticFailureClassifier.Classify(ex));
-
-            WindowsForms.MessageBox.Show(
-                UiMessages.UnableToInitializeDatabase,
-                UiMessages.DatabaseInitializationFailedTitle,
-                WindowsForms.MessageBoxButtons.OK,
-                WindowsForms.MessageBoxIcon.Error);
-
-            return;
+            try
+            {
+                // Covers startup cancellation, startup/database failure,
+                // normal WinForms shutdown, and exceptions.
+                hostLifetime
+                    .DisposeAsync()
+                    .AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            finally
+            {
+                Log.CloseAndFlush();
+            }
         }
+    }
 
-        Log.Information(Resources.LogMessages.ApplicationStarting);
+    internal static IHost? TryBuildHost(
+        Func<IHost> buildHost,
+        Action<string, string> showStartupError)
+    {
+        ArgumentNullException.ThrowIfNull(buildHost);
+        ArgumentNullException.ThrowIfNull(showStartupError);
 
-        var mainForm =
-            host.Services.GetRequiredService<MainForm>();
+        try
+        {
+            return buildHost();
+        }
+        catch (Exception exception)
+        {
+            // Host construction occurs before the production host and its
+            // configured logger are available. Record only the exception
+            // type and show a safe, actionable message to the user.
+            Trace.TraceError(
+                "DeskVault host construction failed. FailureType={0}",
+                exception.GetType().Name);
 
-        WindowsForms.Application.Run(mainForm);
+            showStartupError(
+                UiMessages.UnableToInitializeStartupConfiguration,
+                UiMessages.StartupConfigurationFailedTitle);
+
+            return null;
+        }
     }
 }

@@ -220,6 +220,9 @@ public static class LogMessages
     public const string DatabaseInitializationFailed =
         "Infrastructure database initialization failed.";
 
+    public const string AutomaticLockEvaluationFailed =
+        "Application automatic-lock inactivity evaluation failed; evaluation will be retried.";
+
     public const string DocumentRepositoryAddStarted =
         "Infrastructure document metadata persistence started.";
 

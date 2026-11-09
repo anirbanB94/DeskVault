@@ -19,6 +19,16 @@ public static class UiMessages
         "DeskVault could not initialize its local database. " +
         "The application will now close.";
 
+    public const string StartupConfigurationFailedTitle =
+        "Startup Configuration Failed";
+
+    public const string UnableToInitializeStartupConfiguration =
+        "DeskVault could not start because its startup configuration could not be loaded or validated. " +
+        "Check appsettings.json and any environment-specific configuration. " +
+        "Verify Security:AutomaticLock:Enabled and, when enabled, " +
+        "Security:AutomaticLock:InactivityTimeoutMinutes. " +
+        "The vault has not been opened.";
+
     public const string WindowsHelloAuthenticationTitle =
         "Unlock DeskVault";
 

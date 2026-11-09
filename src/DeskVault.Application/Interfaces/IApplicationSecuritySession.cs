@@ -46,6 +46,25 @@ public interface IApplicationSecuritySession
         ApplicationAuthenticationOutcome outcome);
 
     /// <summary>
+    /// Attempts to withdraw protected access only when the supplied
+    /// revision is still the current authenticated session revision.
+    /// </summary>
+    /// <param name="expectedRevision">
+    /// The authenticated session revision whose access must be withdrawn.
+    /// </param>
+    /// <param name="snapshot">
+    /// The authoritative snapshot after the operation, or the current
+    /// snapshot when the expected revision is stale or not authenticated.
+    /// </param>
+    /// <returns>
+    /// True when the matching authenticated revision was locked;
+    /// otherwise false without changing the session.
+    /// </returns>
+    bool TryLock(
+        long expectedRevision,
+        out ApplicationSecuritySessionSnapshot snapshot);
+
+    /// <summary>
     /// Withdraws protected access and invalidates any active attempt.
     /// </summary>
     /// <remarks>

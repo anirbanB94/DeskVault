@@ -22,6 +22,7 @@ public sealed class ApplicationSecuritySessionLifecycleService
 
     private long _generation;
     private int _lockRequestsInProgress;
+    private bool _conditionalLockInProgress;
     private UnlockOperation? _activeUnlock;
 
     public ApplicationSecuritySessionLifecycleService(
@@ -67,6 +68,61 @@ public sealed class ApplicationSecuritySessionLifecycleService
     }
 
     /// <inheritdoc />
+    public bool TryLock(
+        long expectedRevision,
+        out ApplicationSecuritySessionSnapshot snapshot)
+    {
+        UnlockOperation? operation = null;
+
+        lock (_syncRoot)
+        {
+            // Monitor locks are re-entrant. A session notification raised
+            // during TryLock can call back into this lifecycle service on
+            // the same thread. Do not allow such a callback to begin an
+            // unlock before the conditional lock has completed.
+            if (_conditionalLockInProgress)
+            {
+                snapshot = _session.CurrentSnapshot;
+                return false;
+            }
+
+            _conditionalLockInProgress = true;
+
+            try
+            {
+                // The authoritative session performs the expected-revision
+                // check and state transition atomically.
+                //
+                // A stale revision must not advance the lifecycle generation
+                // or cancel an unlock belonging to a newer session.
+                if (!_session.TryLock(
+                        expectedRevision,
+                        out snapshot))
+                {
+                    return false;
+                }
+
+                // The session transition succeeded. Fence any unlock that
+                // was already in flight before the conditional lock.
+                _generation = checked(_generation + 1);
+
+                operation = _activeUnlock;
+                _activeUnlock = null;
+            }
+            finally
+            {
+                _conditionalLockInProgress = false;
+            }
+        }
+
+        // Request cancellation outside the lifecycle synchronization
+        // boundary. The generation has already fenced late completion.
+        operation?.RequestCancellation();
+
+        return true;
+    }
+
+    /// <inheritdoc />
     public async Task<ApplicationAuthenticationServiceResult> UnlockAsync(
         CancellationToken cancellationToken = default)
     {
@@ -76,7 +132,8 @@ public sealed class ApplicationSecuritySessionLifecycleService
 
         lock (_syncRoot)
         {
-            if (_lockRequestsInProgress > 0)
+            if (_lockRequestsInProgress > 0 ||
+                _conditionalLockInProgress)
             {
                 return ApplicationAuthenticationServiceResult.NotPermitted;
             }

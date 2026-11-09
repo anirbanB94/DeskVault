@@ -20,6 +20,11 @@ public sealed class DeskVaultStartupCompositionTests
                 // Arrange
                 using IHost host = HostConfigurator.Build();
 
+                // The shared host must own the automatic-lock worker.
+                // It is started by Program before startup authentication.
+                IHostedService[] hostedServices =
+                    host.Services.GetServices<IHostedService>().ToArray();
+
                 // Act
                 DeskVaultStartupCoordinator firstCoordinator =
                     host.Services.GetRequiredService<DeskVaultStartupCoordinator>();
@@ -34,6 +39,13 @@ public sealed class DeskVaultStartupCompositionTests
                     host.Services.GetRequiredService<StartupAuthenticationForm>();
 
                 // Assert
+                Assert.Single(
+                    hostedServices.OfType<ApplicationAutomaticLockHostedService>());
+
+                Assert.Same(
+                    TimeProvider.System,
+                    host.Services.GetRequiredService<TimeProvider>());
+
                 Assert.Same(firstCoordinator, secondCoordinator);
 
                 Assert.IsType<StartupAuthenticationForm>(firstForm);
