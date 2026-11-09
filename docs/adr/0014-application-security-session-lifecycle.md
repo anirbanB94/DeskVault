@@ -249,9 +249,17 @@ replace the session's state-transition rules. Its operation generation is
 private coordination state used only to determine whether an unlock
 operation has been superseded by a newer lock request.
 
-A lock request advances that generation even when the session is already
-`Locked` or remains `Unavailable`. It invalidates and cancels any active
-unlock operation before applying `IApplicationSecuritySession.Lock()`.
+An unconditional lifecycle lock request advances that generation even
+when the session is already `Locked` or remains `Unavailable`. It
+invalidates and cancels any active unlock operation before applying
+`IApplicationSecuritySession.Lock()`.
+
+The revision-conditional `TryLock(expectedRevision, out snapshot)`
+operation advances the generation and invalidates an active unlock only
+when the expected revision still identifies the current authenticated
+session and the conditional session transition succeeds. A stale
+conditional request returns the current snapshot without superseding a
+newer unlock operation.
 
 A competing unlock is rejected while the lifecycle lock request is
 executing. This includes notification dispatch performed synchronously
@@ -287,6 +295,111 @@ events, in-app presentation cleanup, suppression of late asynchronous
 presentation results, or integrated verification of the complete access
 boundary. Those remain separate responsibilities.
 
+### Automatic Inactivity Lock Coordination
+
+Automatic inactivity locking is an Application-level policy coordinator
+that observes the authoritative session and delegates expiry locking to
+the existing lifecycle service. It does not add an authorization state,
+change the session transition rules, or provide a second lock/unlock
+implementation.
+
+The Application layer defines:
+
+- `IApplicationAutomaticLockService`, which controls monitoring and
+  inactivity evaluation;
+- `IApplicationUserActivityService`, which accepts qualifying activity
+  associated with an observed session revision;
+- `ApplicationAutomaticLockService`, which implements both contracts
+  through one shared singleton instance;
+- `AutomaticLockSettings`, an immutable, validated policy snapshot
+  supplied by the UI composition root;
+- an injected `TimeProvider` used for monotonic timestamp measurement.
+
+The Application service does not read JSON, environment variables,
+`IConfiguration`, WinForms messages, Windows workstation events, or
+hosting APIs. Configuration construction and validation belong to the
+UI composition root. Periodic scheduling belongs to a UI-hosted service.
+The Application engine remains framework-neutral.
+
+When automatic locking is enabled, the coordinator establishes a fresh
+inactivity baseline for each newly observed authenticated session
+revision. A qualifying activity is accepted only when:
+
+- the current authoritative session is `Authenticated`;
+- the activity source supplies the current session revision; and
+- the inactivity deadline has not already been reached.
+
+Accepted activity advances the baseline using a monotonic timestamp.
+Activity associated with a prior or otherwise stale session revision is
+rejected and cannot refresh the current authenticated session.
+
+Qualifying activity represents deliberate user input, such as key
+presses, pointer-button actions, touch or pointer-down actions, gestures,
+or explicit user-invoked commands. Passive pointer movement, painting,
+timer messages, background work, AI processing, indexing, and search
+execution are not qualifying activity. The UI input adapter is
+responsible for reporting only deliberate input; programmatic work must
+not manufacture user activity.
+
+Inactivity is evaluated using `TimeProvider.GetTimestamp()` and
+`TimeProvider.GetElapsedTime()`. Wall-clock time and UI timer intervals
+must not determine whether the inactivity timeout has elapsed. The hosted
+scheduler only requests evaluations; the Application engine measures
+elapsed inactivity independently of scheduler drift.
+
+The expiry boundary is inclusive. When elapsed inactivity is greater
+than or equal to the configured timeout, the authenticated session is
+expired. An activity event observed at or after that deadline is rejected
+and cannot extend the session.
+
+Activity acceptance and expiry evaluation are serialized by the
+Application coordinator. If expiry wins that synchronization boundary,
+later activity for the same revision cannot reset the baseline. If
+qualifying activity is accepted before the deadline, it advances the
+baseline and subsequent evaluation measures from that accepted activity.
+A pending expiry is fenced to its authenticated session revision so a
+delayed lock request cannot lock a later authenticated session.
+
+When expiry is established, the automatic-lock coordinator invokes only
+`IApplicationSecuritySessionLifecycleService.TryLock(expectedRevision, out snapshot)`,
+using the authenticated revision whose inactivity baseline expired. It
+must not perform a separate revision check followed by an unconditional
+`Lock()` call.
+
+The lifecycle service serializes the conditional request against its
+unlock-operation coordination. The authoritative
+`IApplicationSecuritySession.TryLock(expectedRevision, out snapshot)`
+operation checks the expected revision and protected-access state within
+the same session synchronization boundary that commits the transition.
+A stale expected revision is rejected without locking a newer authenticated
+session.
+
+A rejected stale conditional lock does not advance the lifecycle operation
+generation, detach or cancel a newer in-flight unlock, or alter the current
+session. A matching conditional lock commits the transition to `Locked`,
+advances the lifecycle operation generation, and invalidates and cancels
+any active unlock operation. Protected access is withdrawn through the
+authoritative session state transition.
+
+The automatic-lock coordinator does not authenticate, unlock, restore an
+unavailable session, or directly mutate authoritative session state.
+After a later successful authentication establishes a new authenticated
+revision, a fresh inactivity baseline is created. Activity from an
+earlier revision remains stale.
+
+When the validated policy is disabled, the coordinator does not establish
+an inactivity deadline or lock the session through automatic inactivity
+evaluation. Explicit manual, lifecycle, or workstation-driven locking
+continues to use its separately established owner and contract.
+
+An absent effective automatic-lock configuration section produces the
+disabled policy. An explicitly present section must be valid; malformed,
+partial, or invalid explicit configuration prevents host construction
+rather than silently weakening the policy. The UI composition root
+registers one immutable validated settings snapshot. Changes to external
+configuration sources require application restart and do not mutate an
+active policy snapshot.
+
 ## Architectural Boundaries
 
 The intended Application boundary is:
@@ -318,13 +431,29 @@ Application Composition Root
         |       +-- Session-bound authentication completion
         |
         +-- IApplicationSecuritySessionLifecycleService
+        |       |
+        |       +-- Lock
+        |       +-- TryLock(expectedRevision)
+        |       +-- UnlockAsync
+        |       +-- Unlock-operation generation
+        |       +-- Active unlock cancellation
+        |       +-- Delegates state changes to the session
+        |       +-- Delegates verification to authentication
+        |
+        +-- IApplicationAutomaticLockService
+        |       |
+        |       +-- Start / EvaluateInactivity / Stop
+        |       +-- Immutable automatic-lock policy
+        |       +-- Monotonic inactivity measurement
+        |       +-- Authenticated revision baseline
+        |       +-- Exact deadline enforcement
+        |       +-- Delegates expiry to lifecycle TryLock(expectedRevision)
+        |
+        +-- IApplicationUserActivityService
                 |
-                +-- Lock
-                +-- UnlockAsync
-                +-- Unlock-operation generation
-                +-- Active unlock cancellation
-                +-- Delegates state changes to the session
-                +-- Delegates verification to authentication
+                +-- Qualifying user activity
+                +-- Current session revision fencing
+                +-- Rejects stale or post-deadline activity
 ```
 
 Runtime lock/unlock orchestration delegates authoritative state changes
@@ -336,8 +465,10 @@ Authentication integration supplies outcomes to the Application session.
 Protected-access consumers observe the resulting authoritative state
 through the Application contract.
 
-The Application session and lifecycle service do not depend on
-Infrastructure or UI implementations.
+The Application session, lifecycle service, and automatic-lock coordinator
+do not depend on Infrastructure or UI implementations. UI adapters supply
+validated configuration, deliberate input events, and hosted evaluation
+scheduling through the Application contracts.
 
 ## Alternatives Considered
 
@@ -418,6 +549,10 @@ workspace business entity.
 - State transitions are serialized independently of UI event ordering.
 - Application consumers remain independent of WinForms and
   authentication-provider implementation details.
+- Automatic inactivity expiry reuses the existing lifecycle lock operation
+  instead of introducing another authoritative authorization state.
+- Monotonic timestamps and authenticated session revisions make inactivity
+  expiry deterministic in the presence of clock changes and stale input.
 - Existing document and database encryption responsibilities remain
   separate from runtime authorization.
 
@@ -431,6 +566,11 @@ workspace business entity.
 - The complete protected-access guarantee requires coordinated
   enforcement by the authentication, key, workstation, and presentation
   boundaries.
+- The UI composition root must maintain the validated automatic-lock
+  settings snapshot and the hosted evaluation-service lifetime.
+- Qualifying input must be classified correctly at the UI boundary; an
+  incorrect activity source could otherwise extend or prematurely expire
+  an authenticated session.
 - Additional concurrency and lifecycle regression coverage is required.
 
 These trade-offs are acceptable because protected vault access requires
@@ -466,11 +606,54 @@ The implementation must:
 - keep authentication-provider, workstation-monitoring, automatic-lock,
   protected-key, and UI-enforcement responsibilities at their respective
   architectural boundaries;
+- keep automatic inactivity policy coordination in the Application layer
+  without introducing hosting, configuration-provider, WinForms, or
+  operating-system dependencies there;
+- supply automatic-lock policy as one immutable validated settings
+  snapshot from the UI composition root;
+- treat an absent effective automatic-lock section as disabled, but fail
+  host construction for an explicitly present invalid policy;
+- establish a new inactivity baseline for each authenticated session
+  revision;
+- accept qualifying activity only for the current authenticated revision
+  and only before the inactivity deadline;
+- measure inactivity with monotonic timestamp and elapsed-time APIs,
+  never wall-clock time;
+- treat elapsed inactivity equal to the configured timeout as expired;
+- reject activity at or after the deadline and serialize activity
+  acceptance with expiry evaluation;
+- fence a pending expiry to the authenticated revision that expired;
+- delegate automatic expiry exclusively to the revision-conditional
+  `IApplicationSecuritySessionLifecycleService.TryLock(expectedRevision, out snapshot)`;
+- require the authoritative session to compare the expected revision and
+  commit the conditional lock within one synchronization boundary;
+- reject stale conditional expiry without advancing the lifecycle
+  generation or superseding a newer in-flight unlock;
+- invalidate an in-flight unlock when a matching conditional expiry
+  successfully commits the lock transition;
+- leave authentication, re-authentication, unavailable-state recovery,
+  and authoritative session transitions to their existing owners;
+- establish a fresh inactivity baseline after each successful
+  authentication transition;
+- exclude passive pointer movement, timer messages, painting, background
+  processing, search, indexing, and AI work from qualifying activity;
+- keep periodic evaluation scheduling in the UI-hosted adapter while
+  retaining policy and monotonic deadline decisions in Application;
 - use the lifecycle service for runtime lock/unlock coordination while
   keeping the authoritative authorization state in the session;
-- advance the lifecycle operation generation for every lock request,
-  including a repeated request that does not change the session state;
-- invalidate and cancel an active unlock before applying the session lock;
+- preserve unconditional `Lock()` semantics: advance the lifecycle
+  operation generation for every request, including a repeated request
+  that does not change session state, and invalidate any active unlock
+  before applying the session lock;
+- for `TryLock(expectedRevision, out snapshot)`, advance the lifecycle
+  generation and invalidate an active unlock only when the expected
+  revision identifies the current authenticated session and the
+  conditional session transition succeeds;
+- reject stale conditional lock requests without changing the lifecycle
+  generation or detaching or cancelling a newer in-flight unlock;
+- for a successful conditional lock, establish the lifecycle generation
+  fence and detach the superseded unlock before requesting cancellation;
+  request cancellation outside the lifecycle synchronization gate;
 - reject a competing unlock while a lifecycle lock request is executing,
   including any state-change notification dispatch performed
   synchronously within that lock call;
@@ -506,6 +689,39 @@ tests for:
   injection;
 - lifecycle lock and unlock coordination through the Application
   lifecycle service;
+- authoritative session conditional locking for a matching revision and
+  rejection of a stale expected revision;
+- lifecycle conditional locking that preserves a newer in-flight unlock
+  for stale expiry and supersedes it for a matching expiry;
+- deterministic automatic-lock race coverage where a newer authenticated
+  revision is established immediately before an older expiry is applied;
+- document-workspace compatibility before expiry, presentation cleanup
+  after lock, rejection of the old presenter after re-authentication, and
+  successful document opening through a new presenter;
+- automatic-lock service and WinForms activity-filter disposal, including
+  rejection of activity after disposal;
+- controlled host-construction failure that prevents startup
+  authentication and vault initialization while presenting a safe error;
+- singleton registration and shared resolution of the automatic-lock
+  service through both its monitoring and user-activity contracts;
+- automatic-lock behavior when the policy is disabled;
+- initial inactivity baseline creation on an authenticated session
+  transition;
+- qualifying activity resetting the inactivity baseline before expiry;
+- rejection of activity at the exact expiry boundary;
+- exact-deadline automatic locking through the authoritative lifecycle
+  service;
+- rejection of stale activity from an earlier authenticated revision;
+- fresh inactivity baseline creation after successful re-authentication;
+- repeated inactivity evaluation without duplicate expiry locking;
+- stopping and disposing automatic-lock monitoring;
+- monotonic-time evaluation through an injected deterministic
+  `TimeProvider`;
+- hosted-service startup and shutdown, including start failure cleanup;
+- shared host start-before-authentication ordering and host disposal;
+- integration of successful authentication, inactivity reset, automatic
+  expiry, lifecycle re-authentication, stale activity rejection, and a
+  second expiry against the real Application services;
 - lock invalidation of an unlock still checking provider availability,
   before a session-bound authentication attempt exists;
 - lock invalidation of an active authentication attempt and rejection of
@@ -524,9 +740,12 @@ tests for:
 
 Automated Application tests cover the security-session state transitions,
 authentication-attempt invalidation, concurrency behavior, notification
-ordering, and dependency-injection registration. Full-solution validation
-and integrated protected-access verification remain separate validation
-concerns.
+ordering, dependency-injection registration, and automatic-lock policy
+coordination. The automatic-lock integration test exercises authentication,
+qualifying activity, monotonic expiry, lifecycle locking, re-authentication,
+stale activity rejection, and a subsequent expiry through the real
+Application services. Full-solution validation and the complete integrated
+protected-access verification remain separate validation concerns.
 
 ## Related Decisions
 
@@ -562,7 +781,12 @@ returns to `Locked` so that successful authentication is still required.
 
 The resulting boundary preserves the existing document and database
 encryption architecture while providing a deterministic foundation for
-authentication, runtime lock/unlock orchestration, key availability,
-workstation transitions, and presentation protection. Runtime lock
-requests supersede earlier unlock operations without changing the
-authoritative session-state contract.
+authentication, runtime lock/unlock orchestration, automatic inactivity
+locking, key availability, workstation transitions, and presentation
+protection. Automatic inactivity policy is coordinated separately from
+the authoritative session and delegates expiry to the existing lifecycle
+lock operation. Monotonic time, authenticated revision fencing, and the
+inclusive expiry boundary prevent stale activity from extending an
+expired or newer session. Unconditional lock requests and successful
+revision-conditional expiry locks supersede earlier unlock operations
+without changing the authoritative session-state contract.
