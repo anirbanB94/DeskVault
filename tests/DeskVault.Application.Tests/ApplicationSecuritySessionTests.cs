@@ -301,6 +301,97 @@ public sealed class ApplicationSecuritySessionTests
     }
 
     [Fact]
+    public void TryLock_WhenExpectedAuthenticatedRevisionMatches_LocksSession()
+    {
+        // Arrange
+        var session = new ApplicationSecuritySession();
+
+        ApplicationSecuritySessionAttempt attempt =
+            session.BeginAuthentication();
+
+        Assert.True(
+            session.TryCompleteAuthentication(
+                attempt,
+                ApplicationAuthenticationOutcome.Succeeded));
+
+        ApplicationSecuritySessionSnapshot authenticated =
+            session.CurrentSnapshot;
+
+        var notifications =
+            new List<ApplicationSecuritySessionSnapshot>();
+
+        session.StateChanged += notifications.Add;
+
+        // Act
+        bool locked = session.TryLock(
+            authenticated.Revision,
+            out ApplicationSecuritySessionSnapshot snapshot);
+
+        // Assert
+        Assert.True(locked);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Locked,
+            snapshot.State);
+
+        Assert.False(snapshot.IsProtectedAccessAvailable);
+
+        Assert.Same(snapshot, session.CurrentSnapshot);
+
+        Assert.Single(notifications);
+        Assert.Same(snapshot, notifications[0]);
+    }
+
+    [Fact]
+    public void TryLock_WhenExpectedRevisionIsStale_DoesNotLockNewAuthenticatedSession()
+    {
+        // Arrange
+        var session = new ApplicationSecuritySession();
+
+        ApplicationSecuritySessionAttempt firstAttempt =
+            session.BeginAuthentication();
+
+        Assert.True(
+            session.TryCompleteAuthentication(
+                firstAttempt,
+                ApplicationAuthenticationOutcome.Succeeded));
+
+        long expiredRevision =
+            session.CurrentSnapshot.Revision;
+
+        session.Lock();
+
+        ApplicationSecuritySessionAttempt secondAttempt =
+            session.BeginAuthentication();
+
+        Assert.True(
+            session.TryCompleteAuthentication(
+                secondAttempt,
+                ApplicationAuthenticationOutcome.Succeeded));
+
+        ApplicationSecuritySessionSnapshot newerAuthenticated =
+            session.CurrentSnapshot;
+
+        // Act
+        bool locked = session.TryLock(
+            expiredRevision,
+            out ApplicationSecuritySessionSnapshot snapshot);
+
+        // Assert
+        Assert.False(locked);
+
+        Assert.Same(newerAuthenticated, snapshot);
+        Assert.Same(newerAuthenticated, session.CurrentSnapshot);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Authenticated,
+            session.CurrentSnapshot.State);
+
+        Assert.True(
+            session.CurrentSnapshot.IsProtectedAccessAvailable);
+    }
+
+    [Fact]
     public void Lock_WhenSessionIsAuthenticated_WithdrawsProtectedAccess()
     {
         // Arrange

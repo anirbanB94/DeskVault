@@ -46,6 +46,161 @@ public sealed class ApplicationSecuritySessionLifecycleServiceTests
         Assert.Equal(0, authenticationService.CallCount);
     }
 
+    [Fact]
+    public async Task TryLock_WhenExpectedRevisionIsStale_DoesNotSupersedeNewerInFlightUnlock()
+    {
+        // Arrange
+        ApplicationSecuritySession session =
+            CreateLockedSession();
+
+        long staleRevision =
+            session.CurrentSnapshot.Revision;
+
+        var authenticationReached =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var allowAuthenticationCompletion =
+            new TaskCompletionSource<ApplicationAuthenticationServiceResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var authenticationService =
+            new StubAuthenticationService(
+                async cancellationToken =>
+                {
+                    CompleteAuthentication(
+                        session,
+                        ApplicationAuthenticationOutcome.Succeeded);
+
+                    authenticationReached.TrySetResult(true);
+
+                    return await allowAuthenticationCompletion.Task
+                        .WaitAsync(cancellationToken);
+                });
+
+        var lifecycle =
+            CreateLifecycle(session, authenticationService);
+
+        try
+        {
+            Task<ApplicationAuthenticationServiceResult> unlockTask =
+                lifecycle.UnlockAsync(
+                    TestContext.Current.CancellationToken);
+
+            await authenticationReached.Task.WaitAsync(
+                TestContext.Current.CancellationToken);
+
+            ApplicationSecuritySessionSnapshot authenticated =
+                session.CurrentSnapshot;
+
+            // Act
+            bool locked = lifecycle.TryLock(
+                staleRevision,
+                out ApplicationSecuritySessionSnapshot snapshot);
+
+            // Complete the previously started unlock after the stale
+            // conditional lock has been rejected.
+            allowAuthenticationCompletion.TrySetResult(
+                ApplicationAuthenticationServiceResult.Succeeded);
+
+            ApplicationAuthenticationServiceResult unlockResult =
+                await unlockTask.WaitAsync(
+                    TestContext.Current.CancellationToken);
+
+            // Assert
+            Assert.False(locked);
+            Assert.Same(authenticated, snapshot);
+            Assert.Same(authenticated, session.CurrentSnapshot);
+
+            Assert.Equal(
+                ApplicationAuthenticationServiceResult.Succeeded,
+                unlockResult);
+
+            Assert.Equal(
+                ApplicationSecuritySessionState.Authenticated,
+                session.CurrentSnapshot.State);
+
+            Assert.True(
+                session.CurrentSnapshot.IsProtectedAccessAvailable);
+        }
+        finally
+        {
+            allowAuthenticationCompletion.TrySetResult(
+                ApplicationAuthenticationServiceResult.Succeeded);
+        }
+    }
+
+    [Fact]
+    public async Task TryLock_WhenExpectedRevisionMatches_SupersedesInFlightUnlock()
+    {
+        // Arrange
+        ApplicationSecuritySession session =
+            CreateLockedSession();
+
+        var authenticationReached =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var authenticationService =
+            new StubAuthenticationService(
+                async cancellationToken =>
+                {
+                    CompleteAuthentication(
+                        session,
+                        ApplicationAuthenticationOutcome.Succeeded);
+
+                    authenticationReached.TrySetResult(true);
+
+                    await Task.Delay(
+                        Timeout.InfiniteTimeSpan,
+                        cancellationToken);
+
+                    return ApplicationAuthenticationServiceResult.Succeeded;
+                });
+
+        var lifecycle =
+            CreateLifecycle(session, authenticationService);
+
+        Task<ApplicationAuthenticationServiceResult> unlockTask =
+            lifecycle.UnlockAsync(
+                TestContext.Current.CancellationToken);
+
+        await authenticationReached.Task.WaitAsync(
+            TestContext.Current.CancellationToken);
+
+        ApplicationSecuritySessionSnapshot authenticated =
+            session.CurrentSnapshot;
+
+        // Act
+        bool locked = lifecycle.TryLock(
+            authenticated.Revision,
+            out ApplicationSecuritySessionSnapshot snapshot);
+
+        ApplicationAuthenticationServiceResult unlockResult =
+            await unlockTask.WaitAsync(
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(locked);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Locked,
+            snapshot.State);
+
+        Assert.Same(snapshot, session.CurrentSnapshot);
+
+        Assert.Equal(
+            ApplicationAuthenticationServiceResult.Superseded,
+            unlockResult);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Locked,
+            session.CurrentSnapshot.State);
+
+        Assert.False(
+            session.CurrentSnapshot.IsProtectedAccessAvailable);
+    }
+
     [Theory]
     [InlineData(
         ApplicationAuthenticationOutcome.Succeeded,

@@ -4,6 +4,8 @@ using DeskVault.Application.Documents.Commands.RemoveDocument;
 using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Authentication;
+using DeskVault.Application.Security.AutomaticLock;
 using DeskVault.Application.Security.Sessions;
 using DeskVault.Domain.Documents;
 using DeskVault.UI.Presenters;
@@ -20,6 +22,236 @@ namespace DeskVault.UI.Tests;
 
 public sealed class DocumentWorkspacePresenterTests
 {
+    [Fact]
+    public async Task AutomaticLock_WhenSessionIsReauthenticated_AllowsNewDocumentWorkspaceToOpenDocument()
+    {
+        // Arrange
+        CancellationToken cancellationToken =
+            TestContext.Current.CancellationToken;
+
+        var session = new ApplicationSecuritySession();
+
+        var authenticationService =
+            new ApplicationAuthenticationService(
+                new SuccessfulAuthenticationProvider(),
+                session,
+                NullLogger<ApplicationAuthenticationService>.Instance);
+
+        var lifecycleService =
+            new ApplicationSecuritySessionLifecycleService(
+                session,
+                authenticationService);
+
+        var timeProvider =
+            new AutomaticLockPresentationTimeProvider();
+
+        using var automaticLockService =
+            new ApplicationAutomaticLockService(
+                session,
+                lifecycleService,
+                new AutomaticLockSettings(
+                    enabled: true,
+                    inactivityTimeoutMinutes: 1),
+                timeProvider);
+
+        automaticLockService.Start();
+
+        Guid documentId = Guid.NewGuid();
+
+        Document document =
+            CreateDocument(
+                documentId,
+                "automatic-lock-document.csv");
+
+        Mock<IDocumentRepository> repository =
+            CreateRepository(document);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var firstView =
+            new Mock<IDocumentWorkspaceView>();
+
+        firstView
+            .Setup(view => view.PostToUi(
+                It.IsAny<Action>()))
+            .Callback<Action>(action => action());
+
+        firstView
+            .Setup(view => view.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                document.FileName,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var firstDocumentViewer =
+            new Mock<IDocumentViewer>();
+
+        DocumentWorkspacePresenter? firstPresenter = null;
+        DocumentWorkspacePresenter? secondPresenter = null;
+
+        MemoryStream firstStream = CreateDocumentStream();
+        MemoryStream secondStream = CreateDocumentStream();
+
+        try
+        {
+            // Establish the first authenticated session through the
+            // production Application authentication service.
+            ApplicationAuthenticationServiceResult initialAuthentication =
+                await authenticationService.AuthenticateAsync(
+                    cancellationToken);
+
+            Assert.Equal(
+                ApplicationAuthenticationServiceResult.Succeeded,
+                initialAuthentication);
+
+            ApplicationSecuritySessionSnapshot firstAuthenticatedSnapshot =
+                session.CurrentSnapshot;
+
+            Assert.Equal(
+                ApplicationSecuritySessionState.Authenticated,
+                firstAuthenticatedSnapshot.State);
+
+            // Open the document through a presenter bound to the first
+            // authenticated session revision.
+            firstPresenter =
+                CreatePresenterForSession(
+                    firstView,
+                    firstDocumentViewer,
+                    repository,
+                    storageService,
+                    session);
+
+            await firstPresenter.OpenAsync(
+                documentId,
+                firstStream,
+                document.FileName,
+                cancellationToken);
+
+            Assert.Equal(
+                documentId,
+                firstPresenter.CurrentDocumentId);
+
+            Assert.True(firstStream.CanRead);
+
+            firstView.Verify(
+                view => view.ShowDocumentAsync(
+                    firstStream,
+                    document.FileName,
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+
+            // Expire the first session through the real automatic-lock
+            // service and its lifecycle-owned conditional lock operation.
+            timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+            automaticLockService.EvaluateInactivity();
+
+            Assert.Equal(
+                ApplicationSecuritySessionState.Locked,
+                session.CurrentSnapshot.State);
+
+            Assert.False(
+                session.CurrentSnapshot.IsProtectedAccessAvailable);
+
+            // The old document workspace must immediately clear its
+            // presentation and release the retained document stream.
+            Assert.Null(firstPresenter.CurrentDocumentId);
+            Assert.False(firstStream.CanRead);
+
+            firstView.Verify(
+                view => view.ClearPresentation(),
+                Times.Once);
+
+            // Re-authenticate through the production lifecycle service.
+            ApplicationAuthenticationServiceResult unlockResult =
+                await lifecycleService.UnlockAsync(cancellationToken);
+
+            Assert.Equal(
+                ApplicationAuthenticationServiceResult.Succeeded,
+                unlockResult);
+
+            ApplicationSecuritySessionSnapshot secondAuthenticatedSnapshot =
+                session.CurrentSnapshot;
+
+            Assert.Equal(
+                ApplicationSecuritySessionState.Authenticated,
+                secondAuthenticatedSnapshot.State);
+
+            Assert.True(
+                secondAuthenticatedSnapshot.IsProtectedAccessAvailable);
+
+            Assert.True(
+                secondAuthenticatedSnapshot.Revision >
+                firstAuthenticatedSnapshot.Revision);
+
+            // A presenter permanently bound to the first revision must
+            // not regain access merely because authentication succeeded.
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => firstPresenter.OpenAsync(
+                    documentId,
+                    CreateDocumentStream(),
+                    document.FileName,
+                    cancellationToken));
+
+            Assert.Null(firstPresenter.CurrentDocumentId);
+
+            // A fresh document workspace bound to the new authenticated
+            // revision must be able to open the same document.
+            var secondView =
+                new Mock<IDocumentWorkspaceView>();
+
+            secondView
+                .Setup(view => view.PostToUi(
+                    It.IsAny<Action>()))
+                .Callback<Action>(action => action());
+
+            secondView
+                .Setup(view => view.ShowDocumentAsync(
+                    It.IsAny<Stream>(),
+                    document.FileName,
+                    It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            var secondDocumentViewer =
+                new Mock<IDocumentViewer>();
+
+            secondPresenter =
+                CreatePresenterForSession(
+                    secondView,
+                    secondDocumentViewer,
+                    repository,
+                    storageService,
+                    session);
+
+            await secondPresenter.OpenAsync(
+                documentId,
+                secondStream,
+                document.FileName,
+                cancellationToken);
+
+            // Assert
+            Assert.Equal(
+                documentId,
+                secondPresenter.CurrentDocumentId);
+
+            Assert.True(secondStream.CanRead);
+
+            secondView.Verify(
+                view => view.ShowDocumentAsync(
+                    secondStream,
+                    document.FileName,
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+        finally
+        {
+            secondPresenter?.Dispose();
+            firstPresenter?.Dispose();
+
+            automaticLockService.Stop();
+        }
+    }
     [Fact]
     public async Task OpenAsync_SupportedDocument_ShowsDocument()
     {
@@ -2578,6 +2810,78 @@ public sealed class DocumentWorkspacePresenterTests
         }
     }
 
+    private static DocumentWorkspacePresenter CreatePresenterForSession(
+        Mock<IDocumentWorkspaceView> view,
+        Mock<IDocumentViewer> documentViewer,
+        Mock<IDocumentRepository> repository,
+        Mock<IStorageService> storageService,
+        IApplicationSecuritySession applicationSecuritySession)
+    {
+        return new DocumentWorkspacePresenter(
+            Guid.NewGuid(),
+            view.Object,
+            documentViewer.Object,
+            new GetDocumentHandler(
+                repository.Object,
+                NullLogger<GetDocumentHandler>.Instance),
+            new OpenDocumentHandler(
+                repository.Object,
+                new Mock<IDocumentReader>().Object,
+                new DocumentProcessingOptions(),
+                NullLogger<OpenDocumentHandler>.Instance),
+            new RemoveDocumentHandler(
+                repository.Object,
+                new Mock<IWorkspaceRepository>().Object,
+                storageService.Object,
+                NullLogger<RemoveDocumentHandler>.Instance),
+            NullLogger<DocumentWorkspacePresenter>.Instance,
+            applicationSecuritySession);
+    }
+
+    private sealed class SuccessfulAuthenticationProvider :
+        IApplicationAuthenticationProvider
+    {
+        public Task<ApplicationAuthenticationAvailability> CheckAvailabilityAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                ApplicationAuthenticationAvailability.Available);
+        }
+
+        public Task<ApplicationAuthenticationProviderResult> RequestAuthenticationAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                ApplicationAuthenticationProviderResult.Succeeded);
+        }
+    }
+
+    private sealed class AutomaticLockPresentationTimeProvider : TimeProvider
+    {
+        private long _timestamp;
+
+        public override long TimestampFrequency =>
+            TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() =>
+            Interlocked.Read(ref _timestamp);
+
+        public void Advance(TimeSpan elapsed)
+        {
+            if (elapsed < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elapsed));
+            }
+
+            Interlocked.Add(
+                ref _timestamp,
+                elapsed.Ticks);
+        }
+    }
     private static DocumentWorkspacePresenter CreatePresenter(
         Mock<IDocumentWorkspaceView> view,
         Mock<IDocumentViewer> documentViewer,

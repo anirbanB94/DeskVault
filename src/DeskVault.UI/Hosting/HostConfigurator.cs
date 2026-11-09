@@ -32,11 +32,18 @@ internal static class HostConfigurator
     {
         var builder = CreateBuilder(AppContext.BaseDirectory);
 
+        // Validate the effective policy before creating the production host
+        // or presenting the authentication experience.
+        AutomaticLockSettings automaticLockSettings =
+            AutomaticLockSettingsFactory.Create(
+                builder.Configuration);
+
         ConfigureLogging(builder);
 
         ConfigureServices(
             builder.Services,
-            builder.Configuration);
+            builder.Configuration,
+            automaticLockSettings);
 
         return builder.Build();
     }
@@ -79,9 +86,15 @@ internal static class HostConfigurator
 
     private static void ConfigureServices(
         IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        AutomaticLockSettings automaticLockSettings)
     {
         // Configuration
+
+        // Automatic-lock configuration.
+        // The validated settings are captured once for the process lifetime.
+        services.AddSingleton(automaticLockSettings);
+
         services.Configure<ApplicationOptions>(
             configuration.GetSection(
                 ApplicationOptions.SectionName));
@@ -119,6 +132,11 @@ internal static class HostConfigurator
 
         // Application
         services.AddApplication();
+
+        // Shared runtime services
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+
+        services.AddHostedService<ApplicationAutomaticLockHostedService>();
 
         // Infrastructure
         services.AddInfrastructure(configuration);

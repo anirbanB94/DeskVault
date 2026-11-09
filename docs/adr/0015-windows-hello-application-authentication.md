@@ -136,6 +136,55 @@ The production dependency-injection composition must register the selected Windo
 
 The authentication prompt must be associated with a valid active DeskVault window. UI window-handle ownership remains in the UI composition boundary; the Application security-session contract must not depend on WinForms or native window types.
 
+### Shared Host Lifecycle and Automatic Inactivity Lock
+
+The production UI composition root owns one shared Generic Host for the lifetime of the DeskVault application process.
+
+The host is built and started before the production startup authentication form is resolved or displayed. Starting the host starts its registered hosted services and establishes the runtime service lifecycle before the authentication workflow begins.
+
+If host construction fails because the startup configuration is missing, malformed, or invalid, `Program.Main` presents a fixed actionable startup-configuration message and returns before startup authentication, database initialization, or creation of the main application interface. The failure message does not expose exception details. A host that was not successfully constructed is not started.
+
+The same host and service provider remain in use throughout:
+
+- startup authentication;
+- protected database initialization;
+- creation and execution of the main WinForms interface;
+- normal application shutdown.
+
+The production startup path must not build a second host for authentication, database initialization, or the main application interface. Doing so could create separate singleton security sessions, lifecycle services, authentication services, or automatic-lock coordinators.
+
+The UI-owned `DeskVaultHostLifetime` coordinates host startup, shutdown, and disposal. It is responsible for:
+
+- starting the production host before startup authentication;
+- propagating host-start failures rather than proceeding to authentication;
+- stopping the host when startup is cancelled or fails;
+- stopping the host when the main WinForms message loop exits;
+- disposing the host after the application lifecycle has ended.
+
+The host must be stopped and disposed on every applicable exit path, including successful application exit, startup cancellation, authentication failure, database initialization failure, and exceptions during startup or normal application execution.
+
+The Application layer owns automatic inactivity-lock policy coordination through `ApplicationAutomaticLockService`. The service implements `IApplicationAutomaticLockService` and `IApplicationUserActivityService` through one shared singleton instance.
+
+The UI composition root supplies the validated immutable `AutomaticLockSettings` snapshot and the system `TimeProvider`. The Application service remains independent of configuration providers, WinForms, operating-system events, and hosting APIs.
+
+The UI registers `ApplicationAutomaticLockHostedService` as the hosted scheduling adapter. It starts and stops the Application automatic-lock service with the shared host and periodically requests inactivity evaluation. Scheduling intervals do not determine the expiry deadline; the Application service measures elapsed inactivity through monotonic timestamp APIs.
+
+The automatic-lock service can start before startup authentication without starting an inactivity countdown for an unauthenticated session. It establishes its baseline only when the authoritative Application security session transitions to a new `Authenticated` revision.
+
+The UI input adapter reports qualifying deliberate user activity to `IApplicationUserActivityService` with the observed session revision. Activity is accepted only for the current authenticated revision and before the configured inactivity deadline. Passive pointer movement, painting, timers, and background operations do not extend the inactivity baseline.
+
+When the inactivity deadline is reached, the Application automatic-lock service delegates expiry to the revision-conditional `IApplicationSecuritySessionLifecycleService.TryLock(expectedRevision, out snapshot)`, using the authenticated session revision whose inactivity baseline expired.
+
+The lifecycle service and authoritative Application security session continue to own lock coordination and the resulting authorization-state transition. The expected revision is checked atomically with the session lock transition. A delayed expiry from an earlier revision cannot lock a newer authenticated session or supersede its in-flight unlock. A matching expiry commits the lock and invalidates any in-flight unlock through the existing lifecycle generation and cancellation coordination.
+
+Automatic inactivity locking does not introduce another authentication provider, authentication outcome, authorization state, or unlock path. Following a lock, protected access can be restored only through the existing authentication service and the selected Windows Hello provider.
+
+The `Security:AutomaticLock` configuration is resolved and validated by the UI composition root before startup authentication is allowed to proceed. An absent effective section produces a disabled policy. Explicit invalid configuration prevents successful host construction or startup; it must not silently be treated as a valid enabled or disabled policy.
+
+The validated automatic-lock settings are an immutable runtime snapshot. Changes to external configuration sources do not modify an active policy; the application must be restarted for configuration changes to take effect.
+
+The host lifecycle, automatic-lock policy, activity classification, monotonic expiry, and session-revision behavior are governed by ADR-0002 and ADR-0014. This ADR establishes how those services coexist with the Windows Hello startup authorization boundary.
+
 ### Implementation
 
 The authentication integration is implemented across the Application, Infrastructure, and UI boundaries while preserving the separation defined by ADR-0002 and ADR-0014.
@@ -207,6 +256,12 @@ The UI composition root registers the active-form accessor and window-handle pro
 
 This keeps Windows Forms and native window ownership outside the Application authentication contract.
 
+The UI layer also owns the WinForms user-activity adapter used by automatic inactivity locking. `WinFormsUserActivityMessageFilter` observes the application's input-message boundary and reports qualifying deliberate input through `IApplicationUserActivityService`.
+
+The input adapter must not report passive mouse movement, painting, timer messages, or background processing as qualifying user activity. It associates activity with the currently observed authenticated session revision so that stale input cannot extend a newer session.
+
+The message filter is started and stopped with the main form's UI lifecycle. It does not own the inactivity timeout, calculate the authoritative expiry deadline, or perform a lock transition. Those responsibilities remain in the Application automatic-lock service and the existing lifecycle service.
+
 #### Startup Authentication Experience
 
 `StartupAuthenticationForm` presents the Windows Hello verification request before the main application interface is created.
@@ -226,6 +281,9 @@ Application Startup
         |
         v
 Build Production Host
+        |
+        v
+Start Shared IHost and Hosted Services
         |
         v
 Resolve StartupAuthenticationForm
@@ -253,13 +311,24 @@ Create MainForm
         |
         v
 Run Main Application
+        |
+        v
+Stop and Dispose Shared IHost
 ```
+
+The shared host is started before the startup authentication form is resolved or displayed. This ensures that the production hosted-service lifecycle is established before authentication begins and that the same singleton service graph is retained throughout the application lifecycle.
+
+Automatic inactivity monitoring is available as a hosted service during this lifetime. It does not establish an inactivity baseline or cause an automatic lock until the authoritative security session becomes authenticated.
 
 A failed, cancelled, unavailable, unsupported, or otherwise unsuccessful authentication attempt does not permit database initialization or creation of `MainForm`.
 
 Database initialization failure remains a separate startup failure. It is reported through the existing safe diagnostic boundary and a fixed generic user-facing message.
 
+Database initialization and all protected-vault operations remain gated by the authoritative authenticated session state and the existing protected-key enforcement boundary.
 The startup coordinator does not change database initialization, migration, cryptographic key provisioning, strict key retrieval, or encrypted database provider semantics.
+
+If startup authentication is cancelled, authentication fails, or database initialization fails, the shared host must still be stopped and disposed.
+The same cleanup requirement applies when normal WinForms execution terminates or raises an exception.
 
 ### No-Fallback Policy
 
@@ -278,6 +347,8 @@ When Windows Hello is unavailable or verification does not succeed, protected ac
 The user may retry after Windows Hello availability is independently re-established. A retry must still complete a new successful verification.
 
 No authentication failure or unavailable outcome authorizes reinitialization, replacement, or recreation of existing vault keys.
+
+Automatic inactivity locking is not an authentication fallback. It delegates to the existing Application lifecycle lock operation and leaves re-authentication to the Windows Hello authentication boundary.
 
 ### Deferred Authentication Direction
 
@@ -335,6 +406,12 @@ DPAPI `CurrentUser` remains a key-protection mechanism and must not be represent
 
 Protected content remains dependent on enforcement at the Application, protected-key, and presentation boundaries. Windows Hello verification alone does not guarantee that previously opened content, cached results, or in-flight operations are withdrawn after a later lock transition.
 
+Automatic inactivity locking adds a runtime trigger for the existing Application lock lifecycle. It does not replace Windows Hello authentication, change the authentication provider, or independently authorize protected access.
+
+An inactivity timeout must be measured using monotonic elapsed time and fenced to the authenticated session revision. Qualifying activity must be deliberate user input associated with the current session revision. Activity at or after the expiry deadline must not extend the authenticated session.
+
+When automatic inactivity expiry occurs, it delegates to the existing lifecycle lock operation. The resulting non-authorized state is established by the authoritative Application security session. A later successful Windows Hello authentication remains necessary before protected access is restored.
+
 The application must not log biometric data, credential material, authentication secrets, or sensitive exception details.
 
 Unavailable, failed, or cancelled verification must remain non-authorized and must not be treated as a successful security condition.
@@ -352,6 +429,10 @@ Unavailable, failed, or cancelled verification must remain non-authorized and mu
 - Existing document/database encryption and key-protection responsibilities remain separate.
 - The supported product baseline excludes Windows releases and editions that are no longer within Microsoft's servicing lifecycle.
 - A future application-specific authentication mechanism can be evaluated independently without changing the authoritative session contract.
+- Production hosted services start before startup authentication and remain associated with the same shared host throughout the application lifetime.
+- Host shutdown and disposal are part of the application exit path, including startup cancellation and startup failure.
+- Automatic inactivity expiry delegates to the existing lifecycle lock operation rather than introducing a separate authentication or authorization mechanism.
+- A new inactivity baseline is established only after successful authentication of a new session revision.
 
 ### Negative
 
@@ -362,6 +443,10 @@ Unavailable, failed, or cancelled verification must remain non-authorized and mu
 - The implementation requires a valid application window handle for the desktop verification prompt.
 - Actual Windows Hello hardware and policy behavior requires manual validation on a supported Windows host.
 - Windows Hello does not isolate the application from arbitrary same-user code or replace protected-key and presentation enforcement.
+- The UI composition root must maintain the shared host lifetime and validated automatic-lock policy configuration.
+- Qualifying activity must be classified correctly at the UI input boundary; incorrectly reported activity could extend an inactivity baseline.
+- The periodic hosted evaluator must remain alive while the application session is active, and its lifecycle must be stopped and disposed reliably.
+- Automatic-lock timing, activity acceptance, and expiry behavior require deterministic Application tests and integrated validation.
 
 These trade-offs are acceptable for MVP 2 because the selected mechanism provides local user verification without introducing a separate credential store or changing the existing encryption architecture.
 
@@ -377,7 +462,12 @@ Application-level verification covers:
 - authentication-attempt identity and stale completion rejection;
 - cancellation and concurrent authentication behavior;
 - safe handling of unexpected provider failures;
-- singleton registration of the authentication service and security session.
+- singleton registration of the authentication service and security session;
+- automatic-lock policy validation and immutable settings behavior;
+- automatic-lock evaluation using monotonic time;
+- qualification of activity by authenticated session revision;
+- rejection of stale activity and activity at or after the inactivity deadline;
+- delegation of automatic expiry to the existing lifecycle lock service.
 
 Infrastructure-level verification covers:
 
@@ -393,7 +483,12 @@ Integration-level verification covers:
 - production Application and Infrastructure dependency-injection registration with Windows Hello as the sole authentication provider;
 - mapping Windows availability and verification results through the production Windows Hello provider and Application authentication service into the authoritative session;
 - successful, failed, cancelled, unavailable, and unknown verification outcomes;
-- unavailable Windows Hello capability and an unavailable window handle preventing verification and protected access.
+- unavailable Windows Hello capability and an unavailable window handle preventing verification and protected access;
+- automatic inactivity locking integrated with the real Application security-session and lifecycle services;
+- accepted activity resetting the inactivity baseline before expiry;
+- exact-deadline expiry locking the authenticated session;
+- rejection of activity associated with an earlier authenticated session revision;
+- successful re-authentication followed by a fresh inactivity baseline and a subsequent expiry.
 
 UI-level verification covers:
 
@@ -405,7 +500,13 @@ UI-level verification covers:
 - prevention of database initialization before authenticated access;
 - database initialization after successful authentication;
 - cancellation and initialization failure handling;
-- production startup dependency-injection composition.
+- production startup dependency-injection composition;
+- shared host startup before startup authentication;
+- hosted automatic-lock service startup and shutdown;
+- host stop and disposal after startup cancellation or failure;
+- host stop and disposal after normal application termination;
+- WinForms activity-filter lifecycle and reporting of qualifying input;
+- exclusion of passive pointer movement, timer messages, and painting from qualifying activity.
 
 The implementation also rejects a form during disposal; that transient state is guarded in production code but is not independently exercised by a dedicated automated test.
 
@@ -418,10 +519,10 @@ The supported Windows servicing baseline must be reviewed when the deployed .NET
 ## Related Decisions
 
 - ADR-0001 establishes DeskVault's offline-first product vision.
-- ADR-0002 establishes the Domain, Application, Infrastructure, and UI boundaries and the composition-root model.
+- ADR-0002 establishes the Domain, Application, Infrastructure, and UI boundaries, the composition-root model, and the shared Generic Host lifecycle.
 - ADR-0004 establishes document encryption, DPAPI key protection, strict retrieval, and the authorized provisioning boundary.
 - ADR-0009 establishes encrypted SQLite and database-key management.
-- ADR-0014 establishes the authoritative Application security-session contract, authentication outcomes, state transitions, and stale authentication-attempt rejection.
+- ADR-0014 establishes the authoritative Application security-session contract, authentication outcomes, state transitions, stale authentication-attempt rejection, and automatic inactivity-lock coordination.
 - The existing cryptographic key lifecycle remains governed by the relevant key-management decisions.
 
 ## References
@@ -463,6 +564,10 @@ DeskVault MVP 2 will use Windows Hello as its sole authentication mechanism for 
 The Application security session remains the authoritative authorization boundary. Authentication must succeed before protected database initialization, and unavailable, failed, cancelled, or unsupported verification must fail closed.
 
 The implementation preserves the separation between Application authentication orchestration, Infrastructure Windows Hello integration, and UI window ownership. The startup coordinator ensures that database initialization and creation of the main application interface occur only after the Application security session confirms authenticated protected access.
+
+The production application uses one shared Generic Host. The host and its hosted services start before startup authentication and remain active throughout authentication, database initialization, and the WinForms application lifetime. The host is stopped and disposed on startup cancellation, startup failure, and normal application termination.
+
+Automatic inactivity locking is coordinated by the Application layer using an immutable validated policy snapshot, monotonic time, and authenticated session revision fencing. The UI supplies deliberate activity events and hosted evaluation scheduling. Expiry delegates to the existing Application lifecycle lock operation, and Windows Hello remains the sole authentication mechanism for restoring protected access.
 
 The supported product baseline is Windows 11 version 25H2 or later while serviced and supported by the deployed .NET 10 runtime, together with Windows 11 version 24H2 Enterprise and Education editions only while serviced. Windows 10 and Windows 11 version 24H2 Home/Pro-family editions are not supported by this MVP 2 policy.
 

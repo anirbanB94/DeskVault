@@ -162,6 +162,41 @@ public sealed class ApplicationSecuritySession
     }
 
     /// <inheritdoc />
+    public bool TryLock(
+        long expectedRevision,
+        out ApplicationSecuritySessionSnapshot snapshot)
+    {
+        bool shouldDispatchNotifications;
+
+        lock (_syncRoot)
+        {
+            // The revision check and transition must share the same
+            // synchronization boundary. A later authenticated revision
+            // must never be locked by an earlier expiry callback.
+            if (_currentSnapshot.Revision != expectedRevision ||
+                !_currentSnapshot.IsProtectedAccessAvailable)
+            {
+                snapshot = _currentSnapshot;
+                return false;
+            }
+
+            _activeAttempt = null;
+
+            shouldDispatchNotifications =
+                TransitionLocked(
+                    ApplicationSecuritySessionState.Locked,
+                    out snapshot);
+        }
+
+        if (shouldDispatchNotifications)
+        {
+            DispatchPendingNotifications();
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc />
     public ApplicationSecuritySessionSnapshot Lock()
     {
         ApplicationSecuritySessionSnapshot snapshot;

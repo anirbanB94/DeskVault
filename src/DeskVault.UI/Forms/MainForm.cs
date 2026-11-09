@@ -4,6 +4,7 @@ using DeskVault.Shared.Extensions;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
+using DeskVault.UI.Services.Security;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
 using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
@@ -21,9 +22,12 @@ public partial class MainForm : Form, IMainFormView
     private bool _isUpdatingDocumentGrid;
     private bool _isUpdatingWorkspaceGrid;
     private readonly ISessionBoundDialogCoordinator _dialogCoordinator;
+    private readonly WinFormsUserActivityMessageFilter _userActivityMessageFilter;
 
     public MainForm(
         IApplicationInfoService applicationInfo,
+        IApplicationSecuritySession session,
+        IApplicationUserActivityService userActivityService,
         IMainFormPresenterFactory presenterFactory,
         ILogger<MainForm> logger,
         ISessionBoundDialogCoordinator dialogCoordinator)
@@ -32,6 +36,8 @@ public partial class MainForm : Form, IMainFormView
         ArgumentNullException.ThrowIfNull(presenterFactory);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(dialogCoordinator);
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(userActivityService);
 
         InitializeComponent();
 
@@ -39,6 +45,10 @@ public partial class MainForm : Form, IMainFormView
         _presenter = presenterFactory.Create(this);
         _logger = logger;
         _dialogCoordinator = dialogCoordinator;
+        _userActivityMessageFilter =
+            new WinFormsUserActivityMessageFilter(
+                session,
+                userActivityService);
 
         _searchDebounceTimer = new Timer
         {
@@ -87,6 +97,7 @@ public partial class MainForm : Form, IMainFormView
         workspaceGridView.SelectionChanged += OnWorkspaceSelectionChanged;
         workspaceGridView.CellDoubleClick += OnWorkspaceDoubleClick;
         FormClosed += OnFormClosed;
+        Shown += OnMainFormShown;
     }
 
     public event EventHandler? ImportRequested;
@@ -188,6 +199,13 @@ public partial class MainForm : Form, IMainFormView
                 dialog.WorkspaceName,
                 dialog.WorkspaceDescription)
             : null;
+    }
+
+    private void OnMainFormShown(
+        object? sender,
+        EventArgs e)
+    {
+        _userActivityMessageFilter.Start();
     }
 
     private async void MainForm_Load(
@@ -323,6 +341,7 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         FormClosedEventArgs e)
     {
+        _userActivityMessageFilter.Dispose();
         _presenter.Dispose();
         _searchDebounceTimer.Dispose();
     }
