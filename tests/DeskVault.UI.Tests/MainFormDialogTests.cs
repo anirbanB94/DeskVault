@@ -93,8 +93,66 @@ public sealed class MainFormDialogTests
         form.Close();
     }
 
+    [Fact]
+    public void LockedState_ShowsUnlockAction_AndInvokesReauthenticationDialog()
+    {
+        var dialogCoordinator =
+            new Mock<ISessionBoundDialogCoordinator>();
+
+        var reauthenticationDialog =
+            new Mock<IStartupAuthenticationDialogService>();
+
+        reauthenticationDialog
+            .Setup(x => x.ShowDialog(It.IsAny<IWin32Window>()))
+            .Returns(DialogResult.Cancel);
+
+        using MainForm form =
+            CreateMainForm(
+                dialogCoordinator.Object,
+                reauthenticationDialog.Object);
+
+        StatusStrip statusStrip =
+            Assert.Single(form.Controls.OfType<StatusStrip>());
+
+        ToolStripButton unlockButton =
+            Assert.Single(statusStrip.Items.OfType<ToolStripButton>());
+
+        Assert.Equal(
+            "unlockButton",
+            unlockButton.Name);
+
+        Assert.Equal(
+            UiMessages.UnlockDeskVaultButton,
+            unlockButton.Text);
+
+        // The action must not be exposed while the session is authenticated.
+        Assert.False(unlockButton.Available);
+
+        // A lock exposes the reauthentication route without enabling
+        // any protected document or workspace actions.
+        form.ShowLockedState();
+
+        Assert.True(unlockButton.Available);
+        Assert.True(unlockButton.Enabled);
+
+        unlockButton.PerformClick();
+
+        reauthenticationDialog.Verify(
+            x => x.ShowDialog(form),
+            Times.Once);
+
+        // Cancelling authentication must leave the application locked.
+        Assert.True(unlockButton.Available);
+        Assert.True(unlockButton.Enabled);
+
+        // The authenticated presentation hides the reauthentication action.
+        form.ShowAuthenticatedState();
+
+        Assert.False(unlockButton.Available);
+    }
     private static MainForm CreateMainForm(
-        ISessionBoundDialogCoordinator dialogCoordinator)
+        ISessionBoundDialogCoordinator dialogCoordinator,
+        IStartupAuthenticationDialogService? reauthenticationDialogService = null)
     {
         var applicationInfo =
             new Mock<IApplicationInfoService>();
@@ -238,6 +296,7 @@ public sealed class MainFormDialogTests
             userActivityService.Object,
             presenterFactory,
             NullLogger<MainForm>.Instance,
-            dialogCoordinator);
+            dialogCoordinator,
+            reauthenticationDialogService ?? new Mock<IStartupAuthenticationDialogService>().Object);
     }
 }

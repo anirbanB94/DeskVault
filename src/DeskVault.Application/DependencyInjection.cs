@@ -23,6 +23,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.AutomaticLock;
 using DeskVault.Application.Security.Sessions;
+using DeskVault.Application.Security.Workstation;
 using DeskVault.Application.Workspaces;
 using DeskVault.Application.Workspaces.Commands.ActivateWorkspace;
 using DeskVault.Application.Workspaces.Commands.AddDocumentToWorkspace;
@@ -129,11 +130,39 @@ public static class DependencyInjection
                     options.ChunkOverlap);
             });
 
+        // Application security session and authentication.
+
         services.AddSingleton<IApplicationSecuritySession, ApplicationSecuritySession>();
 
         services.AddSingleton<IApplicationAuthenticationService, ApplicationAuthenticationService>();
 
-        services.AddSingleton<IApplicationSecuritySessionLifecycleService, ApplicationSecuritySessionLifecycleService>();
+        services.AddSingleton<
+            IApplicationSecuritySessionLifecycleService,
+            ApplicationSecuritySessionLifecycleService>();
+
+        // Workstation security monitoring.
+        //
+        // The lifecycle service depends on authentication, and authentication
+        // depends on workstation readiness. Defer lifecycle-service resolution
+        // so constructing the monitor does not introduce a circular dependency.
+        services.AddSingleton<Func<IApplicationSecuritySessionLifecycleService>>(
+            serviceProvider =>
+                () => serviceProvider.GetRequiredService<
+                    IApplicationSecuritySessionLifecycleService>());
+
+        // Register one concrete monitor instance and expose both contracts
+        // through that same singleton.
+        services.AddSingleton<WorkstationSecurityMonitor>();
+
+        services.AddSingleton<IWorkstationSecurityMonitor>(
+            serviceProvider =>
+                serviceProvider.GetRequiredService<WorkstationSecurityMonitor>());
+
+        services.AddSingleton<IWorkstationSecurityReadiness>(
+            serviceProvider =>
+                serviceProvider.GetRequiredService<WorkstationSecurityMonitor>());
+
+        // Automatic application locking.
 
         services.AddSingleton<ApplicationAutomaticLockService>();
 
@@ -144,6 +173,8 @@ public static class DependencyInjection
         services.AddSingleton<IApplicationUserActivityService>(
             serviceProvider =>
                 serviceProvider.GetRequiredService<ApplicationAutomaticLockService>());
+
+        // Workspace services.
 
         services.AddSingleton<IActiveWorkspaceRegistry, ActiveWorkspaceRegistry>();
 

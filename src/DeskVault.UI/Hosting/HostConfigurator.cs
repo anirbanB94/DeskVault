@@ -136,6 +136,11 @@ internal static class HostConfigurator
         // Shared runtime services
         services.AddSingleton<TimeProvider>(TimeProvider.System);
 
+        // Workstation security monitoring must be initialized before
+        // subsequent hosted services and before startup authentication.
+        services.AddHostedService<WorkstationSecurityMonitorHostedService>();
+
+        // Automatic-lock monitoring.
         services.AddHostedService<ApplicationAutomaticLockHostedService>();
 
         // Infrastructure
@@ -178,6 +183,7 @@ internal static class HostConfigurator
         services.AddTransient<IWorkspaceDialogService, WorkspaceDialogService>();
         services.AddSingleton<IWorkspacePresentationManager, WorkspacePresentationManager>();
         services.AddSingleton<ISessionBoundDialogCoordinator, SessionBoundDialogCoordinator>();
+        services.AddSingleton<IStartupAuthenticationDialogService, StartupAuthenticationDialogService>();
         services.AddTransient<GetDocumentHandler>();
 
         // Document rendering

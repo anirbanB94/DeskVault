@@ -1,5 +1,6 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Sessions;
+using DeskVault.Application.Security.Workstation;
 using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,7 @@ public sealed class ApplicationAuthenticationService
 
     private readonly IApplicationAuthenticationProvider _provider;
     private readonly IApplicationSecuritySession _session;
+    private readonly IWorkstationSecurityReadiness _workstationReadiness;
     private readonly ILogger<ApplicationAuthenticationService> _logger;
 
     private int _isAuthenticationInProgress;
@@ -25,14 +27,17 @@ public sealed class ApplicationAuthenticationService
     public ApplicationAuthenticationService(
         IApplicationAuthenticationProvider provider,
         IApplicationSecuritySession session,
+        IWorkstationSecurityReadiness workstationReadiness,
         ILogger<ApplicationAuthenticationService> logger)
     {
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(workstationReadiness);
         ArgumentNullException.ThrowIfNull(logger);
 
         _provider = provider;
         _session = session;
+        _workstationReadiness = workstationReadiness;
         _logger = logger;
     }
 
@@ -63,10 +68,23 @@ public sealed class ApplicationAuthenticationService
                 return ApplicationAuthenticationServiceResult.NotPermitted;
             }
 
+            WorkstationSecurityReadinessSnapshot readinessSnapshot =
+                _workstationReadiness.CurrentSnapshot;
+
+            if (!readinessSnapshot.IsReady)
+            {
+                return RejectForReadinessChange();
+            }
+
             ApplicationAuthenticationAvailability availability =
                 await CheckAvailabilityAsync(cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsReadinessCurrent(readinessSnapshot))
+            {
+                return RejectForReadinessChange();
+            }
 
             if (availability !=
                 ApplicationAuthenticationAvailability.Available)
@@ -76,12 +94,31 @@ public sealed class ApplicationAuthenticationService
                     : ApplicationAuthenticationServiceResult.NotPermitted;
             }
 
+            // Restoration is owned by the readiness capability. It may
+            // restore Unavailable to Locked, but must never authenticate.
+            if (!_workstationReadiness.TryRestoreSessionAvailability(
+                    readinessSnapshot.Revision))
+            {
+                return RejectForReadinessChange();
+            }
+
+            if (!IsReadinessCurrent(readinessSnapshot))
+            {
+                return RejectForReadinessChange();
+            }
+
             if (!TryPrepareSessionForAuthentication())
             {
                 return ApplicationAuthenticationServiceResult.NotPermitted;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Check immediately before beginning an authoritative attempt.
+            if (!IsReadinessCurrent(readinessSnapshot))
+            {
+                return RejectForReadinessChange();
+            }
 
             ApplicationSecuritySessionAttempt attempt;
 
@@ -93,8 +130,7 @@ public sealed class ApplicationAuthenticationService
             catch (InvalidOperationException)
             {
                 // The session may have changed while provider availability
-                // was being checked. The authoritative session decides
-                // whether another authentication attempt is permitted.
+                // or workstation readiness was being checked.
                 return ApplicationAuthenticationServiceResult.NotPermitted;
             }
 
@@ -112,6 +148,14 @@ public sealed class ApplicationAuthenticationService
                     new AuthenticationCancellationRegistration(
                         _session,
                         attempt));
+
+            // A monitoring transition can occur between BeginAuthentication
+            // and the provider request. Do not start Windows Hello against
+            // a stale readiness generation.
+            if (!IsReadinessCurrent(readinessSnapshot))
+            {
+                return RejectForReadinessChange(attempt);
+            }
 
             ApplicationAuthenticationProviderResult providerResult;
 
@@ -135,6 +179,13 @@ public sealed class ApplicationAuthenticationService
                     ApplicationAuthenticationOutcome.Cancelled);
 
                 throw;
+            }
+
+            // Never accept a provider result obtained while the readiness
+            // generation was unavailable or has since changed.
+            if (!IsReadinessCurrent(readinessSnapshot))
+            {
+                return RejectForReadinessChange(attempt);
             }
 
             ApplicationAuthenticationOutcome sessionOutcome =
@@ -169,6 +220,54 @@ public sealed class ApplicationAuthenticationService
                 ref _isAuthenticationInProgress,
                 0);
         }
+    }
+
+    private bool IsReadinessCurrent(
+        WorkstationSecurityReadinessSnapshot expectedSnapshot)
+    {
+        WorkstationSecurityReadinessSnapshot currentSnapshot =
+            _workstationReadiness.CurrentSnapshot;
+
+        return currentSnapshot.IsReady &&
+            currentSnapshot.Revision == expectedSnapshot.Revision;
+    }
+
+    private ApplicationAuthenticationServiceResult RejectForReadinessChange(
+        ApplicationSecuritySessionAttempt? attempt = null)
+    {
+        WorkstationSecurityReadinessSnapshot currentSnapshot =
+            _workstationReadiness.CurrentSnapshot;
+
+        // A newer Ready generation supersedes this authentication operation.
+        // Do not mark a session unavailable when monitoring has already
+        // recovered under a different readiness revision.
+        if (currentSnapshot.IsReady)
+        {
+            return attempt is null
+                ? ApplicationAuthenticationServiceResult.Unavailable
+                : ApplicationAuthenticationServiceResult.Superseded;
+        }
+
+        if (attempt is null)
+        {
+            return TryMarkSessionUnavailable()
+                ? ApplicationAuthenticationServiceResult.Unavailable
+                : ApplicationAuthenticationServiceResult.NotPermitted;
+        }
+
+        if (_session.TryCompleteAuthentication(
+                attempt,
+                ApplicationAuthenticationOutcome.Unavailable))
+        {
+            return ApplicationAuthenticationServiceResult.Unavailable;
+        }
+
+        // The monitor may already have invalidated the attempt. Reassert
+        // the fail-closed state in case the readiness transition arrived
+        // before its corresponding session transition.
+        _session.MarkUnavailable();
+
+        return ApplicationAuthenticationServiceResult.Unavailable;
     }
 
     private async Task<ApplicationAuthenticationAvailability> CheckAvailabilityAsync(
@@ -261,23 +360,8 @@ public sealed class ApplicationAuthenticationService
         ApplicationSecuritySessionState currentState =
             _session.CurrentSnapshot.State;
 
-        if (currentState ==
-            ApplicationSecuritySessionState.Unavailable)
-        {
-            try
-            {
-                _session.RestoreAvailability();
-            }
-            catch (InvalidOperationException)
-            {
-                // Another session transition may have occurred after
-                // the snapshot was read. Re-read the authoritative state.
-            }
-
-            currentState =
-                _session.CurrentSnapshot.State;
-        }
-
+        // Unavailable must be restored through the revision-checked
+        // workstation-readiness capability, never directly here.
         return currentState is
             ApplicationSecuritySessionState.Unauthenticated or
             ApplicationSecuritySessionState.Locked;

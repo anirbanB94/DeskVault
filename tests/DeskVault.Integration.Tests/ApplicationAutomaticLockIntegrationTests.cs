@@ -3,6 +3,7 @@ using DeskVault.Application.Configurations;
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.Sessions;
+using DeskVault.Application.Security.Workstation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -37,6 +38,16 @@ public sealed class ApplicationAutomaticLockIntegrationTests
             new SuccessfulAuthenticationProvider());
 
         services.AddApplication();
+
+        // Keep workstation readiness deterministic in this focused
+        // automatic-lock integration test. The production monitor is
+        // exercised separately by workstation security integration coverage.
+        services.RemoveAll<IWorkstationSecurityReadiness>();
+
+        services.AddSingleton<IWorkstationSecurityReadiness>(
+            serviceProvider =>
+                CreateReadyWorkstationSecurityReadiness(
+                    serviceProvider.GetRequiredService<IApplicationSecuritySession>()));
 
         // Replace only the lifecycle interface with an interposing
         // decorator. Its inner lifecycle service is the real production
@@ -168,6 +179,7 @@ public sealed class ApplicationAutomaticLockIntegrationTests
             automaticLockService.Stop();
         }
     }
+
     [Fact]
     public async Task AutomaticLock_ExpiresSessionAndUnlockEstablishesFreshInactivityBaseline()
     {
@@ -193,6 +205,16 @@ public sealed class ApplicationAutomaticLockIntegrationTests
             new SuccessfulAuthenticationProvider());
 
         services.AddApplication();
+
+        // Keep workstation readiness deterministic in this focused
+        // automatic-lock integration test. The production monitor is
+        // exercised separately by workstation security integration coverage.
+        services.RemoveAll<IWorkstationSecurityReadiness>();
+
+        services.AddSingleton<IWorkstationSecurityReadiness>(
+            serviceProvider =>
+                CreateReadyWorkstationSecurityReadiness(
+                    serviceProvider.GetRequiredService<IApplicationSecuritySession>()));
 
         using ServiceProvider serviceProvider =
             services.BuildServiceProvider();
@@ -328,6 +350,59 @@ public sealed class ApplicationAutomaticLockIntegrationTests
         automaticLockService.Stop();
     }
 
+    private static IWorkstationSecurityReadiness CreateReadyWorkstationSecurityReadiness(
+        IApplicationSecuritySession session)
+    {
+        return new ReadyWorkstationSecurityReadiness(session);
+    }
+
+    private sealed class ReadyWorkstationSecurityReadiness
+        : IWorkstationSecurityReadiness
+    {
+        private const long ReadyRevision = 1;
+
+        private readonly IApplicationSecuritySession _session;
+
+        public ReadyWorkstationSecurityReadiness(
+            IApplicationSecuritySession session)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+
+            _session = session;
+        }
+
+        public WorkstationSecurityReadinessSnapshot CurrentSnapshot { get; } =
+            new(
+                WorkstationSecurityReadinessState.Ready,
+                revision: ReadyRevision);
+
+        // This fake represents permanently ready monitoring. It never changes
+        // readiness, so subscribers are not registered or notified.
+        public event Action<WorkstationSecurityReadinessSnapshot>? ReadinessChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public bool TryRestoreSessionAvailability(
+            long expectedReadinessRevision)
+        {
+            if (!CurrentSnapshot.IsReady ||
+                expectedReadinessRevision != CurrentSnapshot.Revision)
+            {
+                return false;
+            }
+
+            if (_session.CurrentSnapshot.State ==
+                ApplicationSecuritySessionState.Unavailable)
+            {
+                _session.RestoreAvailability();
+            }
+
+            return true;
+        }
+    }
+
     private sealed class InterposingLifecycleService :
         IApplicationSecuritySessionLifecycleService
     {
@@ -380,6 +455,7 @@ public sealed class ApplicationAutomaticLockIntegrationTests
             CancellationToken cancellationToken = default) =>
             _inner.UnlockAsync(cancellationToken);
     }
+
     private sealed class SuccessfulAuthenticationProvider :
         IApplicationAuthenticationProvider
     {

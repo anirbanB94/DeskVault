@@ -7,6 +7,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.AutomaticLock;
 using DeskVault.Application.Security.Sessions;
+using DeskVault.Application.Security.Workstation;
 using DeskVault.Domain.Documents;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
@@ -31,10 +32,25 @@ public sealed class DocumentWorkspacePresenterTests
 
         var session = new ApplicationSecuritySession();
 
+        var workstationReadiness =
+            new Mock<IWorkstationSecurityReadiness>();
+
+        workstationReadiness
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new WorkstationSecurityReadinessSnapshot(
+                    WorkstationSecurityReadinessState.Ready,
+                    revision: 1));
+
+        workstationReadiness
+            .Setup(x => x.TryRestoreSessionAvailability(1))
+            .Returns(true);
+
         var authenticationService =
             new ApplicationAuthenticationService(
                 new SuccessfulAuthenticationProvider(),
                 session,
+                workstationReadiness.Object,
                 NullLogger<ApplicationAuthenticationService>.Instance);
 
         var lifecycleService =

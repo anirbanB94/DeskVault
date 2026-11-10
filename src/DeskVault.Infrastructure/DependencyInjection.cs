@@ -3,6 +3,7 @@ using DeskVault.Infrastructure.Persistence;
 using DeskVault.Infrastructure.Persistence.Context;
 using DeskVault.Infrastructure.Repositories;
 using DeskVault.Infrastructure.Security.Authentication;
+using DeskVault.Infrastructure.Security.Workstation;
 using DeskVault.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -25,6 +26,9 @@ public static class DependencyInjection
         services.AddSingleton<IWindowsHelloPlatformApi, WindowsHelloPlatformApi>();
 
         services.AddSingleton<IApplicationAuthenticationProvider, WindowsHelloAuthenticationProvider>();
+
+        // Windows workstation security notifications.
+        services.AddSingleton<IWorkstationSecurityEventSource, WindowsWorkstationSecurityEventSource>();
 
         services.TryAddSingleton<DeskVaultDataPaths>();
 

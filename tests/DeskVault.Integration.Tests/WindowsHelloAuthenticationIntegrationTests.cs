@@ -2,6 +2,7 @@ using DeskVault.Application;
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.Sessions;
+using DeskVault.Application.Security.Workstation;
 using DeskVault.Infrastructure;
 using DeskVault.Infrastructure.Security.Authentication;
 using Microsoft.Extensions.Configuration;
@@ -224,7 +225,7 @@ public sealed class WindowsHelloAuthenticationIntegrationTests
                 UserConsentVerifierAvailability.Available,
                 [
                     UserConsentVerificationResult.Verified,
-                verificationResult
+                    verificationResult
                 ]);
 
         var windowHandleProvider =
@@ -474,6 +475,16 @@ public sealed class WindowsHelloAuthenticationIntegrationTests
         services.AddInfrastructure(
             new ConfigurationBuilder().Build());
 
+        // Keep workstation readiness deterministic in this focused
+        // Windows Hello integration test. The native workstation event
+        // source is covered separately.
+        services.RemoveAll<IWorkstationSecurityReadiness>();
+
+        services.AddSingleton<IWorkstationSecurityReadiness>(
+            serviceProvider =>
+                new ReadyWorkstationSecurityReadiness(
+                    serviceProvider.GetRequiredService<IApplicationSecuritySession>()));
+
         // Replace only the native Windows API boundary and HWND source.
         // The real WindowsHelloAuthenticationProvider remains registered.
         services.RemoveAll<IWindowsHelloPlatformApi>();
@@ -487,6 +498,53 @@ public sealed class WindowsHelloAuthenticationIntegrationTests
             windowHandleProvider);
 
         return services.BuildServiceProvider();
+    }
+
+    private sealed class ReadyWorkstationSecurityReadiness
+        : IWorkstationSecurityReadiness
+    {
+        private const long ReadyRevision = 1;
+
+        private readonly IApplicationSecuritySession _session;
+
+        public ReadyWorkstationSecurityReadiness(
+            IApplicationSecuritySession session)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+
+            _session = session;
+        }
+
+        public WorkstationSecurityReadinessSnapshot CurrentSnapshot { get; } =
+            new(
+                WorkstationSecurityReadinessState.Ready,
+                revision: ReadyRevision);
+
+        // This fake represents permanently ready monitoring. It never changes
+        // readiness, so subscribers are not registered or notified.
+        public event Action<WorkstationSecurityReadinessSnapshot>? ReadinessChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public bool TryRestoreSessionAvailability(
+            long expectedReadinessRevision)
+        {
+            if (!CurrentSnapshot.IsReady ||
+                expectedReadinessRevision != CurrentSnapshot.Revision)
+            {
+                return false;
+            }
+
+            if (_session.CurrentSnapshot.State ==
+                ApplicationSecuritySessionState.Unavailable)
+            {
+                _session.RestoreAvailability();
+            }
+
+            return true;
+        }
     }
 
     private sealed class StubWindowsHelloPlatformApi

@@ -22,6 +22,7 @@ public partial class MainForm : Form, IMainFormView
     private bool _isUpdatingDocumentGrid;
     private bool _isUpdatingWorkspaceGrid;
     private readonly ISessionBoundDialogCoordinator _dialogCoordinator;
+    private readonly IStartupAuthenticationDialogService _startupAuthenticationDialogService;
     private readonly WinFormsUserActivityMessageFilter _userActivityMessageFilter;
 
     public MainForm(
@@ -30,21 +31,26 @@ public partial class MainForm : Form, IMainFormView
         IApplicationUserActivityService userActivityService,
         IMainFormPresenterFactory presenterFactory,
         ILogger<MainForm> logger,
-        ISessionBoundDialogCoordinator dialogCoordinator)
+        ISessionBoundDialogCoordinator dialogCoordinator,
+        IStartupAuthenticationDialogService startupAuthenticationDialogService)
     {
         ArgumentNullException.ThrowIfNull(applicationInfo);
         ArgumentNullException.ThrowIfNull(presenterFactory);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(dialogCoordinator);
+        ArgumentNullException.ThrowIfNull(startupAuthenticationDialogService);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(userActivityService);
 
         InitializeComponent();
 
+        statusStrip.Renderer = new UnlockActionToolStripRenderer(unlockButton);
+
         _applicationInfo = applicationInfo;
         _presenter = presenterFactory.Create(this);
         _logger = logger;
         _dialogCoordinator = dialogCoordinator;
+        _startupAuthenticationDialogService = startupAuthenticationDialogService;
         _userActivityMessageFilter =
             new WinFormsUserActivityMessageFilter(
                 session,
@@ -98,6 +104,7 @@ public partial class MainForm : Form, IMainFormView
         workspaceGridView.CellDoubleClick += OnWorkspaceDoubleClick;
         FormClosed += OnFormClosed;
         Shown += OnMainFormShown;
+        unlockButton.Click += OnUnlockButtonClick;
     }
 
     public event EventHandler? ImportRequested;
@@ -513,6 +520,96 @@ public partial class MainForm : Form, IMainFormView
         action();
     }
 
+    private void OnUnlockButtonClick(
+        object? sender,
+        EventArgs e)
+    {
+        if (IsDisposed ||
+            Disposing ||
+            !unlockButton.Available ||
+            !unlockButton.Enabled)
+        {
+            return;
+        }
+
+        unlockButton.Enabled = false;
+
+        try
+        {
+            // Reauthentication uses the existing startup coordinator and
+            // application authentication lifecycle. This view never unlocks
+            // or changes the authoritative security session itself.
+            _startupAuthenticationDialogService.ShowDialog(this);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.ApplicationAuthenticationProviderFailure,
+                LogMessages.StartupAuthenticationFailed,
+                exception);
+
+            if (!IsDisposed && !Disposing)
+            {
+                SetStatus(UiMessages.AuthenticationDialogOpenFailed);
+            }
+        }
+        finally
+        {
+            if (!IsDisposed &&
+                !Disposing &&
+                unlockButton.Available)
+            {
+                unlockButton.Enabled = true;
+            }
+        }
+    }
+    private sealed class UnlockActionToolStripRenderer : ToolStripProfessionalRenderer
+    {
+        private readonly ToolStripItem _unlockButton;
+
+        public UnlockActionToolStripRenderer(ToolStripItem unlockButton)
+        {
+            _unlockButton = unlockButton;
+        }
+
+        protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!ReferenceEquals(e.Item, _unlockButton))
+            {
+                base.OnRenderButtonBackground(e);
+                return;
+            }
+
+            var highContrast = SystemInformation.HighContrast;
+
+            var backgroundColor = highContrast
+                ? SystemColors.Highlight
+                : e.Item.Pressed
+                    ? Color.FromArgb(0, 78, 140)
+                    : e.Item.Selected
+                        ? Color.FromArgb(0, 99, 177)
+                        : e.Item.BackColor;
+
+            var borderColor = highContrast
+                ? SystemColors.HighlightText
+                : Color.FromArgb(0, 84, 150);
+
+            var bounds = new Rectangle(Point.Empty, e.Item.Size);
+
+            using var backgroundBrush = new SolidBrush(backgroundColor);
+            e.Graphics.FillRectangle(backgroundBrush, bounds);
+
+            using var borderPen = new Pen(borderColor);
+            e.Graphics.DrawRectangle(
+                borderPen,
+                bounds.X,
+                bounds.Y,
+                bounds.Width - 1,
+                bounds.Height - 1);
+        }
+    }
+
     public void ShowLockedState()
     {
         _searchDebounceTimer.Stop();
@@ -576,6 +673,8 @@ public partial class MainForm : Form, IMainFormView
         createWorkspaceButton.Enabled = false;
 
         SetStatus(UiMessages.LockedSessionStatus);
+        unlockButton.Visible = true;
+        unlockButton.Enabled = true;
     }
 
     public void ShowAuthenticatedState()
@@ -585,6 +684,9 @@ public partial class MainForm : Form, IMainFormView
         searchButton.Enabled = true;
         clearSearchButton.Enabled = true;
         createWorkspaceButton.Enabled = true;
+
+        unlockButton.Visible = false;
+        unlockButton.Enabled = true;
 
         SetImportEnabled(true);
         SetOpenEnabled(false);
