@@ -41,6 +41,7 @@ partial class MainForm
     private ToolStripStatusLabel documentsCountLabel;
     private ToolStripStatusLabel workspaceCountSeparatorLabel;
     private ToolStripStatusLabel workspacesCountLabel;
+    private ToolStripButton unlockButton;
 
     protected override void Dispose(bool disposing)
     {
@@ -107,6 +108,7 @@ partial class MainForm
         documentsCountLabel = new ToolStripStatusLabel();
         workspaceCountSeparatorLabel = new ToolStripStatusLabel();
         workspacesCountLabel = new ToolStripStatusLabel();
+        unlockButton = new ToolStripButton();
         headerPanel.SuspendLayout();
         searchPanel.SuspendLayout();
         contentPanel.SuspendLayout();
@@ -576,7 +578,7 @@ partial class MainForm
         // statusStrip
         //
         statusStrip.ImageScalingSize = new Size(20, 20);
-        statusStrip.Items.AddRange(new ToolStripItem[] { statusLabel, documentsCountLabel, workspaceCountSeparatorLabel, workspacesCountLabel });
+        statusStrip.Items.AddRange(new ToolStripItem[] { statusLabel, documentsCountLabel, workspaceCountSeparatorLabel, workspacesCountLabel, unlockButton });
         statusStrip.Location = new Point(0, 1215);
         statusStrip.Name = "statusStrip";
         statusStrip.Padding = new Padding(10, 0, 10, 0);
@@ -612,6 +614,24 @@ partial class MainForm
         workspacesCountLabel.Size = new Size(0, 32);
         workspacesCountLabel.Text = string.Format(UiMessages.WorkspacesCount, 0);
         workspacesCountLabel.TextAlign = ContentAlignment.MiddleRight;
+        //
+        // unlockButton
+        //
+        unlockButton.Alignment = ToolStripItemAlignment.Right;
+        unlockButton.AutoSize = true;
+        unlockButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
+        unlockButton.BackColor = Color.FromArgb(0, 120, 212);
+        unlockButton.ForeColor = SystemInformation.HighContrast
+            ? SystemColors.HighlightText
+            : Color.White;
+        unlockButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        unlockButton.Margin = new Padding(8, 0, 4, 0);
+        unlockButton.Name = "unlockButton";
+        unlockButton.Padding = new Padding(12, 0, 12, 0);
+        unlockButton.Text = UiMessages.UnlockDeskVaultButton;
+        unlockButton.TextAlign = ContentAlignment.MiddleCenter;
+        unlockButton.ToolTipText = UiMessages.WindowsHelloAuthenticationDescription;
+        unlockButton.Visible = false;
         //
         // MainForm
         //

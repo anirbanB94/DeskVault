@@ -165,6 +165,12 @@ public static class UiMessages
     public const string ReadyStatus =
         "Ready";
 
+    public const string UnlockDeskVaultButton =
+        "Unlock DeskVault";
+
+    public const string AuthenticationDialogOpenFailed =
+        "The authentication prompt could not be opened. Try again.";
+
     public const string LockedSessionStatus =
         "DeskVault is locked. Authenticate to access protected content.";
 

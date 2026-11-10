@@ -36,6 +36,9 @@ public static class DiagnosticOperationCodes
     public const string AutomaticLockEvaluationFailure =
         "automatic-lock.evaluation-failure";
 
+    public const string WorkstationSecurityMonitoringFailure =
+        "workstation-security-monitoring.failure";
+
     public const string DocumentChunkReplacementFailure =
         "document-chunk-replacement.operation-failure";
 

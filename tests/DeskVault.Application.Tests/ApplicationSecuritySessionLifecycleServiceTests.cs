@@ -1,6 +1,7 @@
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.Sessions;
+using DeskVault.Application.Security.Workstation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -269,6 +270,81 @@ public sealed class ApplicationSecuritySessionLifecycleServiceTests
             notifications.Select(snapshot => snapshot.Revision));
     }
 
+    [Fact]
+    public async Task UnlockAsync_WhenWorkstationMonitoringIsUnavailable_BlocksUnlockAndDoesNotInvokeProvider()
+    {
+        // Arrange
+        ApplicationSecuritySession session =
+            CreateLockedSession();
+
+        var provider =
+            new Mock<IApplicationAuthenticationProvider>(MockBehavior.Strict);
+
+        provider
+            .Setup(x => x.CheckAvailabilityAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                ApplicationAuthenticationAvailability.Available);
+
+        provider
+            .Setup(x => x.RequestAuthenticationAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                ApplicationAuthenticationProviderResult.Succeeded);
+
+        var workstationReadiness =
+            new Mock<IWorkstationSecurityReadiness>(MockBehavior.Strict);
+
+        workstationReadiness
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(new WorkstationSecurityReadinessSnapshot(
+                WorkstationSecurityReadinessState.Unavailable,
+                revision: 1));
+
+        var authenticationService =
+            new ApplicationAuthenticationService(
+                provider.Object,
+                session,
+                workstationReadiness.Object,
+                NullLogger<ApplicationAuthenticationService>.Instance);
+
+        var lifecycle =
+            CreateLifecycle(session, authenticationService);
+
+        // Act
+        ApplicationAuthenticationServiceResult result =
+            await lifecycle.UnlockAsync(
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            ApplicationAuthenticationServiceResult.Unavailable,
+            result);
+
+        Assert.Equal(
+            ApplicationSecuritySessionState.Unavailable,
+            session.CurrentSnapshot.State);
+
+        Assert.False(
+            session.CurrentSnapshot.IsProtectedAccessAvailable);
+
+        // Windows Hello being Available cannot bypass the unavailable
+        // workstation-monitoring prerequisite.
+        provider.Verify(
+            x => x.CheckAvailabilityAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        provider.Verify(
+            x => x.RequestAuthenticationAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        workstationReadiness.Verify(
+            x => x.TryRestoreSessionAvailability(
+                It.IsAny<long>()),
+            Times.Never);
+    }
     [Fact]
     public async Task UnlockAsync_WhenSessionIsUnavailable_RequiresSuccessfulAuthentication()
     {
@@ -580,10 +656,24 @@ public sealed class ApplicationSecuritySessionLifecycleServiceTests
             .ReturnsAsync(
                 ApplicationAuthenticationProviderResult.Succeeded);
 
+        var workstationReadiness =
+            new Mock<IWorkstationSecurityReadiness>();
+
+        workstationReadiness
+            .Setup(x => x.CurrentSnapshot)
+            .Returns(new WorkstationSecurityReadinessSnapshot(
+                WorkstationSecurityReadinessState.Ready,
+                revision: 1));
+
+        workstationReadiness
+            .Setup(x => x.TryRestoreSessionAvailability(1))
+            .Returns(true);
+
         var authenticationService =
             new ApplicationAuthenticationService(
                 provider.Object,
                 session,
+                workstationReadiness.Object,
                 NullLogger<ApplicationAuthenticationService>.Instance);
 
         var lifecycle =

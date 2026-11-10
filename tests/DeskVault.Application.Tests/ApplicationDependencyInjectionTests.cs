@@ -1,3 +1,4 @@
+using System.Text;
 using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
@@ -16,11 +17,11 @@ using DeskVault.Application.Documents.Queries.SearchDocuments;
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.Sessions;
+using DeskVault.Application.Security.Workstation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using System.Text;
 
 namespace DeskVault.Application.Tests;
 
@@ -248,7 +249,10 @@ public sealed class ApplicationDependencyInjectionTests
             ResourceLimitExceededException exception =
                 await Assert.ThrowsAsync<ResourceLimitExceededException>(
                     () =>
-                        extractor.ExtractAsync(stream, fileName, TestContext.Current.CancellationToken));
+                        extractor.ExtractAsync(
+                            stream,
+                            fileName,
+                            TestContext.Current.CancellationToken));
 
             Assert.Equal(
                 configuredLimit,
@@ -323,6 +327,12 @@ public sealed class ApplicationDependencyInjectionTests
         services.AddSingleton<IApplicationAuthenticationProvider>(
             Mock.Of<IApplicationAuthenticationProvider>());
 
+        services.AddSingleton<IWorkstationSecurityEventSource>(
+            Mock.Of<IWorkstationSecurityEventSource>());
+
+        services.AddSingleton<ILogger<WorkstationSecurityMonitor>>(
+            NullLogger<WorkstationSecurityMonitor>.Instance);
+
         services.AddApplication();
 
         // Act
@@ -355,6 +365,13 @@ public sealed class ApplicationDependencyInjectionTests
 
         Assert.IsType<ApplicationSecuritySession>(
             serviceProvider.GetRequiredService<IApplicationSecuritySession>());
+
+        Assert.IsType<WorkstationSecurityMonitor>(
+            serviceProvider.GetRequiredService<IWorkstationSecurityMonitor>());
+
+        Assert.Same(
+            serviceProvider.GetRequiredService<IWorkstationSecurityMonitor>(),
+            serviceProvider.GetRequiredService<IWorkstationSecurityReadiness>());
     }
 
     [Fact]
@@ -369,6 +386,12 @@ public sealed class ApplicationDependencyInjectionTests
 
         services.AddSingleton<IApplicationAuthenticationProvider>(
             Mock.Of<IApplicationAuthenticationProvider>());
+
+        services.AddSingleton<IWorkstationSecurityEventSource>(
+            Mock.Of<IWorkstationSecurityEventSource>());
+
+        services.AddSingleton<ILogger<WorkstationSecurityMonitor>>(
+            NullLogger<WorkstationSecurityMonitor>.Instance);
 
         services.AddApplication();
 
@@ -396,5 +419,12 @@ public sealed class ApplicationDependencyInjectionTests
         Assert.Same(first, second);
 
         Assert.IsType<ApplicationSecuritySessionLifecycleService>(first);
+
+        Assert.IsType<ApplicationAuthenticationService>(
+            serviceProvider.GetRequiredService<IApplicationAuthenticationService>());
+
+        Assert.Same(
+            serviceProvider.GetRequiredService<IWorkstationSecurityMonitor>(),
+            serviceProvider.GetRequiredService<IWorkstationSecurityReadiness>());
     }
 }
