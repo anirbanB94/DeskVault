@@ -295,6 +295,154 @@ events, in-app presentation cleanup, suppression of late asynchronous
 presentation results, or integrated verification of the complete access
 boundary. Those remain separate responsibilities.
 
+### Workstation Security Monitoring and Readiness
+
+Workstation security monitoring is a required runtime security capability
+for MVP 2. It observes supported security transitions affecting the Windows
+session in which DeskVault is running and routes access-withdrawal events
+through the existing Application lifecycle. It is not an authentication
+provider, an independent authorization state machine, or an alternative
+owner of the application security session.
+
+The Application layer defines the framework-neutral
+`IWorkstationSecurityEventSource`, `IWorkstationSecurityMonitor`, and
+`IWorkstationSecurityReadiness` contracts. The Application
+`WorkstationSecurityMonitor` implements the monitor and readiness
+contracts through one singleton instance. Infrastructure supplies the
+Windows notification adapter. The UI composition root registers the
+monitoring hosted service with the existing shared Generic Host; it does
+not create another host or another application session.
+
+The readiness snapshot is immutable and revisioned. Its states are:
+
+| State | Meaning | Authentication permitted |
+|---|---|---|
+| `NotStarted` | Monitoring has not been initialized. | No |
+| `Starting` | Native notification registration or initialization is in progress. | No |
+| `Ready` | Required notification registration has completed successfully. | Yes, subject to Windows Hello availability and successful verification |
+| `Unavailable` | Monitoring initialization or an established monitoring capability has failed. | No |
+| `Stopped` | Monitoring has stopped for application shutdown. | No |
+
+Only `Ready` permits authentication. The Application authentication
+service checks readiness before Windows Hello availability is evaluated,
+and fences the availability result, session-bound authentication attempt,
+provider invocation, and provider completion to the same readiness
+revision. A result obtained while readiness is unavailable or has changed
+cannot establish authenticated access. Windows Hello reporting
+`Available` does not override a workstation readiness state other than
+`Ready`.
+
+The shared host starts the workstation monitoring hosted service before
+startup authentication. The hosted service awaits the initial monitoring
+attempt. A known initialization failure leaves readiness non-ready,
+keeps authentication blocked, and is retried while the shared host remains
+active. The startup authentication interface may be composed, but no
+authentication attempt can begin until the monitor reaches `Ready`.
+
+If an established event source reports a runtime failure, the monitor
+invalidates its source generation and detaches that generation's event
+handlers. It then invokes the existing unconditional
+`IApplicationSecuritySessionLifecycleService.Lock()` before marking the
+authoritative application security session `Unavailable`. The lifecycle
+lock supersedes an in-flight unlock and invalidates its authentication
+attempt; the unavailable transition keeps access denied even if Windows
+Hello remains available. A callback from an earlier source generation is
+ignored and cannot restore readiness or authorization.
+
+When monitoring successfully recovers, the monitor advances readiness to
+a new `Ready` revision and restores an `Unavailable` application
+security session only to `Locked`. Recovery never authenticates or
+unlocks the application. A fresh successful Windows Hello verification
+through the existing authentication and lifecycle services is required.
+
+#### MVP 2 Windows Notification Policy
+
+The Windows Infrastructure adapter uses a hidden top-level native window
+on a dedicated background thread. It registers that window for WTS
+notifications with `NOTIFY_FOR_THIS_SESSION`; it does not register for
+all Windows sessions. The same top-level window receives power-broadcast
+messages. A message-only window is not used because it does not receive
+system power broadcasts.
+
+The supported notification mapping is:
+
+| Windows notification | Application event | Application response |
+|---|---|---|
+| `WM_WTSSESSION_CHANGE / WTS_SESSION_LOCK` | `SessionLocked` | Call the existing lifecycle `Lock()`. |
+| `WM_WTSSESSION_CHANGE / WTS_SESSION_LOGOFF` | `SessionLoggedOff` | Call the existing lifecycle `Lock()`. |
+| `WM_WTSSESSION_CHANGE / WTS_CONSOLE_DISCONNECT` | `SessionDisconnected` | Call the existing lifecycle `Lock()`. |
+| `WM_WTSSESSION_CHANGE / WTS_REMOTE_DISCONNECT` | `SessionDisconnected` | Call the existing lifecycle `Lock()`. Remote-session disconnect is supported for the DeskVault process session. |
+| `WM_POWERBROADCAST / PBT_APMSUSPEND` | `SystemSuspending` | Call the existing lifecycle `Lock()`. |
+| `WM_WTSSESSION_CHANGE / WTS_SESSION_UNLOCK` | `SessionUnlocked` | No authorization transition. A Windows unlock is not DeskVault authentication. |
+| `WM_WTSSESSION_CHANGE / WTS_CONSOLE_CONNECT` | `SessionConnected` | No authorization transition. |
+| `WM_WTSSESSION_CHANGE / WTS_REMOTE_CONNECT` | `SessionConnected` | No authorization transition. |
+| `WM_POWERBROADCAST / PBT_APMRESUMEAUTOMATIC` | `SystemResumed` | No authorization transition. |
+| `WM_POWERBROADCAST / PBT_APMRESUMESUSPEND` | `SystemResumed` | No authorization transition. |
+| `WM_POWERBROADCAST / PBT_APMRESUMECRITICAL` | `SystemResumed` | No authorization transition. |
+
+The power-broadcast API reports entry into and resumption from a low-power
+state; it does not identify the exact low-power state. DeskVault therefore
+treats the supported suspend notification as one security transition and
+does not claim to distinguish sleep from hibernation through this message.
+
+The adapter also translates the legacy `PBT_APMRESUMECRITICAL` value when
+received. Microsoft documents that support for this event was removed
+starting with Windows Vista. It is retained as a defensive translation
+and is not relied upon as a supported Windows 11 notification.
+
+Notifications not listed in the mapping are not interpreted as an
+authorization or lock signal by this MVP 2 adapter. This includes WTS
+session logon, remote-control status, session creation or termination,
+and desktop-ready notifications. The current-session registration does
+not provide workstation monitoring for other Windows user sessions.
+
+A lock-triggering notification is routed through the existing lifecycle
+service. Repeated notifications therefore remain lock requests against
+the same authoritative session; the lifecycle operation invalidates an
+active unlock even when the session is already locked. Notification order
+cannot grant authorization: unlock, connect, and resume events do not
+change the application security session. A delayed lock notification
+remains a lock request and can only withdraw access. The monitor's source
+generation fence rejects callbacks belonging to an earlier monitoring
+generation.
+
+#### Notification Delivery and Failure Limits
+
+Successful WTS registration establishes that the current DeskVault
+window is registered to receive WTS session-change messages. Each
+successful registration is paired with an explicit unregister before
+the native window is disposed. Startup registration failure, native
+worker failure, unexpected message-loop termination, and reported
+native cleanup or unregistration failure are observable by the adapter
+and are handled as monitoring failures. A failure after monitoring has
+become ready is surfaced through the event-source failure contract.
+
+This notification mechanism is not a tamper-proof audit stream and does
+not prove that every underlying Windows transition was delivered to the
+process. WTS notifications are sent to registered windows; power events
+are delivered through the Windows power-broadcast message. If Windows
+does not deliver a notification, or a notification is missed without an
+observable source or message-loop failure, DeskVault cannot infer that
+the event occurred. The adapter does not poll or independently reconcile
+the complete Windows session history. It must not claim to detect
+silently missed notifications or guarantee observation of every OS
+transition.
+
+The application therefore fails closed for failures it can establish:
+a failed initial registration prevents authentication, and a reported
+runtime monitoring failure locks and marks the application session
+unavailable. Platform delivery limitations remain explicit and require
+interactive validation on supported Windows configurations. Automated
+native-boundary tests validate mapping, registration, worker behavior,
+and reported failure handling; they cannot prove that the operating
+system will deliver every event in every environment.
+
+Workstation transitions change only the runtime application
+authorization state through the existing lifecycle. This monitor does
+not modify encrypted document data, encrypted database data, key
+artifacts, key identity, or key versions. Existing protected-key and
+presentation enforcement boundaries remain responsible for their own
+withdrawal and cleanup behavior.
 ### Automatic Inactivity Lock Coordination
 
 Automatic inactivity locking is an Application-level policy coordinator
@@ -555,6 +703,13 @@ workspace business entity.
   expiry deterministic in the presence of clock changes and stale input.
 - Existing document and database encryption responsibilities remain
   separate from runtime authorization.
+- Workstation monitoring readiness is an independent prerequisite for
+  authentication; Windows Hello availability alone cannot authorize access.
+- Supported workstation lock, logoff, disconnect, and suspend events reuse
+  the existing lifecycle lock rather than creating a second authorization
+  state or authentication mechanism.
+- Monitoring recovery returns an unavailable session to `Locked`, so a
+  fresh Windows Hello verification remains mandatory.
 
 ### Negative
 
@@ -572,6 +727,12 @@ workspace business entity.
   incorrect activity source could otherwise extend or prematurely expire
   an authenticated session.
 - Additional concurrency and lifecycle regression coverage is required.
+- WTS and power notifications are operating-system messages, not a
+  tamper-proof or complete event-audit stream.
+- A notification silently not delivered to the process cannot be detected
+  by this adapter; this delivery limitation must remain explicit.
+- Actual notification behavior still requires interactive validation on
+  supported Windows configurations.
 
 These trade-offs are acceptable because protected vault access requires
 one deterministic authorization boundary that is independent of the UI
@@ -606,6 +767,26 @@ The implementation must:
 - keep authentication-provider, workstation-monitoring, automatic-lock,
   protected-key, and UI-enforcement responsibilities at their respective
   architectural boundaries;
+- expose Windows workstation notifications to Application only through the
+  framework-neutral event-source contract, with the native implementation
+  remaining in Infrastructure;
+- require workstation readiness to be `Ready` before initial or runtime
+  authentication and fence each authentication operation to one readiness
+  revision;
+- route supported lock, logoff, disconnect, and suspend notifications
+  through the existing lifecycle `Lock()` operation;
+- treat workstation unlock, session connect, and system resume only as
+  notifications and never as proof of DeskVault authentication;
+- on a known runtime monitoring failure, supersede an in-flight unlock
+  through the lifecycle lock before marking the application session
+  `Unavailable`;
+- recover monitoring only to a new `Ready` generation and restore an
+  unavailable application session only to `Locked`;
+- limit WTS notification registration to the DeskVault process session and
+  document the inability to infer silently undelivered operating-system
+  notifications;
+- preserve encrypted document, database, and key artifacts across
+  workstation-driven session transitions;
 - keep automatic inactivity policy coordination in the Application layer
   without introducing hosting, configuration-provider, WinForms, or
   operating-system dependencies there;
@@ -747,6 +928,36 @@ stale activity rejection, and a subsequent expiry through the real
 Application services. Full-solution validation and the complete integrated
 protected-access verification remain separate validation concerns.
 
+Workstation-security verification additionally covers:
+
+- readiness lifecycle transitions, immutable readiness snapshots, and
+  readiness revision fencing;
+- rejection of initial authentication and subsequent unlock when
+  workstation monitoring is not `Ready`, including when Windows Hello
+  reports `Available`;
+- rejection of provider availability and verification results obtained
+  across a readiness-generation change;
+- mapping of supported WTS lock, logoff, console disconnect, and remote
+  disconnect notifications to the existing lifecycle lock;
+- mapping of suspend and resume power notifications, including the rule
+  that resume never restores authorization;
+- no authorization transition for Windows session unlock or console/remote
+  connect notifications;
+- repeated lock notifications, out-of-generation callbacks, and stale
+  callbacks after a monitoring failure;
+- runtime failure ordering that supersedes an in-flight unlock before the
+  session becomes `Unavailable`;
+- recovery to `Locked` only, followed by a required fresh authentication;
+- native window creation, WTS registration and unregistration, message-loop
+  failure, stop retry, and native resource cleanup;
+- hosted-service startup, initialization retry, and deterministic shutdown.
+
+These tests establish the behavior of the Application policy and the
+controlled native boundary. Manual validation on supported Windows
+hardware and session configurations remains necessary for actual WTS and
+power-notification delivery. The documented platform limitation remains
+that a notification silently not delivered to the process cannot be
+detected by this adapter.
 ## Related Decisions
 
 - ADR-0001 establishes DeskVault's offline-first product vision and
@@ -763,7 +974,31 @@ protected-access verification remain separate validation concerns.
 - ADR-0010 establishes document-processing generation authority and
   stale-result protection for document processing.
 - ADR-0015 establishes Windows Hello as the selected authentication
-  provider and its integration with the Application security session.
+  provider and its integration with the Application security session,
+  including the workstation-monitor readiness prerequisite.
+
+## References
+
+- Microsoft Learn — WTSRegisterSessionNotification:
+  https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsregistersessionnotification
+
+- Microsoft Learn — WM_WTSSESSION_CHANGE:
+  https://learn.microsoft.com/en-us/windows/win32/termserv/wm-wtssession-change
+
+- Microsoft Learn — WM_POWERBROADCAST Messages:
+  https://learn.microsoft.com/en-us/windows/win32/power/wm-powerbroadcast-messages
+
+- Microsoft Learn — PBT_APMSUSPEND:
+  https://learn.microsoft.com/en-us/windows/win32/power/pbt-apmsuspend
+
+- Microsoft Learn — PBT_APMRESUMEAUTOMATIC:
+  https://learn.microsoft.com/en-us/windows/win32/power/pbt-apmresumeautomatic
+
+- Microsoft Learn — PBT_APMRESUMESUSPEND:
+  https://learn.microsoft.com/en-us/windows/win32/power/pbt-apmresumesuspend
+
+- Microsoft Learn — PBT_APMRESUMECRITICAL:
+  https://learn.microsoft.com/en-us/windows/win32/power/pbt-apmresumecritical
 
 ## Result
 
@@ -783,7 +1018,13 @@ The resulting boundary preserves the existing document and database
 encryption architecture while providing a deterministic foundation for
 authentication, runtime lock/unlock orchestration, automatic inactivity
 locking, key availability, workstation transitions, and presentation
-protection. Automatic inactivity policy is coordinated separately from
+protection. Workstation notifications are a runtime trigger for the
+existing lifecycle lock and are never an authentication signal.
+Monitoring readiness is mandatory for Windows Hello authentication,
+and monitoring recovery returns only to `Locked`. WTS remote-session
+disconnect is supported for the DeskVault process session. The Windows
+notification adapter documents that silently undelivered events cannot
+be detected. Automatic inactivity policy is coordinated separately from
 the authoritative session and delegates expiry to the existing lifecycle
 lock operation. Monotonic time, authenticated revision fencing, and the
 inclusive expiry boundary prevent stale activity from extending an

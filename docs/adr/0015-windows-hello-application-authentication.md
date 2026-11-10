@@ -86,9 +86,50 @@ The following availability outcomes are treated as unavailable:
 
 Availability does not constitute successful authentication.
 
-If a capability previously marked unavailable becomes available again, the Application authentication service must restore the session from `Unavailable` to `Locked` through `IApplicationSecuritySession.RestoreAvailability()` before beginning a new authentication attempt.
+If a capability previously marked unavailable becomes available again, the Application authentication service may proceed only when workstation security monitoring is also `Ready`. The readiness contract owns restoration of the session from `Unavailable` to `Locked` through `IWorkstationSecurityReadiness.TryRestoreSessionAvailability(expectedReadinessRevision)`. Restoration never transitions directly to `Authenticated`.
 
 Recovery from an unavailable condition never transitions directly to `Authenticated`.
+
+### Workstation Security Readiness Prerequisite
+
+Workstation security-monitor readiness is an independent and mandatory
+prerequisite for Windows Hello authentication. A Windows Hello
+availability result of `Available` is insufficient when workstation
+security monitoring is `NotStarted`, `Starting`, `Unavailable`, or
+`Stopped`.
+
+Before checking Windows Hello availability, the Application
+authentication service reads the current workstation readiness snapshot.
+Only the `Ready` state permits the authentication workflow to continue.
+
+The authentication workflow is fenced to the readiness revision observed
+at its start. The Application authentication service revalidates that
+revision after provider-availability evaluation, before creating the
+session-bound authentication attempt, before requesting Windows Hello
+verification, and before accepting the provider result. A readiness
+transition or a changed readiness revision prevents a delayed provider
+result from establishing authenticated access.
+
+This requirement applies to both initial authentication and runtime
+re-authentication through the existing Application lifecycle service.
+It does not add another authentication provider, authorization state,
+or unlock path.
+
+When a known workstation-monitoring failure occurs, the monitor first
+uses the existing lifecycle lock operation to supersede an in-flight
+unlock and then marks the authoritative application security session
+`Unavailable`. Windows Hello remaining `Available` cannot bypass that
+unavailable monitoring condition.
+
+After monitoring successfully recovers, readiness becomes `Ready` under
+a new readiness revision. Recovery restores the application session only
+to `Locked`; a fresh successful Windows Hello verification is required
+before protected access can be restored.
+
+The detailed Windows event mapping, supported remote-session behavior,
+native registration lifecycle, and notification-delivery limitations are
+defined by ADR-0014.
+
 
 ### Verification Outcome Mapping
 
@@ -337,12 +378,19 @@ MVP 2 will not fall back to:
 - Windows account password collection or `LogonUser`;
 - the presence of a Windows account or user profile;
 - DPAPI availability or successful DPAPI unprotection alone;
-- workstation lock/unlock or resume events;
+- workstation lock, unlock, connect, disconnect, suspend, or resume events;
 - an automatically selected network identity provider;
 - a locally stored application password or passphrase;
 - another unapproved authentication mechanism.
 
 When Windows Hello is unavailable or verification does not succeed, protected access remains unavailable.
+
+Workstation lock, logoff, disconnect, and suspend notifications withdraw
+protected access through the existing Application lifecycle. Windows
+session unlock, console or remote connect, and system resume notifications
+do not restore access, begin authentication, or establish a successful
+DeskVault authentication outcome. They are not substitutes for a fresh
+Windows Hello verification.
 
 The user may retry after Windows Hello availability is independently re-established. A retry must still complete a new successful verification.
 
@@ -416,6 +464,14 @@ The application must not log biometric data, credential material, authentication
 
 Unavailable, failed, or cancelled verification must remain non-authorized and must not be treated as a successful security condition.
 
+Workstation monitoring is an independent security prerequisite. A
+reported monitor failure blocks authentication even when Windows Hello
+is available. A silently undelivered operating-system notification
+cannot be inferred by the notification adapter; the implementation
+documents this platform delivery limitation and does not claim complete
+operating-system event capture.
+
+
 ## Consequences
 
 ### Positive
@@ -424,6 +480,11 @@ Unavailable, failed, or cancelled verification must remain non-authorized and mu
 - The application does not collect or persist the Windows password.
 - Authentication remains local and does not introduce a network identity-provider dependency.
 - Explicit availability and verification outcomes map to the existing Application security-session contract.
+- Workstation-monitor readiness is an additional required authentication
+  prerequisite and cannot be bypassed by Windows Hello availability.
+- Workstation monitoring recovery restores an unavailable session only
+  to `Locked`, preserving the requirement for fresh Windows Hello
+  verification.
 - Successful verification is required before protected database initialization.
 - Application, Infrastructure, and UI responsibilities remain separated.
 - Existing document/database encryption and key-protection responsibilities remain separate.
@@ -442,6 +503,10 @@ Unavailable, failed, or cancelled verification must remain non-authorized and mu
 - The product support baseline is more restrictive than the Windows Hello API's own minimum supported build.
 - The implementation requires a valid application window handle for the desktop verification prompt.
 - Actual Windows Hello hardware and policy behavior requires manual validation on a supported Windows host.
+- Actual workstation WTS session and power-notification delivery requires
+  interactive validation on supported Windows configurations.
+- A notification silently not delivered to the process cannot be detected
+  by the workstation event adapter.
 - Windows Hello does not isolate the application from arbitrary same-user code or replace protected-key and presentation enforcement.
 - The UI composition root must maintain the shared host lifetime and validated automatic-lock policy configuration.
 - Qualifying activity must be classified correctly at the UI input boundary; incorrectly reported activity could extend an inactivity baseline.
@@ -457,6 +522,15 @@ The implementation is supported by automated regression coverage at the Applicat
 Application-level verification covers:
 
 - authentication availability and outcome handling;
+- rejection of authentication when workstation monitoring is not `Ready`,
+  including when Windows Hello reports `Available`;
+- readiness-revision fencing across provider availability checks,
+  authentication-attempt creation, provider invocation, and result
+  acceptance;
+- rejection of stale Windows Hello results after a workstation-monitoring
+  failure or readiness-generation change;
+- restoration of an unavailable session to `Locked` only after the
+  workstation readiness prerequisite is re-established;
 - successful, failed, cancelled, and unavailable authentication;
 - restoration from an unavailable condition before a new attempt;
 - authentication-attempt identity and stale completion rejection;
@@ -484,6 +558,12 @@ Integration-level verification covers:
 - mapping Windows availability and verification results through the production Windows Hello provider and Application authentication service into the authoritative session;
 - successful, failed, cancelled, unavailable, and unknown verification outcomes;
 - unavailable Windows Hello capability and an unavailable window handle preventing verification and protected access;
+- Windows Hello availability being insufficient when workstation
+  monitoring is not ready;
+- authentication remaining blocked after a known monitoring failure,
+  including when Windows Hello becomes available again;
+- monitoring recovery returning the application session only to `Locked`
+  and requiring fresh Windows Hello verification;
 - automatic inactivity locking integrated with the real Application security-session and lifecycle services;
 - accepted activity resetting the inactivity baseline before expiry;
 - exact-deadline expiry locking the authenticated session;
@@ -503,6 +583,12 @@ UI-level verification covers:
 - production startup dependency-injection composition;
 - shared host startup before startup authentication;
 - hosted automatic-lock service startup and shutdown;
+- workstation-security monitor hosted-service startup before
+  startup authentication;
+- authentication remaining blocked after initial workstation-monitor
+  initialization failure while retry continues;
+- workstation-monitor retry, recovery, and shutdown through the
+  production shared Generic Host lifecycle;
 - host stop and disposal after startup cancellation or failure;
 - host stop and disposal after normal application termination;
 - WinForms activity-filter lifecycle and reporting of qualifying input;
@@ -522,7 +608,7 @@ The supported Windows servicing baseline must be reviewed when the deployed .NET
 - ADR-0002 establishes the Domain, Application, Infrastructure, and UI boundaries, the composition-root model, and the shared Generic Host lifecycle.
 - ADR-0004 establishes document encryption, DPAPI key protection, strict retrieval, and the authorized provisioning boundary.
 - ADR-0009 establishes encrypted SQLite and database-key management.
-- ADR-0014 establishes the authoritative Application security-session contract, authentication outcomes, state transitions, stale authentication-attempt rejection, and automatic inactivity-lock coordination.
+- ADR-0014 establishes the authoritative Application security-session contract, authentication outcomes, state transitions, stale authentication-attempt rejection, automatic inactivity-lock coordination, and mandatory workstation-monitor readiness.
 - The existing cryptographic key lifecycle remains governed by the relevant key-management decisions.
 
 ## References
