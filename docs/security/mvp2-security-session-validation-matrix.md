@@ -48,7 +48,7 @@ Historical solution-wide totals below are evidence recorded by the corresponding
 - **Automated evidence:** `ApplicationSecuritySessionTests`, `ApplicationSecuritySessionSnapshotTests`, `ApplicationDependencyInjectionTests`, `WindowsHelloAuthenticationIntegrationTests`, `DeskVaultStartupCompositionTests`, `DeskVaultStartupCoordinatorTests`, and `ProgramStartupTests`. #192 adds `BuildForTesting_UsesProductionRegistrationsAndStartsWorkstationMonitoringBeforeHostStartupCompletes` and `HostStartup_WhenWorkstationMonitoringInitiallyFails_BlocksAuthenticationAndDatabaseInitialization_UntilMonitoringRecoversAndFreshAuthenticationSucceeds` in `ProductionSecuritySessionHostIntegrationTests`.
 - **Manual evidence:** #187 records the native Windows Security prompt, successful authentication and vault startup, cancellation without protected startup, and successful retry.
 - **Evidence status:** **PASS — manual and automated.**
-- **Gap:** None identified for this outcome. The latest #192 full-solution validation remains pending and is tracked separately from this component/integration evidence.
+- **Gap:** None identified for this outcome. The #192 full-solution build and test suite passed on 2026-11-11; see Section 5 for the task-specific execution results.
 
 ### AC2 — Failed, cancelled, unavailable, or unsafe authentication must fail closed
 
@@ -197,17 +197,25 @@ The following results are historical evidence recorded by each completed task. T
 
 ## 5. #192-specific integrated execution evidence
 
-The following checks were run for #192 on 2026-11-11 and are distinct from the historical child-task results above.
+The following checks were run for #192 on 2026-11-11. They are distinct from the historical child-task results in Section 4.
 
 | Executed check | Result | Evidence meaning |
 |---|---:|---|
-| `dotnet build .\tests\DeskVault.UI.Tests\DeskVault.UI.Tests.csproj --no-restore` | **Passed** | UI test project and referenced projects built successfully. |
-| Focused `ExistingDocumentWorkspaceSearchAndProcessingFlows_AfterFreshAuthentication_RemainUsableThroughProductionHost` | **1/1 passed** | Actual production handler workflow remains usable before lock and after fresh authentication, and is denied while locked. |
-| `ProductionSecuritySessionHostIntegrationTests` plus `ProductionSecuritySessionPresentationIntegrationTests` selection | **9/9 passed** | Production composition, readiness, automatic lock, workstation transitions/failure/races, integrated workflow and presentation behavior. |
+| `dotnet build .\DeskVault.slnx --no-restore` | **Passed** | Full solution build succeeded. |
+| `dotnet test .\DeskVault.slnx --no-restore` | **1,952/1,952 passed; 0 failed; 0 skipped** | Full solution test suite passed. |
+| #192 production-host and presentation integration selection | **9/9 passed** | Production composition, readiness, automatic lock, workstation transitions/failures/races, integrated workflow and presentation behavior. |
 | Existing #320 presentation regression selection | **19/19 passed** | Existing presentation cleanup and session-revision regression classes remain green. |
-| `git diff --check` | **Passed** | No whitespace errors in the current tracked diff. |
+| Application authentication, automatic-lock, workstation-monitor, lifecycle and dependency-injection selection | **77/77 passed** | Reused Application-level security-session and automatic-lock regression coverage. |
+| #189 protected-key retrieval regression selection | **16/16 passed** | Protected document/database key retrieval regression coverage. |
+| Windows Hello and automatic-lock integration regression selection | **21/21 passed** | Reused Windows Hello and automatic-lock integration coverage. |
+| UI startup and automatic-lock regression selection | **30/30 passed** | UI startup and automatic-lock regression coverage. |
+| Aggregate focused #192 and reused component regression selections | **172/172 passed; 0 failed; 0 not executed** | Sum of the six focused selections above; these executions are not added to the full solution test count. |
+| `git diff --check` | **Passed** | No whitespace errors in the verified implementation change set. |
+| `git show --format= --check HEAD` | **Passed** | The committed implementation diff passed the whitespace/error check. |
 
-**Not yet executed specifically for #192:** full solution `dotnet build --no-restore` and full solution `dotnet test --no-restore`. These remain Step 8 validation gates and must not be represented as completed in this matrix. The UI test-project build is not a substitute for the full solution build.
+The full solution build and test commands were executed for #192 and passed. The focused selections provide additional targeted evidence; their counts are reported separately and are not added to the full solution total.
+
+The parent #185 manual/platform limitations in AC9 and AC10 remain outstanding independently of these automated test results. See Sections 3 and 7.
 
 ## 6. Windows-specific manual validation
 
@@ -307,7 +315,7 @@ Do not use production sensitive data for these checks. Record the Windows versio
 
 1. **Parent #185 AC9 remains partial for manual/native Windows delivery evidence.** Automated event handling is covered, and Windows+L was manually verified. Logoff/sign-out, remote-session disconnect, and suspend/resume/hibernate manual checks have not been recorded. The source's suspend/hibernate classification limitation must remain explicit.
 2. **Parent #185 AC10 remains partial for unobservable event-delivery failure.** Known initialization and runtime monitoring failures fail closed, but the Windows notification mechanism cannot identify every silently missed event. This platform limitation is documented by #191; it must not be silently represented as full coverage.
-3. **#192 full solution validation remains pending.** Execute `dotnet build --no-restore`, `dotnet test --no-restore`, and final diff/status checks under Step 8. Record actual counts and failures in the #192 completion evidence; do not infer them from earlier child-task runs.
+3. **#192 full solution validation completed on 2026-11-11.** The full solution build passed and the full solution test suite passed 1,952/1,952, with 0 failed and 0 skipped. Task-specific focused regression selections passed 172/172, with 0 failed and 0 not executed. See Section 5. These results do not resolve the separate parent AC9 and AC10 native Windows limitations.
 4. **Do not mark parent #185 closed solely because this matrix exists.** Each parent acceptance criterion must be evaluated against its evidence status. AC9 must not be reported as fully manually verified while the checks above remain unexecuted, and AC10 must not be reported as fully satisfied while silent notification loss remains unobservable.
 5. **Do not expand #192 into #193, #214, #220 or #221 implementation.** Those remain separate responsibility boundaries.
 
