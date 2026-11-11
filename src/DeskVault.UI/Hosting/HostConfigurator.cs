@@ -30,10 +30,53 @@ internal static class HostConfigurator
 {
     public static IHost Build()
     {
-        var builder = CreateBuilder(AppContext.BaseDirectory);
+        return BuildCore(
+            AppContext.BaseDirectory,
+            configureTestServices: null,
+            configurationOverrides: null);
+    }
 
-        // Validate the effective policy before creating the production host
-        // or presenting the authentication experience.
+    /// <summary>
+    /// Builds the production host composition while allowing tests to replace
+    /// only explicitly permitted external boundaries after production
+    /// registrations have been applied.
+    /// </summary>
+    /// <remarks>
+    /// This entry point is internal and is exposed only to the UI test
+    /// assembly. The normal production Build method does not use it and
+    /// retains the production service registrations unchanged.
+    /// </remarks>
+    internal static IHost BuildForTesting(
+        string contentRoot,
+        Action<IServiceCollection> configureTestServices,
+        IReadOnlyDictionary<string, string?>? configurationOverrides = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentRoot);
+        ArgumentNullException.ThrowIfNull(configureTestServices);
+
+        return BuildCore(
+            contentRoot,
+            configureTestServices,
+            configurationOverrides);
+    }
+
+    private static IHost BuildCore(
+        string contentRoot,
+        Action<IServiceCollection>? configureTestServices,
+        IReadOnlyDictionary<string, string?>? configurationOverrides)
+    {
+        var builder = CreateBuilder(contentRoot);
+
+        // Apply test configuration before validating the effective
+        // automatic-lock policy. Production configuration remains the base.
+        if (configurationOverrides is not null)
+        {
+            builder.Configuration.AddInMemoryCollection(
+                configurationOverrides);
+        }
+
+        // Validate the effective policy before creating the host or
+        // permitting the startup authentication experience.
         AutomaticLockSettings automaticLockSettings =
             AutomaticLockSettingsFactory.Create(
                 builder.Configuration);
@@ -44,6 +87,11 @@ internal static class HostConfigurator
             builder.Services,
             builder.Configuration,
             automaticLockSettings);
+
+        // Test overrides are deliberately applied after the complete
+        // production composition. This preserves production registrations
+        // and makes each permitted boundary substitution explicit.
+        configureTestServices?.Invoke(builder.Services);
 
         return builder.Build();
     }
