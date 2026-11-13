@@ -2,8 +2,8 @@
 
 **Parent PBI:** [#185 — Protect Vault Access During an Active DeskVault Session](https://github.com/anirbanB94/DeskVault/issues/185)
 **Validation owner:** [#192 — Validate locked-session security boundaries](https://github.com/anirbanB94/DeskVault/issues/192)
-**Evidence snapshot:** 2026-11-11
-**Status:** Integrated automated evidence is recorded below. Native Windows event-delivery checks that have not been performed remain explicitly outstanding.
+**Evidence snapshot:** 2026-11-13
+**Status:** Integrated automated evidence is recorded below, including #351 current-session reconciliation and independent suspend/resume callback handling. Manual Windows checks now record successful workstation lock, sign-out, Modern Standby resume, and hibernate resume on the documented x64 host. Remote-session disconnect remains unexecuted on the available host, and residual detection and event-delivery limitations remain explicit.
 
 ## 1. Purpose and scope
 
@@ -16,7 +16,8 @@ This matrix is the parent-outcome traceability record required by Technical Task
 - #188 owns the authoritative application lock/unlock lifecycle.
 - #189 owns session-authorized document and database key retrieval.
 - #190 owns automatic-lock configuration, qualifying activity, monotonic inactivity measurement, and expiry triggering.
-- #191 owns Windows workstation-event integration, monitoring readiness, and known monitoring-failure handling.
+- #191 owns the original Windows workstation-event integration, monitoring readiness, and known monitoring-failure handling.
+- #351 extends #191 with current-process WTS session-state reconciliation, independent suspend/resume callback observation, reconciliation-worker liveness, bounded native-query lifecycle, and additional monitoring-reliability evidence.
 - #320 owns in-app presentation protection, retained-content cleanup, and suppression of stale asynchronous presentation results.
 - #193 remains authoritative for secure external document viewing and its temporary plaintext lifecycle.
 - #214 remains authoritative for active-vault concurrency between application instances.
@@ -124,22 +125,34 @@ Historical solution-wide totals below are evidence recorded by the corresponding
 
 **Parent outcome:** Supported workstation lock, logoff/sign-out, suspend, or hibernate withdraw protected access and require DeskVault re-authentication. Windows session unlock or workstation resume alone must not restore access.
 
-- **Implementing tasks:** #188 (authoritative lock lifecycle), #191 (Windows workstation event-source mapping and monitor), #192 (integrated monitor/lifecycle verification).
-- **Automated evidence:** `WorkstationSecurityMonitorTests`, `WindowsWorkstationSecurityEventSourceTests`, `WindowsWorkstationSecurityEventSourceFailurePathTests`, `WindowsWorkstationSecurityNativeApiTests`, and #192's `WorkstationSecurityEvents_WhenReceivedByProductionMonitor_ApplyRequiredLockTransitionsWithoutTreatingUnlockOrResumeAsAuthentication`. The #192 test delivers session lock, logoff, disconnect, and suspending events through the production monitor and verifies the session locks and requires fresh authentication. Unlock, connect, and resume events do not authenticate or change the authenticated revision.
-- **Manual evidence:** #191 records Windows+L followed by Windows sign-in: DeskVault remained locked, protected actions remained unavailable, and the in-app Unlock action required fresh Windows Hello authentication. Manual logoff, remote-session disconnect, suspend/resume and hibernate event delivery were not recorded as executed.
-- **Platform limitation:** #191 documents that the selected Windows power-broadcast notifications do not separately identify suspend from hibernate. The application maps the supported power transition to the protective suspend behavior; it does not claim independent classification of those two power states.
-- **Evidence status:** **PARTIAL — automated transition handling is covered; native Windows manual delivery remains unverified for logoff, remote disconnect and power transitions, and suspend/hibernate cannot be independently distinguished by the selected notification.**
-- **Gap:** Complete the remaining manual Windows checks where the corresponding environment/events are available. Preserve the documented power-notification limitation; do not claim an independent suspend-versus-hibernate signal.
+- **Implementing tasks:** #188 (authoritative lock lifecycle), #191 (original Windows workstation event-source mapping and monitor), #351 (current-session reconciliation and independent suspend/resume callback), and #192 (integrated monitor/lifecycle verification).
+- **Automated evidence:** Existing `WorkstationSecurityMonitorTests`, `WindowsWorkstationSecurityEventSourceTests`, `WindowsWorkstationSecurityEventSourceFailurePathTests`, `WindowsWorkstationSecurityNativeApiTests`, and #192 production integration coverage remain applicable. #351 adds the following focused selections, all passed on 2026-11-12:
+  - `WindowsWorkstationSecurityNativeApiTests`, `WindowsWorkstationSecuritySessionStateParserTests`, and `WindowsWorkstationSecuritySessionReconciliationWorkerTests`: **45/45 passed**. This covers process-session identity, WTS structure/state validation, native buffer cleanup, initial-query failure, persistent locked/disconnected state handling, query timeout/no overlap, worker liveness, polling/cadence measurements, bounded shutdown, and cancellation-related native-buffer cleanup.
+  - `WindowsWorkstationSecurityEventSourceTests` and `WindowsWorkstationPowerNotificationDispatcherTests`: **35/35 passed**. This covers independent power callback registration, event mapping, bounded dispatch outside the callback stack, suspend-before-resume ordering, failure paths, unregistration, and cleanup.
+  - `WorkstationSecurityMonitorTests` and `WorkstationSecurityMonitorFailurePathTests`: **20/20 passed**. These verify that lock-triggering events, including `SystemResumed`, use the existing lifecycle lock; Windows session unlock and connect do not grant authorization.
+  - `ProductionSecuritySessionHostIntegrationTests`: **8/8 passed**. Production-host integration verifies readiness gating, authentication fencing, monitoring-failure behavior, required workstation transitions, and continued protected workflow behavior after fresh authentication.
+  - Two #351 reconciliation integration cases intentionally suppress the primary WTS notification and verify that a persistent locked state or disconnected state is independently discovered and locks the authenticated application session.
+- **Manual evidence:** #191 records Windows+L followed by Windows sign-in: DeskVault remained locked, protected actions remained unavailable, and the in-app Unlock action required fresh Windows Hello authentication. On 2026-11-13, additional interactive checks on Windows 11 Home Single Language 26H2, build 26300.9974 (x64), passed for Windows sign-out/sign-in, Modern Standby (S0) resume, and hibernate/resume. DeskVault required fresh in-app authentication after each transition. Remote-session disconnect/reconnect was not executed because a suitable remote-session host was not available in this test environment.
+- **Platform limitations:** The current-session query detects persistent locked or disconnected state at a later poll when the corresponding primary WTS window notification is missed. It does not reconstruct complete Windows session history and cannot guarantee observation of a transient transition that begins and ends between polling samples. The selected power notification API does not independently distinguish suspend from hibernate. The manual Modern Standby and hibernate checks were initiated as separate Windows power operations; they do not establish separate native power-event classifications.
+- **Evidence status:** **PARTIAL — Windows workstation lock, sign-out/sign-in, Modern Standby resume, and hibernate/resume have passed manual validation on the available x64 host. Remote-session disconnect/reconnect remains unexecuted because a suitable remote-session host was unavailable. The selected notification mechanism also does not independently distinguish suspend from hibernate.**
+- **Gap:** Execute remote-session disconnect/reconnect on a suitable supported remote Windows host when available. No numeric detection-latency measurement or native event-source trace capture was recorded during the November 13 manual checks. Preserve the transient-state and power-notification limitations; do not claim that automated notification mapping proves native delivery.
 
 ### AC10 — Workstation monitoring must fail closed when protection cannot be established reliably
 
 **Parent outcome:** Given required workstation security protection cannot be established or monitored reliably, DeskVault must not silently continue exposing protected content under an assumed-secure session.
 
-- **Implementing tasks:** #191 (monitor readiness and failure handling), #192 (production host startup, runtime failure and recovery integration).
-- **Automated evidence:** `WorkstationSecurityMonitorFailurePathTests`, `WindowsWorkstationSecurityEventSourceFailurePathTests`, `WindowsWorkstationSecurityEventSourceTests`, `DeskVaultStartupCompositionTests`, and #192's initial and runtime monitoring-failure host integration tests. These verify the session becomes `Unavailable`, Windows Hello is not invoked while monitoring is unavailable, protected database initialization is blocked on initial startup failure, and runtime failure withdraws access.
-- **Manual evidence:** The #191 Windows+L manual check is supplementary. It is not evidence of native event-source failure injection; failure paths are deterministically tested.
-- **Evidence status:** **PARTIAL — automated tests verify known initialization and runtime monitoring failures fail closed, but the selected Windows notification mechanism cannot report every silent event-delivery gap.**
-- **Gap:** The implementation cannot detect an operating-system event that is silently missed by the selected notification mechanism. #191 explicitly documents that limitation and does not claim guaranteed delivery or detection of silent event loss. Parent #185 AC10 therefore must not be marked fully satisfied without an explicit product-level acceptance of this platform limitation or a separately approved mitigation.
+- **Implementing tasks:** #191 (original monitor readiness and known failure handling), #351 (WTS reconciliation, independent power callback, query/worker/callback failure handling), and #192 (production host startup, runtime failure and recovery integration).
+- **Automated evidence:** Existing `WorkstationSecurityMonitorFailurePathTests`, `WindowsWorkstationSecurityEventSourceFailurePathTests`, `WindowsWorkstationSecurityEventSourceTests`, `DeskVaultStartupCompositionTests`, and #192's initial and runtime monitoring-failure host integration tests verify known failures leave the session unavailable, prevent Windows Hello authentication while monitoring is unavailable, block protected database initialization on initial failure, and withdraw access on runtime failure.
+
+  #351 adds focused automated evidence executed on 2026-11-12:
+  - The native API/parser/reconciliation selection passed **45/45**. It covers WTS query failure, malformed/unsupported state, parser rejection, native buffer cleanup, initial query failure, query timeout without overlap, process-session identity changes, worker exit/liveness failure, and bounded shutdown.
+  - The event-source/power-dispatcher selection passed **35/35**. It covers WTS and independent power registration failures, callback signalling and dispatch failure, callback unregistration failure, bounded dispatcher shutdown, and cleanup/retry behavior.
+  - The Application monitor and failure-path selection passed **20/20**. It verifies lifecycle lock ordering and that a monitoring failure supersedes an in-flight unlock before the session becomes unavailable.
+  - The production security-session host integration selection passed **8/8**. It verifies monitoring readiness before authentication, initial and runtime failure handling, recovery only to Locked, and stale authentication rejection.
+  - The two suppressed-primary-WTS-notification integration cases verify that persistent locked and disconnected process-session states are found through independent reconciliation and withdraw protected access.
+- **Manual evidence:** The #191 Windows+L check and the #351 sign-out/sign-in, Modern Standby resume, and hibernate/resume checks in Section 6 are supplementary evidence of normal transition outcomes. They are not evidence of native event-source failure injection. The #351 native registration, query, worker, callback, and failure paths have separate automated evidence.
+- **Evidence status:** **PARTIAL — known initialization, query, worker, callback, dispatcher, and cleanup failures fail closed, and persistent locked/disconnected process-session state can be reconciled when the primary WTS window notification is suppressed. The implementation cannot guarantee observation of every silently missed or transient operating-system transition.**
+- **Gap:** A transient locked or disconnected state that begins and ends between WTS reconciliation samples may remain undetected if the corresponding WTS notification is also missed. A power transition may remain unobservable if both the window power-broadcast path and the independent callback fail to report it. AC10 must not be marked fully satisfied without an explicit product-level acceptance of these residual platform limitations or a separately approved mitigation.
 
 ### AC11 — Failed protected-access checks must not replace or recreate encrypted data
 
@@ -217,113 +230,239 @@ The full solution build and test commands were executed for #192 and passed. The
 
 The parent #185 manual/platform limitations in AC9 and AC10 remain outstanding independently of these automated test results. See Sections 3 and 7.
 
+### 5.1 #351 focused workstation-transition monitoring execution evidence
+
+The following selections were executed on 2026-11-12 on
+`feat/351-harden-workstation-transition-monitoring-reliability`.
+They are focused #351 implementation and regression checks. They are
+separate from the historical #192 full-solution result above and are not
+a new full-solution test run.
+
+| Executed check | Result | Evidence meaning |
+|---|---:|---|
+| `WindowsWorkstationSecurityNativeApiTests`, `WindowsWorkstationSecuritySessionStateParserTests`, and `WindowsWorkstationSecuritySessionReconciliationWorkerTests` | **45/45 passed; 0 failed; 0 skipped** | Native WTS query, process-session identity, parser validation, buffer cleanup, current-state reconciliation, polling, query timeout/no overlap, worker liveness, cancellation, and bounded shutdown. |
+| `WindowsWorkstationSecurityEventSourceTests` and `WindowsWorkstationPowerNotificationDispatcherTests` | **35/35 passed; 0 failed; 0 skipped** | WTS event-source lifecycle, independent suspend/resume callback registration and dispatch, callback ordering, failure handling, unregistration, and cleanup. |
+| `WorkstationSecurityMonitorTests` and `WorkstationSecurityMonitorFailurePathTests` | **20/20 passed; 0 failed; 0 skipped** | Application lock policy, resume-triggered lock, monitoring failure ordering, readiness, recovery, and stale callback fencing. |
+| `ProductionSecuritySessionHostIntegrationTests` | **8/8 passed; 0 failed; 0 skipped** | Production shared-host readiness, authentication gating, runtime monitoring failure, stale authentication rejection, workstation transitions, and existing protected workflow regression. |
+| `git diff --check` | **Passed** | Working-tree whitespace validation succeeded for the reviewed change set. |
+
+The test project builds succeeded for all four focused selections.
+The four focused test results are reported separately and are not
+represented as a full-solution total.
+
+The two reconciliation integration cases deliberately suppress the
+primary WTS session notification while retaining the independently
+queried current-session state. One case supplies a persistent locked
+active session; the other supplies a persistent disconnected session.
+Both verify that reconciliation publishes the protective transition
+and the authenticated application session is locked.
+
+The automated tests establish the parser, native boundary, controlled
+notification paths, reconciliation behavior, and Application/production
+host response. They do not establish that an actual supported Windows
+installation delivers every WTS, logoff, remote-session, suspend, resume,
+or hibernate event. Those interactive scenarios remain separately
+tracked in Section 6. The focused results do not resolve the limitations
+recorded for AC9 and AC10.
+
+### 5.2 #351 follow-up gap-remediation regression evidence
+
+The following consolidated regression selections were executed on
+2026-11-12 after the Step 7 gap-remediation changes. They supersede the
+earlier individual Infrastructure subset totals in Section 5.1 as the
+latest combined Infrastructure execution. These are focused test runs,
+not a new full-solution test run.
+
+| Executed check | Result | Evidence meaning |
+|---|---:|---|
+| `WindowsWorkstationSecurityNativeApiTests`, `WindowsWorkstationSecuritySessionStateParserTests`, `WindowsWorkstationSecuritySessionReconciliationWorkerTests`, `WindowsWorkstationSecurityEventSourceTests`, `WindowsWorkstationSecurityEventSourceFailurePathTests`, and `WindowsWorkstationPowerNotificationDispatcherTests` | **85/85 passed; 0 failed; 0 skipped** | Consolidated Infrastructure regression covering native WTS operations, ABI layout, process-session identity and lookup failure, state parsing, memory cleanup, reconciliation, power callback dispatch, worker liveness, and resource lifecycle. |
+| `WorkstationSecurityMonitorTests` and `WorkstationSecurityMonitorFailurePathTests` | **20/20 passed; 0 failed; 0 skipped** | Application monitor policy, protective lock transitions, failure ordering, readiness, recovery, and stale callback handling. |
+| `ProductionSecuritySessionHostIntegrationTests` | **8/8 passed; 0 failed; 0 skipped** | Production shared-host readiness, authentication gating, monitoring failure and recovery, stale authentication rejection, and protected workflow regression. |
+| `git diff --check` | **Passed** | Final working-tree whitespace validation succeeded. |
+
+All three test-project builds succeeded. The reported selections are
+separate test-project executions and are not represented as a
+full-solution total.
+
+#### Native ABI architecture evidence
+
+The ABI layout test asserts the `WTSINFOEXW` outer structure size
+(232 bytes), union offset (8 bytes), `WTSINFOEX_LEVEL1_W` structure
+size (224 bytes), and the offsets of its declared members.
+
+The test process architecture and operating-system architecture were
+both **X64**, with an eight-byte pointer. The Infrastructure and
+Infrastructure.Tests project files do not declare `PlatformTarget`,
+`RuntimeIdentifier`, `RuntimeIdentifiers`, or `Platforms` overrides.
+Consequently, the executed evidence establishes the asserted layout
+under the x64 test host only. It does not establish compatibility for
+ARM64 or another process architecture. #351's native-layout acceptance
+criterion remains PARTIAL until the supported architecture policy is
+explicit and every architecture in that policy has corresponding
+validation evidence, or the product support scope is explicitly limited
+and documented.
+
+#### Transient-state observation limitation
+
+The added deterministic reconciliation test starts with an active,
+unlocked process session, changes the simulated state to locked and
+back to unlocked between polling samples, and suppresses the primary WTS
+notification. The worker does not observe the transient lock and does
+not publish a lock event for that interval.
+
+This is an intentional demonstration of the documented polling boundary,
+not a test failure. Current-session polling detects persistent state
+that remains present at a later sample; it is not a complete event
+history and cannot guarantee observation of a transition that begins
+and ends between samples when the corresponding notification is missed.
+
+#### Remaining manual/platform evidence
+
+The additional #351 automated tests do not replace interactive Windows
+validation. Section 6 now records successful manual Windows+L,
+sign-out/sign-in, Modern Standby resume, and hibernate/resume checks
+performed on 2026-11-13 on a Windows 11 Home Single Language x64 host.
+Remote-session disconnect/reconnect was not executed because a suitable
+remote-session host was unavailable. No numeric event-detection latency
+or native event-source trace capture was recorded during these checks.
+
+Parent #185 AC9 remains PARTIAL pending the unexecuted remote-session
+scenario. AC10 remains PARTIAL because transient state changes between
+reconciliation samples and silently missed power notifications may
+remain unobservable. The suspend/hibernate classification limitation
+must also remain explicit.
+
 ## 6. Windows-specific manual validation
 
-### 6.1 Prerequisites
+### 6.1 Test environment and prerequisites
 
-- A supported Windows environment matching the application's Windows-targeted runtime baseline.
-- DeskVault running in the intended interactive Windows user session with workstation monitoring initialized.
-- Windows Hello configured and available for the signed-in user for authentication checks.
-- An initialized existing encrypted vault containing non-sensitive test documents and a persistent workspace.
-- A test account/environment where Windows lock, sign-out, remote-session disconnect and power transitions can be performed safely.
+The November 13, 2026 manual checks were performed on:
 
-Do not use production sensitive data for these checks. Record the Windows version/build, DeskVault build/commit, scenario, outcome and any observable event-source/logging evidence when performing outstanding checks.
+- Operating system: Microsoft Windows 11 Home Single Language, Version 26H2.
+- OS build: 26300.9974.
+- OS and process architecture: x64.
+- .NET SDK reported by the host: 10.0.404.
+- DeskVault UI target framework: `net10.0-windows10.0.26100.0`.
+- Automatic-lock configuration: `Security.AutomaticLock.Enabled` was `false` in the source and matching output configuration. No process, user, or machine environment overrides were present during preflight.
+
+The checks used a non-sensitive test vault and existing document/workspace content. The operator confirmed the expected security behavior after each completed transition. No numeric event-detection latency or native event-source trace capture was recorded.
 
 ### 6.2 Windows Hello native prompt — recorded as completed under #187
 
-**Steps**
-
-1. Launch DeskVault through its normal startup path.
-2. Confirm the native Windows Security / Windows Hello verification prompt is presented before protected startup completes.
-3. Complete Windows Hello verification and confirm startup and access to the existing vault proceed.
-4. Repeat the authentication attempt and cancel the native prompt.
-5. Confirm cancellation does not permit protected startup or protected vault access.
-6. Retry and complete Windows Hello verification successfully.
-
-**Expected result:** Only successful Windows Hello verification establishes the authenticated protected-access state. Cancellation leaves protected access unavailable; a subsequent successful attempt permits startup.
-
-**Evidence status:** **PASS — manually recorded by #187**, in addition to the automated authentication result tests. This is historical component-task evidence, not a new manual run performed by #192.
+**Evidence status:** **PASS — manually recorded by #187**, in addition to automated authentication result tests. This is historical component-task evidence, not a new manual run performed for #351.
 
 ### 6.3 Windows workstation lock — recorded as completed under #191
 
-**Steps**
+**Steps and expected result:** Windows+L followed by Windows sign-in must leave DeskVault locked. Protected actions remain unavailable until the user invokes the in-app Unlock action and completes fresh Windows Hello verification.
 
-1. Start DeskVault, authenticate through Windows Hello, and confirm the vault is usable.
-2. Lock the Windows workstation using `Windows+L`.
-3. Sign back into Windows and return to DeskVault.
-4. Verify DeskVault remains locked and protected actions are unavailable; Windows sign-in/unlock alone must not restore DeskVault authorization.
-5. Use DeskVault's in-app Unlock action.
-6. Complete a fresh Windows Hello verification.
-7. Verify protected vault operations become available only after successful in-app authentication.
+**Evidence status:** **PASS — manually recorded by #191.** The task record states that DeskVault remained locked after Windows+L and Windows sign-in and required the in-app Unlock/Windows Hello flow. Existing documents and workspace records were usable after successful application authentication.
 
-**Expected result:** The Windows lock transition withdraws protected access. Windows sign-in/unlock does not authenticate DeskVault. Fresh in-app Windows Hello authentication is required.
+### 6.4 Windows logoff/sign-out delivery — completed 2026-11-13
 
-**Evidence status:** **PASS — manually recorded by #191.** The task record states that DeskVault remained locked after Windows+L and Windows sign-in and required the in-app Unlock/Windows Hello flow. It also records that the authenticated application could access existing documents and workspace records after successful application authentication.
+**Steps performed**
 
-### 6.4 Windows logoff/sign-out delivery — not yet executed manually
-
-**Steps to perform**
-
-1. Authenticate to DeskVault and verify the vault is usable.
+1. Authenticate to DeskVault and verify the test vault is usable.
 2. Sign out/log off the Windows user session.
-3. Sign back into Windows and relaunch or return to DeskVault as appropriate.
-4. Verify the previous DeskVault authorization is not restored by Windows sign-in and fresh DeskVault authentication is required.
+3. Sign back into Windows and relaunch or return to DeskVault.
+4. Verify that Windows sign-in alone does not restore the previous DeskVault authorization and that fresh in-app authentication is required.
 
 **Expected result:** The supported logoff/sign-out transition withdraws protected access through the existing application lock lifecycle.
 
-**Evidence status:** **NOT EXECUTED manually.** Automated monitor event mapping and lifecycle tests exist; native Windows logoff notification delivery has not been recorded as manually verified.
+**Evidence status:** **PASS — manually confirmed on 2026-11-13.** The operator confirmed that the transition behaved as expected and that fresh in-app authentication was required.
 
-### 6.5 Remote-session disconnect delivery — not yet executed manually
+### 6.5 Remote-session disconnect/reconnect — not executed
 
-**Steps to perform**
+**Expected scenario**
 
 1. In a supported remote Windows session, authenticate to DeskVault and verify the vault is usable.
-2. Disconnect the remote session without signing out, using the normal remote-session disconnect action.
+2. Disconnect the remote session without signing out.
 3. Reconnect to the same Windows session.
 4. Verify DeskVault remains locked and requires fresh in-app Windows Hello authentication.
 
-**Expected result:** A remote-session disconnect withdraws protected access; reconnecting the Windows session does not restore DeskVault authorization.
+**Evidence status:** **NOT EXECUTED.** The available preflight host was Windows 11 Home Single Language, `TermService` was stopped, and the session-query utilities were unavailable. No separate suitable remote-session host was used. Do not treat this scenario as passed.
 
-**Evidence status:** **NOT EXECUTED manually.** Automated event mapping and monitor/lifecycle tests exist; native remote-session notification delivery has not been recorded as manually verified.
+### 6.6 Modern Standby resume — completed 2026-11-13
 
-### 6.6 Suspend/resume and hibernate delivery — not yet executed manually
+**Steps performed**
 
-**Steps to perform**
+1. Authenticate to DeskVault and verify the test vault and protected content are usable.
+2. Put the laptop into Sleep using the Windows power menu. The host reports `S0 Low Power Idle` (Modern Standby) as its available standby state.
+3. Resume the laptop and return to DeskVault.
+4. Verify DeskVault remains locked and that protected operations require fresh in-app Windows Hello authentication.
 
-1. Authenticate to DeskVault and verify the vault is usable.
-2. Put the Windows workstation into a supported sleep/suspend state.
-3. Resume Windows and return to DeskVault.
-4. Verify DeskVault remains locked and requires fresh in-app authentication.
-5. Where the test environment supports it, repeat using hibernation and verify the same protective outcome.
+**Expected result:** Resuming Windows does not restore DeskVault authorization.
 
-**Expected result:** A supported power transition withdraws protected access; resuming Windows alone does not authenticate DeskVault.
+**Evidence status:** **PASS — manually confirmed on 2026-11-13.** The operator confirmed the expected protective behavior after Modern Standby resume.
 
-**Evidence status:** **NOT EXECUTED manually.** Automated event mapping and application response are tested. #191 documents that the selected Windows power-broadcast notifications do not independently distinguish suspend from hibernate. Do not report separate suspend/hibernate classification or delivery proof where the platform source does not provide it.
+### 6.7 Hibernate/resume — completed 2026-11-13
 
-### 6.7 Manual-validation summary
+**Steps performed**
+
+1. Authenticate to DeskVault and verify the test vault and protected content are usable.
+2. Select Hibernate from the Windows power menu and allow the machine to hibernate.
+3. Power the laptop back on and sign into Windows if prompted.
+4. Return to DeskVault and verify protected access remains locked until fresh in-app Windows Hello authentication.
+
+**Expected result:** Windows sign-in after hibernation does not restore DeskVault authorization.
+
+**Evidence status:** **PASS — manually confirmed on 2026-11-13.** The operator confirmed the expected protective behavior after hibernate/resume.
+
+### 6.8 Manual-validation summary
 
 | Scenario | Automated evidence | Manual evidence | Current status |
 |---|---|---|---|
 | Windows Hello success, cancellation and retry | Yes — #187 and #192 integration coverage | Recorded under #187 | **PASS** |
 | Windows workstation lock (`Windows+L`) | Yes — #191 and #192 event/lifecycle coverage | Recorded under #191 | **PASS** |
-| Windows logoff/sign-out | Yes — event mapping/lifecycle coverage | Not recorded | **NOT EXECUTED manually** |
-| Remote-session disconnect | Yes — event mapping/lifecycle coverage | Not recorded | **NOT EXECUTED manually** |
-| Suspend/resume | Yes — event mapping/lifecycle coverage | Not recorded | **NOT EXECUTED manually** |
-| Hibernate distinct from suspend | Power notification limitation documented | Not recorded; source does not distinguish the two | **NOT INDEPENDENTLY DISTINGUISHABLE** |
-
+| Windows logoff/sign-out | Yes — event mapping/lifecycle coverage | Confirmed 2026-11-13 | **PASS** |
+| Remote-session disconnect/reconnect | Yes — event mapping and reconciliation coverage | Not executed; no suitable remote host available | **NOT EXECUTED** |
+| Modern Standby (`S0`) resume | Yes — event mapping and lifecycle coverage | Confirmed 2026-11-13 | **PASS** |
+| Hibernate/resume | Yes — event mapping and lifecycle coverage | Confirmed 2026-11-13 | **PASS** |
+| Independent native classification of suspend versus hibernate | No separate classification is exposed by the selected power-notification source | Separate manual power operations passed; native event classification not established | **NOT INDEPENDENTLY DISTINGUISHABLE** |
 ## 7. Outstanding coverage and closure controls
 
-1. **Parent #185 AC9 remains partial for manual/native Windows delivery evidence.** Automated event handling is covered, and Windows+L was manually verified. Logoff/sign-out, remote-session disconnect, and suspend/resume/hibernate manual checks have not been recorded. The source's suspend/hibernate classification limitation must remain explicit.
-2. **Parent #185 AC10 remains partial for unobservable event-delivery failure.** Known initialization and runtime monitoring failures fail closed, but the Windows notification mechanism cannot identify every silently missed event. This platform limitation is documented by #191; it must not be silently represented as full coverage.
-3. **#192 full solution validation completed on 2026-11-11.** The full solution build passed and the full solution test suite passed 1,952/1,952, with 0 failed and 0 skipped. Task-specific focused regression selections passed 172/172, with 0 failed and 0 not executed. See Section 5. These results do not resolve the separate parent AC9 and AC10 native Windows limitations.
-4. **Do not mark parent #185 closed solely because this matrix exists.** Each parent acceptance criterion must be evaluated against its evidence status. AC9 must not be reported as fully manually verified while the checks above remain unexecuted, and AC10 must not be reported as fully satisfied while silent notification loss remains unobservable.
-5. **Do not expand #192 into #193, #214, #220 or #221 implementation.** Those remain separate responsibility boundaries.
-
+1. **Parent #185 AC9 remains partial for the unexecuted remote-session scenario.** Windows+L, Windows sign-out/sign-in, Modern Standby resume, and hibernate/resume have passed the recorded manual checks. Remote-session disconnect/reconnect remains unexecuted because a suitable remote-session host was unavailable. Do not represent that scenario as passed.
+2. **Parent #185 AC10 remains partial for residual event-delivery limitations.** Known initialization, query, parser, worker, callback, dispatcher, and cleanup failures use the established fail-closed boundary. Persistent locked/disconnected state can be independently reconciled when a primary WTS window notification is suppressed. However, a transient lock/disconnect that begins and ends between polls may remain undetected if the notification is also missed. A power transition may remain unobservable if neither power-notification path reports it. These limitations must not be silently represented as full coverage.
+3. **#351 focused execution evidence completed on 2026-11-12.** Infrastructure native API/parser/reconciliation tests passed 45/45; event-source/power-dispatcher tests passed 35/35; Application workstation monitor/failure-path tests passed 20/20; production security-session host integration tests passed 8/8. These focused selections are recorded separately and are not added together as a substitute for the full-solution result.
+4. **#351 final solution validation completed on 2026-11-13.** `dotnet build .\DeskVault.slnx --no-restore` succeeded. `dotnet test .\DeskVault.slnx --no-restore` passed **2,029/2,029**, with 0 failed and 0 skipped. `git diff --check HEAD --` and the staged-diff whitespace check passed. This result is the #351 final solution validation and is separate from historical #192 evidence.
+5. **The #192 full-solution evidence remains historical and separate.** The full solution build and test suite recorded for #192 on 2026-11-11 passed 1,952/1,952, with 0 failed and 0 skipped. Do not combine or overwrite that historical result with the #351 run.
+6. **Do not mark parent #185 closed solely because this matrix or #351 exists.** Each parent acceptance criterion must be evaluated against its evidence status. AC9 retains the unexecuted remote-session scenario; AC10 retains the documented transient and silent power-notification limitations.
+7. **Do not expand #192 or #351 into #193, #214, #220 or #221 implementation.** Those remain separate responsibility boundaries.
 ## 8. ADR and architecture impact reference
 
 The #192 implementation change set consists of a shared production-host test-composition seam and integration-test/support files. `HostConfigurator.Build()` continues to invoke the common composition path without test service overrides. The test entry point applies substitutions only after production registrations have been composed. The integrated tests retain the production Application session, authentication, lifecycle, monitoring, session-authorized key adapters, encrypted database factory, and document encryption registrations.
 
 The ADR impact review for this change set considered the shared host/composition and session boundary (ADR-0002 and ADR-0014), the document/database encryption and key-retrieval boundaries (ADR-0004 and ADR-0009), the in-app workspace/presentation lifecycle (ADR-0006 and ADR-0007), and the Windows Hello/workstation monitoring decisions (ADR-0015). The existing decisions already describe the responsibilities and invariants exercised by #192. This task adds integration evidence and traceability, not a new production architectural decision; no ADR update is indicated by the current #192 implementation diff.
+
+### #351 ADR impact review
+
+The #351 implementation changes the durable Windows workstation-monitoring
+contract and updates ADR-0014. The updated decision records:
+
+- initial WTS current-process state validation and independent power callback
+  registration as workstation-monitor readiness prerequisites;
+- process-session identity acquisition and `WTSSessionInfoEx` state
+  reconciliation;
+- native WTS buffer release and parser validation requirements;
+- periodic polling, the one-second timer configuration, skipped ticks while
+  a native query remains active, and actual query-start cadence measurement;
+- query timeout, worker liveness, bounded shutdown, and retained resource
+  behavior;
+- independent suspend/resume callback dispatch and deterministic
+  unregistration/cleanup;
+- resume as a protective lifecycle lock transition;
+- the supported Windows platform baseline and the modern WTS session-flag
+  mapping, without implementing the legacy Windows 7/Windows Server 2008 R2
+  flag inversion;
+- residual transient-state and silent power-notification limitations.
+
+ADR-0015 was reviewed and remains unchanged because the authentication
+provider, Windows Hello verification contract, and fresh-authentication
+requirement are unchanged. ADR-0002 was reviewed and remains unchanged
+because the shared Generic Host owner and composition responsibility
+established by #190 are unchanged. The new reconciliation and callback
+components remain part of the existing Infrastructure workstation
+monitoring lifecycle; no competing host or security-session state machine
+is introduced.
 
 ## 9. Evidence source references
 
@@ -335,4 +474,5 @@ The ADR impact review for this change set considered the shared host/composition
 - [#190 — Automatic-lock configuration and inactivity lifecycle](https://github.com/anirbanB94/DeskVault/issues/190)
 - [#191 — Workstation transitions, monitoring readiness/failure and Windows+L manual evidence](https://github.com/anirbanB94/DeskVault/issues/191)
 - [#192 — Integrated validation and traceability owner](https://github.com/anirbanB94/DeskVault/issues/192)
+- [#351 — Workstation transition monitoring reliability, current-session reconciliation, and independent power callback](https://github.com/anirbanB94/DeskVault/issues/351)
 - [#320 — In-app presentation protection and retained-content cleanup](https://github.com/anirbanB94/DeskVault/issues/320)

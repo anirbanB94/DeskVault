@@ -161,6 +161,127 @@ public sealed class ProductionSecuritySessionHostIntegrationTests
     }
 
     [Fact]
+    public async Task HostStartup_WhenWorkstationMonitoringIsStillInitializing_DoesNotCompleteOrPermitAuthenticationUntilMonitoringIsReady()
+    {
+        // Arrange
+        CancellationToken cancellationToken =
+            TestContext.Current.CancellationToken;
+
+        await using ProductionSecuritySessionTestHost testHost =
+            ProductionSecuritySessionTestHost.Create();
+
+        var monitoringStart =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        testHost.WorkstationEventSource.StartTask =
+            monitoringStart.Task;
+
+        IServiceProvider services =
+            testHost.Services;
+
+        IWorkstationSecurityReadiness workstationReadiness =
+            services.GetRequiredService<IWorkstationSecurityReadiness>();
+
+        IApplicationSecuritySession securitySession =
+            services.GetRequiredService<IApplicationSecuritySession>();
+
+        DeskVaultStartupCoordinator startupCoordinator =
+            services.GetRequiredService<DeskVaultStartupCoordinator>();
+
+        // Act: begin production host startup while holding the
+        // controlled event source in its initialization state.
+        Task hostStart =
+            testHost.StartAsync(cancellationToken);
+
+        try
+        {
+            await testHost.WorkstationEventSource.StartInvoked.WaitAsync(
+                cancellationToken);
+
+            // Assert: startup must remain pending until monitoring is ready.
+            Assert.Equal(
+                1,
+                testHost.WorkstationEventSource.StartCallCount);
+
+            Assert.Equal(
+                WorkstationSecurityReadinessState.Starting,
+                workstationReadiness.CurrentSnapshot.State);
+
+            Assert.False(hostStart.IsCompleted);
+
+            // Authentication must be rejected while monitoring is initializing.
+            bool authenticatedDuringMonitoringInitialization =
+                await startupCoordinator.AuthenticateAsync(
+                    cancellationToken);
+
+            Assert.False(authenticatedDuringMonitoringInitialization);
+
+            Assert.Equal(
+                0,
+                testHost.WindowsHelloPlatformApi.AvailabilityCallCount);
+
+            Assert.Equal(
+                0,
+                testHost.WindowsHelloPlatformApi.VerificationCallCount);
+
+            // A rejected authentication attempt while readiness is Starting
+            // must leave the application session unavailable.
+            Assert.Equal(
+                ApplicationSecuritySessionState.Unavailable,
+                securitySession.CurrentSnapshot.State);
+
+            // Act: complete event-source initialization.
+            monitoringStart.TrySetResult(true);
+
+            await hostStart.WaitAsync(cancellationToken);
+
+            // Assert: successful monitoring initialization restores the
+            // session to Locked, never to Authenticated.
+            Assert.Equal(
+                WorkstationSecurityReadinessState.Ready,
+                workstationReadiness.CurrentSnapshot.State);
+
+            Assert.Equal(
+                ApplicationSecuritySessionState.Locked,
+                securitySession.CurrentSnapshot.State);
+
+            Assert.Equal(
+                0,
+                testHost.WindowsHelloPlatformApi.AvailabilityCallCount);
+
+            Assert.Equal(
+                0,
+                testHost.WindowsHelloPlatformApi.VerificationCallCount);
+
+            // Act: stop the production host.
+            await testHost.StopAsync(cancellationToken);
+
+            // Assert: hosted-service shutdown stops workstation monitoring.
+            Assert.Equal(
+                WorkstationSecurityReadinessState.Stopped,
+                workstationReadiness.CurrentSnapshot.State);
+        }
+        finally
+        {
+            // Always release the controlled initialization task. This ensures
+            // host startup can finish or fail and release its lifecycle gate
+            // before ProductionSecuritySessionTestHost.DisposeAsync executes.
+            monitoringStart.TrySetResult(true);
+
+            try
+            {
+                await hostStart;
+            }
+            catch when (hostStart.IsFaulted || hostStart.IsCanceled)
+            {
+                // Preserve the original test failure while observing a failed
+                // host-start operation during teardown.
+            }
+        }
+    }
+
+    [Fact]
     public async Task HostStartup_WhenWorkstationMonitoringInitiallyFails_BlocksAuthenticationAndDatabaseInitialization_UntilMonitoringRecoversAndFreshAuthenticationSucceeds()
     {
         // Arrange
@@ -1031,13 +1152,12 @@ public sealed class ProductionSecuritySessionHostIntegrationTests
             WorkstationSecurityReadinessState.Ready,
             workstationReadiness.CurrentSnapshot.State);
 
-        // Act and assert: workstation unlock, connection and resume events
-        // must not restore or otherwise change an authenticated session.
+        // Act and assert: workstation unlock and connection events
+        // must not authenticate or otherwise change the application session.
         WorkstationSecurityEventKind[] nonAuthenticatingEvents =
         [
             WorkstationSecurityEventKind.SessionUnlocked,
-            WorkstationSecurityEventKind.SessionConnected,
-            WorkstationSecurityEventKind.SystemResumed
+            WorkstationSecurityEventKind.SessionConnected
         ];
 
         foreach (WorkstationSecurityEventKind eventKind
@@ -1065,13 +1185,15 @@ public sealed class ProductionSecuritySessionHostIntegrationTests
         }
 
         // Act and assert: every supported workstation transition that
-        // requires protection must lock through the production lifecycle.
+        // requires protection, including resume, must lock through the
+        // production lifecycle.
         WorkstationSecurityEventKind[] lockingEvents =
         [
             WorkstationSecurityEventKind.SessionLocked,
             WorkstationSecurityEventKind.SessionLoggedOff,
             WorkstationSecurityEventKind.SessionDisconnected,
-            WorkstationSecurityEventKind.SystemSuspending
+            WorkstationSecurityEventKind.SystemSuspending,
+            WorkstationSecurityEventKind.SystemResumed
         ];
 
         foreach (WorkstationSecurityEventKind eventKind

@@ -1,8 +1,24 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace DeskVault.Infrastructure.Security.Workstation;
+
+internal delegate bool WindowsWorkstationProcessSessionIdLookup(
+    uint processId,
+    out uint sessionId,
+    out int errorCode);
+
+internal delegate bool WindowsWorkstationWtsSessionInformationQuery(
+    IntPtr serverHandle,
+    uint sessionId,
+    int informationClass,
+    out IntPtr buffer,
+    out uint bytesReturned);
+
+internal delegate void WindowsWorkstationWtsMemoryFree(
+    IntPtr memory);
 
 /// <summary>
 /// Implements the native Windows operations required by the workstation
@@ -23,7 +39,86 @@ internal sealed class WindowsWorkstationSecurityNativeApi
 
     private const int ErrorInvalidWindowHandle = 1400;
 
+    private const int ErrorInvalidHandle = 6;
+
+    private const int ErrorInvalidData = 13;
+
+    private const int ErrorNotSupported = 50;
+
+    private const int WtsSessionInfoExInformationClass = 25;
+
+    private const uint DeviceNotifyCallback = 0x00000002;
+
+    private readonly ConcurrentDictionary<
+        IntPtr,
+        WindowsWorkstationPowerNotificationCallback> _powerCallbacks = new();
+
+    private readonly WindowsWorkstationProcessSessionIdLookup
+        _processSessionIdLookup;
+
+    private readonly WindowsWorkstationWtsSessionInformationQuery
+        _wtsSessionInformationQuery;
+
+    private readonly WindowsWorkstationWtsMemoryFree
+        _wtsMemoryFree;
+
     private static long _windowClassSequence;
+
+    internal WindowsWorkstationSecurityNativeApi()
+        : this(
+            TryGetProcessSessionIdNative,
+            WtsQuerySessionInformationNative,
+            WtsFreeMemoryNative)
+    {
+    }
+
+    internal WindowsWorkstationSecurityNativeApi(
+        WindowsWorkstationWtsSessionInformationQuery wtsSessionInformationQuery,
+        WindowsWorkstationWtsMemoryFree wtsMemoryFree)
+        : this(
+            TryGetProcessSessionIdNative,
+            wtsSessionInformationQuery,
+            wtsMemoryFree)
+    {
+    }
+
+    internal WindowsWorkstationSecurityNativeApi(
+        WindowsWorkstationProcessSessionIdLookup processSessionIdLookup,
+        WindowsWorkstationWtsSessionInformationQuery wtsSessionInformationQuery,
+        WindowsWorkstationWtsMemoryFree wtsMemoryFree)
+    {
+        ArgumentNullException.ThrowIfNull(processSessionIdLookup);
+        ArgumentNullException.ThrowIfNull(wtsSessionInformationQuery);
+        ArgumentNullException.ThrowIfNull(wtsMemoryFree);
+
+        _processSessionIdLookup = processSessionIdLookup;
+        _wtsSessionInformationQuery = wtsSessionInformationQuery;
+        _wtsMemoryFree = wtsMemoryFree;
+    }
+
+    /// <summary>
+    /// Gets the native WTSINFOEXW structure size for the current process
+    /// architecture and managed interop layout.
+    /// </summary>
+    internal static int WtsInfoExStructureSize =>
+        Marshal.SizeOf<WtsInfoExNative>();
+
+    /// <summary>
+    /// Determines whether the current process architecture has a supported
+    /// 64-bit Windows native ABI for workstation session reconciliation.
+    /// </summary>
+    /// <remarks>
+    /// DeskVault supports x64 and ARM64 processes. An x64 process running
+    /// under Windows ARM64 emulation still uses the x64 process ABI.
+    /// Native ARM64 compatibility is independently verified by ARM64 CI.
+    /// </remarks>
+    internal static bool IsSupportedProcessArchitecture(
+        Architecture processArchitecture,
+        int pointerSize)
+    {
+        return pointerSize == sizeof(long) &&
+            processArchitecture is Architecture.X64 or Architecture.Arm64;
+    }
 
     /// <inheritdoc />
     public IWindowsWorkstationSecurityNativeWindow CreateHiddenTopLevelWindow(
@@ -80,6 +175,198 @@ internal sealed class WindowsWorkstationSecurityNativeApi
                 : Marshal.GetLastWin32Error();
 
         return succeeded;
+    }
+
+    /// <inheritdoc />
+    public bool TryGetProcessSessionId(
+        out uint processSessionId,
+        out int errorCode)
+    {
+        if (!IsSupportedProcessArchitecture(
+                RuntimeInformation.ProcessArchitecture,
+                IntPtr.Size))
+        {
+            processSessionId = 0;
+            errorCode = ErrorNotSupported;
+            return false;
+        }
+
+        uint processId =
+            checked((uint)Environment.ProcessId);
+
+        bool succeeded =
+            _processSessionIdLookup(
+                processId,
+                out processSessionId,
+                out errorCode);
+
+        if (!succeeded)
+        {
+            processSessionId = 0;
+
+            // A failed lookup without a native error is still an invalid
+            // monitoring result. Do not surface Win32Exception(0).
+            if (errorCode == 0)
+            {
+                errorCode = ErrorInvalidData;
+            }
+
+            return false;
+        }
+
+        errorCode = 0;
+        return true;
+    }
+
+    /// <inheritdoc />
+    public bool TryQuerySessionInformation(
+        uint sessionId,
+        out WindowsWorkstationSecuritySessionStateSnapshot snapshot,
+        out int errorCode)
+    {
+        snapshot = default;
+
+        // Initialize these before invoking the native boundary so that
+        // a query delegate that throws after assigning a buffer still
+        // receives the same unconditional cleanup.
+        IntPtr buffer = IntPtr.Zero;
+        uint bytesReturned = 0;
+
+        try
+        {
+            bool succeeded =
+                _wtsSessionInformationQuery(
+                    IntPtr.Zero,
+                    sessionId,
+                    WtsSessionInfoExInformationClass,
+                    out buffer,
+                    out bytesReturned);
+
+            if (!succeeded)
+            {
+                errorCode = Marshal.GetLastWin32Error();
+                return false;
+            }
+
+            int expectedStructureSize =
+                WtsInfoExStructureSize;
+
+            // Never marshal a native structure from a buffer that is
+            // smaller than the expected structure layout.
+            if (buffer == IntPtr.Zero ||
+                bytesReturned < (uint)expectedStructureSize)
+            {
+                errorCode = ErrorInvalidData;
+                return false;
+            }
+
+            WtsInfoExNative nativeInformation =
+                Marshal.PtrToStructure<WtsInfoExNative>(buffer);
+
+            snapshot =
+                new WindowsWorkstationSecuritySessionStateSnapshot(
+                    Level: nativeInformation.Level,
+                    StructureSize: bytesReturned,
+                    SessionId: nativeInformation.Level1.SessionId,
+                    ConnectionState: nativeInformation.Level1.SessionState,
+                    SessionFlags: nativeInformation.Level1.SessionFlags);
+
+            // A larger-than-expected response is deliberately returned
+            // with its actual size. The validation parser rejects it.
+            errorCode = 0;
+            return true;
+        }
+        finally
+        {
+            // The WTS response belongs to this method. Release it on
+            // success, native-query failure, malformed response, and
+            // exceptions raised by the native query or marshalling.
+            if (buffer != IntPtr.Zero)
+            {
+                _wtsMemoryFree(buffer);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public bool TryRegisterSuspendResumeNotification(
+        WindowsWorkstationPowerNotificationCallback callback,
+        out IntPtr registrationHandle,
+        out int errorCode)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+
+        var parameters =
+            new DeviceNotifySubscribeParameters
+            {
+                Callback = callback,
+                Context = IntPtr.Zero
+            };
+
+        uint nativeError =
+            PowerRegisterSuspendResumeNotificationNative(
+                DeviceNotifyCallback,
+                ref parameters,
+                out registrationHandle);
+
+        if (nativeError != 0)
+        {
+            registrationHandle = IntPtr.Zero;
+            errorCode = unchecked((int)nativeError);
+            return false;
+        }
+
+        if (registrationHandle == IntPtr.Zero)
+        {
+            errorCode = ErrorInvalidData;
+            return false;
+        }
+
+        // Keep the managed delegate rooted for as long as Windows owns
+        // the registration. A failed unregister retains this reference.
+        if (!_powerCallbacks.TryAdd(registrationHandle, callback))
+        {
+            _ = PowerUnregisterSuspendResumeNotificationNative(
+                registrationHandle);
+
+            registrationHandle = IntPtr.Zero;
+            errorCode = ErrorInvalidData;
+            return false;
+        }
+
+        errorCode = 0;
+        return true;
+    }
+
+    /// <inheritdoc />
+    public bool TryUnregisterSuspendResumeNotification(
+        IntPtr registrationHandle,
+        out int errorCode)
+    {
+        if (registrationHandle == IntPtr.Zero)
+        {
+            errorCode = ErrorInvalidHandle;
+            return false;
+        }
+
+        uint nativeError =
+            PowerUnregisterSuspendResumeNotificationNative(
+                registrationHandle);
+
+        if (nativeError != 0)
+        {
+            // Keep the callback rooted. Windows may still invoke it while
+            // the registration remains active.
+            errorCode = unchecked((int)nativeError);
+            return false;
+        }
+
+        _powerCallbacks.TryRemove(
+            registrationHandle,
+            out _);
+
+        errorCode = 0;
+        return true;
     }
 
     /// <summary>
@@ -269,6 +556,7 @@ internal sealed class WindowsWorkstationSecurityNativeApi
         /// <summary>
         /// Destroys the native window and unregisters its class.
         /// This method must execute on the window-creating thread.
+        /// Cleanup remains retryable when either native operation fails.
         /// </summary>
         public void Dispose()
         {
@@ -277,15 +565,10 @@ internal sealed class WindowsWorkstationSecurityNativeApi
                 return;
             }
 
-            // Validate ownership before committing the disposed state. A
-            // wrong-thread call must not prevent the owner thread from later
-            // completing native cleanup.
+            // Validate ownership before changing any cleanup state.
+            // A wrong-thread call must not prevent the owner thread from
+            // completing native cleanup later.
             EnsureOwnerThread();
-
-            if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            {
-                return;
-            }
 
             List<Exception>? failures = null;
 
@@ -307,22 +590,31 @@ internal sealed class WindowsWorkstationSecurityNativeApi
                 }
                 else
                 {
-                    // WM_NCDESTROY normally clears the field during the
-                    // native call. Clear it here as a defensive fallback.
+                    // WM_NCDESTROY normally clears the handle. Clear it
+                    // defensively after successful destruction.
                     Interlocked.Exchange(
                         ref _windowHandle,
                         IntPtr.Zero);
                 }
             }
 
-            try
+            // A window class must not be unregistered while its HWND
+            // still exists. Retain the class registration for retry if
+            // DestroyWindow failed.
+            if (Interlocked.CompareExchange(
+                    ref _windowHandle,
+                    IntPtr.Zero,
+                    IntPtr.Zero) == IntPtr.Zero)
             {
-                UnregisterWindowClass();
-            }
-            catch (Exception exception)
-            {
-                failures ??= [];
-                failures.Add(exception);
+                try
+                {
+                    UnregisterWindowClass();
+                }
+                catch (Exception exception)
+                {
+                    failures ??= [];
+                    failures.Add(exception);
+                }
             }
 
             if (failures is { Count: 1 })
@@ -336,6 +628,11 @@ internal sealed class WindowsWorkstationSecurityNativeApi
                     "Native workstation notification cleanup was incomplete.",
                     failures);
             }
+
+            // Commit the disposed state only after both native resources
+            // have actually been released. If either operation failed,
+            // a later call on the owner thread can retry it.
+            Volatile.Write(ref _disposed, 1);
         }
 
         private void RegisterWindowClass()
@@ -611,6 +908,74 @@ internal sealed class WindowsWorkstationSecurityNativeApi
         public int Y;
     }
 
+    [StructLayout(
+        LayoutKind.Sequential,
+        CharSet = CharSet.Unicode,
+        Pack = 8)]
+    internal struct WtsInfoExNative
+    {
+        public uint Level;
+
+        // WTSINFOEXW contains a union with WTSINFOEX_LEVEL1_W as
+        // its supported level-1 member. Sequential layout preserves
+        // the native union alignment for this single supported member.
+        public WtsInfoExLevel1Native Level1;
+    }
+
+    [StructLayout(
+        LayoutKind.Sequential,
+        CharSet = CharSet.Unicode,
+        Pack = 8)]
+    internal struct WtsInfoExLevel1Native
+    {
+        public uint SessionId;
+
+        public int SessionState;
+
+        public int SessionFlags;
+
+        // The native WTS definitions use the respective maximum
+        // lengths plus one character for the terminating null.
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 33)]
+        public string WinStationName;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 21)]
+        public string UserName;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 18)]
+        public string DomainName;
+
+        public long LogonTime;
+
+        public long ConnectTime;
+
+        public long DisconnectTime;
+
+        public long LastInputTime;
+
+        public long CurrentTime;
+
+        public uint IncomingBytes;
+
+        public uint OutgoingBytes;
+
+        public uint IncomingFrames;
+
+        public uint OutgoingFrames;
+
+        public uint IncomingCompressedBytes;
+
+        public uint OutgoingCompressedBytes;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DeviceNotifySubscribeParameters
+    {
+        public WindowsWorkstationPowerNotificationCallback Callback;
+
+        public IntPtr Context;
+    }
+
     #endregion
 
     #region Win32 imports
@@ -782,6 +1147,74 @@ internal sealed class WindowsWorkstationSecurityNativeApi
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool WtsUnregisterSessionNotification(
         IntPtr windowHandle);
+
+    private static bool TryGetProcessSessionIdNative(
+        uint processId,
+        out uint sessionId,
+        out int errorCode)
+    {
+        bool succeeded =
+            ProcessIdToSessionIdNative(
+                processId,
+                out sessionId);
+
+        errorCode =
+            succeeded
+                ? 0
+                : Marshal.GetLastWin32Error();
+
+        return succeeded;
+    }
+
+    [DllImport(
+        "kernel32.dll",
+        EntryPoint = "ProcessIdToSessionId",
+        ExactSpelling = true,
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ProcessIdToSessionIdNative(
+        uint processId,
+        out uint sessionId);
+
+    [DllImport(
+        "wtsapi32.dll",
+        EntryPoint = "WTSQuerySessionInformationW",
+        ExactSpelling = true,
+        CharSet = CharSet.Unicode,
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WtsQuerySessionInformationNative(
+        IntPtr serverHandle,
+        uint sessionId,
+        int informationClass,
+        out IntPtr buffer,
+        out uint bytesReturned);
+
+    [DllImport(
+        "wtsapi32.dll",
+        EntryPoint = "WTSFreeMemory",
+        ExactSpelling = true,
+        SetLastError = false)]
+    private static extern void WtsFreeMemoryNative(
+        IntPtr memory);
+
+    [DllImport(
+        "powrprof.dll",
+        EntryPoint = "PowerRegisterSuspendResumeNotification",
+        ExactSpelling = true,
+        SetLastError = false)]
+    private static extern uint PowerRegisterSuspendResumeNotificationNative(
+        uint flags,
+        ref DeviceNotifySubscribeParameters recipient,
+        out IntPtr registrationHandle);
+
+    [DllImport(
+        "powrprof.dll",
+        EntryPoint = "PowerUnregisterSuspendResumeNotification",
+        ExactSpelling = true,
+        SetLastError = false)]
+    private static extern uint PowerUnregisterSuspendResumeNotificationNative(
+        IntPtr registrationHandle);
 
     #endregion
 }

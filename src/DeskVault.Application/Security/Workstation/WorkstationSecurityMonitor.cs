@@ -1,9 +1,9 @@
-using System.Diagnostics;
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Sessions;
 using DeskVault.Shared.Extensions;
 using DeskVault.Shared.Resources;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace DeskVault.Application.Security.Workstation;
 
@@ -374,6 +374,7 @@ public sealed class WorkstationSecurityMonitor : IWorkstationSecurityMonitor
                 case WorkstationSecurityEventKind.SessionLoggedOff:
                 case WorkstationSecurityEventKind.SessionDisconnected:
                 case WorkstationSecurityEventKind.SystemSuspending:
+                case WorkstationSecurityEventKind.SystemResumed:
                     try
                     {
                         // OS transitions withdraw access through the existing
@@ -390,8 +391,7 @@ public sealed class WorkstationSecurityMonitor : IWorkstationSecurityMonitor
 
                 case WorkstationSecurityEventKind.SessionUnlocked:
                 case WorkstationSecurityEventKind.SessionConnected:
-                case WorkstationSecurityEventKind.SystemResumed:
-                    // An operating-system unlock, connection or resume is
+                    // An operating-system unlock or connection is
                     // never evidence of fresh DeskVault authentication.
                     break;
 
