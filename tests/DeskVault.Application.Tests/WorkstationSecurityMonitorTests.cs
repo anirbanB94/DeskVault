@@ -163,6 +163,7 @@ public sealed class WorkstationSecurityMonitorTests
     [InlineData(WorkstationSecurityEventKind.SessionLoggedOff)]
     [InlineData(WorkstationSecurityEventKind.SessionDisconnected)]
     [InlineData(WorkstationSecurityEventKind.SystemSuspending)]
+    [InlineData(WorkstationSecurityEventKind.SystemResumed)]
     public async Task SecurityEvent_WhenTransitionRequiresProtection_LocksAuthenticatedSession(
         WorkstationSecurityEventKind eventKind)
     {

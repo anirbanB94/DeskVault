@@ -111,6 +111,53 @@ public sealed class WindowsWorkstationSecurityEventSourceFailurePathTests
 
             return windowHandle != IntPtr.Zero;
         }
+
+        public bool TryGetProcessSessionId(
+            out uint processSessionId,
+            out int errorCode)
+        {
+            processSessionId = 42;
+            errorCode = 0;
+            return true;
+        }
+
+        public bool TryQuerySessionInformation(
+            uint sessionId,
+            out WindowsWorkstationSecuritySessionStateSnapshot snapshot,
+            out int errorCode)
+        {
+            snapshot =
+                new WindowsWorkstationSecuritySessionStateSnapshot(
+                    Level: 1,
+                    StructureSize:
+                        (uint)WindowsWorkstationSecurityNativeApi.WtsInfoExStructureSize,
+                    SessionId: sessionId,
+                    ConnectionState: 0,
+                    SessionFlags: 1);
+
+            errorCode = 0;
+            return true;
+        }
+
+        public bool TryRegisterSuspendResumeNotification(
+            WindowsWorkstationPowerNotificationCallback callback,
+            out IntPtr registrationHandle,
+            out int errorCode)
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+
+            registrationHandle = new IntPtr(900);
+            errorCode = 0;
+            return true;
+        }
+
+        public bool TryUnregisterSuspendResumeNotification(
+            IntPtr registrationHandle,
+            out int errorCode)
+        {
+            errorCode = registrationHandle != IntPtr.Zero ? 0 : 6;
+            return registrationHandle != IntPtr.Zero;
+        }
     }
 
     private sealed class FakeNativeWindow

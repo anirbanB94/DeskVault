@@ -17,6 +17,8 @@ internal sealed class ControlledWorkstationSecurityEventSource
 
     private int _startCallCount;
     private int _stopCallCount;
+    private readonly TaskCompletionSource<bool> _startInvoked =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public event EventHandler<WorkstationSecurityEventArgs>? SecurityEventReceived
     {
@@ -38,6 +40,15 @@ internal sealed class ControlledWorkstationSecurityEventSource
 
     public Exception? StartException { get; set; }
 
+    public Task StartInvoked =>
+        _startInvoked.Task;
+
+    /// <summary>
+    /// Optional completion task used to hold source initialization
+    /// while testing the production host's readiness gate.
+    /// </summary>
+    public Task? StartTask { get; set; }
+
     public Exception? StopException { get; set; }
 
     public Task StartAsync(
@@ -46,12 +57,16 @@ internal sealed class ControlledWorkstationSecurityEventSource
         cancellationToken.ThrowIfCancellationRequested();
 
         Interlocked.Increment(ref _startCallCount);
+        _startInvoked.TrySetResult(true);
 
         Exception? exception = StartException;
 
-        return exception is null
-            ? Task.CompletedTask
-            : Task.FromException(exception);
+        if (exception is not null)
+        {
+            return Task.FromException(exception);
+        }
+
+        return StartTask ?? Task.CompletedTask;
     }
 
     public Task StopAsync(

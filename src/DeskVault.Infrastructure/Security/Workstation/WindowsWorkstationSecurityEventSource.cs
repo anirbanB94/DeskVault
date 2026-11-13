@@ -1,7 +1,7 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Workstation;
+using System.ComponentModel;
+using System.Diagnostics;
 
 namespace DeskVault.Infrastructure.Security.Workstation;
 
@@ -38,8 +38,15 @@ public sealed class WindowsWorkstationSecurityEventSource
     // NOTIFY_FOR_THIS_SESSION. NOTIFY_FOR_ALL_SESSIONS is deliberately not used.
     private const uint NotifyForThisSession = 0x0000;
 
+    private static readonly TimeSpan DefaultShutdownTimeout =
+        TimeSpan.FromSeconds(3);
+
+    private static readonly TimeSpan DefaultStartupTimeout =
+        TimeSpan.FromSeconds(10);
+
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly IWindowsWorkstationSecurityNativeApi _nativeApi;
+    private readonly TimeSpan _shutdownTimeout;
 
     private Worker? _worker;
 
@@ -49,13 +56,23 @@ public sealed class WindowsWorkstationSecurityEventSource
     }
 
     internal WindowsWorkstationSecurityEventSource(
-        IWindowsWorkstationSecurityNativeApi nativeApi)
+        IWindowsWorkstationSecurityNativeApi nativeApi,
+        TimeSpan? shutdownTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(nativeApi);
 
+        _shutdownTimeout =
+            shutdownTimeout ?? DefaultShutdownTimeout;
+
+        if (_shutdownTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(shutdownTimeout),
+                "The workstation event-source shutdown timeout must be positive.");
+        }
+
         _nativeApi = nativeApi;
     }
-
     /// <inheritdoc />
     public event EventHandler<WorkstationSecurityEventArgs>? SecurityEventReceived;
 
@@ -65,6 +82,8 @@ public sealed class WindowsWorkstationSecurityEventSource
     /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
+        Worker worker;
+
         await _lifecycleGate
             .WaitAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -77,163 +96,203 @@ public sealed class WindowsWorkstationSecurityEventSource
             {
                 if (!_worker.Completion.IsCompleted)
                 {
-                    if (_worker.Started.IsCompletedSuccessfully)
+                    if (_worker.Started.IsCompletedSuccessfully &&
+                        !_worker.IsStopping)
                     {
                         // Starting an already-ready source is idempotent.
                         return;
                     }
 
                     throw new InvalidOperationException(
-                        "Workstation security notification startup is already in progress.");
+                        "A previous workstation notification worker is still starting, stopping, or retaining native resources.");
                 }
 
                 if (!_worker.CleanupSucceeded)
                 {
                     throw new InvalidOperationException(
-                        "A previous workstation notification worker did not release all native resources.",
+                        "A previous workstation notification worker completed without confirming native resource cleanup.",
                         _worker.TerminalFailure);
                 }
 
-                // A worker that ended unexpectedly can be restarted only after
-                // its WTS registration and native window were both released.
                 _worker = null;
             }
 
-            var worker = new Worker(this, _nativeApi);
+            worker = new Worker(
+                this,
+                _nativeApi,
+                _shutdownTimeout);
+
             _worker = worker;
-            worker.Start();
-
-            try
-            {
-                await worker.Started
-                    .WaitAsync(cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception startupException)
-            {
-                // StartAsync owns a partially initialized worker until its
-                // cleanup has finished. A failed stop request must not be
-                // followed by an unbounded wait for a worker that may still
-                // be blocked in its native message loop.
-                Exception? stopRequestFailure = null;
-
-                try
-                {
-                    worker.RequestStop();
-                }
-                catch (Exception exception)
-                {
-                    stopRequestFailure = exception;
-                }
-
-                if (stopRequestFailure is not null &&
-                    !worker.Completion.IsCompleted)
-                {
-                    // Retain the worker reference. A later StopAsync call can
-                    // retry shutdown, and StartAsync must not create a second
-                    // native notification window while the first may remain.
-                    throw new AggregateException(
-                        "Workstation notification startup failed and worker shutdown could not be requested. The worker is retained to prevent an unsafe restart.",
-                        startupException,
-                        stopRequestFailure);
-                }
-
-                Exception? completionFailure = null;
-
-                try
-                {
-                    await worker.Completion.ConfigureAwait(false);
-                }
-                catch (Exception exception)
-                {
-                    completionFailure = exception;
-                }
-
-                if (worker.CleanupSucceeded && ReferenceEquals(_worker, worker))
-                {
-                    _worker = null;
-                }
-
-                if (!worker.CleanupSucceeded)
-                {
-                    Exception cleanupFailure =
-                        worker.TerminalFailure ??
-                        completionFailure ??
-                        new InvalidOperationException(
-                            "The workstation notification worker did not confirm native resource cleanup.");
-
-                    throw new AggregateException(
-                        "Workstation notification startup failed and native cleanup was incomplete.",
-                        startupException,
-                        cleanupFailure);
-                }
-
-                // Preserve the original startup or cancellation exception
-                // when the worker's native cleanup completed successfully.
-                throw;
-            }
+            worker.Start(cancellationToken);
         }
         finally
         {
             _lifecycleGate.Release();
         }
-    }
 
+        try
+        {
+            await worker.Started
+                .WaitAsync(
+                    DefaultStartupTimeout,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception startupException)
+        {
+            Exception? stopRequestFailure = null;
+
+            try
+            {
+                worker.RequestStop();
+            }
+            catch (Exception exception)
+            {
+                stopRequestFailure = exception;
+            }
+
+            worker.RequestCleanupRetry();
+
+            try
+            {
+                await worker.Completion
+                    .WaitAsync(
+                        _shutdownTimeout,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException cleanupTimeout)
+            {
+                var failures = new List<Exception>
+                {
+                    startupException,
+                    cleanupTimeout
+                };
+
+                if (stopRequestFailure is not null)
+                {
+                    failures.Add(stopRequestFailure);
+                }
+
+                if (worker.LastCleanupFailure is Exception cleanupFailure)
+                {
+                    failures.Add(cleanupFailure);
+                }
+
+                throw new InvalidOperationException(
+                    "Workstation notification startup failed and native cleanup did not complete within the bounded shutdown period. The original worker and its resources remain retained for retry.",
+                    new AggregateException(failures));
+            }
+            catch (Exception) when (worker.CleanupSucceeded)
+            {
+                // The worker can fault because startup failed. That fault
+                // is expected once native cleanup has completed.
+            }
+
+            if (!worker.CleanupSucceeded)
+            {
+                throw new InvalidOperationException(
+                    "Workstation notification startup failed and native resource cleanup remains incomplete.",
+                    worker.TerminalFailure ?? worker.LastCleanupFailure);
+            }
+
+            await ReleaseWorkerReferenceAsync(worker)
+                .ConfigureAwait(false);
+
+            if (stopRequestFailure is not null)
+            {
+                throw new AggregateException(
+                    "Workstation notification startup failed and its stop request also failed.",
+                    startupException,
+                    stopRequestFailure);
+            }
+
+            throw;
+        }
+    }
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        Worker? worker;
+
         await _lifecycleGate
             .WaitAsync(cancellationToken)
             .ConfigureAwait(false);
 
         try
         {
-            Worker? worker = _worker;
+            worker = _worker;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
 
-            if (worker is null)
-            {
-                return;
-            }
+        if (worker is null)
+        {
+            return;
+        }
 
-            if (!worker.Completion.IsCompleted)
-            {
-                try
-                {
-                    worker.RequestStop();
-                }
-                catch (Exception requestException)
-                {
-                    if (!worker.Completion.IsCompleted)
-                    {
-                        // Do not wait indefinitely when neither native stop
-                        // notification could be posted. Keep the worker so a
-                        // subsequent StopAsync can retry the request.
-                        throw new InvalidOperationException(
-                            "The workstation notification worker could not be signalled to stop. Its resources remain owned by the retained worker.",
-                            requestException);
-                    }
-                }
-            }
+        try
+        {
+            worker.RequestStop();
+        }
+        catch (Exception requestException)
+        {
+            worker.RequestCleanupRetry();
 
-            try
-            {
-                await worker.Completion.ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // A runtime message-loop failure has already been surfaced
-                // through MonitoringFailed. Stop succeeds when native cleanup
-                // nevertheless completed successfully.
-            }
+            throw new InvalidOperationException(
+                "The workstation notification worker could not be signalled to stop. Its native resources remain owned by the retained worker.",
+                requestException);
+        }
 
-            if (!worker.CleanupSucceeded)
-            {
-                throw new InvalidOperationException(
-                    "Workstation security notification resources could not be released cleanly.",
-                    worker.TerminalFailure);
-            }
+        worker.RequestCleanupRetry();
 
-            if (ReferenceEquals(_worker, worker))
+        try
+        {
+            await worker.Completion
+                .WaitAsync(
+                    _shutdownTimeout,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException timeoutException)
+        {
+            Exception inner =
+                worker.LastCleanupFailure ?? timeoutException;
+
+            throw new InvalidOperationException(
+                "Workstation notification shutdown did not complete within the bounded period. The worker and any unreleased native resources remain retained for a subsequent StopAsync retry.",
+                inner);
+        }
+        catch (Exception) when (worker.CleanupSucceeded)
+        {
+            // An unexpected message-loop failure has already been
+            // reported through MonitoringFailed. Stop is complete because
+            // the worker confirms every native resource was released.
+        }
+
+        if (!worker.CleanupSucceeded)
+        {
+            throw new InvalidOperationException(
+                "Workstation notification shutdown ended without confirming native resource cleanup.",
+                worker.TerminalFailure ?? worker.LastCleanupFailure);
+        }
+
+        await ReleaseWorkerReferenceAsync(worker)
+            .ConfigureAwait(false);
+    }
+
+    private async Task ReleaseWorkerReferenceAsync(Worker worker)
+    {
+        await _lifecycleGate
+            .WaitAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        try
+        {
+            if (ReferenceEquals(_worker, worker) &&
+                worker.CleanupSucceeded)
             {
                 _worker = null;
             }
@@ -243,7 +302,6 @@ public sealed class WindowsWorkstationSecurityEventSource
             _lifecycleGate.Release();
         }
     }
-
     private void OnNativeWindowMessage(
         uint message,
         nuint wParam,
@@ -252,11 +310,20 @@ public sealed class WindowsWorkstationSecurityEventSource
         WorkstationSecurityEventKind? kind =
             TranslateMessage(message, wParam);
 
-        if (kind is null)
+        if (kind is not null)
         {
-            return;
+            PublishSecurityEvent(kind.Value);
         }
+    }
 
+    /// <summary>
+    /// Publishes a normalized workstation event to all subscribers.
+    /// Subscriber exceptions must never escape a native or reconciliation
+    /// worker thread.
+    /// </summary>
+    private void PublishSecurityEvent(
+        WorkstationSecurityEventKind kind)
+    {
         EventHandler<WorkstationSecurityEventArgs>? handlers =
             SecurityEventReceived;
 
@@ -265,7 +332,8 @@ public sealed class WindowsWorkstationSecurityEventSource
             return;
         }
 
-        var eventArgs = new WorkstationSecurityEventArgs(kind.Value);
+        var eventArgs =
+            new WorkstationSecurityEventArgs(kind);
 
         foreach (EventHandler<WorkstationSecurityEventArgs> handler
             in handlers.GetInvocationList())
@@ -276,8 +344,6 @@ public sealed class WindowsWorkstationSecurityEventSource
             }
             catch (Exception)
             {
-                // Subscriber failures must not escape a native window
-                // procedure or terminate the workstation message loop.
                 Trace.TraceError(
                     "A workstation security event subscriber failed.");
             }
@@ -352,6 +418,7 @@ public sealed class WindowsWorkstationSecurityEventSource
     {
         private readonly WindowsWorkstationSecurityEventSource _owner;
         private readonly IWindowsWorkstationSecurityNativeApi _nativeApi;
+        private readonly TimeSpan _shutdownTimeout;
 
         private readonly TaskCompletionSource<bool> _started =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -360,19 +427,38 @@ public sealed class WindowsWorkstationSecurityEventSource
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         private readonly object _stopSyncRoot = new();
+        private readonly AutoResetEvent _cleanupRetryRequested = new(false);
 
         private IWindowsWorkstationSecurityNativeWindow? _window;
+        private WindowsWorkstationSecuritySessionReconciliationWorker? _reconciliationWorker;
+        private WindowsWorkstationPowerNotificationDispatcher? _powerDispatcher;
+
+        private IntPtr _powerRegistrationHandle;
+        private bool _powerRegistrationSucceeded;
+        private bool _wtsRegistrationSucceeded;
+
         private Exception? _terminalFailure;
+        private Exception? _lastCleanupFailure;
+        private Exception? _powerFailure;
+        private Exception? _reconciliationFailure;
+        private int _monitoringFailureRaised;
+
+        private CancellationToken _startupCancellationToken;
+
         private bool _stopRequested;
         private bool _windowCreationCompleted;
+
+        private int _messageLoopExited;
         private int _cleanupSucceeded;
 
         public Worker(
             WindowsWorkstationSecurityEventSource owner,
-            IWindowsWorkstationSecurityNativeApi nativeApi)
+            IWindowsWorkstationSecurityNativeApi nativeApi,
+            TimeSpan shutdownTimeout)
         {
             _owner = owner;
             _nativeApi = nativeApi;
+            _shutdownTimeout = shutdownTimeout;
         }
 
         public Task Started => _started.Task;
@@ -382,11 +468,21 @@ public sealed class WindowsWorkstationSecurityEventSource
         public bool CleanupSucceeded =>
             Volatile.Read(ref _cleanupSucceeded) == 1;
 
-        public Exception? TerminalFailure =>
-            Volatile.Read(ref _terminalFailure);
+        public bool IsStopping =>
+            IsStopRequested ||
+            Volatile.Read(ref _messageLoopExited) != 0;
 
-        public void Start()
+        public Exception? LastCleanupFailure =>
+            Volatile.Read(ref _lastCleanupFailure);
+
+        public Exception? TerminalFailure =>
+            Volatile.Read(ref _terminalFailure) ??
+            LastCleanupFailure;
+
+        public void Start(CancellationToken cancellationToken)
         {
+            _startupCancellationToken = cancellationToken;
+
             var thread = new Thread(Run)
             {
                 IsBackground = true,
@@ -401,42 +497,69 @@ public sealed class WindowsWorkstationSecurityEventSource
             {
                 Volatile.Write(ref _cleanupSucceeded, 1);
                 Volatile.Write(ref _terminalFailure, exception);
+
                 _started.TrySetException(exception);
                 _completion.TrySetException(exception);
+
+                _cleanupRetryRequested.Dispose();
             }
         }
 
         public void RequestStop()
         {
+            IWindowsWorkstationSecurityNativeWindow? window;
+            bool wasAlreadyRequested;
+
             lock (_stopSyncRoot)
             {
-                if (_window is null)
-                {
-                    // If creation has not finished, remember the request so
-                    // Run can avoid registering a window that is already being
-                    // stopped. If creation and cleanup have finished, do not
-                    // suppress a pending runtime-failure notification.
-                    if (!_windowCreationCompleted)
-                    {
-                        _stopRequested = true;
-                    }
+                wasAlreadyRequested = _stopRequested;
+                _stopRequested = true;
 
-                    return;
-                }
+                window =
+                    _windowCreationCompleted &&
+                    Volatile.Read(ref _messageLoopExited) == 0
+                        ? _window
+                        : null;
+            }
 
+            if (window is not null)
+            {
                 try
                 {
-                    _window.RequestStop();
-                    _stopRequested = true;
+                    // Do not hold _stopSyncRoot while invoking a native
+                    // stop request. The worker and failure callbacks must
+                    // remain able to acquire that lock.
+                    window.RequestStop();
                 }
                 catch
                 {
-                    // A failed native stop request is not a completed stop.
-                    // Leave the worker eligible to report an unexpected loop
-                    // exit, and allow a later caller to retry the request.
-                    _stopRequested = false;
+                    if (!wasAlreadyRequested)
+                    {
+                        lock (_stopSyncRoot)
+                        {
+                            if (Volatile.Read(ref _messageLoopExited) == 0)
+                            {
+                                _stopRequested = false;
+                            }
+                        }
+                    }
+
                     throw;
                 }
+            }
+
+            RequestCleanupRetry();
+        }
+
+        public void RequestCleanupRetry()
+        {
+            try
+            {
+                _cleanupRetryRequested.Set();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Cleanup already completed and the worker has exited.
             }
         }
 
@@ -451,17 +574,101 @@ public sealed class WindowsWorkstationSecurityEventSource
             }
         }
 
-        private void Run()
+        private void OnReconciliationFailure(Exception exception)
         {
-            IWindowsWorkstationSecurityNativeWindow? window = null;
-            bool registrationSucceeded = false;
-            bool startupSucceeded = false;
-            Exception? executionFailure = null;
-            Exception? cleanupFailure = null;
+            ArgumentNullException.ThrowIfNull(exception);
+
+            Interlocked.CompareExchange(
+                ref _reconciliationFailure,
+                exception,
+                null);
+
+            IWindowsWorkstationSecurityNativeWindow? window;
+
+            lock (_stopSyncRoot)
+            {
+                window = _window;
+            }
+
+            if (window is null)
+            {
+                return;
+            }
 
             try
             {
-                window =
+                window.RequestStop();
+            }
+            catch (Exception stopException)
+            {
+                NotifyMonitoringFailure(
+                    new AggregateException(
+                        "Session reconciliation failed and the notification window could not be stopped.",
+                        exception,
+                        stopException));
+            }
+        }
+
+        private void OnPowerDispatcherFailure(Exception exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+
+            Interlocked.CompareExchange(
+                ref _powerFailure,
+                exception,
+                null);
+
+            if (IsStopRequested)
+            {
+                return;
+            }
+
+            IWindowsWorkstationSecurityNativeWindow? window;
+
+            lock (_stopSyncRoot)
+            {
+                window = _window;
+            }
+
+            if (window is null)
+            {
+                return;
+            }
+
+            try
+            {
+                window.RequestStop();
+            }
+            catch (Exception stopException)
+            {
+                NotifyMonitoringFailure(
+                    new AggregateException(
+                        "The power-notification dispatcher failed and the native notification window could not be stopped.",
+                        exception,
+                        stopException));
+            }
+        }
+
+        private void NotifyMonitoringFailure(Exception exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+
+            if (Interlocked.Exchange(
+                    ref _monitoringFailureRaised,
+                    1) == 0)
+            {
+                _owner.RaiseMonitoringFailed(exception);
+            }
+        }
+
+        private void Run()
+        {
+            bool startupSucceeded = false;
+            Exception? executionFailure = null;
+
+            try
+            {
+                IWindowsWorkstationSecurityNativeWindow window =
                     _nativeApi.CreateHiddenTopLevelWindow(
                         _owner.OnNativeWindowMessage);
 
@@ -487,15 +694,73 @@ public sealed class WindowsWorkstationSecurityEventSource
                         "WTS session notification registration failed.");
                 }
 
-                registrationSucceeded = true;
+                _wtsRegistrationSucceeded = true;
+
+                var powerDispatcher =
+                    new WindowsWorkstationPowerNotificationDispatcher(
+                        _owner.PublishSecurityEvent,
+                        OnPowerDispatcherFailure,
+                        _shutdownTimeout);
+
+                _powerDispatcher = powerDispatcher;
+
+                powerDispatcher.Start();
+
+                if (!_nativeApi.TryRegisterSuspendResumeNotification(
+                        powerDispatcher.Callback,
+                        out IntPtr powerRegistrationHandle,
+                        out int powerRegistrationError))
+                {
+                    throw new Win32Exception(
+                        powerRegistrationError,
+                        "Independent Windows suspend/resume notification registration failed.");
+                }
+
+                if (powerRegistrationHandle == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException(
+                        "Power notification registration succeeded without returning a valid registration handle.");
+                }
+
+                _powerRegistrationHandle = powerRegistrationHandle;
+                _powerRegistrationSucceeded = true;
+
+                var reconciliationWorker =
+                    new WindowsWorkstationSecuritySessionReconciliationWorker(
+                        _nativeApi,
+                        _owner.PublishSecurityEvent,
+                        OnReconciliationFailure,
+                        shutdownTimeout: _shutdownTimeout);
+
+                _reconciliationWorker = reconciliationWorker;
+
+                // Readiness requires successful native notification
+                // registration and an initial validated process-session query.
+                reconciliationWorker
+                    .StartAsync(_startupCancellationToken)
+                    .GetAwaiter()
+                    .GetResult();
+
                 startupSucceeded = true;
                 _started.TrySetResult(true);
 
-                // Once the window has been published under _stopSyncRoot,
-                // RequestStop posts directly to it. A stop request arriving
-                // during WTS registration is therefore queued before the
-                // message loop starts.
                 window.RunMessageLoop();
+
+                Exception? reconciliationFailure =
+                    Volatile.Read(ref _reconciliationFailure);
+
+                if (reconciliationFailure is not null)
+                {
+                    throw reconciliationFailure;
+                }
+
+                Exception? powerFailure =
+                    Volatile.Read(ref _powerFailure);
+
+                if (powerFailure is not null)
+                {
+                    throw powerFailure;
+                }
 
                 if (!IsStopRequested)
                 {
@@ -507,93 +772,186 @@ public sealed class WindowsWorkstationSecurityEventSource
             {
                 executionFailure = exception;
                 _started.TrySetException(exception);
+
+                // Revoke monitoring readiness immediately. A failure callback
+                // may already have requested message-loop termination; that
+                // does not make the monitoring failure an intentional stop.
+                if (startupSucceeded && !IsStopRequested)
+                {
+                    NotifyMonitoringFailure(exception);
+                }
             }
             finally
             {
-                // Serialize native cleanup with RequestStop. Once the window
-                // reference is cleared, a late stop call must not mark an
-                // already-failed message loop as an intentional shutdown.
-                lock (_stopSyncRoot)
-                {
-                    if (registrationSucceeded && window is not null)
-                    {
-                        try
-                        {
-                            if (!_nativeApi.UnregisterSessionNotification(
-                                    window.Handle,
-                                    out int unregistrationError))
-                            {
-                                throw new Win32Exception(
-                                    unregistrationError,
-                                    "WTS session notification unregistration failed.");
-                            }
-                        }
-                        catch (Exception exception)
-                        {
-                            cleanupFailure = exception;
-                        }
-                    }
+                // The worker thread remains the owner of the native window
+                // and all WTS/window cleanup operations.
+                Volatile.Write(ref _messageLoopExited, 1);
 
-                    if (window is not null)
-                    {
-                        try
-                        {
-                            window.Dispose();
-                        }
-                        catch (Exception exception)
-                        {
-                            cleanupFailure = CombineFailures(
-                                cleanupFailure,
-                                exception);
-                        }
-                    }
-
-                    _window = null;
-                    _windowCreationCompleted = true;
-                }
-
-                Volatile.Write(
-                    ref _cleanupSucceeded,
-                    cleanupFailure is null ? 1 : 0);
-
-                Exception? terminalFailure =
-                    CombineFailures(
-                        executionFailure,
-                        cleanupFailure);
-
-                Volatile.Write(ref _terminalFailure, terminalFailure);
-
-                if (terminalFailure is not null)
-                {
-                    if (startupSucceeded && !IsStopRequested)
-                    {
-                        _owner.RaiseMonitoringFailed(terminalFailure);
-                    }
-
-                    _completion.TrySetException(terminalFailure);
-                }
-                else
-                {
-                    _completion.TrySetResult(true);
-                }
+                CompleteAfterCleanup(
+                    executionFailure,
+                    startupSucceeded);
             }
         }
 
-        private static Exception? CombineFailures(
-            Exception? first,
-            Exception? second)
+        private void CompleteAfterCleanup(
+            Exception? executionFailure,
+            bool startupSucceeded)
         {
-            if (first is null)
+            while (true)
             {
-                return second;
+                Exception? cleanupFailure = TryCleanupOnce();
+
+                if (cleanupFailure is null)
+                {
+                    break;
+                }
+
+                Volatile.Write(
+                    ref _lastCleanupFailure,
+                    cleanupFailure);
+
+                Trace.TraceError(
+                    "DeskVault workstation native cleanup remains incomplete. FailureType={0}.",
+                    cleanupFailure.GetType().Name);
+
+                // Retry only when explicitly requested. This avoids both
+                // unbounded synchronous waits and a tight native retry loop.
+                _cleanupRetryRequested.WaitOne();
             }
 
-            if (second is null)
+            Volatile.Write(ref _cleanupSucceeded, 1);
+            Volatile.Write(ref _terminalFailure, executionFailure);
+
+            if (executionFailure is not null)
             {
-                return first;
+                if (startupSucceeded && !IsStopRequested)
+                {
+                    NotifyMonitoringFailure(executionFailure);
+                }
+
+                _completion.TrySetException(executionFailure);
+            }
+            else
+            {
+                _completion.TrySetResult(true);
             }
 
-            return new AggregateException(first, second);
+            _cleanupRetryRequested.Dispose();
+        }
+
+        private Exception? TryCleanupOnce()
+        {
+            try
+            {
+                // 1. Unregister the independent native power callback.
+                // Retain the callback and registration handle on failure.
+                if (_powerRegistrationSucceeded)
+                {
+                    if (!_nativeApi.TryUnregisterSuspendResumeNotification(
+                            _powerRegistrationHandle,
+                            out int unregistrationError))
+                    {
+                        throw new Win32Exception(
+                            unregistrationError,
+                            "Independent Windows suspend/resume notification unregistration failed.");
+                    }
+
+                    _powerRegistrationSucceeded = false;
+                    _powerRegistrationHandle = IntPtr.Zero;
+                }
+
+                // 2. Native callback unregistration succeeded. Drain and
+                // stop the dispatcher before releasing its callback delegate.
+                WindowsWorkstationPowerNotificationDispatcher? dispatcher =
+                    _powerDispatcher;
+
+                if (dispatcher is not null)
+                {
+                    dispatcher.StopAsync(CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+
+                    if (ReferenceEquals(_powerDispatcher, dispatcher))
+                    {
+                        _powerDispatcher = null;
+                    }
+                }
+
+                // 3. Stop reconciliation. Its own bounded shutdown retains
+                // the query worker and its synchronization resources if needed.
+                WindowsWorkstationSecuritySessionReconciliationWorker?
+                    reconciliationWorker = _reconciliationWorker;
+
+                if (reconciliationWorker is not null)
+                {
+                    reconciliationWorker
+                        .StopAsync(CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+
+                    if (ReferenceEquals(
+                            _reconciliationWorker,
+                            reconciliationWorker))
+                    {
+                        _reconciliationWorker = null;
+                    }
+                }
+
+                IWindowsWorkstationSecurityNativeWindow? window;
+
+                lock (_stopSyncRoot)
+                {
+                    window = _window;
+                }
+
+                // 4. Unregister WTS while the original HWND is still alive.
+                // On failure, retain the registration flag and HWND.
+                if (_wtsRegistrationSucceeded)
+                {
+                    if (window is null)
+                    {
+                        throw new InvalidOperationException(
+                            "The WTS registration is still owned but its native window reference is unavailable.");
+                    }
+
+                    if (!_nativeApi.UnregisterSessionNotification(
+                            window.Handle,
+                            out int unregistrationError))
+                    {
+                        throw new Win32Exception(
+                            unregistrationError,
+                            "WTS session notification unregistration failed.");
+                    }
+
+                    _wtsRegistrationSucceeded = false;
+                }
+
+                // 5. Dispose the HWND only after successful WTS
+                // unregistration. NativeWindow.Dispose is retryable.
+                if (window is not null)
+                {
+                    window.Dispose();
+
+                    lock (_stopSyncRoot)
+                    {
+                        if (ReferenceEquals(_window, window))
+                        {
+                            _window = null;
+                        }
+                    }
+                }
+
+                lock (_stopSyncRoot)
+                {
+                    _windowCreationCompleted = true;
+                }
+
+                return null;
+            }
+            catch (Exception exception)
+            {
+                return exception;
+            }
         }
     }
 }
