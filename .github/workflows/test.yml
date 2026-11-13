@@ -48,3 +48,50 @@ jobs:
         with:
           name: code-coverage-report
           path: "${{ github.workspace }}/coverage-report"
+
+  native-arm64-abi:
+    name: Native Windows ARM64 ABI validation
+    runs-on: windows-11-vs2026-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup .NET ARM64 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          architecture: arm64
+
+      - name: Verify native ARM64 process and operating system
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          $processArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
+          $osArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+
+          if ($processArchitecture -ne [System.Runtime.InteropServices.Architecture]::Arm64) {
+              throw "Expected native ARM64 .NET process; actual process architecture: $processArchitecture."
+          }
+
+          if ($osArchitecture -ne [System.Runtime.InteropServices.Architecture]::Arm64) {
+              throw "Expected ARM64 Windows OS; actual OS architecture: $osArchitecture."
+          }
+
+          if ([IntPtr]::Size -ne 8) {
+              throw "Expected an eight-byte native pointer; actual pointer size: $([IntPtr]::Size)."
+          }
+
+          Write-Host "Process architecture: $processArchitecture"
+          Write-Host "OS architecture: $osArchitecture"
+          Write-Host "Pointer size: $([IntPtr]::Size)"
+
+          dotnet --info
+
+      - name: Restore Infrastructure test project
+        run: dotnet restore .\tests\DeskVault.Infrastructure.Tests\DeskVault.Infrastructure.Tests.csproj
+
+      - name: Run native Windows API tests on ARM64
+        run: dotnet test .\tests\DeskVault.Infrastructure.Tests\DeskVault.Infrastructure.Tests.csproj --no-restore --filter "FullyQualifiedName~WindowsWorkstationSecurityNativeApiTests"
