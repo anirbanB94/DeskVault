@@ -1168,6 +1168,81 @@ active temporary presentation of that document.
 The presentation mechanism remains independent of the underlying workspace
 model and is not coupled to MDI.
 
+## Workspace State Ownership and Passive View Boundary
+
+For each live workspace presentation context, `WorkspacePresentation` is the
+authoritative owner of the in-memory workspace presentation state. This
+includes the workspace identity and type, workspace name and description,
+the workspace-member identifiers represented by the presentation, the set of
+created document presentations, the selected persistent-workspace navigation
+mode, and the active document identity.
+
+This is an in-memory presentation-state boundary. It does not transfer
+ownership of durable workspace entities or persisted workspace membership
+from the Domain and Application persistence workflows to the UI. The
+`WorkspacePresentation` coordinates presentation updates and invokes the
+existing Application handlers for workspace-level mutations; durable state
+continues to be governed by the existing workspace model and persistence
+contracts.
+
+`WorkspacePresentationManager` maintains the registry of live workspace
+presentation instances keyed by workspace identity. It coordinates lookup,
+creation, reuse, activation, and closure of those managed presentations. The
+manager owns the registry of presentation instances; it does not maintain a
+second copy of each presentation's identity, membership, navigation, or
+active-document state.
+
+`WorkspaceViewForm` implements `IWorkspacePresentationView` and remains a
+WinForms Passive View. It is responsible for rendering workspace identity,
+workspace-member navigation, tabs/sidebar layout, contextual menu state,
+and the transient control-hosting arrangement required to display the
+current presentation. Its internal references to tab pages, a sidebar-hosted
+document, selection synchronization, and temporary/persistent visual mode
+are view and layout state only. They must not become an independent source of
+authoritative workspace membership, navigation mode, or active-document
+identity.
+
+The view reports user interactions through `IWorkspacePresentationView`
+events. `WorkspacePresentation` handles workspace-level interactions,
+updates its in-memory state, invokes the appropriate Application workspace
+handlers, and raises workspace lifecycle requests to the application shell
+where required. It then projects the resulting presentation state back
+through the view contract. The Form does not receive workspace repositories
+or Application command handlers to perform these operations itself.
+
+Workspace membership and document presentation remain distinct. Closing an
+individual document presentation removes that presentation from the current
+workspace view but leaves persistent workspace membership intact. Removing a
+document from a persistent workspace is a workspace-membership operation;
+it does not delete the underlying document from the document library.
+Global document removal is a separate document-level operation. The
+workspace presentation may observe its completion to reconcile its current
+membership and presented-document state, but the document-specific removal
+pipeline remains owned by the document workspace presentation.
+
+Document information, global document removal, external viewing, and
+format-specific rendering remain document-level behavior delegated to the
+active document presentation and its document workspace presenter/view and
+associated viewer or renderer collaborators. `WorkspacePresentation` may
+select the active document presentation and route a document-specific
+request to it; it must not absorb document metadata processing, document
+removal execution, external-viewing lifecycle, or document rendering.
+
+Temporary and persistent workspace behavior remains distinct. A temporary
+workspace presents the directly opened document and exposes document-level
+actions without persistent-workspace navigation choices. A persistent
+workspace supports multiple workspace members, workspace-level membership
+and management actions, and the Tabs or Sidebar navigation choice. The
+workspace presentation owns the navigation-mode value; the Form renders the
+selected mode and reports user changes through its view event. Conversion
+from temporary to persistent workspace continues to update the existing
+presentation rather than creating a second presentation.
+
+This boundary defines state ownership and interaction flow only. It does
+not prescribe or change the concrete control-hosting mechanism for document
+views, the navigation-restoration/persistence policy, or the broader
+presentation disposal and lifetime contracts.
+
 ## Scope of Initial Implementation
 
 The current implementation phase establishes the concrete workspace
@@ -1305,6 +1380,8 @@ The architecture will support multiple workspaces, but the first implementation 
 - Persistent workspace naming remains user-controlled.
 - Recent activity has a clear future model without expanding the current implementation.
 - Multiple simultaneous workspace presentation contexts are supported without coupling workspace identity to MDI.
+- Workspace presentation state has one authoritative in-memory owner, while the WinForms workspace view remains Passive View and retains only transient UI hosting/layout state.
+- Workspace-level actions and document-level requests remain routed through their respective presentation and Application boundaries.
 - New document renderers can be added without changing workspace orchestration.
 - Markdown rendering can evolve independently of the workspace contract.
 - Markdig provides a mature Markdown parsing boundary while WebView2 provides a rich presentation surface.
