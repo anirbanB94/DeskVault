@@ -24,7 +24,7 @@ public sealed class WorkspaceDocumentPresentationTests
             CreatePresenter();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         WorkspaceDocumentPresentation presentation =
             new(
@@ -55,7 +55,7 @@ public sealed class WorkspaceDocumentPresentationTests
     public void Constructor_ThrowsWhenPresenterIsNull()
     {
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         Assert.Throws<ArgumentNullException>(
             () => new WorkspaceDocumentPresentation(
@@ -78,32 +78,10 @@ public sealed class WorkspaceDocumentPresentationTests
     }
 
     [Fact]
-    public void Activate_DelegatesToPresenter()
+    public async Task Dispose_DisposesPresenterAndDisposableView()
     {
         var view =
-            new Mock<IDocumentWorkspaceView>();
-
-        DocumentWorkspacePresenter presenter =
-            CreatePresenter(view);
-
-        WorkspaceDocumentPresentation presentation =
-            new(
-                Guid.NewGuid(),
-                presenter,
-                view.Object);
-
-        presentation.Activate();
-
-        view.Verify(
-            x => x.ActivateWorkspace(),
-            Times.Once);
-    }
-
-    [Fact]
-    public void Dispose_DisposesPresenterAndDisposableView()
-    {
-        var view =
-            new DisposableDocumentWorkspaceView();
+            new DisposableDocumentView();
 
         DocumentWorkspacePresenter presenter =
             CreatePresenter(view);
@@ -116,21 +94,22 @@ public sealed class WorkspaceDocumentPresentationTests
 
         presentation.Dispose();
 
-        Assert.True(
-            view.IsDisposed);
+        Assert.True(view.IsDisposed);
 
-        Assert.Throws<ObjectDisposedException>(
-            () => presentation.Activate());
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => presenter.OpenAsync(
+                Guid.NewGuid(),
+                TestContext.Current.CancellationToken));
 
         Assert.True(view.IsPresentationCleared);
         Assert.True(view.IsDisposed);
     }
 
     [Fact]
-    public void Dispose_IsIdempotent()
+    public async Task Dispose_IsIdempotent()
     {
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         DocumentWorkspacePresenter presenter =
             CreatePresenter(view);
@@ -144,8 +123,14 @@ public sealed class WorkspaceDocumentPresentationTests
         presentation.Dispose();
         presentation.Dispose();
 
-        Assert.Throws<ObjectDisposedException>(
-            () => presentation.Activate());
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => presenter.OpenAsync(
+                Guid.NewGuid(),
+                TestContext.Current.CancellationToken));
+
+        view.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
     }
 
     [Fact]
@@ -158,7 +143,7 @@ public sealed class WorkspaceDocumentPresentationTests
             new(
                 Guid.NewGuid(),
                 presenter,
-                new Mock<IDocumentWorkspaceView>().Object);
+                new Mock<IDocumentView>().Object);
 
         Assert.Null(
             presentation.DisplayName);
@@ -174,14 +159,14 @@ public sealed class WorkspaceDocumentPresentationTests
             new(
                 Guid.NewGuid(),
                 presenter,
-                new Mock<IDocumentWorkspaceView>().Object);
+                new Mock<IDocumentView>().Object);
 
         Assert.Null(
             presentation.FileName);
     }
 
-    private sealed class DisposableDocumentWorkspaceView :
-        IDocumentWorkspaceView,
+    private sealed class DisposableDocumentView :
+        IDocumentView,
         IDisposable
     {
         public bool IsPresentationCleared { get; private set; }
@@ -247,14 +232,6 @@ public sealed class WorkspaceDocumentPresentationTests
             IsPresentationCleared = true;
         }
 
-        public void ActivateWorkspace()
-        {
-        }
-
-        public void CloseWorkspace()
-        {
-        }
-
         public void ShowError(
             string message,
             string title,
@@ -275,7 +252,7 @@ public sealed class WorkspaceDocumentPresentationTests
     }
 
     private static DocumentWorkspacePresenter CreatePresenter(
-        IDocumentWorkspaceView view)
+        IDocumentView view)
     {
         var documentRepository = new Mock<IDocumentRepository>();
         var documentReader = new Mock<IDocumentReader>();
@@ -327,9 +304,9 @@ public sealed class WorkspaceDocumentPresentationTests
     }
 
     private static DocumentWorkspacePresenter CreatePresenter(
-    Mock<IDocumentWorkspaceView>? view = null)
+    Mock<IDocumentView>? view = null)
     {
-        view ??= new Mock<IDocumentWorkspaceView>();
+        view ??= new Mock<IDocumentView>();
 
         var documentRepository = new Mock<IDocumentRepository>();
         var documentReader = new Mock<IDocumentReader>();

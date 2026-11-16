@@ -1,14 +1,12 @@
 namespace DeskVault.UI.Views;
 
-public interface IDocumentWorkspaceView
+public interface IDocumentView
 {
     event EventHandler OpenExternallyRequested;
 
     event EventHandler DocumentInformationRequested;
 
     event EventHandler RemoveDocumentRequested;
-
-    event EventHandler CloseWorkspaceRequested;
 
     Task ShowDocumentAsync(
         Stream documentStream,
@@ -34,10 +32,6 @@ public interface IDocumentWorkspaceView
     void ClearPresentation();
 
     void PostToUi(Action action);
-
-    void ActivateWorkspace();
-
-    void CloseWorkspace();
 
     void ShowError(
         string message,

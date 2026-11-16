@@ -5,13 +5,13 @@ namespace DeskVault.UI.Services.Workspace;
 
 public sealed class WorkspaceDocumentPresentation : IDisposable
 {
-    private readonly IDocumentWorkspaceView _view;
+    private readonly IDocumentView _view;
     private bool _disposed;
 
     public WorkspaceDocumentPresentation(
         Guid documentId,
         DocumentWorkspacePresenter presenter,
-        IDocumentWorkspaceView view)
+        IDocumentView view)
     {
         ArgumentNullException.ThrowIfNull(presenter);
         ArgumentNullException.ThrowIfNull(view);
@@ -29,14 +29,7 @@ public sealed class WorkspaceDocumentPresentation : IDisposable
 
     public string? FileName => Presenter.CurrentDocumentFileName;
 
-    public IDocumentWorkspaceView View => _view;
-
-    public void Activate()
-    {
-        ThrowIfDisposed();
-
-        Presenter.Activate();
-    }
+    public IDocumentView View => _view;
 
     public void Dispose()
     {
@@ -58,12 +51,5 @@ public sealed class WorkspaceDocumentPresentation : IDisposable
                 disposableView.Dispose();
             }
         }
-    }
-
-    private void ThrowIfDisposed()
-    {
-        ObjectDisposedException.ThrowIf(
-            _disposed,
-            this);
     }
 }

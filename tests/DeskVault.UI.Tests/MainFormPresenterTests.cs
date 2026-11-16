@@ -2078,7 +2078,7 @@ public sealed class MainFormPresenterTests
                 content));
 
         var workspaceView =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();

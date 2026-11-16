@@ -46,7 +46,7 @@ public sealed class SessionRevocationPresentationCleanupTests
         var storageService = new Mock<IStorageService>();
         var documentReader = new Mock<IDocumentReader>();
         var documentViewer = new Mock<IDocumentViewer>();
-        var view = new Mock<IDocumentWorkspaceView>();
+        var view = new Mock<IDocumentView>();
 
         var postedActions = new List<Action>();
         view

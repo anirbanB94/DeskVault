@@ -222,8 +222,6 @@ internal static class HostConfigurator
         services.AddTransient<StartupAuthenticationForm>();
         services.AddTransient<MainForm>();
         services.AddTransient<IMainFormPresenterFactory, MainFormPresenterFactory>();
-        services.AddTransient<DocumentViewForm>();
-        services.AddTransient<IDocumentWorkspaceView>(provider => provider.GetRequiredService<DocumentViewForm>());
         services.AddTransient<IExternalDocumentLauncher, ExternalDocumentLauncher>();
         services.AddSingleton<IDocumentViewer, DocumentViewer>();
         services.AddTransient<IWorkspaceDocumentPresentationFactory, WorkspaceDocumentPresentationFactory>();

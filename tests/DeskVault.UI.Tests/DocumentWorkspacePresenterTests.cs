@@ -86,7 +86,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var firstView =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         firstView
             .Setup(view => view.PostToUi(
@@ -215,7 +215,7 @@ public sealed class DocumentWorkspacePresenterTests
             // A fresh document workspace bound to the new authenticated
             // revision must be able to open the same document.
             var secondView =
-                new Mock<IDocumentWorkspaceView>();
+                new Mock<IDocumentView>();
 
             secondView
                 .Setup(view => view.PostToUi(
@@ -287,7 +287,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -331,7 +331,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         view
             .Setup(x => x.ShowDocumentAsync(
@@ -381,7 +381,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         using var cancellationTokenSource =
             new CancellationTokenSource();
@@ -441,7 +441,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         view
             .Setup(x => x.ShowDocumentAsync(
@@ -502,7 +502,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -561,7 +561,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         view
         .Setup(x => x.ShowDocumentAsync(
@@ -638,7 +638,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -682,7 +682,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -748,7 +748,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         view
             .Setup(x => x.ConfirmRemoval(
@@ -793,13 +793,10 @@ public sealed class DocumentWorkspacePresenterTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
-        view.Verify(
-            x => x.CloseWorkspace(),
-            Times.Never);
     }
 
     [Fact]
-    public async Task RemoveDocument_Success_DisposesStreamKeepsWorkspaceOpenAndRaisesEvent()
+    public async Task RemoveDocument_Success_DisposesStreamAndRaisesEvent()
     {
         Guid documentId =
             Guid.NewGuid();
@@ -829,7 +826,7 @@ public sealed class DocumentWorkspacePresenterTests
             .Returns(Task.CompletedTask);
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         view
             .Setup(x => x.ConfirmRemoval(
@@ -881,10 +878,6 @@ public sealed class DocumentWorkspacePresenterTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
-        view.Verify(
-            x => x.CloseWorkspace(),
-            Times.Never);
-
         Assert.True(
             documentRemovedRaised);
     }
@@ -926,7 +919,7 @@ public sealed class DocumentWorkspacePresenterTests
             .Returns(Task.CompletedTask);
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         view
             .Setup(x => x.ConfirmRemoval(document.FileName))
@@ -1005,7 +998,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         view
             .Setup(x => x.ConfirmRemoval(document.FileName))
@@ -1107,7 +1100,7 @@ public sealed class DocumentWorkspacePresenterTests
                     "Storage deletion failed."));
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         view
             .Setup(x => x.ConfirmRemoval(
@@ -1155,9 +1148,6 @@ public sealed class DocumentWorkspacePresenterTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
 
-        view.Verify(
-            x => x.CloseWorkspace(),
-            Times.Never);
     }
 
     [Fact]
@@ -1168,7 +1158,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         var repository = CreateRepository(document);
         var storageService = new Mock<IStorageService>();
-        var view = new Mock<IDocumentWorkspaceView>();
+        var view = new Mock<IDocumentView>();
 
         const string sentinel = "PBI232_DOCUMENT_WORKSPACE_REMOVE_SENTINEL";
 
@@ -1238,7 +1228,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1280,7 +1270,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1322,7 +1312,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1409,7 +1399,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1536,7 +1526,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1628,7 +1618,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1712,7 +1702,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1807,7 +1797,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1932,7 +1922,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -2049,7 +2039,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -2115,7 +2105,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -2194,7 +2184,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -2314,7 +2304,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -2481,7 +2471,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -2623,7 +2613,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -2731,7 +2721,7 @@ public sealed class DocumentWorkspacePresenterTests
             new Mock<IStorageService>();
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -2827,7 +2817,7 @@ public sealed class DocumentWorkspacePresenterTests
     }
 
     private static DocumentWorkspacePresenter CreatePresenterForSession(
-        Mock<IDocumentWorkspaceView> view,
+        Mock<IDocumentView> view,
         Mock<IDocumentViewer> documentViewer,
         Mock<IDocumentRepository> repository,
         Mock<IStorageService> storageService,
@@ -2899,7 +2889,7 @@ public sealed class DocumentWorkspacePresenterTests
         }
     }
     private static DocumentWorkspacePresenter CreatePresenter(
-        Mock<IDocumentWorkspaceView> view,
+        Mock<IDocumentView> view,
         Mock<IDocumentViewer> documentViewer,
         Mock<IDocumentRepository> repository,
         Mock<IStorageService> storageService,
