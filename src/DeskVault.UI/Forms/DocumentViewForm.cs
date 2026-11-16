@@ -32,7 +32,7 @@ public partial class DocumentViewForm :
         _rendererResolver = rendererResolver;
         _dialogCoordinator = dialogCoordinator;
 
-        Text = UiMessages.DocumentWorkspaceTitle;
+        Text = UiMessages.DocumentViewTitle;
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(900, 600);
     }
@@ -63,9 +63,6 @@ public partial class DocumentViewForm :
             cancellationToken.ThrowIfCancellationRequested();
 
             documentTitleLabel.Text = fileName;
-
-            documentMetadataLabel.Text =
-                UiMessages.DocumentWorkspaceMetadata;
 
             unsupportedPreviewPanel.Visible = false;
             documentContentPanel.Visible = true;
@@ -249,16 +246,13 @@ public partial class DocumentViewForm :
 
     private void ClearPresentationCore()
     {
-        workspaceContextMenu.Close(
+        documentContextMenu.Close(
             ToolStripDropDownCloseReason.CloseCalled);
 
         DocumentContentHost.Clear(
             documentContentPanel);
 
         documentTitleLabel.Text =
-            string.Empty;
-
-        documentMetadataLabel.Text =
             string.Empty;
 
         unsupportedDocumentPreviewMessageLabel.Text =
@@ -303,22 +297,15 @@ public partial class DocumentViewForm :
             EventArgs.Empty);
     }
 
-    private void backButton_Click(
+    private void documentActionsButton_Click(
         object? sender,
         EventArgs e)
     {
-        Hide();
-    }
-
-    private void workspaceMenuButton_Click(
-        object? sender,
-        EventArgs e)
-    {
-        workspaceContextMenu.Show(
-            workspaceMenuButton,
+        documentContextMenu.Show(
+            documentActionsButton,
             new Point(
                 0,
-                workspaceMenuButton.Height));
+                documentActionsButton.Height));
     }
 
     private void documentInformationMenuItem_Click(
@@ -337,20 +324,6 @@ public partial class DocumentViewForm :
         RemoveDocumentRequested?.Invoke(
             this,
             EventArgs.Empty);
-    }
-
-    private void closeWorkspaceMenuItem_Click(
-        object? sender,
-        EventArgs e)
-    {
-        Hide();
-    }
-
-    private void closeButton_Click(
-        object sender,
-        EventArgs e)
-    {
-        Hide();
     }
 
     protected override void OnFormClosing(
