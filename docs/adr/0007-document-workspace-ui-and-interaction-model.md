@@ -16,33 +16,40 @@ The design should avoid prematurely implementing future functionality while ensu
 
 ## Decision
 
-DeskVault will implement `DocumentViewForm` as an enterprise-oriented document workspace with the following structure:
+DeskVault will implement the surrounding workspace interaction surface in
+`WorkspaceViewForm` and the document-content presentation surface in
+`DocumentViewForm`.
+
+The intended composition is:
 
 ```text
-DocumentViewForm
-├── Enterprise workspace header
-├── Document content area
-└── Adaptive AI assistant
+WorkspaceViewForm
+├── Workspace/document identity
+├── Workspace navigation
+├── Workspace/document contextual menu
+├── Adaptive AI presentation boundary
+└── Active DocumentViewForm
+    ├── Document content
+    ├── Unsupported-format preview
+    └── Explicit external-open action
 ```
 
-The workspace header will provide document identity and high-level actions.
+`WorkspaceViewForm` owns the header and surrounding workspace chrome. It
+presents the appropriate navigation and contextual actions for temporary
+and persistent workspace modes.
 
-The intended header structure is:
+`DocumentViewForm` implements `IDocumentView` and presents document content
+through the renderer boundary. It retains document-specific presentation
+behavior and request events but does not own workspace identity, workspace
+navigation, workspace management actions, or the workspace contextual menu.
 
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│ ← Documents                                                        │
-│                                                                    │
-│ report.pdf                                  [ AI ] [⋯] [Close]      │
-│ Imported Aug 11 • PDF                                               │
-├────────────────────────────────────────────────────────────────────┤
-│                                                                    │
-│                         Document                                   │
-│                                                                    │
-└────────────────────────────────────────────────────────────────────┘
-```
+The workspace presentation and its presenter coordinate document selection
+and route document-specific requests to the active document presentation.
+The document view does not become an independent owner of workspace state.
 
-The exact visual styling may evolve during implementation, but the header will preserve the distinction between navigation, document identity, workspace actions, and AI access.
+The exact visual styling may evolve during implementation, but the
+responsibility distinction between workspace presentation and document
+content presentation remains explicit.
 
 ## MVP 1 Scope Boundary
 
@@ -173,22 +180,22 @@ dependent on rendered controls such as `DataGridView` or WebView2.
 
 ## Workspace Header
 
-The workspace header will provide:
+The workspace header belongs to `WorkspaceViewForm`. It provides navigation
+appropriate to the current workspace type, workspace or temporary-document
+identity, the contextual workspace/document menu, and workspace-level
+presentation actions.
 
-- navigation appropriate to the current workspace type
-- workspace or document identity appropriate to the current presentation
-- document metadata appropriate for the current view
-- AI assistant toggle
-- contextual workspace/document menu
-- workspace/document close action
+The document view does not provide a second workspace header. Its own
+presentation surface is limited to document identity and document-specific
+presentation actions where that surface is displayed independently. When
+hosted as the active document content within a workspace, the surrounding
+workspace view is the owner of the visible workspace chrome and its
+contextual action surface.
 
-For a temporary document presentation, the identity indicates the temporary
-workspace context and the menu provides document-level actions.
-
-For a persistent workspace, the identity shows the workspace name and
-description and the menu provides workspace management actions.
-
-The current temporary document menu is:
+For a temporary document presentation, the `WorkspaceViewForm` identity
+indicates the opened document and the contextual menu provides document-level
+requests and temporary-session actions. The current temporary document menu
+is:
 
 ```text
 [⋯]
@@ -198,7 +205,9 @@ The current temporary document menu is:
 └── Close Document
 ```
 
-The current persistent workspace menu is:
+For a persistent workspace, the identity shows the workspace name and
+description and the menu provides workspace management actions. The current
+persistent workspace menu is:
 
 ```text
 [⋯]
@@ -209,18 +218,25 @@ The current persistent workspace menu is:
 └── Close Workspace
 ```
 
-Persistent workspaces also expose Tabs and Sidebar presentation choices, with
-Tabs as the default.
+Persistent workspaces also expose Tabs and Sidebar presentation choices,
+with Tabs as the default.
 
-The contextual menu remains extensible for future workspace capabilities.
+Document-specific requests raised by the workspace menu are routed through
+the workspace presentation to the active document presentation and its
+document presenter. `WorkspaceViewForm` does not perform document metadata
+processing or global document removal itself.
 
 ## AI Assistant Interaction
 
-The AI assistant will use an adaptive and collapsible side-panel model.
+The AI assistant will use an adaptive and collapsible side-panel model owned
+by the surrounding workspace presentation.
 
-The header will provide an `[AI]` toggle.
+The `WorkspaceViewForm` header will provide an `[AI]` toggle. The document
+content view remains focused on document rendering and does not own the
+workspace-level AI control or side-panel layout.
 
-When the assistant is collapsed, a persistent edge tab may remain available.
+When the assistant is collapsed, a persistent edge tab may remain
+available.
 
 Conceptually:
 
@@ -228,8 +244,9 @@ Conceptually:
 Large screen
 
 ┌──────────────────────────────────────────────────────────┬──────────────┐
-│ Document                              [ AI ]              │ AI Assistant │
+│ Workspace / document presentation                         │ AI Assistant │
 │                                                          │              │
+│   DocumentViewForm content                               │              │
 └──────────────────────────────────────────────────────────┴──────────────┘
 ```
 
@@ -237,7 +254,7 @@ When collapsed:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Document                                              [ AI ]           │
+│ Workspace / document presentation                                      │
 │                                                   ┌────────┐           │
 │                                                   │   AI   │           │
 │                                                   └────────┘           │
@@ -1170,12 +1187,12 @@ model and is not coupled to MDI.
 
 ## Workspace State Ownership and Passive View Boundary
 
-For each live workspace presentation context, `WorkspacePresentation` is the
-authoritative owner of the in-memory workspace presentation state. This
+For each live workspace presentation context, `WorkspacePresentation` is
+the authoritative owner of the in-memory workspace presentation state. This
 includes the workspace identity and type, workspace name and description,
-the workspace-member identifiers represented by the presentation, the set of
-created document presentations, the selected persistent-workspace navigation
-mode, and the active document identity.
+the workspace-member identifiers represented by the presentation, the set
+of created document presentations, the selected persistent-workspace
+navigation mode, and the active document identity.
 
 This is an in-memory presentation-state boundary. It does not transfer
 ownership of durable workspace entities or persisted workspace membership
@@ -1187,20 +1204,21 @@ contracts.
 
 `WorkspacePresentationManager` maintains the registry of live workspace
 presentation instances keyed by workspace identity. It coordinates lookup,
-creation, reuse, activation, and closure of those managed presentations. The
-manager owns the registry of presentation instances; it does not maintain a
-second copy of each presentation's identity, membership, navigation, or
-active-document state.
+creation, reuse, activation, and closure of those managed presentations.
+The manager owns the registry of presentation instances; it does not
+maintain a second copy of each presentation's identity, membership,
+navigation, or active-document state.
 
 `WorkspaceViewForm` implements `IWorkspacePresentationView` and remains a
 WinForms Passive View. It is responsible for rendering workspace identity,
-workspace-member navigation, tabs/sidebar layout, contextual menu state,
-and the transient control-hosting arrangement required to display the
-current presentation. Its internal references to tab pages, a sidebar-hosted
-document, selection synchronization, and temporary/persistent visual mode
-are view and layout state only. They must not become an independent source of
-authoritative workspace membership, navigation mode, or active-document
-identity.
+temporary-document identity, workspace-member navigation, tabs/sidebar
+layout, contextual menu state, workspace-level presentation actions, and
+the transient control-hosting arrangement required to display the current
+document presentation. Its internal references to tab pages, a
+sidebar-hosted document, selection synchronization, and
+temporary/persistent visual mode are view and layout state only. They must
+not become an independent source of authoritative workspace membership,
+navigation mode, or active-document identity.
 
 The view reports user interactions through `IWorkspacePresentationView`
 events. `WorkspacePresentation` handles workspace-level interactions,
@@ -1210,15 +1228,25 @@ where required. It then projects the resulting presentation state back
 through the view contract. The Form does not receive workspace repositories
 or Application command handlers to perform these operations itself.
 
-Workspace membership and document presentation remain distinct. Closing an
-individual document presentation removes that presentation from the current
-workspace view but leaves persistent workspace membership intact. Removing a
-document from a persistent workspace is a workspace-membership operation;
-it does not delete the underlying document from the document library.
-Global document removal is a separate document-level operation. The
-workspace presentation may observe its completion to reconcile its current
-membership and presented-document state, but the document-specific removal
-pipeline remains owned by the document workspace presentation.
+`DocumentViewForm` implements `IDocumentView` and remains a WinForms
+Passive View for the document-specific content surface. It is responsible
+for hosting the active rendered document content, displaying the
+unsupported-format preview and explicit external-open action, and raising
+document-specific presentation requests through its view events. It does
+not own workspace identity, workspace membership, workspace navigation,
+workspace management actions, or the workspace contextual menu. The
+visible workspace chrome and the temporary/persistent workspace action menu
+belong to `WorkspaceViewForm`.
+
+Workspace membership and document presentation remain distinct. Closing
+an individual document presentation removes that presentation from the
+current workspace view but leaves persistent workspace membership intact.
+Removing a document from a persistent workspace is a workspace-membership
+operation; it does not delete the underlying document from the document
+library. Global document removal is a separate document-level operation.
+The workspace presentation may observe its completion to reconcile its
+current membership and presented-document state, but the document-specific
+removal pipeline remains owned by the document workspace presentation.
 
 Document information, global document removal, external viewing, and
 format-specific rendering remain document-level behavior delegated to the
@@ -1230,12 +1258,13 @@ removal execution, external-viewing lifecycle, or document rendering.
 
 Temporary and persistent workspace behavior remains distinct. A temporary
 workspace presents the directly opened document and exposes document-level
-actions without persistent-workspace navigation choices. A persistent
-workspace supports multiple workspace members, workspace-level membership
-and management actions, and the Tabs or Sidebar navigation choice. The
-workspace presentation owns the navigation-mode value; the Form renders the
-selected mode and reports user changes through its view event. Conversion
-from temporary to persistent workspace continues to update the existing
+requests and temporary-session actions through `WorkspaceViewForm`, without
+persistent-workspace navigation choices. A persistent workspace supports
+multiple workspace members, workspace-level membership and management
+actions, and the Tabs or Sidebar navigation choice. The workspace
+presentation owns the navigation-mode value; the Form renders the selected
+mode and reports user changes through its view event. Conversion from
+temporary to persistent workspace continues to update the existing
 presentation rather than creating a second presentation.
 
 This boundary defines state ownership and interaction flow only. It does
@@ -1363,7 +1392,10 @@ The architecture will support multiple workspaces, but the first implementation 
 
 ### Positive
 
-- `DocumentViewForm` has a clear enterprise-oriented interaction model.
+- `WorkspaceViewForm` owns workspace identity, navigation, and contextual
+  interaction, while `DocumentViewForm` owns document-content presentation.
+- Document-specific presentation requests remain routed through the active
+  document presentation and its presenter.
 - Temporary document sessions remain focused on the opened document while persistent workspaces support multiple document members.
 - The AI assistant has a defined adaptive interaction pattern.
 - Document rendering is separated behind a resolver and renderer boundary.
@@ -1416,23 +1448,28 @@ These trade-offs are acceptable because they establish a scalable foundation whi
 
 ## Result
 
-DeskVault will implement an enterprise-oriented document workspace that
-supports temporary single-document viewing and persistent multi-document
-knowledge contexts.
+DeskVault will implement an application-managed workspace presentation
+that supports temporary single-document viewing and persistent
+multi-document knowledge contexts.
 
-The resulting direction is:
+The resulting UI direction is:
 
 ```text
+Login
+    ↓
 Application Shell
     ↓
 Document Library
     ↓
-Temporary Document Workspace
-    ├── Enterprise Header
-    └── Document Renderer Boundary
-             ├── Text
-             ├── Markdown
-             └── CSV
+WorkspaceViewForm
+    ├── Workspace/document identity and navigation
+    ├── Workspace/document contextual actions
+    ├── DocumentViewForm
+    │   └── Document Renderer Boundary
+    │       ├── Text
+    │       ├── Markdown
+    │       └── CSV
+    └── Future Adaptive Local AI Assistant
              ↓
         Save as Workspace
              ↓
@@ -1440,8 +1477,6 @@ Temporary Document Workspace
         ├── Document
         ├── Document
         └── Document
-             ↓
-      Future AI Context
 ```
 
 The architecture separates:
@@ -1468,7 +1503,10 @@ Document rendering
 AI / search processing
 ```
 
+The existing Application and Infrastructure boundaries remain responsible
+for document retrieval, decryption, persistence, and storage.
+
 This separation allows DeskVault to evolve toward multi-document workspaces,
 local AI, retrieval, RAG, and enterprise knowledge workflows without
-requiring the document workspace implementation to contain those future
-capabilities.
+requiring the document-content view to own workspace behavior or future
+AI-processing capabilities.
