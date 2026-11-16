@@ -79,6 +79,127 @@ public sealed class WorkspacePresentationTests
     }
 
     [Fact]
+    public void NavigationModeChanged_FromView_UpdatesAuthoritativeNavigationMode()
+    {
+        // Arrange
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view);
+
+        // Act
+        view.View.Raise(
+            x => x.NavigationModeChanged += null,
+            new NavigationModeChangedEventArgs(
+                WorkspacePresentationNavigationMode.Sidebar));
+
+        // Assert
+        Assert.Equal(
+            WorkspacePresentationNavigationMode.Sidebar,
+            presentation.NavigationMode);
+
+        view.View.Verify(
+            x => x.SetNavigationMode(
+                It.IsAny<WorkspacePresentationNavigationMode>()),
+            Times.Never);
+
+        // Act: change the authoritative state back through the view event.
+        view.View.Raise(
+            x => x.NavigationModeChanged += null,
+            new NavigationModeChangedEventArgs(
+                WorkspacePresentationNavigationMode.Tabs));
+
+        // Assert
+        Assert.Equal(
+            WorkspacePresentationNavigationMode.Tabs,
+            presentation.NavigationMode);
+
+        view.View.Verify(
+            x => x.SetNavigationMode(
+                It.IsAny<WorkspacePresentationNavigationMode>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public void PersistentWorkspace_CloseWorkspaceRequested_ForwardsRequest()
+    {
+        // Arrange
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view);
+
+        int requestCount = 0;
+        object? requestSender = null;
+
+        presentation.WorkspaceCloseRequested +=
+            (sender, _) =>
+            {
+                requestCount++;
+                requestSender = sender;
+            };
+
+        // Act
+        view.View.Raise(
+            x => x.CloseWorkspaceRequested += null,
+            EventArgs.Empty);
+
+        // Assert
+        Assert.Equal(1, requestCount);
+
+        Assert.Same(
+            presentation,
+            requestSender);
+    }
+
+    [Fact]
+    public void PersistentWorkspace_DeleteWorkspaceRequested_ForwardsRequest()
+    {
+        // Arrange
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view);
+
+        int requestCount = 0;
+        object? requestSender = null;
+
+        presentation.WorkspaceDeleteRequested +=
+            (sender, _) =>
+            {
+                requestCount++;
+                requestSender = sender;
+            };
+
+        // Act
+        view.View.Raise(
+            x => x.DeleteWorkspaceRequested += null,
+            EventArgs.Empty);
+
+        // Assert
+        Assert.Equal(1, requestCount);
+
+        Assert.Same(
+            presentation,
+            requestSender);
+    }
+
+    [Fact]
     public void TemporaryWorkspace_DoesNotChangeNavigationMode()
     {
         WorkspacePresentationViewHarness view =
