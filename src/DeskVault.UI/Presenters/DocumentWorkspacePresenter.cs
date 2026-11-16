@@ -16,7 +16,7 @@ public sealed class DocumentWorkspacePresenter :
     IDocumentWorkspace,
     IDisposable
 {
-    private readonly IDocumentWorkspaceView _view;
+    private readonly IDocumentView _view;
     private readonly IDocumentViewer _documentViewer;
     private readonly GetDocumentHandler _getDocumentHandler;
     private readonly OpenDocumentHandler _openDocumentHandler;
@@ -59,7 +59,7 @@ public sealed class DocumentWorkspacePresenter :
 
     public DocumentWorkspacePresenter(
         Guid workspaceId,
-        IDocumentWorkspaceView view,
+        IDocumentView view,
         IDocumentViewer documentViewer,
         GetDocumentHandler getDocumentHandler,
         OpenDocumentHandler openDocumentHandler,
@@ -106,20 +106,6 @@ public sealed class DocumentWorkspacePresenter :
         _view.RemoveDocumentRequested +=
             OnRemoveDocumentRequested;
 
-        _view.CloseWorkspaceRequested +=
-            OnCloseWorkspaceRequested;
-    }
-
-    public void Activate()
-    {
-        ThrowIfDisposed();
-
-        if (!IsOwningSessionCurrent())
-        {
-            return;
-        }
-
-        _view.ActivateWorkspace();
     }
 
     public async Task OpenAsync(
@@ -1047,16 +1033,6 @@ public sealed class DocumentWorkspacePresenter :
         }
     }
 
-    private void OnCloseWorkspaceRequested(
-        object? sender,
-        EventArgs e)
-    {
-        _logger.LogDebug(
-            LogMessages.DocumentWorkspaceCloseRequested);
-
-        _view.CloseWorkspace();
-    }
-
     public void Dispose()
     {
         CancellationTokenSource? activeOpenOperation;
@@ -1115,9 +1091,6 @@ public sealed class DocumentWorkspacePresenter :
 
         TryCleanup(() =>
             _view.RemoveDocumentRequested -= OnRemoveDocumentRequested);
-
-        TryCleanup(() =>
-            _view.CloseWorkspaceRequested -= OnCloseWorkspaceRequested);
 
         TryCleanup(() =>
             _applicationSecuritySession.StateChanged -=

@@ -7,7 +7,7 @@ namespace DeskVault.UI.Forms;
 
 public partial class DocumentViewForm :
     Form,
-    IDocumentWorkspaceView
+    IDocumentView
 {
     private readonly IDocumentContentRendererResolver _rendererResolver;
     private long _presentationOperationVersion;
@@ -42,8 +42,6 @@ public partial class DocumentViewForm :
     public event EventHandler DocumentInformationRequested = null!;
 
     public event EventHandler RemoveDocumentRequested = null!;
-
-    public event EventHandler CloseWorkspaceRequested = null!;
 
     public async Task ShowDocumentAsync(
         Stream documentStream,
@@ -272,18 +270,6 @@ public partial class DocumentViewForm :
         Hide();
     }
 
-    public void ActivateWorkspace()
-    {
-        Show();
-        BringToFront();
-        Activate();
-    }
-
-    public void CloseWorkspace()
-    {
-        Hide();
-    }
-
     public void ShowError(
         string message,
         string title,
@@ -357,9 +343,7 @@ public partial class DocumentViewForm :
         object? sender,
         EventArgs e)
     {
-        CloseWorkspaceRequested?.Invoke(
-            this,
-            EventArgs.Empty);
+        Hide();
     }
 
     private void closeButton_Click(

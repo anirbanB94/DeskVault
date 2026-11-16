@@ -1057,8 +1057,10 @@ public sealed class WorkspacePresentationTests
         Assert.Empty(presentation.WorkspaceDocumentIds);
         Assert.Empty(presentation.PresentedDocumentIds);
 
-        Assert.Throws<ObjectDisposedException>(
-            () => openedPresentation.Activate());
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => openedPresentation.Presenter.OpenAsync(
+                documentId,
+                TestContext.Current.CancellationToken));
 
         view.View.Verify(
             x => x.ClearPresentation(),
@@ -1077,7 +1079,7 @@ public sealed class WorkspacePresentationTests
         Guid secondDocumentId = Guid.NewGuid();
 
         var firstDocumentView =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var firstDisposableView =
             firstDocumentView.As<IDisposable>();
@@ -1088,7 +1090,7 @@ public sealed class WorkspacePresentationTests
                 "First document view disposal failed."));
 
         var secondDocumentView =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var secondDisposableView =
             secondDocumentView.As<IDisposable>();
@@ -2683,7 +2685,7 @@ public sealed class WorkspacePresentationTests
                 TaskCreationOptions.RunContinuationsAsynchronously);
 
         var documentView =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         documentView
             .Setup(x => x.ShowDocumentAsync(
@@ -2793,7 +2795,7 @@ public sealed class WorkspacePresentationTests
                 TaskCreationOptions.RunContinuationsAsynchronously);
 
         var documentView =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         documentView
             .Setup(x => x.ShowDocumentAsync(
@@ -3634,12 +3636,12 @@ public sealed class WorkspacePresentationTests
         Guid workspaceId,
         Guid documentId,
         Exception? openException = null,
-        Mock<IDocumentWorkspaceView>? documentView = null,
+        Mock<IDocumentView>? documentView = null,
         Mock<IDocumentRepository>? documentRepository = null,
         Mock<IDocumentReader>? documentReader = null,
         long securitySessionRevision = 0)
     {
-        documentView ??= new Mock<IDocumentWorkspaceView>();
+        documentView ??= new Mock<IDocumentView>();
         documentRepository ??= new Mock<IDocumentRepository>();
         documentReader ??= new Mock<IDocumentReader>();
 

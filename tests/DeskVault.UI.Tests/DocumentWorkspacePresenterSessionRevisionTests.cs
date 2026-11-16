@@ -8,37 +8,13 @@ namespace DeskVault.UI.Tests;
 public sealed class DocumentWorkspacePresenterSessionRevisionTests
 {
     [Fact]
-    public void Activate_WhenOwningSessionRevisionIsSuperseded_DoesNotActivateDocument()
-    {
-        var session = new SecuritySessionHarness(
-            ApplicationSecuritySessionState.Authenticated,
-            revision: 40);
-        var view = new Mock<IDocumentWorkspaceView>();
-        var presenter = CreateDocumentWorkspacePresenter(
-            view,
-            session,
-            securitySessionRevision: 40);
-
-        session.Set(ApplicationSecuritySessionState.Locked, revision: 41);
-        session.Set(ApplicationSecuritySessionState.Authenticated, revision: 42);
-
-        presenter.Activate();
-
-        view.Verify(
-            x => x.ActivateWorkspace(),
-            Times.Never);
-
-        presenter.Dispose();
-    }
-
-    [Fact]
     public async Task OpenAsync_WhenOwningSessionRevisionIsSuperseded_RejectsAndDisposesIncomingStream()
     {
         Guid documentId = Guid.NewGuid();
         var session = new SecuritySessionHarness(
             ApplicationSecuritySessionState.Authenticated,
             revision: 50);
-        var view = new Mock<IDocumentWorkspaceView>();
+        var view = new Mock<IDocumentView>();
         var repository = new Mock<DeskVault.Application.Interfaces.IDocumentRepository>(MockBehavior.Strict);
         var presenter = CreateDocumentWorkspacePresenter(
             view,

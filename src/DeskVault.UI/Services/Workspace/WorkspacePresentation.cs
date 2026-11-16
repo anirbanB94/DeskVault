@@ -626,13 +626,8 @@ public sealed class WorkspacePresentation : IDisposable
     private void ActivateDocumentPresentation(
         Guid documentId)
     {
-        WorkspaceDocumentPresentation presentation =
-            _documentPresentations[documentId];
-
         _view.ActivateDocumentPresentation(
             documentId);
-
-        presentation.Activate();
 
         ActiveDocumentId = documentId;
     }

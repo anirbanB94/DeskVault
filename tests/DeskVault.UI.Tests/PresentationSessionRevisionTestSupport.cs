@@ -143,7 +143,7 @@ internal static class PresentationSessionRevisionTestSupport
     }
 
     internal static DocumentWorkspacePresenter CreateDocumentWorkspacePresenter(
-        Mock<IDocumentWorkspaceView> view,
+        Mock<IDocumentView> view,
         SecuritySessionHarness session,
         Mock<IDocumentRepository>? repository = null,
         long securitySessionRevision = 0)

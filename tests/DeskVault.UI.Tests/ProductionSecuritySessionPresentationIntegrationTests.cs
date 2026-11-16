@@ -13,6 +13,7 @@ using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
 using DeskVault.Infrastructure.Services;
+using DeskVault.UI.Forms;
 using DeskVault.UI.Hosting;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Services.Interfaces;
@@ -42,6 +43,14 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
 
         IServiceProvider services =
             testHost.Services;
+
+        // Document views are composed directly by the presentation factory.
+        // Neither the document contract nor its concrete Form is a DI service.
+        Assert.Null(
+            services.GetService<IDocumentView>());
+
+        Assert.Null(
+            services.GetService<DocumentViewForm>());
 
         DeskVaultStartupCoordinator startupCoordinator =
             services.GetRequiredService<DeskVaultStartupCoordinator>();
@@ -101,7 +110,7 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
             CreateDocumentRepository(document);
 
         var view =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var queuedUiActions =
             new List<Action>();
@@ -286,13 +295,6 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
                 It.IsAny<long>()),
             Times.Never);
 
-        // The new session is still authenticated, but the old presenter
-        // cannot activate or expose its previous document.
-        presenter.Activate();
-
-        view.Verify(
-            x => x.ActivateWorkspace(),
-            Times.Never);
     }
 
     [Fact]
@@ -344,7 +346,7 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
         // Create a real child DocumentWorkspacePresenter bound to the
         // same production session and revision as the workspace.
         var childView =
-            new Mock<IDocumentWorkspaceView>();
+            new Mock<IDocumentView>();
 
         var queuedChildUiActions =
             new List<Action>();
@@ -566,7 +568,7 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
 
     private static DocumentWorkspacePresenter CreateDocumentWorkspacePresenter(
         IApplicationSecuritySession securitySession,
-        IDocumentWorkspaceView view,
+        IDocumentView view,
         Mock<IDocumentRepository> documentRepository,
         long securitySessionRevision)
     {
