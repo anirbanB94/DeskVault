@@ -1238,6 +1238,40 @@ workspace management actions, or the workspace contextual menu. The
 visible workspace chrome and the temporary/persistent workspace action menu
 belong to `WorkspaceViewForm`.
 
+The document-interaction contract and the WinForms hosting surface are
+separate. `WorkspaceDocumentPresentation.View` exposes document-specific
+behavior through `IDocumentView`, while its `HostedForm` property exposes
+the generic `System.Windows.Forms.Form` surface used for workspace hosting.
+Both properties refer to the same underlying view instance; the hosting
+property does not create a second document view or a separate top-level
+window.
+
+`WorkspaceDocumentPresentationFactory` may construct the concrete
+`DocumentViewForm`. It supplies that same instance to
+`DocumentWorkspacePresenter` through `IDocumentView` and to
+`WorkspaceDocumentPresentation` as the document view. This keeps concrete
+`DocumentViewForm` construction knowledge within the factory rather than
+exposing that implementation dependency to workspace hosting.
+
+`WorkspaceViewForm` uses only the generic `HostedForm` surface when
+preparing, attaching, removing, activating, and moving the document
+presentation between its tab and sidebar containers. It does not cast the
+document interaction contract to `DocumentViewForm` or search hosted
+controls for that concrete type. Moving between tab and sidebar hosting
+reparents the same Form instance.
+
+The generic Form hosting surface is a WinForms presentation boundary only.
+It does not add Form, parent-control, or workspace-navigation members to
+`IDocumentView`, move navigation ownership into the document view, or
+change the authoritative workspace state held by `WorkspacePresentation`.
+Exposing the host Form does not introduce another document view or another
+window.
+
+The hosting boundary does not create a new disposal owner or redefine the
+document and workspace presentation lifetime contracts. The navigation-
+restoration/persistence policy and broader presentation disposal and
+lifetime contracts remain separate responsibilities.
+
 Workspace membership and document presentation remain distinct. Closing
 an individual document presentation removes that presentation from the
 current workspace view but leaves persistent workspace membership intact.
@@ -1267,10 +1301,10 @@ mode and reports user changes through its view event. Conversion from
 temporary to persistent workspace continues to update the existing
 presentation rather than creating a second presentation.
 
-This boundary defines state ownership and interaction flow only. It does
-not prescribe or change the concrete control-hosting mechanism for document
-views, the navigation-restoration/persistence policy, or the broader
-presentation disposal and lifetime contracts.
+This boundary defines state ownership, interaction flow, and the separation
+between document interaction and WinForms hosting. It does not change the
+navigation-restoration/persistence policy or the broader presentation
+disposal and lifetime contracts.
 
 ## Scope of Initial Implementation
 

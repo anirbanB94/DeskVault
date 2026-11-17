@@ -6,6 +6,12 @@ namespace DeskVault.UI.Services.Workspace;
 public sealed class WorkspaceDocumentPresentation : IDisposable
 {
     private readonly IDocumentView _view;
+
+    public Form HostedForm =>
+        _view as Form ??
+        throw new InvalidOperationException(
+            "Workspace document presentation view must provide a WinForms Form hosting surface.");
+
     private bool _disposed;
 
     public WorkspaceDocumentPresentation(

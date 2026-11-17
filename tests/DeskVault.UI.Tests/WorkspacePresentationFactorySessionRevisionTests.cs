@@ -1,5 +1,6 @@
 using DeskVault.Application.Security.Sessions;
 using DeskVault.Domain.Workspaces;
+using DeskVault.UI.Forms;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
 using Moq;
@@ -77,5 +78,41 @@ public sealed class WorkspacePresentationFactorySessionRevisionTests
             Times.Never);
 
         presentation.Dispose();
+    }
+
+    [Fact]
+    public void Create_ExposesSameDocumentFormThroughSeparatePresentationSurfaces()
+    {
+        // Arrange
+        var session = new SecuritySessionHarness(
+            ApplicationSecuritySessionState.Authenticated,
+            revision: 80);
+
+        WorkspaceDocumentPresentationFactory factory =
+            CreateWorkspaceDocumentPresentationFactory(
+                session.Session.Object);
+
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        // Act
+        using WorkspaceDocumentPresentation presentation =
+            factory.Create(
+                workspaceId,
+                documentId,
+                securitySessionRevision: 80);
+
+        // Assert
+        DocumentViewForm documentView =
+            Assert.IsType<DocumentViewForm>(
+                presentation.View);
+
+        Assert.Same(
+            documentView,
+            presentation.HostedForm);
+
+        Assert.Equal(
+            documentId,
+            presentation.DocumentId);
     }
 }
