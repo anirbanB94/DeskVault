@@ -1209,6 +1209,15 @@ The manager owns the registry of presentation instances; it does not
 maintain a second copy of each presentation's identity, membership,
 navigation, or active-document state.
 
+Workspace identity is not copied into a child `DocumentWorkspacePresenter`
+or propagated through the document-presentation factory contract.
+`IWorkspaceDocumentPresentationFactory.Create` accepts only `documentId`
+and `securitySessionRevision`. `DocumentWorkspacePresenter` has no
+`WorkspaceId` property or workspace-identity constructor parameter and
+exposes no workspace activation or closure operation. Workspace identity
+and workspace lifecycle therefore remain at the workspace-presentation
+and manager boundary.
+
 `WorkspaceViewForm` implements `IWorkspacePresentationView` and remains a
 WinForms Passive View. It is responsible for rendering workspace identity,
 temporary-document identity, workspace-member navigation, tabs/sidebar
@@ -1253,6 +1262,13 @@ window.
 `DocumentViewForm` construction knowledge within the factory rather than
 exposing that implementation dependency to workspace hosting.
 
+`WorkspaceDocumentPresentation` remains a non-activating wrapper for one
+document presentation. It exposes the document presenter, document view,
+and generic WinForms hosting surface; it does not forward a workspace
+activation API to the document presenter. Its existing disposal path
+continues to dispose the presenter and its view. The identity-contract
+change does not create another disposal owner or alter that lifecycle.
+
 `WorkspaceViewForm` uses only the generic `HostedForm` surface when
 preparing, attaching, removing, activating, and moving the document
 presentation between its tab and sidebar containers. It does not cast the
@@ -1278,9 +1294,17 @@ current workspace view but leaves persistent workspace membership intact.
 Removing a document from a persistent workspace is a workspace-membership
 operation; it does not delete the underlying document from the document
 library. Global document removal is a separate document-level operation.
-The workspace presentation may observe its completion to reconcile its
-current membership and presented-document state, but the document-specific
-removal pipeline remains owned by the document workspace presentation.
+The document-specific removal pipeline remains owned by the document
+workspace presentation. Upon successful global removal,
+`DocumentWorkspacePresenter` raises its `DocumentRemoved` event.
+`WorkspacePresentation` subscribes to that event when the child presentation
+is registered. It identifies the affected child presentation, removes and
+disposes that presentation, removes the document identifier from its
+in-memory workspace membership, and publishes the corresponding workspace
+removal and membership-update notifications. For a temporary workspace, it
+also raises the workspace-close request. This keeps document removal
+execution document-specific while workspace membership reconciliation and
+temporary-workspace closure remain with the workspace owner.
 
 Document information, global document removal, external viewing, and
 format-specific rendering remain document-level behavior delegated to the
