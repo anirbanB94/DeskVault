@@ -168,7 +168,6 @@ internal static class PresentationSessionRevisionTestSupport
             NullLogger<RemoveDocumentHandler>.Instance);
 
         return new DocumentWorkspacePresenter(
-            Guid.NewGuid(),
             view.Object,
             new Mock<IDocumentViewer>().Object,
             getDocumentHandler,

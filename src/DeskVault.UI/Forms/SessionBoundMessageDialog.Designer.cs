@@ -43,8 +43,8 @@ partial class SessionBoundMessageDialog
         AutoScaleMode = AutoScaleMode.Font;
 
         ClientSize = new Size(460, 170);
-        Name = nameof(SessionBoundMessageDialog);
-        Text = nameof(SessionBoundMessageDialog);
+        Name = "SessionBoundMessageDialog";
+        Text = "SessionBoundMessageDialog";
 
         ResumeLayout(false);
         PerformLayout();

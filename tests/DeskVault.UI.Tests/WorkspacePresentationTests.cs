@@ -252,13 +252,11 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId,
                 originalException);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId, 0))
             .Returns(documentPresentation);
 
@@ -334,12 +332,10 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId, 0))
             .Returns(documentPresentation);
 
@@ -380,7 +376,6 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory.Verify(
             x => x.Create(
-                workspaceId,
                 documentId, 0),
             Times.Once);
     }
@@ -399,12 +394,10 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId, 0))
             .Returns(documentPresentation);
 
@@ -437,7 +430,6 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory.Verify(
             x => x.Create(
-                workspaceId,
                 documentId, 0),
             Times.Once);
 
@@ -467,23 +459,19 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation firstPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 firstDocumentId);
 
         WorkspaceDocumentPresentation secondPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 secondDocumentId);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 firstDocumentId, 0))
             .Returns(firstPresentation);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 secondDocumentId, 0))
             .Returns(secondPresentation);
 
@@ -549,12 +537,10 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId, 0))
             .Returns(documentPresentation);
 
@@ -619,17 +605,14 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation firstPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId);
 
         WorkspaceDocumentPresentation secondPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId);
 
         documentPresentationFactory
             .SetupSequence(x => x.Create(
-                workspaceId,
                 documentId, 0))
             .Returns(firstPresentation)
             .Returns(secondPresentation);
@@ -686,7 +669,6 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory.Verify(
             x => x.Create(
-                workspaceId,
                 documentId, 0),
             Times.Exactly(2));
 
@@ -721,23 +703,19 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation firstPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 firstDocumentId);
 
         WorkspaceDocumentPresentation secondPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 secondDocumentId);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 firstDocumentId, 0))
             .Returns(firstPresentation);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 secondDocumentId, 0))
             .Returns(secondPresentation);
 
@@ -814,7 +792,6 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory.Verify(
             x => x.Create(
-                It.IsAny<Guid>(),
                 documentId, 0),
             Times.Never);
 
@@ -866,12 +843,10 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId, 0))
             .Returns(documentPresentation);
 
@@ -941,6 +916,199 @@ public sealed class WorkspacePresentationTests
             Times.Once);
     }
 
+    [Theory]
+    [InlineData(WorkspaceType.Persistent, false)]
+    [InlineData(WorkspaceType.Temporary, true)]
+    public async Task RemovingDocumentThroughChildPresenter_UpdatesWorkspaceAndClosesOnlyTemporaryWorkspace(
+        WorkspaceType workspaceType,
+        bool expectedWorkspaceCloseRequest)
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        Document document = Document.Create(
+            documentId,
+            "document.csv",
+            "document",
+            "test-sha256",
+            $"Data\\{documentId}\\document.csv");
+
+        var documentRepository =
+            new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        documentRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([document]);
+
+        documentRepository
+            .Setup(x => x.DeleteAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var documentView =
+            new Mock<IDocumentView>();
+
+        documentView
+            .Setup(x => x.ConfirmRemoval(
+                document.FileName,
+                It.IsAny<long>()))
+            .Returns(true);
+
+        WorkspaceDocumentPresentation documentPresentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentView: documentView,
+                documentRepository: documentRepository,
+                storageService: storageService);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(x => x.Create(
+                documentId,
+                0))
+            .Returns(documentPresentation);
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                workspaceType,
+                workspaceType == WorkspaceType.Persistent ? "Workspace" : null,
+                null,
+                view,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory,
+                documentRepository: documentRepository);
+
+        await presentation.SetWorkspaceDocumentsAsync(
+            [documentId],
+            TestContext.Current.CancellationToken);
+
+        WorkspaceDocumentPresentation openedPresentation =
+            presentation.OpenDocument(documentId);
+
+        var documentStream =
+            new MemoryStream(
+                "Id,Name\r\n1,Alice\r\n"u8.ToArray());
+
+        await openedPresentation.Presenter.OpenAsync(
+            documentId,
+            documentStream,
+            document.FileName,
+            TestContext.Current.CancellationToken);
+
+        TaskCompletionSource<bool> workspaceDocumentsUpdated =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        List<Guid> removedDocumentIds = [];
+        int workspaceDocumentsUpdatedCount = 0;
+        int workspaceCloseRequestedCount = 0;
+
+        presentation.DocumentRemoved +=
+            (_, args) => removedDocumentIds.Add(args.DocumentId);
+
+        presentation.WorkspaceDocumentsUpdated +=
+            (_, _) =>
+            {
+                workspaceDocumentsUpdatedCount++;
+                workspaceDocumentsUpdated.TrySetResult(true);
+            };
+
+        presentation.WorkspaceCloseRequested +=
+            (_, _) => workspaceCloseRequestedCount++;
+
+        // Act
+        documentView.Raise(
+            x => x.RemoveDocumentRequested += null,
+            EventArgs.Empty);
+
+        await workspaceDocumentsUpdated.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            documentId,
+            Assert.Single(removedDocumentIds));
+
+        Assert.Equal(
+            1,
+            workspaceDocumentsUpdatedCount);
+
+        Assert.False(
+            presentation.IsWorkspaceDocument(documentId));
+
+        Assert.DoesNotContain(
+            documentId,
+            presentation.WorkspaceDocumentIds);
+
+        Assert.Empty(
+            presentation.PresentedDocumentIds);
+
+        Assert.False(
+            presentation.ContainsDocument(documentId));
+
+        Assert.Null(
+            presentation.GetDocumentPresentation(documentId));
+
+        Assert.Null(
+            presentation.ActiveDocumentId);
+
+        Assert.False(
+            documentStream.CanRead);
+
+        Assert.Equal(
+            expectedWorkspaceCloseRequest ? 1 : 0,
+            workspaceCloseRequestedCount);
+
+        view.View.Verify(
+            x => x.RemoveDocumentPresentation(documentId),
+            Times.Once);
+
+        documentView.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        documentRepository.Verify(
+            x => x.DeleteAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        documentPresentationFactory.Verify(
+            x => x.Create(
+                documentId,
+                0),
+            Times.Once);
+    }
+
     [Fact]
     public void TemporaryWorkspace_CloseDocumentRequested_RaisesWorkspaceCloseRequested()
     {
@@ -1007,7 +1175,6 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId);
 
         var documentPresentationFactory =
@@ -1015,7 +1182,6 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId, 0))
             .Returns(documentPresentation);
 
@@ -1097,13 +1263,11 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation firstDocumentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 firstDocumentId,
                 documentView: firstDocumentView);
 
         WorkspaceDocumentPresentation secondDocumentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 secondDocumentId,
                 documentView: secondDocumentView);
 
@@ -1112,13 +1276,11 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 firstDocumentId, 0))
             .Returns(firstDocumentPresentation);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 secondDocumentId, 0))
             .Returns(secondDocumentPresentation);
 
@@ -1869,7 +2031,6 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory.Verify(
             x => x.Create(
-                workspaceId,
                 documentId, 0),
             Times.Never);
     }
@@ -2719,7 +2880,6 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId,
                 documentView: documentView,
                 documentRepository: documentRepository,
@@ -2729,7 +2889,8 @@ public sealed class WorkspacePresentationTests
             new Mock<IWorkspaceDocumentPresentationFactory>();
 
         documentPresentationFactory
-            .Setup(x => x.Create(workspaceId, documentId, 0))
+            .Setup(x => x.Create(
+                documentId, 0))
             .Returns(documentPresentation);
 
         WorkspacePresentationViewHarness workspaceView =
@@ -2830,7 +2991,6 @@ public sealed class WorkspacePresentationTests
         // the workspace presentation's own session-revision responsibility.
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 documentId,
                 documentView: documentView,
                 documentRepository: documentRepository,
@@ -2841,7 +3001,6 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId, 0))
             .Returns(documentPresentation);
 
@@ -3082,7 +3241,6 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory.Verify(
             x => x.Create(
-                workspaceId,
                 documentId, 0),
             Times.Never);
 
@@ -3249,11 +3407,9 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory
         .Setup(x => x.Create(
-            workspaceId,
             documentId, 0))
         .Returns(
             CreateDocumentPresentation(
-                workspaceId,
                 documentId));
 
         WorkspacePresentation presentation =
@@ -3272,7 +3428,8 @@ public sealed class WorkspacePresentationTests
         Assert.Empty(presentation.PresentedDocumentIds);
 
         documentPresentationFactory.Verify(
-            x => x.Create(workspaceId, documentId, 0),
+            x => x.Create(
+                documentId, 0),
             Times.Never);
 
         view.View.Verify(
@@ -3305,9 +3462,10 @@ public sealed class WorkspacePresentationTests
             new Mock<IWorkspaceDocumentPresentationFactory>();
 
         documentPresentationFactory
-            .Setup(x => x.Create(workspaceId, documentId, 0))
+            .Setup(x => x.Create(
+                documentId, 0))
             .Returns(
-                CreateDocumentPresentation(workspaceId, documentId));
+                CreateDocumentPresentation(documentId));
 
         WorkspacePresentation presentation =
             CreatePresentation(
@@ -3365,9 +3523,10 @@ public sealed class WorkspacePresentationTests
             new Mock<IWorkspaceDocumentPresentationFactory>();
 
         documentPresentationFactory
-            .Setup(x => x.Create(workspaceId, documentId, 0))
+            .Setup(x => x.Create(
+                documentId, 0))
             .Returns(
-                CreateDocumentPresentation(workspaceId, documentId));
+                CreateDocumentPresentation(documentId));
 
         WorkspacePresentation presentation =
             CreatePresentation(
@@ -3453,12 +3612,10 @@ public sealed class WorkspacePresentationTests
 
         WorkspaceDocumentPresentation firstPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 firstDocumentId);
 
         WorkspaceDocumentPresentation secondPresentation =
             CreateDocumentPresentation(
-                workspaceId,
                 secondDocumentId);
 
         var documentPresentationFactory =
@@ -3466,13 +3623,11 @@ public sealed class WorkspacePresentationTests
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 firstDocumentId, 0))
             .Returns(firstPresentation);
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 secondDocumentId, 0))
             .Returns(secondPresentation);
 
@@ -3633,13 +3788,13 @@ public sealed class WorkspacePresentationTests
     }
 
     private static WorkspaceDocumentPresentation CreateDocumentPresentation(
-        Guid workspaceId,
         Guid documentId,
         Exception? openException = null,
         Mock<IDocumentView>? documentView = null,
         Mock<IDocumentRepository>? documentRepository = null,
         Mock<IDocumentReader>? documentReader = null,
-        long securitySessionRevision = 0)
+        long securitySessionRevision = 0,
+        Mock<IStorageService>? storageService = null)
     {
         documentView ??= new Mock<IDocumentView>();
         documentRepository ??= new Mock<IDocumentRepository>();
@@ -3657,7 +3812,7 @@ public sealed class WorkspacePresentationTests
         var workspaceRepository =
             new Mock<IWorkspaceRepository>();
 
-        var storageService =
+        storageService ??=
             new Mock<IStorageService>();
 
         var documentViewer =
@@ -3694,7 +3849,6 @@ public sealed class WorkspacePresentationTests
 
         var presenter =
             new DocumentWorkspacePresenter(
-                workspaceId,
                 documentView.Object,
                 documentViewer.Object,
                 getDocumentHandler,

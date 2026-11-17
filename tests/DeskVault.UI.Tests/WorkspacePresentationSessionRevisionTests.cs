@@ -61,7 +61,6 @@ public sealed class WorkspacePresentationSessionRevisionTests
         documentFactory.Verify(
             x => x.Create(
                 It.IsAny<Guid>(),
-                It.IsAny<Guid>(),
                 It.IsAny<long>()),
             Times.Never);
 

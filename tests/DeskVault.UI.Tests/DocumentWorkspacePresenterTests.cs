@@ -2824,7 +2824,6 @@ public sealed class DocumentWorkspacePresenterTests
         IApplicationSecuritySession applicationSecuritySession)
     {
         return new DocumentWorkspacePresenter(
-            Guid.NewGuid(),
             view.Object,
             documentViewer.Object,
             new GetDocumentHandler(
@@ -2911,7 +2910,6 @@ public sealed class DocumentWorkspacePresenterTests
         }
 
         return new DocumentWorkspacePresenter(
-            Guid.NewGuid(),
             view.Object,
             documentViewer.Object,
             new GetDocumentHandler(

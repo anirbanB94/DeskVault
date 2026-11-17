@@ -37,7 +37,6 @@ public sealed class WorkspacePresentationFactorySessionRevisionTests
         documentFactory.Verify(
             x => x.Create(
                 It.IsAny<Guid>(),
-                It.IsAny<Guid>(),
                 It.IsAny<long>()),
             Times.Never);
 
@@ -57,7 +56,6 @@ public sealed class WorkspacePresentationFactorySessionRevisionTests
                 repository);
 
         WorkspaceDocumentPresentation presentation = factory.Create(
-            Guid.NewGuid(),
             Guid.NewGuid(),
             securitySessionRevision: 69);
 
@@ -98,7 +96,6 @@ public sealed class WorkspacePresentationFactorySessionRevisionTests
         // Act
         using WorkspaceDocumentPresentation presentation =
             factory.Create(
-                workspaceId,
                 documentId,
                 securitySessionRevision: 80);
 

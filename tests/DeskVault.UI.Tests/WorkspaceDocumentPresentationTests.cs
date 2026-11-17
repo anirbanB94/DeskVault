@@ -331,7 +331,6 @@ public sealed class WorkspaceDocumentPresentationTests
             NullLogger<RemoveDocumentHandler>.Instance);
 
         return new DocumentWorkspacePresenter(
-            Guid.NewGuid(),
             view,
             documentViewer.Object,
             getDocumentHandler,
@@ -385,7 +384,6 @@ public sealed class WorkspaceDocumentPresentationTests
             NullLogger<RemoveDocumentHandler>.Instance);
 
         return new DocumentWorkspacePresenter(
-            Guid.NewGuid(),
             view.Object,
             documentViewer.Object,
             getDocumentHandler,

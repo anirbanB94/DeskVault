@@ -621,9 +621,7 @@ partial class MainForm
         unlockButton.AutoSize = true;
         unlockButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
         unlockButton.BackColor = Color.FromArgb(0, 120, 212);
-        unlockButton.ForeColor = SystemInformation.HighContrast
-            ? SystemColors.HighlightText
-            : Color.White;
+        unlockButton.ForeColor = Color.White;
         unlockButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         unlockButton.Margin = new Padding(8, 0, 4, 0);
         unlockButton.Name = "unlockButton";

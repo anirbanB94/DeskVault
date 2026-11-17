@@ -289,6 +289,20 @@ presentation. The state includes workspace identity and type, represented
 workspace members, document presentations, navigation mode, and active
 document identity.
 
+Workspace identity remains authoritative at this workspace-presentation
+boundary. It is not duplicated in an individual `DocumentWorkspacePresenter`
+and is not propagated through `IWorkspaceDocumentPresentationFactory.Create`.
+That factory creates a child document presentation from the document identity
+and the owning security-session revision only.
+
+`WorkspacePresentation` coordinates workspace-scoped presentation behavior,
+including active-document selection, navigation, document-presentation
+registration, and workspace membership reconciliation. `WorkspacePresentationManager`
+maintains the registry of live workspace presentations and coordinates their
+lookup, creation, reuse, activation, and closure. Workspace-close requests
+remain at the workspace/application boundary; they are not operations of an
+individual document presenter or document view.
+
 `WorkspaceViewForm` implements the workspace presentation view contract and
 remains a WinForms Passive View. It renders workspace or temporary-document
 identity, workspace navigation, tabs/sidebar layout, workspace contextual
@@ -328,6 +342,32 @@ boundary remains separate from disposal ownership.
 `DocumentWorkspacePresenter` owns document-specific presentation workflows
 and coordinates the document view with the existing Application operations,
 renderer resolution, session-bound dialogs, and document resource lifecycle.
+It is scoped to document behavior: it carries no `WorkspaceId`, accepts no
+workspace identity during construction, and exposes no workspace activation
+or closure operation. Its responsibilities include document acquisition
+and opening, rendering requests, document information, global document
+removal, external viewing, document-specific errors, cancellation,
+session-revision checks, and active/pending document-stream ownership.
+
+After successful global document removal, `DocumentWorkspacePresenter`
+raises its `DocumentRemoved` event. `WorkspacePresentation` subscribes when
+it registers the child presentation and uses that notification to locate
+the corresponding document presentation, close and dispose that child
+presentation, remove the document from the in-memory workspace membership,
+and publish the workspace-level removal/update notifications. For a
+temporary workspace, the workspace presentation also raises the existing
+workspace-close request. This notification preserves the coordination
+boundary: document removal execution remains document-specific, while
+workspace membership and workspace closure remain workspace-level
+responsibilities.
+
+`WorkspaceDocumentPresentation` remains the wrapper for one document
+presentation. It exposes the document presenter, the `IDocumentView`
+interaction surface, and the same underlying WinForms view through its
+generic hosting surface. It does not forward workspace activation to the
+document presenter. Its existing disposal path continues to dispose the
+presenter and its view; removing workspace identity from the child presenter
+and factory does not change presentation ownership or disposal behavior.
 
 `DocumentViewForm` implements `IDocumentView` and is responsible for the
 document-specific presentation surface:
