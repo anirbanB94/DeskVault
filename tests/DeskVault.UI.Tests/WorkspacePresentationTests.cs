@@ -247,13 +247,34 @@ public sealed class WorkspacePresentationTests
         var logger =
             new RecordingLogger<WorkspacePresentation>();
 
+        var documentView =
+            new Mock<IDocumentView>();
+
+        var disposableDocumentView =
+            documentView.As<IDisposable>();
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        bool detachAttempted = false;
+
+        view.View
+            .Setup(x => x.RemoveDocumentPresentation(documentId))
+            .Callback(() => detachAttempted = true)
+            .Returns(false);
+
+        disposableDocumentView
+            .Setup(x => x.Dispose())
+            .Callback(() => Assert.True(detachAttempted));
+
         var documentPresentationFactory =
             new Mock<IWorkspaceDocumentPresentationFactory>();
 
         WorkspaceDocumentPresentation documentPresentation =
             CreateDocumentPresentation(
                 documentId,
-                originalException);
+                originalException,
+                documentView);
 
         documentPresentationFactory
             .Setup(x => x.Create(
@@ -265,6 +286,7 @@ public sealed class WorkspacePresentationTests
                 WorkspaceType.Persistent,
                 "Workspace",
                 null,
+                view,
                 workspaceId: workspaceId,
                 documentPresentationFactory: documentPresentationFactory,
                 logger: logger);
@@ -276,20 +298,32 @@ public sealed class WorkspacePresentationTests
                     documentId,
                     TestContext.Current.CancellationToken));
 
-        // Assert: preserve the original exception and failed-presentation cleanup.
+        // Assert: preserve the original exception.
         Assert.Same(originalException, thrownException);
         Assert.Empty(presentation.PresentedDocumentIds);
+
+        // Removal is attempted before disposal of the owned view.
+        view.View.Verify(
+            x => x.RemoveDocumentPresentation(documentId),
+            Times.Once);
+
+        disposableDocumentView.Verify(
+            x => x.Dispose(),
+            Times.Once);
 
         RecordedLogEntry logEntry =
             Assert.Single(logger.Entries);
 
         Assert.Equal(LogLevel.Error, logEntry.Level);
+
         Assert.Contains(
             LogMessages.WorkspacePresentationDocumentOpenSafeFailure,
             logEntry.Message);
+
         Assert.Contains(
             $"OperationCode={DiagnosticOperationCodes.WorkspacePresentationDocumentOpenFailure}",
             logEntry.Message);
+
         Assert.Contains(
             $"FailureType={nameof(InvalidOperationException)}",
             logEntry.Message);
@@ -297,10 +331,12 @@ public sealed class WorkspacePresentationTests
         Assert.DoesNotContain("{WorkspaceId}", logEntry.Message);
         Assert.DoesNotContain("{DocumentId}", logEntry.Message);
         Assert.DoesNotContain("{Description}", logEntry.Message);
-        // The logger receives no exception object or runtime workspace/document IDs.
+
         Assert.Null(logEntry.Exception);
+
         Assert.DoesNotContain(workspaceId.ToString(), logEntry.Message);
         Assert.DoesNotContain(documentId.ToString(), logEntry.Message);
+
         Assert.DoesNotContain("WorkspaceId", logEntry.Properties.Keys);
         Assert.DoesNotContain("DocumentId", logEntry.Properties.Keys);
         Assert.DoesNotContain("Description", logEntry.Properties.Keys);
@@ -316,6 +352,98 @@ public sealed class WorkspacePresentationTests
                     value?.ToString() ?? string.Empty);
             }
         }
+
+        presentation.Dispose();
+    }
+
+    [Fact]
+    public void OpenDocument_WhenViewAdditionFails_RemovesAndDisposesCreatedPresentation()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        var hostingException =
+            new InvalidOperationException(
+                "Document hosting failed.");
+
+        var documentView =
+            new Mock<IDocumentView>();
+
+        var disposableDocumentView =
+            documentView.As<IDisposable>();
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        bool detachAttempted = false;
+
+        WorkspaceDocumentPresentation documentPresentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentView: documentView);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(x => x.Create(
+                documentId, 0))
+            .Returns(documentPresentation);
+
+        view.View
+            .Setup(x => x.AddDocumentPresentation(
+                documentPresentation))
+            .Throws(hostingException);
+
+        view.View
+            .Setup(x => x.RemoveDocumentPresentation(documentId))
+            .Callback(() => detachAttempted = true)
+            .Returns(true);
+
+        disposableDocumentView
+            .Setup(x => x.Dispose())
+            .Callback(() => Assert.True(detachAttempted));
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory);
+
+        // Act
+        InvalidOperationException thrownException =
+            Assert.Throws<InvalidOperationException>(
+                () => presentation.OpenDocument(documentId));
+
+        // Assert
+        Assert.Same(hostingException, thrownException);
+
+        Assert.Empty(presentation.PresentedDocumentIds);
+        Assert.Null(presentation.ActiveDocumentId);
+
+        // The workspace view gets an opportunity to detach partial hosting.
+        view.View.Verify(
+            x => x.RemoveDocumentPresentation(documentId),
+            Times.Once);
+
+        // The owner disposes its document view exactly once.
+        disposableDocumentView.Verify(
+            x => x.Dispose(),
+            Times.Once);
+
+        documentPresentationFactory.Verify(
+            x => x.Create(
+                documentId, 0),
+            Times.Once);
+
+        // Failed presentations must not be activated.
+        view.View.Verify(
+            x => x.ActivateDocumentPresentation(documentId),
+            Times.Never);
     }
 
     [Fact]
@@ -588,6 +716,98 @@ public sealed class WorkspacePresentationTests
         view.View.Verify(
             x => x.RemoveDocumentPresentation(
                 documentId),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CloseDocumentPresentation_WhenViewRemovalThrows_StillDisposesOwnedPresentation()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        List<string> cleanupOrder = [];
+
+        var viewRemovalException =
+            new InvalidOperationException(
+                "Workspace view removal failed.");
+
+        var documentView =
+            new Mock<IDocumentView>();
+
+        documentView
+            .Setup(x => x.ClearPresentation())
+            .Callback(() => cleanupOrder.Add("presenter-clear"));
+
+        var disposableDocumentView =
+            documentView.As<IDisposable>();
+
+        disposableDocumentView
+            .Setup(x => x.Dispose())
+            .Callback(() => cleanupOrder.Add("document-view-dispose"));
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        view.View
+            .Setup(x => x.RemoveDocumentPresentation(documentId))
+            .Callback(() => cleanupOrder.Add("workspace-detach"))
+            .Throws(viewRemovalException);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        WorkspaceDocumentPresentation documentPresentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentView: documentView);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(
+                documentId, 0))
+            .Returns(documentPresentation);
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory);
+
+        await presentation.SetWorkspaceDocumentsAsync(
+            [documentId],
+            TestContext.Current.CancellationToken);
+
+        presentation.OpenDocument(documentId);
+
+        // Act
+        InvalidOperationException thrownException =
+            Assert.Throws<InvalidOperationException>(
+                () => presentation.CloseDocumentPresentation(documentId));
+
+        // Assert
+        Assert.Same(viewRemovalException, thrownException);
+
+        Assert.Empty(presentation.PresentedDocumentIds);
+        Assert.Null(presentation.ActiveDocumentId);
+
+        // Detachment was attempted before presenter/view disposal.
+        Assert.Equal(
+            [
+                "workspace-detach",
+                "presenter-clear",
+                "document-view-dispose"
+            ],
+            cleanupOrder);
+
+        disposableDocumentView.Verify(
+            x => x.Dispose(),
+            Times.Once);
+
+        view.View.Verify(
+            x => x.RemoveDocumentPresentation(documentId),
             Times.Once);
     }
 
@@ -1243,6 +1463,7 @@ public sealed class WorkspacePresentationTests
         Guid workspaceId = Guid.NewGuid();
         Guid firstDocumentId = Guid.NewGuid();
         Guid secondDocumentId = Guid.NewGuid();
+        List<string> cleanupOrder = [];
 
         var firstDocumentView =
             new Mock<IDocumentView>();
@@ -1252,6 +1473,8 @@ public sealed class WorkspacePresentationTests
 
         firstDisposableView
             .Setup(x => x.Dispose())
+            .Callback(() =>
+                cleanupOrder.Add("first-document-view-dispose"))
             .Throws(new InvalidOperationException(
                 "First document view disposal failed."));
 
@@ -1260,6 +1483,11 @@ public sealed class WorkspacePresentationTests
 
         var secondDisposableView =
             secondDocumentView.As<IDisposable>();
+
+        secondDisposableView
+            .Setup(x => x.Dispose())
+            .Callback(() =>
+                cleanupOrder.Add("second-document-view-dispose"));
 
         WorkspaceDocumentPresentation firstDocumentPresentation =
             CreateDocumentPresentation(
@@ -1286,6 +1514,10 @@ public sealed class WorkspacePresentationTests
 
         WorkspacePresentationViewHarness workspaceView =
             CreateViewHarness();
+
+        workspaceView.View
+            .Setup(x => x.ClearPresentation())
+            .Callback(() => cleanupOrder.Add("workspace-clear"));
 
         var disposableWorkspaceView =
             workspaceView.View.As<IDisposable>();
@@ -1331,6 +1563,19 @@ public sealed class WorkspacePresentationTests
 
         Assert.Empty(presentation.WorkspaceDocumentIds);
         Assert.Empty(presentation.PresentedDocumentIds);
+
+        int workspaceClearIndex =
+            cleanupOrder.IndexOf("workspace-clear");
+
+        int firstDocumentDisposeIndex =
+            cleanupOrder.IndexOf("first-document-view-dispose");
+
+        int secondDocumentDisposeIndex =
+            cleanupOrder.IndexOf("second-document-view-dispose");
+
+        Assert.True(workspaceClearIndex >= 0);
+        Assert.True(firstDocumentDisposeIndex > workspaceClearIndex);
+        Assert.True(secondDocumentDisposeIndex > firstDocumentDisposeIndex);
     }
 
     [Fact]
@@ -2931,6 +3176,159 @@ public sealed class WorkspacePresentationTests
         workspaceView.View.Verify(
             x => x.ActivateDocumentPresentation(documentId),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task OpenDocumentAsync_WhenClosedPresentationFailsAfterReplacement_DoesNotRemoveReplacement()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        Document document = Document.Create(
+            documentId,
+            "document.csv",
+            "Document",
+            "test-sha256",
+            $"Data\\{documentId}\\document.csv");
+
+        var renderStarted =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var renderRelease =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var firstDocumentView =
+            new Mock<IDocumentView>();
+
+        firstDocumentView
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                document.FileName,
+                It.IsAny<CancellationToken>()))
+            .Callback<Stream, string, CancellationToken>(
+                (_, _, _) => renderStarted.TrySetResult(true))
+            .Returns(renderRelease.Task);
+
+        var documentRepository =
+            new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        documentReader
+            .Setup(x => x.OpenReadAsync(
+                documentId,
+                document.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new MemoryStream([1, 2, 3]));
+
+        var replacementDocumentView =
+            new Mock<IDocumentView>();
+
+        WorkspaceDocumentPresentation firstPresentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentView: firstDocumentView,
+                documentRepository: documentRepository,
+                documentReader: documentReader);
+
+        WorkspaceDocumentPresentation replacementPresentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentView: replacementDocumentView);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .SetupSequence(x => x.Create(
+                documentId, 0))
+            .Returns(firstPresentation)
+            .Returns(replacementPresentation);
+
+        WorkspacePresentationViewHarness workspaceView =
+            CreateViewHarness();
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                workspaceView,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory);
+
+        // Act: begin opening the first presentation and pause during rendering.
+        Task openTask =
+            presentation.OpenDocumentAsync(
+                documentId,
+                TestContext.Current.CancellationToken);
+
+        await renderStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Close and dispose the first presentation while its render is pending.
+        Assert.True(
+            presentation.CloseDocumentPresentation(documentId));
+
+        // Create a replacement for the same document ID.
+        WorkspaceDocumentPresentation actualReplacement =
+            presentation.OpenDocument(documentId);
+
+        Assert.Same(
+            replacementPresentation,
+            actualReplacement);
+
+        // Complete the stale render. Its continuation must not remove the replacement.
+        renderRelease.TrySetResult();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => openTask);
+
+        // Assert
+        Assert.Same(
+            replacementPresentation,
+            presentation.GetDocumentPresentation(documentId));
+
+        Assert.Contains(
+            documentId,
+            presentation.PresentedDocumentIds);
+
+        Assert.Equal(
+            documentId,
+            presentation.ActiveDocumentId);
+
+        // The first presentation was disposed only by its explicit close.
+        firstDocumentView.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        // The stale failed operation must not dispose the replacement.
+        replacementDocumentView.Verify(
+            x => x.ClearPresentation(),
+            Times.Never);
+
+        // The first close is the only removal request; stale cleanup must
+        // not issue another request against the replacement's document ID.
+        workspaceView.View.Verify(
+            x => x.RemoveDocumentPresentation(documentId),
+            Times.Once);
+
+        workspaceView.View.Verify(
+            x => x.AddDocumentPresentation(replacementPresentation),
+            Times.Once);
     }
 
     [Fact]

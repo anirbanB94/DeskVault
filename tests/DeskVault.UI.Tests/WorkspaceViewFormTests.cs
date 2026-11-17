@@ -315,6 +315,101 @@ public sealed class WorkspaceViewFormTests
     }
 
     [Fact]
+    public void RemoveDocumentPresentation_WhenHostedInTabs_DetachesWithoutDisposingOwnedForm()
+    {
+        // Arrange
+        using var workspaceView = new WorkspaceViewForm();
+
+        Guid documentId = Guid.NewGuid();
+
+        var documentForm = new TestDocumentViewForm();
+
+        using WorkspaceDocumentPresentation presentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentForm);
+
+        TabControl tabControl =
+            GetControl<TabControl>(
+                workspaceView,
+                "documentTabControl");
+
+        workspaceView.AddDocumentPresentation(presentation);
+
+        TabPage tabPage =
+            Assert.Single(tabControl.TabPages.Cast<TabPage>());
+
+        Assert.Same(tabPage, documentForm.Parent);
+
+        // Act
+        bool removed =
+            workspaceView.RemoveDocumentPresentation(documentId);
+
+        // Assert
+        Assert.True(removed);
+        Assert.Empty(tabControl.TabPages);
+        Assert.Null(documentForm.Parent);
+
+        // The workspace view detached the Form but did not dispose it.
+        Assert.False(documentForm.IsDisposed);
+
+        // The owning presentation remains responsible for disposal.
+        presentation.Dispose();
+
+        Assert.True(documentForm.IsDisposed);
+    }
+
+    [Fact]
+    public void AddDocumentPresentation_WhenHostingFailsAfterParenting_RollsBackWithoutDisposingOwnedForm()
+    {
+        // Arrange
+        using var workspaceView = new WorkspaceViewForm();
+
+        Guid documentId = Guid.NewGuid();
+
+        var documentForm = new TestDocumentViewForm(
+            throwWhenParented: true);
+
+        using WorkspaceDocumentPresentation presentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentForm);
+
+        TabControl tabControl =
+            GetControl<TabControl>(
+                workspaceView,
+                "documentTabControl");
+
+        // Act
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => workspaceView.AddDocumentPresentation(
+                    presentation));
+
+        // Assert: the original hosting failure is preserved.
+        Assert.Equal(
+            "Document hosting failed.",
+            exception.Message);
+
+        // No partial tab or hosted Form remains.
+        Assert.Empty(tabControl.TabPages);
+        Assert.Null(documentForm.Parent);
+
+        // The workspace view did not dispose the Form.
+        Assert.False(documentForm.IsDisposed);
+
+        // The failed hosting attempt left no registry entry.
+        Assert.False(
+            workspaceView.RemoveDocumentPresentation(
+                documentId));
+
+        // The owning presentation remains responsible for disposal.
+        presentation.Dispose();
+
+        Assert.True(documentForm.IsDisposed);
+    }
+
+    [Fact]
     public void RemoveDocumentPresentation_WhenHostedInSidebar_RemovesGenericForm()
     {
         // Arrange
@@ -359,7 +454,6 @@ public sealed class WorkspaceViewFormTests
 
         // Assert
         Assert.True(removed);
-
         Assert.Empty(tabControl.TabPages);
 
         Assert.DoesNotContain(
@@ -367,6 +461,90 @@ public sealed class WorkspaceViewFormTests
             sidebarContentPanel.Controls.Cast<Control>());
 
         Assert.Null(documentForm.Parent);
+
+        // The hosted Form must remain alive after workspace removal.
+        Assert.False(documentForm.IsDisposed);
+
+        // Its owning presentation performs the actual disposal.
+        presentation.Dispose();
+
+        Assert.True(documentForm.IsDisposed);
+    }
+
+    [Fact]
+    public void ClearPresentation_WhenDocumentsAreHostedAcrossTabsAndSidebar_DetachesWithoutDisposingOwnedForms()
+    {
+        // Arrange
+        using var workspaceView = new WorkspaceViewForm();
+
+        Guid tabDocumentId = Guid.NewGuid();
+        Guid sidebarDocumentId = Guid.NewGuid();
+
+        var tabDocumentForm = new TestDocumentViewForm();
+        var sidebarDocumentForm = new TestDocumentViewForm();
+
+        using WorkspaceDocumentPresentation tabPresentation =
+            CreateDocumentPresentation(
+                tabDocumentId,
+                tabDocumentForm);
+
+        using WorkspaceDocumentPresentation sidebarPresentation =
+            CreateDocumentPresentation(
+                sidebarDocumentId,
+                sidebarDocumentForm);
+
+        TabControl tabControl =
+            GetControl<TabControl>(
+                workspaceView,
+                "documentTabControl");
+
+        Panel sidebarContentPanel =
+            GetControl<Panel>(
+                workspaceView,
+                "documentSidebarContentPanel");
+
+        workspaceView.AddDocumentPresentation(tabPresentation);
+        workspaceView.AddDocumentPresentation(sidebarPresentation);
+
+        // Move one document into Sidebar while keeping the other in Tabs.
+        Assert.True(
+            workspaceView.ActivateDocumentPresentation(
+                sidebarDocumentId));
+
+        workspaceView.SetNavigationMode(
+            WorkspacePresentationNavigationMode.Sidebar);
+
+        Assert.Contains(
+            tabDocumentForm,
+            tabControl.TabPages
+                .Cast<TabPage>()
+                .SelectMany(page => page.Controls.OfType<Form>()));
+
+        Assert.Same(
+            sidebarContentPanel,
+            sidebarDocumentForm.Parent);
+
+        // Act
+        workspaceView.ClearPresentation();
+
+        // Assert: all workspace-owned containers are cleared.
+        Assert.Empty(tabControl.TabPages);
+        Assert.Empty(sidebarContentPanel.Controls);
+
+        // Both document Forms are detached.
+        Assert.Null(tabDocumentForm.Parent);
+        Assert.Null(sidebarDocumentForm.Parent);
+
+        // Neither Form was disposed by the workspace view.
+        Assert.False(tabDocumentForm.IsDisposed);
+        Assert.False(sidebarDocumentForm.IsDisposed);
+
+        // The individual presentation owners remain responsible for disposal.
+        tabPresentation.Dispose();
+        sidebarPresentation.Dispose();
+
+        Assert.True(tabDocumentForm.IsDisposed);
+        Assert.True(sidebarDocumentForm.IsDisposed);
     }
 
     private static string[] GetWorkspaceMenuItemNames(
@@ -496,6 +674,25 @@ public sealed class WorkspaceViewFormTests
         Form,
         IDocumentView
     {
+        private readonly bool _throwWhenParented;
+
+        public TestDocumentViewForm(
+            bool throwWhenParented = false)
+        {
+            _throwWhenParented = throwWhenParented;
+        }
+
+        protected override void OnParentChanged(EventArgs e)
+        {
+            base.OnParentChanged(e);
+
+            if (_throwWhenParented && Parent is not null)
+            {
+                throw new InvalidOperationException(
+                    "Document hosting failed.");
+            }
+        }
+
         public event EventHandler OpenExternallyRequested
         {
             add { }
