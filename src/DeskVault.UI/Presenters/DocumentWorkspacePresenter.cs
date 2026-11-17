@@ -38,8 +38,6 @@ public sealed class DocumentWorkspacePresenter :
     private int _sessionRevocationCleanupQueued;
     private readonly long _securitySessionRevision;
 
-    public Guid WorkspaceId { get; }
-
     public Guid? CurrentDocumentId =>
         HasAuthorizedCurrentDocument()
             ? _currentDocument?.Id
@@ -58,7 +56,6 @@ public sealed class DocumentWorkspacePresenter :
     public event EventHandler DocumentRemoved = null!;
 
     public DocumentWorkspacePresenter(
-        Guid workspaceId,
         IDocumentView view,
         IDocumentViewer documentViewer,
         GetDocumentHandler getDocumentHandler,
@@ -76,7 +73,6 @@ public sealed class DocumentWorkspacePresenter :
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(applicationSecuritySession);
 
-        WorkspaceId = workspaceId;
         _view = view;
         _documentViewer = documentViewer;
         _getDocumentHandler = getDocumentHandler;

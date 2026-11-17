@@ -44,6 +44,10 @@ public partial class MainForm : Form, IMainFormView
 
         InitializeComponent();
 
+        unlockButton.ForeColor = SystemInformation.HighContrast
+            ? SystemColors.HighlightText
+            : Color.White;
+
         statusStrip.Renderer = new UnlockActionToolStripRenderer(unlockButton);
 
         _applicationInfo = applicationInfo;

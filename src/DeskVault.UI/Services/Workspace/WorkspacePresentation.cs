@@ -592,7 +592,6 @@ public sealed class WorkspacePresentation : IDisposable
 
         WorkspaceDocumentPresentation presentation =
             _documentPresentationFactory.Create(
-                WorkspaceId,
                 documentId,
                 _securitySessionRevision);
 

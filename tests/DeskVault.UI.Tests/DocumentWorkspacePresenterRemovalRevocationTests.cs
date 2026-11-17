@@ -84,7 +84,6 @@ public sealed class DocumentWorkspacePresenterRemovalRevocationTests
             .Returns(() => currentSnapshot);
 
         var presenter = new DocumentWorkspacePresenter(
-            Guid.NewGuid(),
             view.Object,
             documentViewer.Object,
             new GetDocumentHandler(

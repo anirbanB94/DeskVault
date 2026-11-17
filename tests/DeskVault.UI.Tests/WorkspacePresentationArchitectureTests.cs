@@ -1,5 +1,7 @@
 using DeskVault.Domain.Workspaces;
 using DeskVault.UI.Forms;
+using DeskVault.UI.Presenters;
+using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
 using DeskVault.UI.Views;
 using System.Reflection;
@@ -291,6 +293,126 @@ public sealed class WorkspacePresentationArchitectureTests
         Assert.DoesNotContain(
             memberSignatureTypes,
             ReferencesDocumentViewForm);
+    }
+
+    [Fact]
+    public void DocumentWorkspacePresenter_DoesNotOwnWorkspaceIdentityOrLifecycleOperations()
+    {
+        // Arrange
+        Type presenterType =
+            typeof(DocumentWorkspacePresenter);
+
+        PropertyInfo? workspaceId =
+            presenterType.GetProperty(
+                "WorkspaceId",
+                PublicInstanceProperties);
+
+        ConstructorInfo constructor =
+            Assert.Single(
+                presenterType.GetConstructors(
+                    BindingFlags.Instance |
+                    BindingFlags.Public));
+
+        string[] constructorParameterNames =
+            constructor.GetParameters()
+                .Select(parameter => parameter.Name!)
+                .ToArray();
+
+        string[] publicMethodNames =
+            presenterType.GetMethods(
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.DeclaredOnly)
+                .Select(method => method.Name)
+                .ToArray();
+
+        string[] publicEventNames =
+            presenterType.GetEvents(
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.DeclaredOnly)
+                .Select(@event => @event.Name)
+                .ToArray();
+
+        // Assert
+        Assert.Null(workspaceId);
+
+        Assert.DoesNotContain(
+            "workspaceId",
+            constructorParameterNames);
+
+        Assert.DoesNotContain(
+            "Activate",
+            publicMethodNames);
+
+        Assert.DoesNotContain(
+            "CloseWorkspace",
+            publicMethodNames);
+
+        Assert.DoesNotContain(
+            "CloseWorkspaceRequested",
+            publicEventNames);
+    }
+
+    [Fact]
+    public void WorkspaceDocumentPresentationFactory_CreateContractDoesNotAcceptWorkspaceIdentity()
+    {
+        // Arrange
+        Type[] factoryTypes =
+        [
+            typeof(IWorkspaceDocumentPresentationFactory),
+            typeof(WorkspaceDocumentPresentationFactory)
+        ];
+
+        // Act and Assert
+        foreach (Type factoryType in factoryTypes)
+        {
+            MethodInfo createMethod =
+                factoryType.GetMethod(
+                    nameof(IWorkspaceDocumentPresentationFactory.Create),
+                    BindingFlags.Instance |
+                    BindingFlags.Public)!;
+
+            Assert.NotNull(createMethod);
+
+            ParameterInfo[] parameters =
+                createMethod.GetParameters();
+
+            Assert.Equal(
+                new[]
+                {
+                    "documentId",
+                    "securitySessionRevision"
+                },
+                parameters.Select(parameter => parameter.Name));
+
+            Assert.Equal(
+                new[]
+                {
+                    typeof(Guid),
+                    typeof(long)
+                },
+                parameters.Select(parameter => parameter.ParameterType));
+        }
+    }
+
+    [Fact]
+    public void WorkspaceDocumentPresentation_DoesNotExposeActivationForwardingApi()
+    {
+        // Arrange
+        Type presentationType =
+            typeof(WorkspaceDocumentPresentation);
+
+        // Act
+        MethodInfo? activateMethod =
+            presentationType.GetMethod(
+                "Activate",
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.DeclaredOnly);
+
+        // Assert
+        Assert.Null(activateMethod);
     }
 
     private static bool ReferencesDocumentViewForm(Type type)

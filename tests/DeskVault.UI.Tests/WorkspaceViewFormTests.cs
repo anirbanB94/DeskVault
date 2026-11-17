@@ -478,7 +478,6 @@ public sealed class WorkspaceViewFormTests
 
         var presenter =
             new DocumentWorkspacePresenter(
-                Guid.NewGuid(),
                 documentView,
                 new Mock<IDocumentViewer>().Object,
                 getDocumentHandler,

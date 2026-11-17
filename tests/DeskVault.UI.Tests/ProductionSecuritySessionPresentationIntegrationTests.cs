@@ -383,7 +383,6 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId,
                 owningSnapshot.Revision))
             .Returns(childPresentation);
@@ -601,7 +600,6 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
                 NullLogger<RemoveDocumentHandler>.Instance);
 
         return new DocumentWorkspacePresenter(
-            Guid.NewGuid(),
             view,
             new Mock<IDocumentViewer>().Object,
             getDocumentHandler,

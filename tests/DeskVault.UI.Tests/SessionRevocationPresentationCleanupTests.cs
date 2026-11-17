@@ -73,7 +73,6 @@ public sealed class SessionRevocationPresentationCleanupTests
             .Returns(() => currentSnapshot);
 
         var presenter = new DocumentWorkspacePresenter(
-            Guid.NewGuid(),
             view.Object,
             documentViewer.Object,
             new GetDocumentHandler(

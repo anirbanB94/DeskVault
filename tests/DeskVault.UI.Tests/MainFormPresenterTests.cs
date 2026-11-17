@@ -2120,7 +2120,6 @@ public sealed class MainFormPresenterTests
 
         var workspacePresenter =
             new DocumentWorkspacePresenter(
-                workspaceId,
                 workspaceView.Object,
                 documentViewer.Object,
                 getDocumentHandler,
@@ -2141,7 +2140,6 @@ public sealed class MainFormPresenterTests
 
         documentPresentationFactory
             .Setup(x => x.Create(
-                workspaceId,
                 documentId,
                 0L))
             .Returns(documentPresentation);

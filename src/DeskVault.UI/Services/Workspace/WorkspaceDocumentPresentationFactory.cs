@@ -52,7 +52,6 @@ public sealed class WorkspaceDocumentPresentationFactory :
     }
 
     public WorkspaceDocumentPresentation Create(
-        Guid workspaceId,
         Guid documentId,
         long securitySessionRevision)
     {
@@ -63,7 +62,6 @@ public sealed class WorkspaceDocumentPresentationFactory :
 
         var presenter =
             new DocumentWorkspacePresenter(
-                workspaceId,
                 view,
                 _documentViewer,
                 _getDocumentHandler,
