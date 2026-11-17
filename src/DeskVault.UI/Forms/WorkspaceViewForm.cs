@@ -286,13 +286,9 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             return;
         }
 
-        if (presentation.View is not DocumentViewForm documentView)
-        {
-            throw new InvalidOperationException(
-                "Workspace document presentation must use a DocumentViewForm.");
-        }
+        Form documentForm = presentation.HostedForm;
 
-        PrepareDocumentView(documentView);
+        PrepareDocumentView(documentForm);
 
         string fileName =
             presentation.FileName ??
@@ -305,7 +301,7 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             UseVisualStyleBackColor = true
         };
 
-        tabPage.Controls.Add(documentView);
+        tabPage.Controls.Add(documentForm);
 
         _documentTabs.Add(
             presentation.DocumentId,
@@ -325,22 +321,22 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             return false;
         }
 
-        DocumentViewForm? documentView =
+        Form? documentForm =
             tabPage.Controls
-                .OfType<DocumentViewForm>()
+                .OfType<Form>()
                 .FirstOrDefault();
 
         if (_sidebarDocumentId == documentId)
         {
-            documentView =
+            documentForm =
                 documentSidebarContentPanel.Controls
-                    .OfType<DocumentViewForm>()
+                    .OfType<Form>()
                     .FirstOrDefault();
 
-            if (documentView is not null)
+            if (documentForm is not null)
             {
                 documentSidebarContentPanel.Controls.Remove(
-                    documentView);
+                    documentForm);
             }
 
             _sidebarDocumentId = null;
@@ -350,7 +346,7 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             tabPage);
 
         tabPage.Dispose();
-        documentView?.Dispose();
+        documentForm?.Dispose();
 
         UpdateEmptyStateVisibility();
 
@@ -533,14 +529,14 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
     }
 
     private void PrepareDocumentView(
-        DocumentViewForm documentView)
+        Form documentForm)
     {
-        documentView.TopLevel = false;
-        documentView.FormBorderStyle = FormBorderStyle.None;
-        documentView.Dock = DockStyle.Fill;
-        documentView.ShowInTaskbar = false;
-        documentView.Visible = false;
-        documentView.Show();
+        documentForm.TopLevel = false;
+        documentForm.FormBorderStyle = FormBorderStyle.None;
+        documentForm.Dock = DockStyle.Fill;
+        documentForm.ShowInTaskbar = false;
+        documentForm.Visible = false;
+        documentForm.Show();
     }
 
     private void ShowDocumentInTabs(Guid documentId)
@@ -554,12 +550,12 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
 
         MoveSidebarDocumentBackToTab();
 
-        DocumentViewForm? requestedDocumentView =
+        Form? requestedDocumentForm =
             requestedTab.Controls
-                .OfType<DocumentViewForm>()
+                .OfType<Form>()
                 .FirstOrDefault();
 
-        if (requestedDocumentView is null)
+        if (requestedDocumentForm is null)
         {
             return;
         }
@@ -576,7 +572,7 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             }
         }
 
-        requestedDocumentView.Visible = true;
+        requestedDocumentForm.Visible = true;
         documentTabControl.SelectedTab = requestedTab;
     }
 
@@ -596,26 +592,26 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
 
         MoveSidebarDocumentBackToTab();
 
-        DocumentViewForm? requestedDocumentView =
+        Form? requestedDocumentForm =
             requestedTab.Controls
-                .OfType<DocumentViewForm>()
+                .OfType<Form>()
                 .FirstOrDefault();
 
-        if (requestedDocumentView is null)
+        if (requestedDocumentForm is null)
         {
             return;
         }
 
         requestedTab.Controls.Remove(
-            requestedDocumentView);
+            requestedDocumentForm);
 
         documentSidebarContentPanel.Controls.Add(
-            requestedDocumentView);
+            requestedDocumentForm);
 
-        requestedDocumentView.Dock =
+        requestedDocumentForm.Dock =
             DockStyle.Fill;
 
-        requestedDocumentView.Visible = true;
+        requestedDocumentForm.Visible = true;
 
         _sidebarDocumentId = documentId;
 
@@ -644,27 +640,27 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             return;
         }
 
-        DocumentViewForm? sidebarDocumentView =
+        Form? sidebarDocumentForm =
             documentSidebarContentPanel.Controls
-                .OfType<DocumentViewForm>()
+                .OfType<Form>()
                 .FirstOrDefault();
 
-        if (sidebarDocumentView is null)
+        if (sidebarDocumentForm is null)
         {
             _sidebarDocumentId = null;
             return;
         }
 
         documentSidebarContentPanel.Controls.Remove(
-            sidebarDocumentView);
+            sidebarDocumentForm);
 
         sidebarTab.Controls.Add(
-            sidebarDocumentView);
+            sidebarDocumentForm);
 
-        sidebarDocumentView.Dock =
+        sidebarDocumentForm.Dock =
             DockStyle.Fill;
 
-        sidebarDocumentView.Visible = true;
+        sidebarDocumentForm.Visible = true;
 
         _sidebarDocumentId = null;
     }

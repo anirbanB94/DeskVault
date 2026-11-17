@@ -31,6 +31,13 @@ public sealed class WorkspacePresentationArchitectureTests
         nameof(WorkspacePresentation.ActiveDocumentId)
     ];
 
+    private const BindingFlags DeclaredInstanceMembers =
+        BindingFlags.Instance |
+        BindingFlags.Static |
+        BindingFlags.Public |
+        BindingFlags.NonPublic |
+        BindingFlags.DeclaredOnly;
+
     [Fact]
     public void WorkspacePresentation_OwnsWorkspaceIdentityAndType()
     {
@@ -202,6 +209,107 @@ public sealed class WorkspacePresentationArchitectureTests
                 propertyName,
                 actualPropertyNames);
         }
+    }
+
+    [Fact]
+    public void WorkspaceDocumentPresentation_ExposesSeparateDocumentAndHostingContracts()
+    {
+        // Arrange
+        Type presentationType =
+            typeof(WorkspaceDocumentPresentation);
+
+        PropertyInfo documentView =
+            GetPublicProperty(
+                presentationType,
+                nameof(WorkspaceDocumentPresentation.View));
+
+        PropertyInfo hostedForm =
+            GetPublicProperty(
+                presentationType,
+                nameof(WorkspaceDocumentPresentation.HostedForm));
+
+        // Assert
+        Assert.Equal(
+            typeof(IDocumentView),
+            documentView.PropertyType);
+
+        AssertReadOnly(documentView);
+
+        Assert.Equal(
+            typeof(Form),
+            hostedForm.PropertyType);
+
+        AssertReadOnly(hostedForm);
+    }
+
+    [Fact]
+    public void WorkspaceViewForm_MemberSignaturesDoNotExposeDocumentViewForm()
+    {
+        // Arrange
+        Type workspaceViewFormType =
+            typeof(WorkspaceViewForm);
+
+        Type[] memberSignatureTypes =
+        [
+            .. workspaceViewFormType
+                .GetFields(DeclaredInstanceMembers)
+                .Select(field => field.FieldType),
+
+            .. workspaceViewFormType
+                .GetProperties(DeclaredInstanceMembers)
+                .SelectMany(property =>
+                    new[]
+                    {
+                        property.PropertyType
+                    }.Concat(
+                        property.GetIndexParameters()
+                            .Select(parameter => parameter.ParameterType))),
+
+            .. workspaceViewFormType
+                .GetMethods(DeclaredInstanceMembers)
+                .SelectMany(method =>
+                    new[]
+                    {
+                        method.ReturnType
+                    }.Concat(
+                        method.GetParameters()
+                            .Select(parameter => parameter.ParameterType))),
+
+            .. workspaceViewFormType
+                .GetConstructors(DeclaredInstanceMembers)
+                .SelectMany(constructor =>
+                    constructor.GetParameters()
+                        .Select(parameter => parameter.ParameterType)),
+
+            .. workspaceViewFormType
+                .GetEvents(DeclaredInstanceMembers)
+                .Where(@event => @event.EventHandlerType is not null)
+                .Select(@event => @event.EventHandlerType!)
+        ];
+
+        // Assert
+        Assert.DoesNotContain(
+            memberSignatureTypes,
+            ReferencesDocumentViewForm);
+    }
+
+    private static bool ReferencesDocumentViewForm(Type type)
+    {
+        if (type == typeof(DocumentViewForm))
+        {
+            return true;
+        }
+
+        if (type.HasElementType &&
+            type.GetElementType() is Type elementType &&
+            ReferencesDocumentViewForm(elementType))
+        {
+            return true;
+        }
+
+        return type.IsGenericType &&
+            type.GetGenericArguments()
+                .Any(ReferencesDocumentViewForm);
     }
 
     private static PropertyInfo GetPublicProperty(

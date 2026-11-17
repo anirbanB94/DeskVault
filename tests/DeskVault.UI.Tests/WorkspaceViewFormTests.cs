@@ -1,6 +1,17 @@
+using DeskVault.Application.Configurations;
+using DeskVault.Application.Documents.Commands.RemoveDocument;
+using DeskVault.Application.Documents.Queries.GetDocument;
+using DeskVault.Application.Documents.Queries.OpenDocument;
+using DeskVault.Application.Interfaces;
+using DeskVault.Application.Security.Sessions;
 using DeskVault.UI.Forms;
+using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
+using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
+using DeskVault.UI.Views;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using System.Reflection;
 
 namespace DeskVault.UI.Tests;
@@ -224,6 +235,140 @@ public sealed class WorkspaceViewFormTests
             observedRequests);
     }
 
+    [Fact]
+    public void AddActivateAndMoveDocumentPresentation_UsesSameGenericFormInstanceAcrossTabsAndSidebar()
+    {
+        // Arrange
+        using var workspaceView = new WorkspaceViewForm();
+
+        Guid documentId = Guid.NewGuid();
+
+        var documentForm = new TestDocumentViewForm();
+
+        using WorkspaceDocumentPresentation presentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentForm);
+
+        TabControl tabControl =
+            GetControl<TabControl>(
+                workspaceView,
+                "documentTabControl");
+
+        Panel sidebarContentPanel =
+            GetControl<Panel>(
+                workspaceView,
+                "documentSidebarContentPanel");
+
+        // Act
+        workspaceView.AddDocumentPresentation(presentation);
+
+        TabPage tabPage =
+            Assert.Single(
+                tabControl.TabPages.Cast<TabPage>());
+
+        // Assert: initial tab hosting uses the generic Form instance.
+        Assert.Same(
+            documentForm,
+            Assert.Single(
+                tabPage.Controls.OfType<Form>()));
+
+        Assert.Same(
+            documentForm,
+            presentation.HostedForm);
+
+        Assert.Same(
+            tabPage,
+            documentForm.Parent);
+
+        // Act: activate and move the document into sidebar hosting.
+        Assert.True(
+            workspaceView.ActivateDocumentPresentation(
+                documentId));
+
+        workspaceView.SetNavigationMode(
+            WorkspacePresentationNavigationMode.Sidebar);
+
+        // Assert: the same Form instance is hosted in the sidebar.
+        Assert.Same(
+            documentForm,
+            Assert.Single(
+                sidebarContentPanel.Controls.OfType<Form>()));
+
+        Assert.Same(
+            sidebarContentPanel,
+            documentForm.Parent);
+
+        // Act: return to tab hosting.
+        workspaceView.SetNavigationMode(
+            WorkspacePresentationNavigationMode.Tabs);
+
+        // Assert: the original Form instance returns to the original tab.
+        Assert.Same(
+            documentForm,
+            Assert.Single(
+                tabPage.Controls.OfType<Form>()));
+
+        Assert.Same(
+            tabPage,
+            documentForm.Parent);
+    }
+
+    [Fact]
+    public void RemoveDocumentPresentation_WhenHostedInSidebar_RemovesGenericForm()
+    {
+        // Arrange
+        using var workspaceView = new WorkspaceViewForm();
+
+        Guid documentId = Guid.NewGuid();
+
+        var documentForm = new TestDocumentViewForm();
+
+        using WorkspaceDocumentPresentation presentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentForm);
+
+        TabControl tabControl =
+            GetControl<TabControl>(
+                workspaceView,
+                "documentTabControl");
+
+        Panel sidebarContentPanel =
+            GetControl<Panel>(
+                workspaceView,
+                "documentSidebarContentPanel");
+
+        workspaceView.AddDocumentPresentation(presentation);
+
+        Assert.True(
+            workspaceView.ActivateDocumentPresentation(
+                documentId));
+
+        workspaceView.SetNavigationMode(
+            WorkspacePresentationNavigationMode.Sidebar);
+
+        Assert.Same(
+            sidebarContentPanel,
+            documentForm.Parent);
+
+        // Act
+        bool removed =
+            workspaceView.RemoveDocumentPresentation(
+                documentId);
+
+        // Assert
+        Assert.True(removed);
+
+        Assert.Empty(tabControl.TabPages);
+
+        Assert.DoesNotContain(
+            documentForm,
+            sidebarContentPanel.Controls.Cast<Control>());
+
+        Assert.Null(documentForm.Parent);
+    }
+
     private static string[] GetWorkspaceMenuItemNames(
         WorkspaceViewForm form)
     {
@@ -284,5 +429,138 @@ public sealed class WorkspaceViewFormTests
         Assert.NotNull(menuItem);
 
         return menuItem!;
+    }
+
+    private static WorkspaceDocumentPresentation CreateDocumentPresentation(
+        Guid documentId,
+        TestDocumentViewForm documentView)
+    {
+        var documentRepository =
+            new Mock<IDocumentRepository>();
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var getDocumentHandler =
+            new GetDocumentHandler(
+                documentRepository.Object,
+                NullLogger<GetDocumentHandler>.Instance);
+
+        var openDocumentHandler =
+            new OpenDocumentHandler(
+                documentRepository.Object,
+                documentReader.Object,
+                new DocumentProcessingOptions(),
+                NullLogger<OpenDocumentHandler>.Instance);
+
+        var removeDocumentHandler =
+            new RemoveDocumentHandler(
+                documentRepository.Object,
+                workspaceRepository.Object,
+                storageService.Object,
+                NullLogger<RemoveDocumentHandler>.Instance);
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    0));
+
+        var presenter =
+            new DocumentWorkspacePresenter(
+                Guid.NewGuid(),
+                documentView,
+                new Mock<IDocumentViewer>().Object,
+                getDocumentHandler,
+                openDocumentHandler,
+                removeDocumentHandler,
+                NullLogger<DocumentWorkspacePresenter>.Instance,
+                securitySession.Object);
+
+        return new WorkspaceDocumentPresentation(
+            documentId,
+            presenter,
+            documentView);
+    }
+
+    private sealed class TestDocumentViewForm :
+        Form,
+        IDocumentView
+    {
+        public event EventHandler OpenExternallyRequested
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler DocumentInformationRequested
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler RemoveDocumentRequested
+        {
+            add { }
+            remove { }
+        }
+
+        public Task ShowDocumentAsync(
+            Stream documentStream,
+            string fileName,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public void ShowUnsupportedPreview(
+            string message)
+        {
+        }
+
+        public void ShowDocumentInformation(
+            string displayName,
+            string fileName,
+            string fileType,
+            DateTime importedAt,
+            string status,
+            string sha256Hash,
+            long expectedSessionRevision = 0)
+        {
+        }
+
+        public bool ConfirmRemoval(
+            string fileName,
+            long expectedSessionRevision = 0)
+        {
+            return false;
+        }
+
+        public void ClearPresentation()
+        {
+        }
+
+        public void PostToUi(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            action();
+        }
+
+        public void ShowError(
+            string message,
+            string title,
+            long expectedSessionRevision = 0)
+        {
+        }
     }
 }

@@ -4,7 +4,9 @@ using DeskVault.Application.Documents.Queries.GetDocument;
 using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Sessions;
+using DeskVault.UI.Forms;
 using DeskVault.UI.Presenters;
+using DeskVault.UI.Rendering;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
 using DeskVault.UI.Views;
@@ -75,6 +77,57 @@ public sealed class WorkspaceDocumentPresentationTests
                 Guid.NewGuid(),
                 presenter,
                 null!));
+    }
+
+    [Fact]
+    public void HostedForm_ReturnsSameInstanceAsDocumentView()
+    {
+        // Arrange
+        var view = new DocumentViewForm(
+            new Mock<IDocumentContentRendererResolver>().Object,
+            new Mock<ISessionBoundDialogCoordinator>().Object);
+
+        using WorkspaceDocumentPresentation presentation =
+            new(
+                Guid.NewGuid(),
+                CreatePresenter(view),
+                view);
+
+        // Act
+        Form hostedForm = presentation.HostedForm;
+
+        // Assert
+        Assert.Same(view, presentation.View);
+        Assert.Same(view, hostedForm);
+
+        Assert.Equal(
+            typeof(Form),
+            typeof(WorkspaceDocumentPresentation)
+                .GetProperty(nameof(WorkspaceDocumentPresentation.HostedForm))!
+                .PropertyType);
+    }
+
+    [Fact]
+    public void HostedForm_ThrowsWhenDocumentViewDoesNotProvideFormHostingSurface()
+    {
+        // Arrange
+        var view = new Mock<IDocumentView>();
+
+        using WorkspaceDocumentPresentation presentation =
+            new(
+                Guid.NewGuid(),
+                CreatePresenter(view.Object),
+                view.Object);
+
+        // Act
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => _ = presentation.HostedForm);
+
+        // Assert
+        Assert.Contains(
+            "WinForms Form hosting surface",
+            exception.Message);
     }
 
     [Fact]
