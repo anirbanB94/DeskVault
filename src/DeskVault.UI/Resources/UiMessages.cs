@@ -228,11 +228,11 @@ public static class UiMessages
 
     // Document workspace presentation
 
-    public const string DocumentWorkspaceTitle =
-        "Document Workspace";
+    public const string DocumentViewTitle =
+        "Document";
 
-    public const string DocumentWorkspaceMetadata =
-        "Document Workspace";
+    public const string DocumentActionsButton =
+        "⋯";
 
     public const string DocumentWorkspaceFallbackName =
         "Document";
@@ -251,9 +251,6 @@ public static class UiMessages
 
     public const string AiButton =
         "AI";
-
-    public const string AddRelatedDocuments =
-        "Add Related Documents";
 
     public const string DocumentInformation =
         "Document Information";

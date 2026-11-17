@@ -20,11 +20,27 @@ The UI should also preserve clear responsibilities between the document library,
 
 ## Decision
 
-DeskVault will introduce a dedicated **in-app document workspace** represented by `DocumentViewForm`.
+DeskVault will implement an application-managed document workspace
+presentation represented by `WorkspaceViewForm`.
 
-`MainForm` will remain responsible for the document library and document-management workflow.
+`WorkspaceViewForm` owns the surrounding workspace presentation, including
+workspace or temporary-document identity, workspace navigation, contextual
+workspace/document actions, and the hosting arrangement for document
+presentations.
 
-Opening a document from `MainForm` will open the document inside DeskVault rather than launching the document through the operating system's default external application.
+`DocumentViewForm` remains the document-specific presentation surface. It
+receives document content through the existing document presentation
+boundary and is responsible for rendering that content, presenting
+unsupported-format feedback, and exposing document-specific presentation
+requests. It does not own the surrounding workspace identity, navigation,
+workspace menu, or workspace lifecycle.
+
+`MainForm` will remain responsible for the document library and
+document-management workflow.
+
+Opening a document from `MainForm` will open the document inside DeskVault
+rather than launching the document through the operating system's default
+external application.
 
 The intended UI structure is:
 
@@ -32,20 +48,28 @@ The intended UI structure is:
 LoginForm
     ↓
 MainForm
-    │
     ├── Document library
     ├── Import
     └── Document selection
             ↓
-      DocumentViewForm
-            ├── Document content
-            ├── Document information
-            └── AI assistant workspace
+      Managed Workspace Presentation
+            ↓
+      WorkspaceViewForm
+            ├── Workspace/document identity
+            ├── Workspace navigation
+            ├── Workspace/document action menu
+            ├── Adaptive AI presentation boundary
+            └── Active DocumentViewForm
+                    ├── Document content
+                    ├── Unsupported-format preview
+                    └── Explicit external-open action
 ```
 
-`MainForm` will serve as the primary application shell rather than being limited to the document list.
+`MainForm` will serve as the primary application shell rather than being
+limited to the document list.
 
-The application shell will use a left navigation rail for major application areas such as:
+The application shell will use a left navigation rail for major application
+areas such as:
 
 ```text
 Documents
@@ -55,15 +79,27 @@ Search
 Settings
 ```
 
-The document workspace presentation can represent either a temporary single-document session or a persistent workspace containing multiple documents.
+A workspace presentation can represent either a temporary single-document
+session or a persistent workspace containing multiple documents.
 
-A temporary document session is created when a document is opened directly from the document library. A persistent workspace can contain multiple document members and presents those documents through the same workspace presentation.
+A temporary document session is created when a document is opened directly
+from the document library. A persistent workspace can contain multiple
+document members and presents those documents through the same managed
+workspace presentation boundary.
 
-The document workspace will use a hybrid layout in which the document remains the primary content area and the AI assistant is presented as a collapsible side panel.
+`WorkspaceViewForm` provides the surrounding workspace interaction model.
+For a temporary presentation, it displays the current document identity and
+exposes the applicable document-level actions. For a persistent workspace,
+it displays workspace identity and exposes workspace-management actions and
+document navigation.
 
-The AI assistant panel will adapt to the available screen space. On larger screens it may remain visible alongside the document, while on smaller screens it may collapse and be opened when required.
+The active `DocumentViewForm` provides the document content surface. The
+workspace presentation and its presenter coordinate document selection,
+document-specific requests, and workspace lifecycle without transferring
+workspace ownership to the document view.
 
-The document workspace will be designed so that the initial one-document model can scale to multiple related documents for future AI processing.
+The document workspace will be designed so that the initial one-document
+model can scale to multiple related documents for future AI processing.
 
 A workspace may initially contain:
 
@@ -80,19 +116,31 @@ Related Document
 Related Document
 ```
 
-Related documents may be added ad hoc to the current workspace and, in a future implementation, the group may be saved as a named workspace or collection.
+Related documents may be added ad hoc to the current workspace and, in a
+future implementation, the group may be saved as a named workspace or
+collection.
 
-The document workspace itself will remain distinct from the AI context so that future retrieval and AI processing can operate over a group of related documents without changing the fundamental document model.
+The document workspace itself will remain distinct from the AI context so
+that future retrieval and AI processing can operate over a group of related
+documents without changing the fundamental document model.
 
-Each primary document may have its own application-managed `DocumentViewForm`.
+Each primary document may have its own application-managed document
+presentation represented by `DocumentViewForm`.
 
-If a user attempts to open a document that already has an active workspace, DeskVault should activate the existing workspace rather than create a duplicate workspace for the same document.
+If a user attempts to open a document that already has an active workspace,
+DeskVault should activate the existing workspace rather than create a
+duplicate workspace for the same document.
 
-The application will not adopt MDI as a mandatory architectural requirement at this stage. The workspace model should remain independent of the eventual window-management strategy.
+The application will not adopt MDI as a mandatory architectural requirement
+at this stage. The workspace model should remain independent of the eventual
+window-management strategy.
 
-Document rendering will be designed around a scalable rendering boundary rather than placing format-specific rendering logic directly inside `DocumentViewForm`.
+Document rendering will be designed around a scalable rendering boundary
+rather than placing format-specific rendering logic directly inside
+`DocumentViewForm`.
 
-The initial implementation should prioritize simple in-app rendering for formats such as:
+The initial implementation should prioritize simple in-app rendering for
+formats such as:
 
 ```text
 TXT
@@ -100,13 +148,21 @@ MD
 CSV
 ```
 
-Additional renderers, such as PDF and DOCX rendering, can be introduced independently as the application evolves.
+Additional renderers, such as PDF and DOCX rendering, can be introduced
+independently as the application evolves.
 
-Formats that do not yet have an appropriate in-app renderer use the explicit user-controlled external-open action.
+Formats that do not yet have an appropriate in-app renderer use the
+explicit user-controlled external-open action exposed by the document
+presentation.
 
-The AI assistant area will initially provide the structural foundation for future functionality. It will not imply that AI analysis, retrieval, or RAG functionality is already implemented.
+The AI assistant area will initially provide the structural foundation for
+future functionality. It will not imply that AI analysis, retrieval, or RAG
+functionality is already implemented.
 
-Future AI capabilities may operate over the primary document and its related documents as a shared processing and retrieval context.
+Future AI capabilities may operate over the primary document and its
+related documents as a shared processing and retrieval context. The
+workspace-level AI presentation belongs to the workspace presentation
+rather than to the document renderer or document-content view.
 
 ## MVP 1 Scope Boundary
 
@@ -120,12 +176,19 @@ The current workspace presentation provides:
 
 ```text
 Workspace Presentation
-├── Workspace / document identity
-├── Document presentation
-├── Multiple document presentation where applicable
-├── Document information
-├── Workspace/document actions
-└── Adaptive AI presentation boundary
+├── WorkspacePresentation
+├── WorkspaceViewForm
+│   ├── Workspace / document identity
+│   ├── Workspace navigation
+│   ├── Workspace/document contextual actions
+│   ├── Tabs or Sidebar hosting
+│   └── Adaptive AI presentation boundary
+└── Document Presentation
+    ├── DocumentWorkspacePresenter
+    └── DocumentViewForm
+        ├── Document content
+        ├── Unsupported-format preview
+        └── Document-specific presentation requests
 ```
 
 Current workspace interaction includes:
@@ -134,20 +197,28 @@ Current workspace interaction includes:
 - persistent workspaces containing multiple documents
 - Tabs as the default persistent-workspace navigation mode
 - Sidebar as an alternative persistent-workspace navigation mode
-- activation of existing workspace presentations instead of duplicate presentation
+- activation of existing workspace presentations instead of duplicate
+  presentation
 - closing a document presentation without removing workspace membership
 - reopening a workspace member after its presentation has been closed
 - explicit Save as Workspace conversion from a temporary session
 - workspace-level add/remove/details/delete actions for persistent workspaces
+- document-specific information and removal requests routed through the
+  active document presentation
 
-Functional AI processing, Recent activity implementation, workspace recovery,
-PDF/DOCX in-app rendering, and other future knowledge-work capabilities
-remain outside the current implementation unless otherwise documented by
-their own implementation decisions.
+`WorkspaceViewForm` owns the workspace-level presentation surface.
+`DocumentViewForm` remains responsible for the document-content presentation
+surface and does not duplicate workspace chrome or workspace navigation.
 
-The workspace presentation is therefore intentionally functional for document
-and workspace lifecycle while preserving the architectural boundaries required
-for future AI-assisted and multi-document knowledge workflows.
+Functional AI processing, Recent activity implementation, workspace
+recovery, PDF/DOCX in-app rendering, and other future knowledge-work
+capabilities remain outside the current implementation unless otherwise
+documented by their own implementation decisions.
+
+The workspace presentation is therefore intentionally functional for
+document and workspace lifecycle while preserving the architectural
+boundaries required for future AI-assisted and multi-document knowledge
+workflows.
 
 ## Current Implementation and Deferred Scope
 
@@ -200,7 +271,8 @@ AI or search functionality.
 
 ## Architectural Boundaries
 
-`MainForm` remains responsible for the application shell and document-library workflow.
+`MainForm` remains responsible for the application shell and
+document-library workflow.
 
 ```text
 MainForm
@@ -212,14 +284,43 @@ MainForm
 └── Open
 ```
 
-`DocumentViewForm` is responsible for the document-specific workspace.
+`WorkspacePresentation` owns the in-memory state for a managed workspace
+presentation. The state includes workspace identity and type, represented
+workspace members, document presentations, navigation mode, and active
+document identity.
+
+`WorkspaceViewForm` implements the workspace presentation view contract and
+remains a WinForms Passive View. It renders workspace or temporary-document
+identity, workspace navigation, tabs/sidebar layout, workspace contextual
+menus, and the control-hosting arrangement required to display the active
+document presentation.
+
+`DocumentWorkspacePresenter` owns document-specific presentation workflows
+and coordinates the document view with the existing Application operations,
+renderer resolution, session-bound dialogs, and document resource lifecycle.
+
+`DocumentViewForm` implements `IDocumentView` and is responsible for the
+document-specific presentation surface:
 
 ```text
 DocumentViewForm
-├── Document content
-├── Document information
-└── Future AI workspace
+├── Document content host
+├── Unsupported-format preview
+├── Explicit external-open action
+└── Document-specific information/removal request events
 ```
+
+`DocumentViewForm` does not own workspace identity, workspace navigation,
+workspace membership, workspace management actions, or the workspace
+contextual menu. When hosted by `WorkspaceViewForm`, the outer workspace
+view supplies the relevant workspace chrome and interaction surface.
+
+The workspace view may expose document-specific actions for a temporary
+document session. Those requests are routed through the workspace
+presentation to the active document presentation and its document
+presenter. The routing does not transfer document metadata processing,
+document removal execution, external-viewing lifecycle, or rendering into
+`WorkspaceViewForm`.
 
 The Application layer remains responsible for retrieving the document.
 
@@ -245,7 +346,8 @@ OpenDocumentResult
 └── string FileName
 ```
 
-The UI receives the document content through this existing Application boundary.
+The UI receives the document content through this existing Application
+boundary.
 
 The UI must not access:
 
@@ -255,11 +357,13 @@ The UI must not access:
 - encryption keys
 - encryption services directly
 
-This preserves the existing separation between UI, Application, Domain, and Infrastructure.
+This preserves the existing separation between UI, Application, Domain, and
+Infrastructure.
 
 ## Document Opening Workflow
 
-The document opening workflow will become:
+The document opening workflow uses the existing Application retrieval
+boundary and separates workspace hosting from document rendering:
 
 ```text
 User selects document
@@ -276,12 +380,28 @@ IDocumentReader
     ↓
 OpenDocumentResult
     ↓
-DocumentViewForm
-    ↓
-In-app document workspace
+Managed workspace/document presentation
+    ├── WorkspacePresentation
+    ├── WorkspaceViewForm
+    └── DocumentWorkspacePresenter
+            ↓
+      DocumentViewForm (IDocumentView)
+            ↓
+      IDocumentContentRendererResolver
+            ↓
+      Format-specific document renderer
 ```
 
-The external viewer remains available as an explicit user-controlled action when an in-app renderer is unavailable.
+`WorkspaceViewForm` supplies the temporary or persistent workspace
+interaction surface and hosts the active document view.
+
+`DocumentViewForm` receives the document stream and filename through the
+document presentation boundary. It renders document content through the
+renderer resolver and exposes document-specific presentation behavior
+without owning workspace navigation or workspace actions.
+
+The external viewer remains available as an explicit user-controlled action
+when an in-app renderer is unavailable.
 
 ### External Viewing Temporary Artifact Lifecycle
 
@@ -505,16 +625,22 @@ The renderer displays structural warnings without altering the underlying docume
 
 ## AI Workspace
 
-The document workspace will reserve a dedicated area for future local AI functionality.
+The workspace presentation will reserve a dedicated area for future local
+AI functionality.
 
-The AI assistant will be adaptive and collapsible rather than permanently consuming a fixed portion of the workspace.
+The AI assistant will be adaptive and collapsible rather than permanently
+consuming a fixed portion of the workspace. Its interaction and layout
+belong to `WorkspaceViewForm`, which owns the surrounding workspace
+presentation.
 
 The intended future structure is:
 
 ```text
-DocumentViewForm
-├── Document Content
-│
+WorkspaceViewForm
+├── Workspace identity and navigation
+├── Document presentation host
+│   └── DocumentViewForm
+│       └── Document content
 └── AI Assistant
     ├── Conversation
     ├── Prompt
@@ -536,7 +662,10 @@ Future AI capabilities may include:
 
 These capabilities are not part of the current implementation.
 
-The UI must therefore provide the structural foundation without presenting future AI functionality as already implemented.
+The workspace UI must therefore provide the structural foundation without
+presenting future AI functionality as already implemented. The document
+renderer and `DocumentViewForm` remain independent of the future AI
+processing and presentation boundary.
 
 ## Security Considerations
 
@@ -616,7 +745,10 @@ The rendering boundary allows document-format support to grow independently.
 
 - DeskVault gains a unified in-app document experience.
 - `MainForm` remains focused on application-level navigation and document-library responsibilities.
-- Document-specific functionality has a dedicated workspace.
+- `WorkspaceViewForm` owns workspace identity, navigation, and contextual
+  interaction, while `DocumentViewForm` owns document-content presentation.
+- Document-specific presentation requests remain routed through the active
+  document presentation and its presenter.
 - The AI assistant has a natural location within the document context.
 - The AI panel can adapt to available screen space.
 - Application and Infrastructure boundaries remain intact.
@@ -649,8 +781,9 @@ These trade-offs are acceptable because the decisions align with DeskVault's lon
 
 ## Result
 
-DeskVault will evolve from a document-management application with external
-document opening into a document-centric knowledge workspace.
+DeskVault will implement a managed workspace presentation that supports
+temporary single-document viewing and persistent multi-document knowledge
+contexts.
 
 The resulting UI direction is:
 
@@ -661,8 +794,15 @@ Application Shell
     ↓
 Document Library
     ↓
-Temporary Document Workspace
-    └── Document Presentation
+WorkspaceViewForm
+    ├── Workspace/document identity and navigation
+    ├── Workspace/document contextual actions
+    ├── DocumentViewForm
+    │   └── Document Renderer Boundary
+    │       ├── Text
+    │       ├── Markdown
+    │       └── CSV
+    └── Future Adaptive Local AI Assistant
              ↓
         Save as Workspace
              ↓
@@ -670,24 +810,36 @@ Temporary Document Workspace
         ├── Document
         ├── Document
         └── Document
-             ↓
-      Future Adaptive Local AI Assistant
+```
+
+The architecture separates:
+
+```text
+Document lifecycle
+        ≠
+Workspace membership lifecycle
+        ≠
+Document presentation lifecycle
+        ≠
+Recent activity
+        ≠
+AI context
+```
+
+The renderer architecture additionally separates:
+
+```text
+Document parsing / extraction
+        ≠
+Document rendering
+        ≠
+AI / search processing
 ```
 
 The existing Application and Infrastructure boundaries remain responsible
 for document retrieval, decryption, persistence, and storage.
 
-The current workspace architecture establishes explicit separation between
-workspace identity, workspace membership, document presentation, and future
-AI context. It also supports multiple simultaneous workspace presentation
-contexts without coupling the model to MDI or another specific windowing
-strategy.
-
-The new document workspace establishes the UI foundation for future document
-processing, search, semantic retrieval, multi-document context, RAG, and
-source-grounded local AI capabilities.
-
-The architecture remains flexible enough to support future window-management
-strategies, additional document renderers, workspace recovery, Recent
-activity, and enterprise identity integration without requiring a
-fundamental redesign of the document workspace.
+This separation allows DeskVault to evolve toward multi-document workspaces,
+local AI, retrieval, RAG, and enterprise knowledge workflows without
+requiring the document-content view to own workspace behavior or future
+AI-processing capabilities.

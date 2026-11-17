@@ -3,11 +3,168 @@ using DeskVault.UI.Rendering;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using Moq;
+using System.Reflection;
 
 namespace DeskVault.UI.Tests;
 
 public sealed class DocumentViewFormTests
 {
+    [Fact]
+    public void DocumentContextMenu_ContainsOnlyDocumentSpecificActions()
+    {
+        // Arrange
+        var resolver =
+            new Mock<IDocumentContentRendererResolver>();
+
+        using var form =
+            CreateForm(resolver.Object);
+
+        ContextMenuStrip documentContextMenu =
+            GetPrivateField<ContextMenuStrip>(
+                form,
+                "documentContextMenu");
+
+        // Act
+        string[] actualMenuItems =
+            documentContextMenu.Items
+                .Cast<ToolStripItem>()
+                .Select(item => item.Name ?? string.Empty)
+                .ToArray();
+
+        // Assert
+        Assert.Equal(
+            [
+                "documentInformationMenuItem",
+                "removeDocumentMenuItem"
+            ],
+            actualMenuItems);
+
+        Assert.Empty(
+            form.Controls.Find(
+                "backButton",
+                true));
+
+        Assert.Empty(
+            form.Controls.Find(
+                "aiButton",
+                true));
+
+        Assert.Empty(
+            form.Controls.Find(
+                "closeButton",
+                true));
+
+        Assert.Empty(
+            form.Controls.Find(
+                "workspaceMenuButton",
+                true));
+
+        Assert.Equal(
+            UiMessages.DocumentViewTitle,
+            form.Text);
+
+        Button documentActionsButton =
+            GetPrivateField<Button>(
+                form,
+                "documentActionsButton");
+
+        Assert.Equal(
+            UiMessages.DocumentActionsButton,
+            documentActionsButton.Text);
+    }
+
+    [Fact]
+    public void DocumentContextMenuActions_RaiseDocumentSpecificRequests()
+    {
+        // Arrange
+        var resolver =
+            new Mock<IDocumentContentRendererResolver>();
+
+        using var form =
+            CreateForm(resolver.Object);
+
+        List<string> observedRequests = [];
+
+        form.DocumentInformationRequested +=
+            (_, _) =>
+                observedRequests.Add(
+                    nameof(form.DocumentInformationRequested));
+
+        form.RemoveDocumentRequested +=
+            (_, _) =>
+                observedRequests.Add(
+                    nameof(form.RemoveDocumentRequested));
+
+        ToolStripMenuItem documentInformationMenuItem =
+            GetPrivateField<ToolStripMenuItem>(
+                form,
+                "documentInformationMenuItem");
+
+        ToolStripMenuItem removeDocumentMenuItem =
+            GetPrivateField<ToolStripMenuItem>(
+                form,
+                "removeDocumentMenuItem");
+
+        // Act
+        documentInformationMenuItem.PerformClick();
+        removeDocumentMenuItem.PerformClick();
+
+        // Assert
+        Assert.Equal(
+            [
+                nameof(form.DocumentInformationRequested),
+                nameof(form.RemoveDocumentRequested)
+            ],
+            observedRequests);
+    }
+
+    [Fact]
+    public void ShowUnsupportedPreview_RetainsExternalOpenAction()
+    {
+        // Arrange
+        const string previewMessage =
+            "This file cannot be previewed.";
+
+        var resolver =
+            new Mock<IDocumentContentRendererResolver>();
+
+        using var form =
+            CreateForm(resolver.Object);
+
+        int openExternallyRequestCount = 0;
+
+        form.OpenExternallyRequested +=
+            (_, _) =>
+                openExternallyRequestCount++;
+
+        Label previewMessageLabel =
+            Assert.IsType<Label>(
+                Assert.Single(
+                    form.Controls.Find(
+                        "unsupportedDocumentPreviewMessageLabel",
+                        true)));
+
+        Button openExternallyButton =
+            Assert.IsType<Button>(
+                Assert.Single(
+                    form.Controls.Find(
+                        "openExternallyButton",
+                        true)));
+
+        // Act
+        form.ShowUnsupportedPreview(previewMessage);
+        openExternallyButton.PerformClick();
+
+        // Assert
+        Assert.Equal(
+            previewMessage,
+            previewMessageLabel.Text);
+
+        Assert.Equal(
+            1,
+            openExternallyRequestCount);
+    }
+
     [Fact]
     public async Task ShowDocumentAsync_UnsupportedRenderer_PropagatesNotSupportedException()
     {
@@ -196,13 +353,6 @@ public sealed class DocumentViewFormTests
                         "documentTitleLabel",
                         true)));
 
-        Label metadataLabel =
-            Assert.IsType<Label>(
-                Assert.Single(
-                    form.Controls.Find(
-                        "documentMetadataLabel",
-                        true)));
-
         Assert.Equal(fileName, titleLabel.Text);
         Assert.NotEmpty(contentPanel.Controls);
         Assert.False(renderedControl.IsDisposed);
@@ -212,7 +362,6 @@ public sealed class DocumentViewFormTests
         Assert.True(renderedControl.IsDisposed);
         Assert.Empty(contentPanel.Controls);
         Assert.Empty(titleLabel.Text);
-        Assert.Empty(metadataLabel.Text);
         Assert.False(form.Visible);
     }
 
@@ -482,6 +631,23 @@ public sealed class DocumentViewFormTests
                 expectedSessionRevision,
                 form),
             Times.Exactly(2));
+    }
+
+    private static T GetPrivateField<T>(
+        DocumentViewForm form,
+        string fieldName)
+        where T : class
+    {
+        FieldInfo? field =
+            typeof(DocumentViewForm).GetField(
+                fieldName,
+                BindingFlags.Instance |
+                BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+
+        return Assert.IsType<T>(
+            field!.GetValue(form));
     }
 
     private static MemoryStream CreateDocumentStream()
