@@ -295,6 +295,36 @@ identity, workspace navigation, tabs/sidebar layout, workspace contextual
 menus, and the control-hosting arrangement required to display the active
 document presentation.
 
+The document interaction and WinForms hosting surfaces are deliberately
+separate. `WorkspaceDocumentPresentation` exposes the document-specific
+interaction contract through its `IDocumentView` `View` property and the
+generic WinForms hosting surface through its `Form`-typed `HostedForm`
+property. Both properties refer to the same underlying view instance;
+`HostedForm` does not create a second view or a separate document window.
+
+`WorkspaceDocumentPresentationFactory` may construct the concrete
+`DocumentViewForm`. It supplies that same instance to
+`DocumentWorkspacePresenter` as the `IDocumentView` and to
+`WorkspaceDocumentPresentation` as the document view. This keeps concrete
+`DocumentViewForm` construction knowledge within the factory rather than
+exposing that implementation dependency to workspace hosting.
+
+`WorkspaceViewForm` uses the generic `HostedForm` surface when preparing,
+adding, removing, activating, and moving a document presentation between
+its tab and sidebar containers. The workspace view does not cast the
+document interaction contract to `DocumentViewForm` or search its hosted
+controls for that concrete type. Moving between tab and sidebar hosting
+reparents the same Form instance.
+
+The generic Form hosting surface is a WinForms presentation boundary only.
+It does not add Form, parent-control, or workspace-navigation members to
+`IDocumentView`, move navigation ownership into the document view, or
+change the authoritative workspace state held by `WorkspacePresentation`.
+
+Exposing the host Form does not create a new disposal owner or redefine the
+document and workspace presentation lifetime contracts. The hosting
+boundary remains separate from disposal ownership.
+
 `DocumentWorkspacePresenter` owns document-specific presentation workflows
 and coordinates the document view with the existing Application operations,
 renderer resolution, session-bound dialogs, and document resource lifecycle.
