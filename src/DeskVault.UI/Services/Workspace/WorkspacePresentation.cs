@@ -359,16 +359,33 @@ public sealed class WorkspacePresentation : IDisposable
                 "Workspace presentation is not authorized for the current session.");
         }
 
+        bool presentationCreated =
+            !_documentPresentations.ContainsKey(documentId);
+
         WorkspaceDocumentPresentation presentation =
             GetOrCreateDocumentPresentation(documentId);
 
-        _view.AddDocumentPresentation(
-            presentation);
+        try
+        {
+            _view.AddDocumentPresentation(
+                presentation);
 
-        ActivateDocumentPresentation(
-            documentId);
+            ActivateDocumentPresentation(
+                documentId);
 
-        return presentation;
+            return presentation;
+        }
+        catch
+        {
+            if (presentationCreated)
+            {
+                RemoveFailedDocumentPresentation(
+                    documentId,
+                    presentation);
+            }
+
+            throw;
+        }
     }
 
     public bool ActivateDocument(Guid documentId)
@@ -448,13 +465,30 @@ public sealed class WorkspacePresentation : IDisposable
             return false;
         }
 
-        presentation.Presenter.DocumentRemoved -=
-            OnDocumentRemoved;
+        Exception? cleanupException = null;
 
-        _view.RemoveDocumentPresentation(
-            documentId);
+        void TryCleanup(Action cleanup)
+        {
+            try
+            {
+                cleanup();
+            }
+            catch (Exception exception)
+            {
+                cleanupException ??= exception;
+            }
+        }
 
-        presentation.Dispose();
+        // Stop receiving child events before detaching or disposing the pair.
+        TryCleanup(() =>
+            presentation.Presenter.DocumentRemoved -= OnDocumentRemoved);
+
+        // Detach the hosted Form before its owner disposes the presenter and view.
+        // Owner disposal must still be attempted when view removal fails.
+        TryCleanup(() =>
+            _view.RemoveDocumentPresentation(documentId));
+
+        TryCleanup(presentation.Dispose);
 
         if (ActiveDocumentId == documentId)
         {
@@ -468,8 +502,8 @@ public sealed class WorkspacePresentation : IDisposable
 
             if (ActiveDocumentId is Guid nextDocumentId)
             {
-                ActivateDocumentPresentation(
-                    nextDocumentId);
+                TryCleanup(() =>
+                    ActivateDocumentPresentation(nextDocumentId));
             }
         }
 
@@ -477,6 +511,15 @@ public sealed class WorkspacePresentation : IDisposable
             LogMessages.WorkspacePresentationDocumentClosed,
             WorkspaceId,
             documentId);
+
+        // Preserve the first cleanup exception after all applicable cleanup
+        // operations have been attempted.
+        if (cleanupException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(cleanupException)
+                .Throw();
+        }
 
         return true;
     }
@@ -553,6 +596,9 @@ public sealed class WorkspacePresentation : IDisposable
         WorkspaceName = null;
         WorkspaceDescription = null;
 
+        // Detach every hosted document Form before disposing its owner.
+        TryCleanup(_view.ClearPresentation);
+
         // One failing document presentation must not prevent cleanup of others.
         foreach (WorkspaceDocumentPresentation presentation
             in documentPresentations)
@@ -564,7 +610,6 @@ public sealed class WorkspacePresentation : IDisposable
         }
 
         // Always attempt workspace-view cleanup and disposal.
-        TryCleanup(_view.ClearPresentation);
         TryCleanup(_view.Dispose);
 
         _logger.LogDebug(
@@ -609,17 +654,57 @@ public sealed class WorkspacePresentation : IDisposable
         Guid documentId,
         WorkspaceDocumentPresentation presentation)
     {
-        if (!_documentPresentations.Remove(
+        if (!_documentPresentations.TryGetValue(
                 documentId,
-                out WorkspaceDocumentPresentation? registeredPresentation))
+                out WorkspaceDocumentPresentation? registeredPresentation) ||
+            !ReferenceEquals(
+                registeredPresentation,
+                presentation))
         {
             return;
         }
 
+        _documentPresentations.Remove(documentId);
+
         registeredPresentation.Presenter.DocumentRemoved -=
             OnDocumentRemoved;
 
-        registeredPresentation.Dispose();
+        Exception? cleanupException = null;
+
+        try
+        {
+            _view.RemoveDocumentPresentation(
+                documentId);
+        }
+        catch (Exception exception)
+        {
+            cleanupException = exception;
+        }
+
+        try
+        {
+            registeredPresentation.Dispose();
+        }
+        catch (Exception exception)
+        {
+            cleanupException =
+                cleanupException is null
+                    ? exception
+                    : new AggregateException(
+                        cleanupException,
+                        exception);
+        }
+
+        // Cleanup failures are diagnosed safely without replacing
+        // the original document-open or hosting exception.
+        if (cleanupException is not null)
+        {
+            _logger.LogSafeFailure(
+                LogLevel.Error,
+                DiagnosticOperationCodes.WorkspacePresentationDocumentOpenFailure,
+                LogMessages.WorkspacePresentationDocumentOpenSafeFailure,
+                cleanupException);
+        }
     }
 
     private void ActivateDocumentPresentation(

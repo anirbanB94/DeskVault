@@ -187,6 +187,116 @@ public sealed class WorkspaceDocumentPresentationTests
     }
 
     [Fact]
+    public void Dispose_WhenRepeated_DisposesPresenterThenDisposableViewExactlyOnce()
+    {
+        // Arrange
+        List<string> disposalOrder = [];
+
+        var view = new Mock<IDocumentView>();
+
+        view
+            .Setup(x => x.ClearPresentation())
+            .Callback(() => disposalOrder.Add("presenter"));
+
+        var disposableView = view.As<IDisposable>();
+
+        disposableView
+            .Setup(x => x.Dispose())
+            .Callback(() => disposalOrder.Add("view"));
+
+        DocumentWorkspacePresenter presenter =
+            CreatePresenter(view);
+
+        WorkspaceDocumentPresentation presentation =
+            new(
+                Guid.NewGuid(),
+                presenter,
+                view.Object);
+
+        // Act
+        presentation.Dispose();
+        presentation.Dispose();
+
+        // Assert
+        Assert.Equal(
+            [
+                "presenter",
+            "view"
+            ],
+            disposalOrder);
+
+        view.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        disposableView.Verify(
+            x => x.Dispose(),
+            Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_WhenPresenterDisposalThrows_StillDisposesViewExactlyOnce()
+    {
+        // Arrange
+        List<string> disposalOrder = [];
+
+        var presenterException =
+            new InvalidOperationException(
+                "Presenter disposal failed.");
+
+        var view = new Mock<IDocumentView>();
+
+        view
+            .Setup(x => x.ClearPresentation())
+            .Callback(() => disposalOrder.Add("presenter"))
+            .Throws(presenterException);
+
+        var disposableView = view.As<IDisposable>();
+
+        disposableView
+            .Setup(x => x.Dispose())
+            .Callback(() => disposalOrder.Add("view"));
+
+        DocumentWorkspacePresenter presenter =
+            CreatePresenter(view);
+
+        WorkspaceDocumentPresentation presentation =
+            new(
+                Guid.NewGuid(),
+                presenter,
+                view.Object);
+
+        // Act
+        InvalidOperationException thrownException =
+            Assert.Throws<InvalidOperationException>(
+                () => presentation.Dispose());
+
+        // A repeated disposal must remain a no-op, even after the first
+        // invocation encountered a presenter cleanup failure.
+        presentation.Dispose();
+
+        // Assert
+        Assert.Same(
+            presenterException,
+            thrownException);
+
+        Assert.Equal(
+            [
+                "presenter",
+            "view"
+            ],
+            disposalOrder);
+
+        view.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        disposableView.Verify(
+            x => x.Dispose(),
+            Times.Once);
+    }
+
+    [Fact]
     public void DisplayName_DelegatesToPresenter()
     {
         DocumentWorkspacePresenter presenter =

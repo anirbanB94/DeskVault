@@ -221,6 +221,31 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
                     .Cast<TabPage>()
                     .ToArray();
 
+            // Detach every hosted document Form from its tab page.
+            // These Forms remain owned by their WorkspaceDocumentPresentation.
+            foreach (TabPage tabPage in tabPages)
+            {
+                foreach (Form documentForm in
+                         tabPage.Controls
+                             .OfType<Form>()
+                             .ToArray())
+                {
+                    tabPage.Controls.Remove(documentForm);
+                }
+            }
+
+            // Detach the currently sidebar-hosted document Form(s).
+            foreach (Form documentForm in
+                     documentSidebarContentPanel.Controls
+                         .OfType<Form>()
+                         .ToArray())
+            {
+                documentSidebarContentPanel.Controls.Remove(
+                    documentForm);
+            }
+
+            // All hosted document Forms are now detached.
+            // Workspace-owned tab pages can safely be disposed.
             documentTabControl.TabPages.Clear();
 
             foreach (TabPage tabPage in tabPages)
@@ -228,6 +253,7 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
                 tabPage.Dispose();
             }
 
+            // Dispose only remaining workspace-owned sidebar controls.
             foreach (Control control in
                      documentSidebarContentPanel.Controls
                          .Cast<Control>()
@@ -287,29 +313,67 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
         }
 
         Form documentForm = presentation.HostedForm;
+        TabPage? tabPage = null;
 
-        PrepareDocumentView(documentForm);
-
-        string fileName =
-            presentation.FileName ??
-            UiMessages.DocumentWorkspaceFallbackName;
-
-        TabPage tabPage = new()
+        try
         {
-            Name = $"documentTab_{presentation.DocumentId:N}",
-            Text = fileName,
-            UseVisualStyleBackColor = true
-        };
+            PrepareDocumentView(documentForm);
 
-        tabPage.Controls.Add(documentForm);
+            string fileName =
+                presentation.FileName ??
+                UiMessages.DocumentWorkspaceFallbackName;
 
-        _documentTabs.Add(
-            presentation.DocumentId,
-            tabPage);
+            tabPage = new TabPage
+            {
+                Name = $"documentTab_{presentation.DocumentId:N}",
+                Text = fileName,
+                UseVisualStyleBackColor = true
+            };
 
-        documentTabControl.TabPages.Add(tabPage);
+            tabPage.Controls.Add(documentForm);
 
-        UpdateEmptyStateVisibility();
+            _documentTabs.Add(
+                presentation.DocumentId,
+                tabPage);
+
+            documentTabControl.TabPages.Add(tabPage);
+
+            UpdateEmptyStateVisibility();
+        }
+        catch
+        {
+            // Remove only the registry entry created by this attempt.
+            if (tabPage is not null &&
+                _documentTabs.TryGetValue(
+                    presentation.DocumentId,
+                    out TabPage? registeredTabPage) &&
+                ReferenceEquals(registeredTabPage, tabPage))
+            {
+                _documentTabs.Remove(
+                    presentation.DocumentId);
+            }
+
+            if (tabPage is not null)
+            {
+                documentTabControl.TabPages.Remove(
+                    tabPage);
+            }
+
+            // Detach the document Form before disposing its container.
+            if (documentForm.Parent is Control parent)
+            {
+                parent.Controls.Remove(documentForm);
+            }
+
+            // Never dispose a container while it still owns the Form.
+            if (tabPage is not null &&
+                documentForm.Parent is null)
+            {
+                tabPage.Dispose();
+            }
+
+            throw;
+        }
     }
 
     public bool RemoveDocumentPresentation(Guid documentId)
@@ -333,20 +397,21 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
                     .OfType<Form>()
                     .FirstOrDefault();
 
-            if (documentForm is not null)
-            {
-                documentSidebarContentPanel.Controls.Remove(
-                    documentForm);
-            }
-
             _sidebarDocumentId = null;
+        }
+
+        // Detach the hosted document Form from its actual parent.
+        // WorkspaceViewForm must never dispose the document Form.
+        if (documentForm?.Parent is Control parent)
+        {
+            parent.Controls.Remove(documentForm);
         }
 
         documentTabControl.TabPages.Remove(
             tabPage);
 
+        // Only the workspace-owned tab container is disposed here.
         tabPage.Dispose();
-        documentForm?.Dispose();
 
         UpdateEmptyStateVisibility();
 
