@@ -430,29 +430,54 @@ public partial class MainForm : Form, IMainFormView
 
     public void SetSelectedDocumentId(Guid? documentId)
     {
-        if (documentId is null)
+        bool wasUpdatingDocumentGrid =
+            _isUpdatingDocumentGrid;
+
+        _isUpdatingDocumentGrid = true;
+
+        try
         {
+            // Remove both forms of existing selection state before
+            // resolving the requested document identity.
             documentGridView.ClearSelection();
-            return;
+            documentGridView.CurrentCell = null;
+
+            if (documentId is not Guid selectedDocumentId)
+            {
+                return;
+            }
+
+            foreach (DataGridViewRow row in documentGridView.Rows)
+            {
+                Guid? rowDocumentId =
+                    row.DataBoundItem switch
+                    {
+                        DocumentListItem item => item.Id,
+                        SearchResultListItem searchResult =>
+                            searchResult.DocumentId,
+                        _ => null
+                    };
+
+                if (rowDocumentId != selectedDocumentId)
+                {
+                    continue;
+                }
+
+                row.Selected = true;
+
+                if (row.Cells.Count > 0)
+                {
+                    documentGridView.CurrentCell =
+                        row.Cells[0];
+                }
+
+                return;
+            }
         }
-
-        foreach (DataGridViewRow row in documentGridView.Rows)
+        finally
         {
-            if (row.DataBoundItem is DocumentListItem item &&
-                item.Id == documentId.Value)
-            {
-                row.Selected = true;
-                documentGridView.CurrentCell = row.Cells[0];
-                return;
-            }
-
-            if (row.DataBoundItem is SearchResultListItem searchResult &&
-                searchResult.DocumentId == documentId.Value)
-            {
-                row.Selected = true;
-                documentGridView.CurrentCell = row.Cells[0];
-                return;
-            }
+            _isUpdatingDocumentGrid =
+                wasUpdatingDocumentGrid;
         }
     }
 
@@ -825,6 +850,12 @@ public partial class MainForm : Form, IMainFormView
     public void ShowDocuments(
         IReadOnlyList<DocumentListItem> documents)
     {
+        Guid? previouslySelectedDocumentId =
+            SelectedDocumentId;
+
+        bool wasUpdatingDocumentGrid =
+            _isUpdatingDocumentGrid;
+
         _isUpdatingDocumentGrid = true;
 
         try
@@ -879,24 +910,31 @@ public partial class MainForm : Form, IMainFormView
                     FillWeight = 20
                 });
 
-            documentGridView.DataSource = documents.ToList();
+            List<DocumentListItem> documentItems =
+                [.. documents];
 
-            documentGridView.Visible = documents.Count > 0;
-            emptyStateLabel.Visible = documents.Count == 0;
+            documentGridView.DataSource = documentItems;
 
-            if (documents.Count > 0)
-            {
-                documentGridView.ClearSelection();
-                documentGridView.Rows[0].Selected = true;
-                documentGridView.CurrentCell =
-                    documentGridView.Rows[0].Cells[0];
-            }
+            documentGridView.Visible = documentItems.Count > 0;
+            emptyStateLabel.Visible = documentItems.Count == 0;
+
+            Guid? documentIdToSelect =
+                previouslySelectedDocumentId
+                ?? (documentItems.Count > 0
+                    ? documentItems[0].Id
+                    : null);
+
+            // Binding can establish a new current cell automatically.
+            // Clear both selection representations before restoring the
+            // intended document identity.
+            SetSelectedDocumentId(documentIdToSelect);
 
             SetLoadMoreEnabled(false);
         }
         finally
         {
-            _isUpdatingDocumentGrid = false;
+            _isUpdatingDocumentGrid =
+                wasUpdatingDocumentGrid;
         }
     }
 
