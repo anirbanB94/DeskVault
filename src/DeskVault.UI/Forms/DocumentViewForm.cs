@@ -94,10 +94,6 @@ public partial class DocumentViewForm :
             }
 
             presentationCommitted = true;
-
-            Show();
-            BringToFront();
-            Activate();
         }
         catch (OperationCanceledException)
         {
@@ -187,10 +183,6 @@ public partial class DocumentViewForm :
         documentContentPanel.Visible = false;
         unsupportedPreviewPanel.Visible = true;
         unsupportedPreviewPanel.BringToFront();
-
-        Show();
-        BringToFront();
-        Activate();
     }
 
     public void PostToUi(Action action)
@@ -277,17 +269,6 @@ public partial class DocumentViewForm :
             expectedSessionRevision);
     }
 
-    protected override void OnParentChanged(
-        EventArgs e)
-    {
-        base.OnParentChanged(e);
-
-        if (Parent is not null)
-        {
-            workspaceHeaderPanel.Visible = false;
-        }
-    }
-
     private void openExternallyButton_Click(
         object? sender,
         EventArgs e)
@@ -324,18 +305,5 @@ public partial class DocumentViewForm :
         RemoveDocumentRequested?.Invoke(
             this,
             EventArgs.Empty);
-    }
-
-    protected override void OnFormClosing(
-        FormClosingEventArgs e)
-    {
-        if (e.CloseReason == CloseReason.UserClosing)
-        {
-            e.Cancel = true;
-            Hide();
-            return;
-        }
-
-        base.OnFormClosing(e);
     }
 }

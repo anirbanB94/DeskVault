@@ -119,50 +119,90 @@ public sealed class DocumentViewFormTests
     }
 
     [Fact]
+    public void ShowUnsupportedPreview_UpdatesContentWithoutShowingOrActivatingForm()
+    {
+        // Arrange
+        const string previewMessage = "This file cannot be previewed.";
+        var resolver = new Mock<IDocumentContentRendererResolver>();
+        using var form = CreateForm(resolver.Object);
+
+        int shownEventCount = 0;
+        int activatedEventCount = 0;
+
+        form.Shown += (_, _) => shownEventCount++;
+        form.Activated += (_, _) => activatedEventCount++;
+
+        Label previewMessageLabel = Assert.IsType<Label>(
+            Assert.Single(form.Controls.Find(
+                "unsupportedDocumentPreviewMessageLabel",
+                true)));
+
+        // Act
+        form.ShowUnsupportedPreview(previewMessage);
+
+        // Assert
+        Assert.Equal(previewMessage, previewMessageLabel.Text);
+        Assert.False(form.Visible);
+        Assert.Equal(0, shownEventCount);
+        Assert.Equal(0, activatedEventCount);
+    }
+
+    [Fact]
     public void ShowUnsupportedPreview_RetainsExternalOpenAction()
     {
         // Arrange
-        const string previewMessage =
-            "This file cannot be previewed.";
-
-        var resolver =
-            new Mock<IDocumentContentRendererResolver>();
-
-        using var form =
-            CreateForm(resolver.Object);
+        const string previewMessage = "This file cannot be previewed.";
+        var resolver = new Mock<IDocumentContentRendererResolver>();
+        using var form = CreateForm(resolver.Object);
 
         int openExternallyRequestCount = 0;
 
         form.OpenExternallyRequested +=
-            (_, _) =>
-                openExternallyRequestCount++;
+            (_, _) => openExternallyRequestCount++;
 
-        Label previewMessageLabel =
-            Assert.IsType<Label>(
-                Assert.Single(
-                    form.Controls.Find(
-                        "unsupportedDocumentPreviewMessageLabel",
-                        true)));
-
-        Button openExternallyButton =
-            Assert.IsType<Button>(
-                Assert.Single(
-                    form.Controls.Find(
-                        "openExternallyButton",
-                        true)));
+        Button openExternallyButton = Assert.IsType<Button>(
+            Assert.Single(form.Controls.Find(
+                "openExternallyButton",
+                true)));
 
         // Act
         form.ShowUnsupportedPreview(previewMessage);
+
+        // The test explicitly displays the Form so that the button
+        // is selectable. ShowUnsupportedPreview itself must not do this.
+        form.Show();
+
         openExternallyButton.PerformClick();
 
         // Assert
-        Assert.Equal(
-            previewMessage,
-            previewMessageLabel.Text);
+        Assert.Equal(1, openExternallyRequestCount);
+    }
 
-        Assert.Equal(
-            1,
-            openExternallyRequestCount);
+    [Fact]
+    public void Close_UsesNormalFormClosingSemantics()
+    {
+        // Arrange
+        var resolver = new Mock<IDocumentContentRendererResolver>();
+        using var form = CreateForm(resolver.Object);
+
+        bool formClosingRaised = false;
+        bool? closeCancelled = null;
+
+        form.FormClosing += (_, e) =>
+        {
+            formClosingRaised = true;
+            closeCancelled = e.Cancel;
+        };
+
+        form.Show();
+
+        // Act
+        form.Close();
+
+        // Assert
+        Assert.True(formClosingRaised);
+        Assert.False(closeCancelled);
+        Assert.True(form.IsDisposed);
     }
 
     [Fact]
@@ -204,8 +244,9 @@ public sealed class DocumentViewFormTests
     }
 
     [Fact]
-    public async Task ShowDocumentAsync_SupportedRenderer_CallsRenderAsync()
+    public async Task ShowDocumentAsync_SupportedRenderer_RendersWithoutShowingOrActivatingForm()
     {
+        // Arrange
         const string fileName =
             "document.csv";
 
@@ -225,8 +266,22 @@ public sealed class DocumentViewFormTests
         using var stream =
             CreateDocumentStream();
 
-        await form.ShowDocumentAsync(stream, fileName, TestContext.Current.CancellationToken);
+        int shownEventCount = 0;
+        int activatedEventCount = 0;
 
+        form.Shown +=
+            (_, _) => shownEventCount++;
+
+        form.Activated +=
+            (_, _) => activatedEventCount++;
+
+        // Act
+        await form.ShowDocumentAsync(
+            stream,
+            fileName,
+            TestContext.Current.CancellationToken);
+
+        // Assert
         resolver.Verify(
             x => x.Resolve(fileName),
             Times.Once);
@@ -238,6 +293,10 @@ public sealed class DocumentViewFormTests
                 fileName,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+
+        Assert.False(form.Visible);
+        Assert.Equal(0, shownEventCount);
+        Assert.Equal(0, activatedEventCount);
     }
 
     [Fact]
@@ -631,6 +690,41 @@ public sealed class DocumentViewFormTests
                 expectedSessionRevision,
                 form),
             Times.Exactly(2));
+    }
+
+    [Fact]
+    public void ParentChanged_DoesNotHideDocumentHeader()
+    {
+        // Arrange
+        var resolver = new Mock<IDocumentContentRendererResolver>();
+
+        using var hostForm = new Form();
+        using var documentForm = CreateForm(resolver.Object);
+
+        var hostPanel = new Panel
+        {
+            Dock = DockStyle.Fill
+        };
+
+        hostForm.Controls.Add(hostPanel);
+        hostForm.Show();
+
+        Panel workspaceHeaderPanel = Assert.IsType<Panel>(
+            Assert.Single(documentForm.Controls.Find(
+                "workspaceHeaderPanel",
+                true)));
+
+        // Act
+        documentForm.TopLevel = false;
+        documentForm.FormBorderStyle = FormBorderStyle.None;
+        documentForm.Dock = DockStyle.Fill;
+        documentForm.ShowInTaskbar = false;
+
+        hostPanel.Controls.Add(documentForm);
+        documentForm.Show();
+
+        // Assert
+        Assert.True(workspaceHeaderPanel.Visible);
     }
 
     private static T GetPrivateField<T>(
