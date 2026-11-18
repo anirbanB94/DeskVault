@@ -336,7 +336,20 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
                 presentation.DocumentId,
                 tabPage);
 
-            documentTabControl.TabPages.Add(tabPage);
+            bool wasSynchronizingDocumentSelection =
+                _synchronizingDocumentSelection;
+
+            _synchronizingDocumentSelection = true;
+
+            try
+            {
+                documentTabControl.TabPages.Add(tabPage);
+            }
+            finally
+            {
+                _synchronizingDocumentSelection =
+                    wasSynchronizingDocumentSelection;
+            }
 
             UpdateEmptyStateVisibility();
         }
@@ -407,8 +420,21 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             parent.Controls.Remove(documentForm);
         }
 
-        documentTabControl.TabPages.Remove(
-            tabPage);
+        bool wasSynchronizingDocumentSelection =
+            _synchronizingDocumentSelection;
+
+        _synchronizingDocumentSelection = true;
+
+        try
+        {
+            documentTabControl.TabPages.Remove(
+                tabPage);
+        }
+        finally
+        {
+            _synchronizingDocumentSelection =
+                wasSynchronizingDocumentSelection;
+        }
 
         // Only the workspace-owned tab container is disposed here.
         tabPage.Dispose();
@@ -779,13 +805,6 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
         }
 
         UpdateEmptyStateVisibility();
-    }
-
-    protected override void OnShown(EventArgs e)
-    {
-        base.OnShown(e);
-
-        ApplyTabsNavigationMode();
     }
 
     private void backButton_Click(

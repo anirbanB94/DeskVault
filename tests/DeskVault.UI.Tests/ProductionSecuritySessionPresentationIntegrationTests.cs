@@ -10,6 +10,7 @@ using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
 using DeskVault.Infrastructure.Services;
@@ -418,6 +419,7 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
                 services.GetRequiredService<RenameWorkspaceHandler>(),
                 services.GetRequiredService<SaveTemporaryWorkspaceHandler>(),
                 services.GetRequiredService<UpdateWorkspaceDescriptionHandler>(),
+                services.GetRequiredService<UpdateWorkspaceLastActiveDocumentHandler>(),
                 workspaceDialogService.Object,
                 workspaceView.Object,
                 NullLogger<WorkspacePresentation>.Instance,

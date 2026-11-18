@@ -126,6 +126,40 @@ public sealed class WorkspaceViewFormTests
     }
 
     [Fact]
+    public void WorkspaceViewForm_WhenHiddenAndShownAgain_PreservesSidebarNavigationMode()
+    {
+        // Arrange
+        using var form = new WorkspaceViewForm();
+
+        form.SetWorkspaceIdentity(
+            "Workspace",
+            null);
+
+        Panel tabsPanel =
+            GetControl<Panel>(
+                form,
+                "documentTabsPanel");
+
+        Panel sidebarPanel =
+            GetControl<Panel>(
+                form,
+                "documentSidebarPanel");
+
+        form.Show();
+
+        form.SetNavigationMode(
+            WorkspacePresentationNavigationMode.Sidebar);
+
+        // Act
+        form.Hide();
+        form.Show();
+
+        // Assert
+        Assert.True(sidebarPanel.Visible);
+        Assert.False(tabsPanel.Visible);
+    }
+
+    [Fact]
     public void PersistentWorkspace_MenuActions_ForwardWorkspaceRequests()
     {
         // Arrange
@@ -312,6 +346,107 @@ public sealed class WorkspaceViewFormTests
         Assert.Same(
             tabPage,
             documentForm.Parent);
+    }
+
+    [Fact]
+    public void AddDocumentPresentation_SuppressesImplicitSelectionButUserSelectionRaisesDocumentActivated()
+    {
+        // Arrange
+        using var workspaceView = new WorkspaceViewForm();
+
+        workspaceView.Show();
+
+        Guid firstDocumentId = Guid.NewGuid();
+        Guid secondDocumentId = Guid.NewGuid();
+
+        using WorkspaceDocumentPresentation firstPresentation =
+            CreateDocumentPresentation(
+                firstDocumentId,
+                new TestDocumentViewForm());
+
+        using WorkspaceDocumentPresentation secondPresentation =
+            CreateDocumentPresentation(
+                secondDocumentId,
+                new TestDocumentViewForm());
+
+        var activatedDocumentIds = new List<Guid>();
+
+        workspaceView.DocumentActivated +=
+            (_, args) => activatedDocumentIds.Add(args.DocumentId);
+
+        TabControl tabControl =
+            GetControl<TabControl>(
+                workspaceView,
+                "documentTabControl");
+
+        // Act
+        workspaceView.AddDocumentPresentation(firstPresentation);
+        workspaceView.AddDocumentPresentation(secondPresentation);
+
+        // Assert
+        Assert.Empty(activatedDocumentIds);
+
+        // Act
+        tabControl.SelectedIndex = 1;
+
+        // Assert
+        Assert.Equal(
+            [secondDocumentId],
+            activatedDocumentIds);
+    }
+
+    [Fact]
+    public void RemoveDocumentPresentation_WhenRemovingSelectedTab_DoesNotRaiseDocumentActivatedForImplicitReplacement()
+    {
+        // Arrange
+        using var workspaceView = new WorkspaceViewForm();
+
+        workspaceView.Show();
+
+        Guid firstDocumentId = Guid.NewGuid();
+        Guid secondDocumentId = Guid.NewGuid();
+
+        using WorkspaceDocumentPresentation firstPresentation =
+            CreateDocumentPresentation(
+                firstDocumentId,
+                new TestDocumentViewForm());
+
+        using WorkspaceDocumentPresentation secondPresentation =
+            CreateDocumentPresentation(
+                secondDocumentId,
+                new TestDocumentViewForm());
+
+        List<Guid> activatedDocumentIds = [];
+
+        workspaceView.DocumentActivated +=
+            (_, args) => activatedDocumentIds.Add(args.DocumentId);
+
+        TabControl tabControl =
+            GetControl<TabControl>(
+                workspaceView,
+                "documentTabControl");
+
+        workspaceView.AddDocumentPresentation(firstPresentation);
+        workspaceView.AddDocumentPresentation(secondPresentation);
+
+        // Act: select the second tab as the user.
+        tabControl.SelectedIndex = 1;
+
+        Assert.Equal(
+            [secondDocumentId],
+            activatedDocumentIds);
+
+        // Removing the selected tab implicitly selects the first tab.
+        bool removed =
+            workspaceView.RemoveDocumentPresentation(secondDocumentId);
+
+        // Assert
+        Assert.True(removed);
+        Assert.Single(tabControl.TabPages);
+
+        Assert.Equal(
+            [secondDocumentId],
+            activatedDocumentIds);
     }
 
     [Fact]

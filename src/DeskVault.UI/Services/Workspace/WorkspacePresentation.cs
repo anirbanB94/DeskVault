@@ -6,6 +6,7 @@ using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using DeskVault.Domain.Workspaces;
 using DeskVault.Shared.Extensions;
 using DeskVault.UI.Resources;
@@ -34,6 +35,11 @@ public sealed class WorkspacePresentation : IDisposable
     private bool _disposed;
     private readonly IApplicationSecuritySession _applicationSecuritySession;
     private readonly long _securitySessionRevision;
+    private readonly UpdateWorkspaceLastActiveDocumentHandler _updateWorkspaceLastActiveDocumentHandler;
+    private readonly object _activeDocumentPersistenceSync = new();
+    private readonly CancellationTokenSource _lifetimeCancellationTokenSource = new();
+    private Task _activeDocumentPersistenceTask = Task.CompletedTask;
+    private long _activeDocumentSelectionVersion;
 
     public WorkspacePresentation(
         Guid workspaceId,
@@ -47,6 +53,7 @@ public sealed class WorkspacePresentation : IDisposable
         RenameWorkspaceHandler renameWorkspaceHandler,
         SaveTemporaryWorkspaceHandler saveTemporaryWorkspaceHandler,
         UpdateWorkspaceDescriptionHandler updateWorkspaceDescriptionHandler,
+        UpdateWorkspaceLastActiveDocumentHandler updateWorkspaceLastActiveDocumentHandler,
         IWorkspaceDialogService dialogService,
         IWorkspacePresentationView view,
         ILogger<WorkspacePresentation> logger,
@@ -60,6 +67,7 @@ public sealed class WorkspacePresentation : IDisposable
         ArgumentNullException.ThrowIfNull(renameWorkspaceHandler);
         ArgumentNullException.ThrowIfNull(saveTemporaryWorkspaceHandler);
         ArgumentNullException.ThrowIfNull(updateWorkspaceDescriptionHandler);
+        ArgumentNullException.ThrowIfNull(updateWorkspaceLastActiveDocumentHandler);
         ArgumentNullException.ThrowIfNull(dialogService);
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(logger);
@@ -76,6 +84,7 @@ public sealed class WorkspacePresentation : IDisposable
         _renameWorkspaceHandler = renameWorkspaceHandler;
         _saveTemporaryWorkspaceHandler = saveTemporaryWorkspaceHandler;
         _updateWorkspaceDescriptionHandler = updateWorkspaceDescriptionHandler;
+        _updateWorkspaceLastActiveDocumentHandler = updateWorkspaceLastActiveDocumentHandler;
         _dialogService = dialogService;
         _view = view;
         _logger = logger;
@@ -251,9 +260,20 @@ public sealed class WorkspacePresentation : IDisposable
             workspaceDocuments);
     }
 
-    public async Task OpenDocumentAsync(
+    public Task OpenDocumentAsync(
         Guid documentId,
         CancellationToken cancellationToken = default)
+    {
+        return OpenDocumentCoreAsync(
+            documentId,
+            activate: true,
+            cancellationToken);
+    }
+
+    private async Task OpenDocumentCoreAsync(
+        Guid documentId,
+        bool activate,
+        CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
 
@@ -291,8 +311,6 @@ public sealed class WorkspacePresentation : IDisposable
                 documentId,
                 cancellationToken);
 
-            // The workspace may have been locked, re-authenticated,
-            // or disposed while the child document was being opened.
             if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
             {
                 throw new OperationCanceledException(
@@ -310,8 +328,11 @@ public sealed class WorkspacePresentation : IDisposable
             _view.AddDocumentPresentation(
                 presentation);
 
-            ActivateDocumentPresentation(
-                documentId);
+            if (activate)
+            {
+                ActivateDocumentPresentation(
+                    documentId);
+            }
 
             _logger.LogInformation(
                 LogMessages.WorkspacePresentationDocumentOpened,
@@ -416,6 +437,9 @@ public sealed class WorkspacePresentation : IDisposable
         {
             return false;
         }
+
+        _view.SetNavigationMode(
+            NavigationMode);
 
         _view.ActivateWorkspace();
 
@@ -532,6 +556,11 @@ public sealed class WorkspacePresentation : IDisposable
         }
 
         _disposed = true;
+
+        Interlocked.Increment(
+            ref _activeDocumentSelectionVersion);
+
+        _lifetimeCancellationTokenSource.Cancel();
 
         Exception? disposalException = null;
 
@@ -714,6 +743,71 @@ public sealed class WorkspacePresentation : IDisposable
             documentId);
 
         ActiveDocumentId = documentId;
+    }
+
+    private Task PersistActiveDocumentSelectionAsync(
+        Guid documentId,
+        long expectedSessionRevision,
+        long selectionVersion)
+    {
+        lock (_activeDocumentPersistenceSync)
+        {
+            _activeDocumentPersistenceTask =
+                PersistActiveDocumentSelectionAfterAsync(
+                    _activeDocumentPersistenceTask,
+                    documentId,
+                    expectedSessionRevision,
+                    selectionVersion);
+
+            return _activeDocumentPersistenceTask;
+        }
+    }
+
+    private async Task PersistActiveDocumentSelectionAfterAsync(
+        Task previousPersistenceTask,
+        Guid documentId,
+        long expectedSessionRevision,
+        long selectionVersion)
+    {
+        try
+        {
+            await previousPersistenceTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            // The preceding activation reports its own persistence failure.
+            // A failed update must not prevent a later selection from being saved.
+        }
+
+        CancellationToken cancellationToken =
+            _lifetimeCancellationTokenSource.Token;
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (selectionVersion !=
+                Interlocked.Read(ref _activeDocumentSelectionVersion) ||
+            !IsSessionRevisionCurrent(expectedSessionRevision) ||
+            ActiveDocumentId != documentId)
+        {
+            return;
+        }
+
+        await _updateWorkspaceLastActiveDocumentHandler.HandleAsync(
+            new UpdateWorkspaceLastActiveDocumentCommand(
+                WorkspaceId,
+                documentId),
+            cancellationToken);
+
+        if (!IsSessionRevisionCurrent(expectedSessionRevision) ||
+            selectionVersion !=
+                Interlocked.Read(ref _activeDocumentSelectionVersion) ||
+            ActiveDocumentId != documentId)
+        {
+            return;
+        }
     }
 
     private async void OnAddDocumentsRequested(
@@ -1318,15 +1412,20 @@ public sealed class WorkspacePresentation : IDisposable
             _applicationSecuritySession.CurrentSnapshot;
 
         if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
-            _disposed)
+            _disposed ||
+            IsTemporary ||
+            !_workspaceDocumentIds.Contains(e.DocumentId))
         {
             return;
         }
 
+        long selectionVersion =
+            Interlocked.Increment(
+                ref _activeDocumentSelectionVersion);
+
         try
         {
-            if (_documentPresentations.ContainsKey(
-                    e.DocumentId))
+            if (_documentPresentations.ContainsKey(e.DocumentId))
             {
                 if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
                 {
@@ -1334,22 +1433,43 @@ public sealed class WorkspacePresentation : IDisposable
                 }
 
                 ActiveDocumentId = e.DocumentId;
-                return;
+            }
+            else
+            {
+                // Load first; activate only if this remains the latest user selection.
+                await OpenDocumentCoreAsync(
+                    e.DocumentId,
+                    activate: false,
+                    _lifetimeCancellationTokenSource.Token);
+
+                if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+                    selectionVersion !=
+                        Interlocked.Read(ref _activeDocumentSelectionVersion))
+                {
+                    if (ActiveDocumentId is Guid activeDocumentId &&
+                        _documentPresentations.ContainsKey(activeDocumentId))
+                    {
+                        ActivateDocumentPresentation(activeDocumentId);
+                    }
+
+                    return;
+                }
+
+                ActivateDocumentPresentation(e.DocumentId);
             }
 
-            if (!_workspaceDocumentIds.Contains(
-                    e.DocumentId))
+            if (!IsSessionRevisionCurrent(operationSnapshot.Revision) ||
+                selectionVersion !=
+                    Interlocked.Read(ref _activeDocumentSelectionVersion) ||
+                ActiveDocumentId != e.DocumentId)
             {
                 return;
             }
 
-            if (!IsSessionRevisionCurrent(operationSnapshot.Revision))
-            {
-                return;
-            }
-
-            await OpenDocumentAsync(
-                e.DocumentId);
+            await PersistActiveDocumentSelectionAsync(
+                e.DocumentId,
+                operationSnapshot.Revision,
+                selectionVersion);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -1449,6 +1569,11 @@ public sealed class WorkspacePresentation : IDisposable
         {
             return;
         }
+
+        Interlocked.Increment(
+            ref _activeDocumentSelectionVersion);
+
+        _lifetimeCancellationTokenSource.Cancel();
 
         try
         {

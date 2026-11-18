@@ -10,6 +10,7 @@ using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
 using DeskVault.UI.Presenters;
@@ -1019,6 +1020,295 @@ public sealed class WorkspacePresentationTests
             x => x.AddDocumentPresentation(
                 It.IsAny<WorkspaceDocumentPresentation>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task DocumentActivated_ForPersistentWorkspaceMember_PersistsLastActiveDocument()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        Workspace activeWorkspace =
+            Workspace.CreatePersistent(workspaceId, "Workspace");
+
+        activeWorkspace.AddDocument(documentId);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        var persistedWorkspace =
+            new TaskCompletionSource<Workspace>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns(() => activeWorkspace);
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Replace(It.IsAny<Workspace>()))
+            .Callback<Workspace>(updatedWorkspace =>
+            {
+                activeWorkspace = updatedWorkspace;
+                persistedWorkspace.TrySetResult(updatedWorkspace);
+            });
+
+        workspaceRepository
+            .Setup(x => x.UpdateAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        WorkspaceDocumentPresentation documentPresentation =
+            CreateDocumentPresentation(documentId);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(documentId, 0))
+            .Returns(documentPresentation);
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory);
+
+        await presentation.SetWorkspaceDocumentsAsync(
+            [documentId],
+            TestContext.Current.CancellationToken);
+
+        presentation.OpenDocument(documentId);
+
+        // Act
+        view.View.Raise(
+            x => x.DocumentActivated += null,
+            new DocumentActivatedEventArgs(documentId));
+
+        Workspace updatedWorkspace =
+            await persistedWorkspace.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            documentId,
+            updatedWorkspace.LastActiveDocumentId);
+
+        workspaceRepository.Verify(
+            x => x.UpdateAsync(
+                It.Is<Workspace>(workspace =>
+                    workspace.LastActiveDocumentId == documentId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        activeWorkspaceRegistry.Verify(
+            x => x.Replace(It.IsAny<Workspace>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public void ProgrammaticDocumentActivation_DoesNotPersistLastActiveDocument()
+    {
+        // Arrange
+        Guid documentId = Guid.NewGuid();
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        WorkspaceDocumentPresentation documentPresentation =
+            CreateDocumentPresentation(documentId);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(documentId, 0))
+            .Returns(documentPresentation);
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                documentPresentationFactory: documentPresentationFactory);
+
+        // Act
+        presentation.OpenDocument(documentId);
+
+        presentation.ActivateDocument(documentId);
+
+        // Assert
+        workspaceRepository.Verify(
+            x => x.UpdateAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        activeWorkspaceRegistry.Verify(
+            x => x.Replace(It.IsAny<Workspace>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task DocumentActivated_WhenSelectionsOverlap_PersistsLatestSelectionLast()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid firstDocumentId = Guid.NewGuid();
+        Guid secondDocumentId = Guid.NewGuid();
+
+        Workspace activeWorkspace =
+            Workspace.CreatePersistent(workspaceId, "Workspace");
+
+        activeWorkspace.AddDocument(firstDocumentId);
+        activeWorkspace.AddDocument(secondDocumentId);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        var firstUpdateStarted =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var releaseFirstUpdate =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var secondUpdateReplaced =
+            new TaskCompletionSource<Workspace>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        int updateCount = 0;
+
+        async Task WaitForFirstUpdateAsync(
+            CancellationToken cancellationToken)
+        {
+            firstUpdateStarted.TrySetResult(true);
+
+            await releaseFirstUpdate.Task.WaitAsync(
+                cancellationToken);
+        }
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns(() => activeWorkspace);
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Replace(It.IsAny<Workspace>()))
+            .Callback<Workspace>(updatedWorkspace =>
+            {
+                activeWorkspace = updatedWorkspace;
+
+                if (updatedWorkspace.LastActiveDocumentId == secondDocumentId)
+                {
+                    secondUpdateReplaced.TrySetResult(updatedWorkspace);
+                }
+            });
+
+        workspaceRepository
+            .Setup(x => x.UpdateAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((Workspace _, CancellationToken cancellationToken) =>
+                Interlocked.Increment(ref updateCount) == 1
+                    ? WaitForFirstUpdateAsync(cancellationToken)
+                    : Task.CompletedTask);
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        WorkspaceDocumentPresentation firstPresentation =
+            CreateDocumentPresentation(firstDocumentId);
+
+        WorkspaceDocumentPresentation secondPresentation =
+            CreateDocumentPresentation(secondDocumentId);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(firstDocumentId, 0))
+            .Returns(firstPresentation);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(secondDocumentId, 0))
+            .Returns(secondPresentation);
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory);
+
+        await presentation.SetWorkspaceDocumentsAsync(
+            [firstDocumentId, secondDocumentId],
+            TestContext.Current.CancellationToken);
+
+        presentation.OpenDocument(firstDocumentId);
+        presentation.OpenDocument(secondDocumentId);
+
+        // Act
+        view.View.Raise(
+            x => x.DocumentActivated += null,
+            new DocumentActivatedEventArgs(firstDocumentId));
+
+        await firstUpdateStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        view.View.Raise(
+            x => x.DocumentActivated += null,
+            new DocumentActivatedEventArgs(secondDocumentId));
+
+        releaseFirstUpdate.TrySetResult(true);
+
+        Workspace finalWorkspace =
+            await secondUpdateReplaced.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            secondDocumentId,
+            finalWorkspace.LastActiveDocumentId);
+
+        Assert.Equal(
+            secondDocumentId,
+            activeWorkspace.LastActiveDocumentId);
+
+        Assert.Equal(
+            2,
+            updateCount);
     }
 
     [Fact]
@@ -3962,6 +4252,208 @@ public sealed class WorkspacePresentationTests
     }
 
     [Fact]
+    public async Task DocumentActivated_WhenSessionIsRevokedDuringPersistence_CancelsUpdateWithoutPublishingWorkspace()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        Workspace activeWorkspace =
+            Workspace.CreatePersistent(
+                workspaceId,
+                "Workspace");
+
+        activeWorkspace.AddDocument(documentId);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(registry => registry.Get(workspaceId))
+            .Returns(activeWorkspace);
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(session => session.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var updateStarted =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var updateCancelled =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        workspaceRepository
+            .Setup(repository => repository.UpdateAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (Workspace _, CancellationToken cancellationToken) =>
+            {
+                updateStarted.TrySetResult(true);
+
+                try
+                {
+                    await Task.Delay(
+                        Timeout.InfiniteTimeSpan,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    updateCancelled.TrySetResult(true);
+                    throw;
+                }
+            });
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        view.View
+            .Setup(workspaceView => workspaceView.PostToUi(
+                It.IsAny<Action>()))
+            .Callback<Action>(action => action());
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(factory => factory.Create(documentId, 0))
+            .Returns(CreateDocumentPresentation(documentId));
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory,
+                applicationSecuritySession: securitySession.Object);
+
+        await presentation.SetWorkspaceDocumentsAsync(
+            [documentId],
+            TestContext.Current.CancellationToken);
+
+        // Opening is programmatic and does not persist a selection.
+        presentation.OpenDocument(documentId);
+
+        // Act: simulate a user selection and wait for persistence to start.
+        view.View.Raise(
+            workspaceView => workspaceView.DocumentActivated += null,
+            new DocumentActivatedEventArgs(documentId));
+
+        await updateStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Revoke the presentation's owning security-session revision.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            session => session.StateChanged += null,
+            currentSnapshot);
+
+        await updateCancelled.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Empty(presentation.PresentedDocumentIds);
+        Assert.Null(presentation.ActiveDocumentId);
+        Assert.Null(activeWorkspace.LastActiveDocumentId);
+
+        activeWorkspaceRegistry.Verify(
+            registry => registry.Replace(
+                It.IsAny<Workspace>()),
+            Times.Never);
+
+        workspaceRepository.Verify(
+            repository => repository.UpdateAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public void Activate_ReappliesNavigationModeBeforeWorkspaceAndDocumentActivation()
+    {
+        // Arrange
+        Guid documentId = Guid.NewGuid();
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(x => x.Create(
+                documentId,
+                0))
+            .Returns(
+                CreateDocumentPresentation(documentId));
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                documentPresentationFactory: documentPresentationFactory);
+
+        presentation.OpenDocument(documentId);
+
+        presentation.SetNavigationMode(
+            WorkspacePresentationNavigationMode.Sidebar);
+
+        List<string> activationOrder = [];
+
+        view.View
+            .Setup(x => x.SetNavigationMode(
+                WorkspacePresentationNavigationMode.Sidebar))
+            .Callback(() => activationOrder.Add("NavigationMode"));
+
+        view.View
+            .Setup(x => x.ActivateWorkspace())
+            .Callback(() => activationOrder.Add("Workspace"));
+
+        view.View
+            .Setup(x => x.ActivateDocumentPresentation(documentId))
+            .Callback(() => activationOrder.Add("Document"))
+            .Returns(true);
+
+        // Act
+        bool activated = presentation.Activate();
+
+        // Assert
+        Assert.True(activated);
+
+        Assert.Equal(
+            [
+                "NavigationMode",
+            "Workspace",
+            "Document"
+            ],
+            activationOrder);
+    }
+
+    [Fact]
     public void SetNavigationMode_WhenSessionIsLocked_DoesNotChangeNavigationMode()
     {
         var securitySession =
@@ -4161,6 +4653,12 @@ public sealed class WorkspacePresentationTests
                 activeWorkspaceRegistry.Object,
                 NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
 
+        var updateWorkspaceLastActiveDocumentHandler =
+            new UpdateWorkspaceLastActiveDocumentHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceLastActiveDocumentHandler>.Instance);
+
         var workspaceSecuritySession =
             applicationSecuritySession ??
             CreateAuthenticatedApplicationSecuritySession(
@@ -4178,6 +4676,7 @@ public sealed class WorkspacePresentationTests
             renameWorkspaceHandler,
             saveTemporaryWorkspaceHandler,
             updateWorkspaceDescriptionHandler,
+            updateWorkspaceLastActiveDocumentHandler,
             dialogService.Object,
             view.View.Object,
             logger ?? NullLogger<WorkspacePresentation>.Instance,

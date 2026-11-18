@@ -5,6 +5,7 @@ using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using DeskVault.Domain.Workspaces;
 using DeskVault.UI.Forms;
 using DeskVault.UI.Services.Interfaces;
@@ -22,6 +23,7 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
     private readonly RenameWorkspaceHandler _renameWorkspaceHandler;
     private readonly SaveTemporaryWorkspaceHandler _saveTemporaryWorkspaceHandler;
     private readonly UpdateWorkspaceDescriptionHandler _updateWorkspaceDescriptionHandler;
+    private readonly UpdateWorkspaceLastActiveDocumentHandler _updateWorkspaceLastActiveDocumentHandler;
     private readonly IWorkspaceDialogService _dialogService;
     private readonly IApplicationSecuritySession _applicationSecuritySession;
 
@@ -33,6 +35,7 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
         RenameWorkspaceHandler renameWorkspaceHandler,
         SaveTemporaryWorkspaceHandler saveTemporaryWorkspaceHandler,
         UpdateWorkspaceDescriptionHandler updateWorkspaceDescriptionHandler,
+        UpdateWorkspaceLastActiveDocumentHandler updateWorkspaceLastActiveDocumentHandler,
         IWorkspaceDialogService dialogService,
         IApplicationSecuritySession applicationSecuritySession)
     {
@@ -43,6 +46,7 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
         ArgumentNullException.ThrowIfNull(renameWorkspaceHandler);
         ArgumentNullException.ThrowIfNull(saveTemporaryWorkspaceHandler);
         ArgumentNullException.ThrowIfNull(updateWorkspaceDescriptionHandler);
+        ArgumentNullException.ThrowIfNull(updateWorkspaceLastActiveDocumentHandler);
         ArgumentNullException.ThrowIfNull(dialogService);
         ArgumentNullException.ThrowIfNull(applicationSecuritySession);
 
@@ -53,6 +57,7 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
         _renameWorkspaceHandler = renameWorkspaceHandler;
         _saveTemporaryWorkspaceHandler = saveTemporaryWorkspaceHandler;
         _updateWorkspaceDescriptionHandler = updateWorkspaceDescriptionHandler;
+        _updateWorkspaceLastActiveDocumentHandler = updateWorkspaceLastActiveDocumentHandler;
         _dialogService = dialogService;
         _applicationSecuritySession = applicationSecuritySession;
     }
@@ -79,6 +84,7 @@ public sealed class WorkspacePresentationFactory : IWorkspacePresentationFactory
             _renameWorkspaceHandler,
             _saveTemporaryWorkspaceHandler,
             _updateWorkspaceDescriptionHandler,
+            _updateWorkspaceLastActiveDocumentHandler,
             _dialogService,
             view,
             NullLogger<WorkspacePresentation>.Instance,

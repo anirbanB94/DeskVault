@@ -1018,6 +1018,38 @@ that document from the workspace.
 Persistent workspace changes use explicit user actions rather than silently
 turning every temporary document session into a persistent workspace.
 
+A persistent workspace also retains the identity of its last actively
+selected member document as a navigation checkpoint. This checkpoint
+preserves the user's most recent document context when the persistent
+workspace is opened again. It is workspace metadata, not a second source
+of document membership or document content.
+
+The checkpoint is updated when the user selects a different document
+member in an open persistent workspace. Programmatic document opening,
+workspace initialization, activation, and restoration do not constitute
+user selection and must not overwrite the checkpoint. Removing the active
+member applies the existing domain rule that clears the checkpoint.
+Activating a remaining member as an automatic presentation fallback after
+that removal is not a new user selection and must not repopulate the
+checkpoint. Re-selecting the already active member does not require a
+persistence operation.
+
+The checkpoint is valid only while its document remains a member of the
+persistent workspace. Restoration must validate the stored identifier
+against the workspace's current valid membership and document state.
+An absent, stale, or invalid checkpoint must not prevent the workspace
+from opening; the workspace follows its normal valid-document selection
+behavior instead.
+
+Checkpoint writes are ordered so that an older asynchronous selection
+cannot overwrite a newer user selection. Pending writes must also respect
+the active security-session revision and must not publish stale state after
+the relevant presentation or authorization lifetime has ended.
+
+This narrow navigation checkpoint is an intentional persistence boundary.
+It does not mean that every presentation change or every workspace-session
+state is automatically persisted.
+
 ## Workspace Recovery
 
 Persistent workspace state and active session state will remain conceptually separate.
@@ -1202,6 +1234,28 @@ existing Application handlers for workspace-level mutations; durable state
 continues to be governed by the existing workspace model and persistence
 contracts.
 
+The active document identity has two related but distinct roles. During a
+live presentation, `WorkspacePresentation` owns the currently active
+document identity and coordinates document activation. For a persistent
+workspace, the Application workspace workflow also stores the last
+user-selected member document as a durable navigation checkpoint. The
+Application handler and workspace repository own that durable update;
+the UI presentation does not write workspace persistence directly.
+
+Only a user-driven change to the selected workspace member updates this
+checkpoint. Programmatic opening and restoration of the stored active
+document must not be interpreted as a new user selection. The stored
+identifier is validated against the current workspace membership before
+it is used during workspace restoration.
+
+`NavigationMode` remains presentation-lifetime state owned by
+`WorkspacePresentation`. When an existing workspace presentation is
+activated, the presentation must project its authoritative navigation mode
+to the view before activating the workspace's document presentation.
+This reapplication prevents a view's transient control state from replacing
+the presentation's authoritative state during reactivation. Navigation
+mode is not persisted across application restarts by this decision.
+
 `WorkspacePresentationManager` maintains the registry of live workspace
 presentation instances keyed by workspace identity. It coordinates lookup,
 creation, reuse, activation, and closure of those managed presentations.
@@ -1326,9 +1380,11 @@ temporary to persistent workspace continues to update the existing
 presentation rather than creating a second presentation.
 
 This boundary defines state ownership, interaction flow, and the separation
-between document interaction and WinForms hosting. It does not change the
-navigation-restoration/persistence policy or the broader presentation
-disposal and lifetime contracts.
+between document interaction and WinForms hosting. Persistent active-document
+checkpointing is performed through the Application workspace workflow and
+is limited to user-driven member selection. Navigation-mode restoration
+remains an in-memory presentation responsibility. These decisions do not
+change the broader presentation disposal and lifetime contracts.
 
 ## Scope of Initial Implementation
 
@@ -1420,11 +1476,21 @@ Conditional confirmation provides protection only when meaningful unsaved state 
 
 ### Automatically save every workspace change
 
-Rejected.
+Rejected as a general workspace-persistence policy.
 
-Automatic persistence would blur the distinction between temporary session state and intentional persistent workspace configuration.
+Automatic persistence of every presentation or workspace change would blur
+the distinction between temporary session state and intentional persistent
+workspace configuration.
 
-Explicit save provides clearer user control.
+A narrowly scoped exception is made for the last actively selected document
+in an already persistent workspace. This is a navigation checkpoint rather
+than automatic persistence of arbitrary workspace changes. It is updated
+only for user-driven member selection, through the Application workspace
+workflow, and is validated against current membership during restoration.
+
+Explicit save remains the mechanism for converting a temporary workspace
+into a persistent workspace and for intentional persistent workspace
+configuration changes.
 
 ### Automatically open unsupported formats externally
 
@@ -1471,6 +1537,11 @@ The architecture will support multiple workspaces, but the first implementation 
 - Recent activity has a clear future model without expanding the current implementation.
 - Multiple simultaneous workspace presentation contexts are supported without coupling workspace identity to MDI.
 - Workspace presentation state has one authoritative in-memory owner, while the WinForms workspace view remains Passive View and retains only transient UI hosting/layout state.
+- The last user-selected document in a persistent workspace is retained as a validated navigation checkpoint through the Application workspace persistence boundary.
+- Programmatic opening and restoration do not overwrite the user's persisted active-document checkpoint.
+- Asynchronous checkpoint updates are ordered and fenced against stale selections and superseded security-session revisions.
+- Existing workspace presentations reapply their authoritative in-memory navigation mode when activated.
+- Navigation mode remains presentation-lifetime state and is not persisted across application restarts.
 - Workspace-level actions and document-level requests remain routed through their respective presentation and Application boundaries.
 - New document renderers can be added without changing workspace orchestration.
 - Markdown rendering can evolve independently of the workspace contract.
@@ -1489,7 +1560,9 @@ The architecture will support multiple workspaces, but the first implementation 
 
 - Additional workspace state and lifecycle concepts increase application complexity.
 - Renderer resolution introduces additional Application/UI abstractions.
-- Future workspace persistence and recovery will require additional storage design.
+- Persisting the active-document navigation checkpoint adds an Application workflow and ordered asynchronous persistence coordination.
+- Navigation mode remains transient; restoring it across application restarts would require a separate persistence decision.
+- Future broader workspace persistence and recovery will require additional storage design.
 - Multi-document workspace management will require additional UI and domain modeling.
 - Recent activity will require a separate persistence and retention implementation.
 - AI functionality will require additional Application and AI-layer capabilities.
