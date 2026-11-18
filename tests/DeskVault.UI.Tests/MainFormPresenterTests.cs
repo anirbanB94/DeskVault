@@ -18,6 +18,7 @@ using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
 using DeskVault.Domain.Documents;
 using DeskVault.Domain.Workspaces;
@@ -2190,6 +2191,12 @@ public sealed class MainFormPresenterTests
                 activeWorkspaceRegistry.Object,
                 NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
 
+        var updateWorkspaceLastActiveDocumentHandler =
+            new UpdateWorkspaceLastActiveDocumentHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceLastActiveDocumentHandler>.Instance);
+
         var workspaceDialogService =
             new Mock<IWorkspaceDialogService>();
 
@@ -2206,6 +2213,7 @@ public sealed class MainFormPresenterTests
                 renameWorkspaceHandler,
                 saveTemporaryWorkspaceHandler,
                 updateWorkspaceDescriptionHandler,
+                updateWorkspaceLastActiveDocumentHandler,
                 workspaceDialogService.Object,
                 workspacePresentationView.Object,
                 NullLogger<WorkspacePresentation>.Instance,
@@ -2468,6 +2476,12 @@ public sealed class MainFormPresenterTests
                 activeWorkspaceRegistry.Object,
                 NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
 
+        var updateWorkspaceLastActiveDocumentHandler =
+            new UpdateWorkspaceLastActiveDocumentHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceLastActiveDocumentHandler>.Instance);
+
         var workspaceDialogService =
             new Mock<IWorkspaceDialogService>();
 
@@ -2494,6 +2508,7 @@ public sealed class MainFormPresenterTests
                 renameWorkspaceHandler,
                 saveTemporaryWorkspaceHandler,
                 updateWorkspaceDescriptionHandler,
+                updateWorkspaceLastActiveDocumentHandler,
                 workspaceDialogService.Object,
                 workspacePresentationView.Object,
                 NullLogger<WorkspacePresentation>.Instance,
@@ -4356,6 +4371,12 @@ public sealed class MainFormPresenterTests
                 activeWorkspaceRegistry.Object,
                 NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
 
+        var updateWorkspaceLastActiveDocumentHandler =
+            new UpdateWorkspaceLastActiveDocumentHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceLastActiveDocumentHandler>.Instance);
+
         workspaceSecuritySession
             .SetupGet(x => x.CurrentSnapshot)
             .Returns(
@@ -4375,6 +4396,7 @@ public sealed class MainFormPresenterTests
             renameWorkspaceHandler,
             saveTemporaryWorkspaceHandler,
             updateWorkspaceDescriptionHandler,
+            updateWorkspaceLastActiveDocumentHandler,
             dialogService.Object,
             view.Object,
             NullLogger<WorkspacePresentation>.Instance,
@@ -5101,6 +5123,268 @@ public sealed class MainFormPresenterTests
             Assert.DoesNotContain(
                 workspaceId.ToString(),
                 value?.ToString() ?? string.Empty);
+        }
+    }
+
+    [Fact]
+    public async Task WorkspaceOpenRequested_RestoresPersistedLastActiveDocumentAfterAllMembersArePresented()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid firstDocumentId = Guid.NewGuid();
+        Guid secondDocumentId = Guid.NewGuid();
+
+        Document firstDocument =
+            Document.Create(
+                firstDocumentId,
+                "first.md",
+                "First document",
+                "first-hash",
+                "first.dvault");
+
+        Document secondDocument =
+            Document.Create(
+                secondDocumentId,
+                "second.md",
+                "Second document",
+                "second-hash",
+                "second.dvault");
+
+        Document[] documents =
+        [
+            firstDocument,
+        secondDocument
+        ];
+
+        var documentRepository =
+            new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(documents);
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                firstDocumentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(firstDocument);
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                secondDocumentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(secondDocument);
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        documentReader
+            .Setup(x => x.OpenReadAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                () => new MemoryStream(
+                    Encoding.UTF8.GetBytes("Document content")));
+
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                workspaceId,
+                "Workspace");
+
+        workspace.AddDocument(firstDocumentId);
+        workspace.AddDocument(secondDocumentId);
+        workspace.SetLastActiveDocument(secondDocumentId);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.GetByIdAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(workspace);
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns((Workspace?)null);
+
+        var securitySession =
+            new PresentationSessionRevisionTestSupport.SecuritySessionHarness(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        List<(string Action, Guid DocumentId)> presentationEvents = [];
+
+        var workspaceView =
+            new Mock<IWorkspacePresentationView>();
+
+        workspaceView
+            .Setup(x => x.AddDocumentPresentation(
+                It.IsAny<WorkspaceDocumentPresentation>()))
+            .Callback<WorkspaceDocumentPresentation>(
+                presentation =>
+                    presentationEvents.Add(
+                        ("Added", presentation.DocumentId)));
+
+        workspaceView
+            .Setup(x => x.ActivateDocumentPresentation(
+                It.IsAny<Guid>()))
+            .Callback<Guid>(
+                documentId =>
+                    presentationEvents.Add(
+                        ("Activated", documentId)))
+            .Returns(true);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(x => x.Create(firstDocumentId, 0))
+            .Returns(
+                () => CreateDocumentPresentation(firstDocumentId));
+
+        documentPresentationFactory
+            .Setup(x => x.Create(secondDocumentId, 0))
+            .Returns(
+                () => CreateDocumentPresentation(secondDocumentId));
+
+        using WorkspacePresentation workspacePresentation =
+            PresentationSessionRevisionTestSupport.CreateWorkspacePresentation(
+                workspaceId,
+                securitySession,
+                0,
+                workspaceView,
+                documentPresentationFactory);
+
+        var workspacePresentationManager =
+            new Mock<IWorkspacePresentationManager>();
+
+        workspacePresentationManager
+            .Setup(x => x.GetOrCreate(
+                workspaceId,
+                WorkspaceType.Persistent,
+                workspace.Name,
+                workspace.Description,
+                0))
+            .Returns(workspacePresentation);
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SelectedWorkspaceId)
+            .Returns(workspaceId);
+
+        using MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: documentRepository,
+                documentReader: documentReader,
+                workspacePresentationManager: workspacePresentationManager,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                applicationSecuritySession: securitySession.Session);
+
+        // Act
+        view.Raise(
+            x => x.WorkspaceOpenRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert
+        Assert.Equal(
+            new[]
+            {
+            firstDocumentId,
+            secondDocumentId
+            },
+            presentationEvents
+                .Where(entry => entry.Action == "Added")
+                .Select(entry => entry.DocumentId)
+                .ToArray());
+
+        Assert.Equal(
+            ("Activated", secondDocumentId),
+            presentationEvents[^1]);
+
+        int restoredActivationIndex =
+            presentationEvents.Count - 1;
+
+        foreach (Guid documentId in new[]
+                 {
+                 firstDocumentId,
+                 secondDocumentId
+             })
+        {
+            int presentedIndex =
+                presentationEvents.FindIndex(
+                    entry =>
+                        entry.Action == "Added" &&
+                        entry.DocumentId == documentId);
+
+            Assert.True(presentedIndex >= 0);
+            Assert.True(presentedIndex < restoredActivationIndex);
+        }
+
+        Assert.Equal(
+            secondDocumentId,
+            workspacePresentation.ActiveDocumentId);
+
+        WorkspaceDocumentPresentation CreateDocumentPresentation(
+            Guid documentId)
+        {
+            var documentView =
+                new Mock<IDocumentView>();
+
+            documentView
+                .Setup(x => x.ShowDocumentAsync(
+                    It.IsAny<Stream>(),
+                    It.IsAny<string>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+
+            var getDocumentHandler =
+                new GetDocumentHandler(
+                    documentRepository.Object,
+                    NullLogger<GetDocumentHandler>.Instance);
+
+            var openDocumentHandler =
+                new OpenDocumentHandler(
+                    documentRepository.Object,
+                    documentReader.Object,
+                    new DocumentProcessingOptions(),
+                    NullLogger<OpenDocumentHandler>.Instance);
+
+            var removeDocumentHandler =
+                new RemoveDocumentHandler(
+                    documentRepository.Object,
+                    new Mock<IWorkspaceRepository>().Object,
+                    new Mock<IStorageService>().Object,
+                    NullLogger<RemoveDocumentHandler>.Instance);
+
+            var documentPresenter =
+                new DocumentWorkspacePresenter(
+                    documentView.Object,
+                    new Mock<IDocumentViewer>().Object,
+                    getDocumentHandler,
+                    openDocumentHandler,
+                    removeDocumentHandler,
+                    NullLogger<DocumentWorkspacePresenter>.Instance,
+                    securitySession.Session.Object,
+                    0);
+
+            return new WorkspaceDocumentPresentation(
+                documentId,
+                documentPresenter,
+                documentView.Object);
         }
     }
 

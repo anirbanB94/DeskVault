@@ -6,6 +6,7 @@ using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using DeskVault.Domain.Workspaces;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
@@ -148,6 +149,7 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 new Mock<IWorkspaceDialogService>().Object,
                 CreateAuthenticatedApplicationSecuritySession()));
     }
@@ -164,6 +166,7 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 new Mock<IWorkspaceDialogService>().Object,
                 CreateAuthenticatedApplicationSecuritySession()));
     }
@@ -180,6 +183,7 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 new Mock<IWorkspaceDialogService>().Object,
                 CreateAuthenticatedApplicationSecuritySession()));
     }
@@ -196,6 +200,7 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 new Mock<IWorkspaceDialogService>().Object,
                 CreateAuthenticatedApplicationSecuritySession()));
     }
@@ -212,6 +217,7 @@ public sealed class WorkspacePresentationFactoryTests
                 null!,
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 new Mock<IWorkspaceDialogService>().Object,
                 CreateAuthenticatedApplicationSecuritySession()));
     }
@@ -228,6 +234,7 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 null!,
                 CreateUpdateWorkspaceDescriptionHandler(),
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 new Mock<IWorkspaceDialogService>().Object,
                 CreateAuthenticatedApplicationSecuritySession()));
     }
@@ -244,6 +251,7 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 null!,
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 new Mock<IWorkspaceDialogService>().Object,
                 CreateAuthenticatedApplicationSecuritySession()));
     }
@@ -260,6 +268,7 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 null!,
                 CreateAuthenticatedApplicationSecuritySession()));
     }
@@ -276,8 +285,34 @@ public sealed class WorkspacePresentationFactoryTests
                 CreateRenameWorkspaceHandler(),
                 CreateSaveTemporaryWorkspaceHandler(),
                 CreateUpdateWorkspaceDescriptionHandler(),
+                CreateUpdateWorkspaceLastActiveDocumentHandler(),
                 new Mock<IWorkspaceDialogService>().Object,
                 null!));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsWhenUpdateWorkspaceLastActiveDocumentHandlerIsNull()
+    {
+        // Arrange
+        WorkspacePresentationFactory factory;
+
+        // Act
+        Action createFactory = () =>
+            factory = new WorkspacePresentationFactory(
+                new Mock<IWorkspaceDocumentPresentationFactory>().Object,
+                CreateListDocumentsHandler(),
+                CreateAddDocumentToWorkspaceHandler(),
+                CreateRemoveDocumentFromWorkspaceHandler(),
+                CreateRenameWorkspaceHandler(),
+                CreateSaveTemporaryWorkspaceHandler(),
+                CreateUpdateWorkspaceDescriptionHandler(),
+                null!,
+                new Mock<IWorkspaceDialogService>().Object,
+                CreateAuthenticatedApplicationSecuritySession());
+
+        // Assert
+        Assert.Throws<ArgumentNullException>(
+            createFactory);
     }
 
     private static WorkspacePresentationFactory CreateFactory(
@@ -291,6 +326,7 @@ public sealed class WorkspacePresentationFactoryTests
             CreateRenameWorkspaceHandler(),
             CreateSaveTemporaryWorkspaceHandler(),
             CreateUpdateWorkspaceDescriptionHandler(),
+            CreateUpdateWorkspaceLastActiveDocumentHandler(),
             new Mock<IWorkspaceDialogService>().Object,
             applicationSecuritySession ??
                 CreateAuthenticatedApplicationSecuritySession());
@@ -371,5 +407,14 @@ public sealed class WorkspacePresentationFactoryTests
             new Mock<IWorkspaceRepository>().Object,
             new Mock<IActiveWorkspaceRegistry>().Object,
             NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
+    }
+
+    private static UpdateWorkspaceLastActiveDocumentHandler
+        CreateUpdateWorkspaceLastActiveDocumentHandler()
+    {
+        return new UpdateWorkspaceLastActiveDocumentHandler(
+            new Mock<IWorkspaceRepository>().Object,
+            new Mock<IActiveWorkspaceRegistry>().Object,
+            NullLogger<UpdateWorkspaceLastActiveDocumentHandler>.Instance);
     }
 }

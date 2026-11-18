@@ -1,4 +1,3 @@
-using System.Text;
 using DeskVault.Application.Configurations;
 using DeskVault.Application.Documents.Chunking;
 using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
@@ -18,10 +17,12 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Authentication;
 using DeskVault.Application.Security.Sessions;
 using DeskVault.Application.Security.Workstation;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.Text;
 
 namespace DeskVault.Application.Tests;
 
@@ -426,5 +427,27 @@ public sealed class ApplicationDependencyInjectionTests
         Assert.Same(
             serviceProvider.GetRequiredService<IWorkstationSecurityMonitor>(),
             serviceProvider.GetRequiredService<IWorkstationSecurityReadiness>());
+    }
+
+    [Fact]
+    public void AddApplication_RegistersUpdateWorkspaceLastActiveDocumentHandlerAsSingleton()
+    {
+        // Arrange
+        var services =
+            new ServiceCollection();
+
+        // Act
+        services.AddApplication();
+
+        // Assert
+        Assert.Contains(
+            services,
+            descriptor =>
+                descriptor.ServiceType ==
+                    typeof(UpdateWorkspaceLastActiveDocumentHandler)
+                && descriptor.ImplementationType ==
+                    typeof(UpdateWorkspaceLastActiveDocumentHandler)
+                && descriptor.Lifetime ==
+                    ServiceLifetime.Singleton);
     }
 }

@@ -182,6 +182,21 @@ public static class LogMessages
     public const string WorkspaceDescriptionUpdateCompleted =
         "Application workspace description update completed.";
 
+    public const string WorkspaceLastActiveDocumentUpdateWorkspaceNotFound =
+        "Application workspace last-active-document update skipped because the workspace was not active.";
+
+    public const string WorkspaceLastActiveDocumentUpdateNotPersistent =
+        "Application workspace last-active-document update skipped because the workspace is not persistent.";
+
+    public const string WorkspaceLastActiveDocumentUpdateNotMember =
+        "Application workspace last-active-document update skipped because the document is not a member.";
+
+    public const string WorkspaceLastActiveDocumentUpdateUnchanged =
+        "Application workspace last-active-document update skipped because the active document is unchanged.";
+
+    public const string WorkspaceLastActiveDocumentUpdateCompleted =
+        "Application workspace last-active-document update completed.";
+
     public const string WorkspacePresentationAddDocumentsOperation =
         "add documents";
 

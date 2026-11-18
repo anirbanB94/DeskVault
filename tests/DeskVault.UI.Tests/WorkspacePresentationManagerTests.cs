@@ -6,6 +6,7 @@ using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using DeskVault.Domain.Workspaces;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
@@ -875,6 +876,12 @@ public sealed class WorkspacePresentationManagerTests
                 activeWorkspaceRegistry.Object,
                 NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
 
+        var updateWorkspaceLastActiveDocumentHandler =
+            new UpdateWorkspaceLastActiveDocumentHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceLastActiveDocumentHandler>.Instance);
+
         var applicationSecuritySession =
             new Mock<IApplicationSecuritySession>();
 
@@ -897,6 +904,7 @@ public sealed class WorkspacePresentationManagerTests
             renameWorkspaceHandler,
             saveTemporaryWorkspaceHandler,
             updateWorkspaceDescriptionHandler,
+            updateWorkspaceLastActiveDocumentHandler,
             dialogService.Object,
             view.Object,
             NullLogger<WorkspacePresentation>.Instance,

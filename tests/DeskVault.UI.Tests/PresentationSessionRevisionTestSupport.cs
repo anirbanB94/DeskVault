@@ -10,6 +10,7 @@ using DeskVault.Application.Workspaces.Commands.RemoveDocumentFromWorkspace;
 using DeskVault.Application.Workspaces.Commands.RenameWorkspace;
 using DeskVault.Application.Workspaces.Commands.SaveTemporaryWorkspace;
 using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceDescription;
+using DeskVault.Application.Workspaces.Commands.UpdateWorkspaceLastActiveDocument;
 using DeskVault.Domain.Workspaces;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Services.Interfaces;
@@ -123,6 +124,12 @@ internal static class PresentationSessionRevisionTestSupport
                 activeWorkspaceRegistry.Object,
                 NullLogger<UpdateWorkspaceDescriptionHandler>.Instance);
 
+        var updateWorkspaceLastActiveDocumentHandler =
+            new UpdateWorkspaceLastActiveDocumentHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceLastActiveDocumentHandler>.Instance);
+
         return new WorkspacePresentation(
             workspaceId,
             workspaceType,
@@ -135,6 +142,7 @@ internal static class PresentationSessionRevisionTestSupport
             renameWorkspaceHandler,
             saveTemporaryWorkspaceHandler,
             updateWorkspaceDescriptionHandler,
+            updateWorkspaceLastActiveDocumentHandler,
             dialogService.Object,
             view.Object,
             NullLogger<WorkspacePresentation>.Instance,
@@ -217,6 +225,10 @@ internal static class PresentationSessionRevisionTestSupport
                 workspaceRepository.Object,
                 activeWorkspaceRegistry.Object,
                 NullLogger<UpdateWorkspaceDescriptionHandler>.Instance),
+            new UpdateWorkspaceLastActiveDocumentHandler(
+                workspaceRepository.Object,
+                activeWorkspaceRegistry.Object,
+                NullLogger<UpdateWorkspaceLastActiveDocumentHandler>.Instance),
             new Mock<IWorkspaceDialogService>().Object,
             securitySession);
     }
