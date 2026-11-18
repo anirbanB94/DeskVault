@@ -18,6 +18,7 @@ public partial class MainForm : Form, IMainFormView
     private readonly MainFormPresenter _presenter;
     private readonly ILogger<MainForm> _logger;
     private readonly Timer _searchDebounceTimer;
+    private bool _isClearingSearch;
     private readonly List<SearchResultListItem> _searchResults = [];
     private bool _isUpdatingDocumentGrid;
     private bool _isUpdatingWorkspaceGrid;
@@ -305,7 +306,18 @@ public partial class MainForm : Form, IMainFormView
         EventArgs e)
     {
         _searchDebounceTimer.Stop();
-        searchTextBox.Clear();
+
+        _isClearingSearch = true;
+
+        try
+        {
+            searchTextBox.Clear();
+        }
+        finally
+        {
+            _isClearingSearch = false;
+        }
+
         SearchRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -322,6 +334,11 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         EventArgs e)
     {
+        if (_isClearingSearch)
+        {
+            return;
+        }
+
         _searchDebounceTimer.Stop();
         _searchDebounceTimer.Start();
     }

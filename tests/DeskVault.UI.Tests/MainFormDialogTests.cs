@@ -150,7 +150,8 @@ public sealed class MainFormDialogTests
 
         Assert.False(unlockButton.Available);
     }
-    private static MainForm CreateMainForm(
+
+    internal static MainForm CreateMainForm(
         ISessionBoundDialogCoordinator dialogCoordinator,
         IStartupAuthenticationDialogService? reauthenticationDialogService = null)
     {
@@ -167,6 +168,12 @@ public sealed class MainFormDialogTests
 
         var documentRepository =
             new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                []);
 
         var workspaceRepository =
             new Mock<IWorkspaceRepository>();
@@ -185,6 +192,15 @@ public sealed class MainFormDialogTests
 
         var searchStore =
             new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                []);
 
         var processingService =
             new Mock<IDocumentProcessingService>();
