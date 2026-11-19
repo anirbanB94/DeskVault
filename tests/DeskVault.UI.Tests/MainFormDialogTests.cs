@@ -153,7 +153,8 @@ public sealed class MainFormDialogTests
 
     internal static MainForm CreateMainForm(
         ISessionBoundDialogCoordinator dialogCoordinator,
-        IStartupAuthenticationDialogService? reauthenticationDialogService = null)
+        IStartupAuthenticationDialogService? reauthenticationDialogService = null,
+        IWorkspacePresentationManager? workspacePresentationManager = null)
     {
         var applicationInfo =
             new Mock<IApplicationInfoService>();
@@ -278,8 +279,8 @@ public sealed class MainFormDialogTests
                 activeWorkspaceRegistry.Object,
                 NullLogger<CloseWorkspaceHandler>.Instance);
 
-        var workspacePresentationManager =
-            new Mock<IWorkspacePresentationManager>();
+        workspacePresentationManager ??=
+            new Mock<IWorkspacePresentationManager>().Object;
 
         DocumentTextExtractorResolver extractorResolver =
             new([]);
@@ -295,7 +296,7 @@ public sealed class MainFormDialogTests
                 getWorkspacesHandler,
                 openWorkspaceHandler,
                 closeWorkspaceHandler,
-                workspacePresentationManager.Object,
+                workspacePresentationManager,
                 processingService.Object,
                 extractorResolver,
                 NullLogger<MainFormPresenter>.Instance,

@@ -906,6 +906,66 @@ process memory. The implementation minimizes retained in-app presentation
 state and disposes resources it owns within the established ownership
 boundaries.
 
+### Presentation Lifetime and Event Subscription Ownership
+
+`MainForm` owns the `MainFormPresenter`, search-debounce timer, and
+`WinFormsUserActivityMessageFilter` instances that it creates or receives
+for its own UI lifetime. It releases those resources through one idempotent
+cleanup path for both normal form closure and direct form disposal. This
+form-level cleanup does not own or dispose the shared Generic Host; host
+lifetime remains with `Program.Main` as specified by ADR-0002.
+
+`MainFormPresenter` owns the event subscriptions it establishes on each
+`WorkspacePresentation`. It tracks the presentations to which it subscribes
+and detaches its workspace event handlers before the corresponding
+presentation is released. This applies to successful workspace close and
+delete, replacement by a presentation associated with a newer
+security-session revision, protected-presentation cleanup, and presenter
+disposal. A closed, disposed, or superseded presentation must not retain
+callbacks into the presenter.
+
+`WorkspacePresentationManager` maintains a registry of live,
+non-disposed workspace presentation instances keyed by workspace identity.
+It coordinates lookup, creation, reuse, activation, and closure of those
+managed presentations. A disposed presentation must not be returned by
+lookup, reported as present, found through temporary-document lookup,
+reactivated, or reused by a subsequent creation operation. Factories remain
+construction-only and do not retain created presentation instances.
+
+The manager removes an individual presentation from its registry before
+beginning that presentation's disposal. It clears the complete registry
+before beginning `CloseAll` or manager disposal. If disposal of one
+presentation fails, cleanup attempts continue for the remaining selected
+presentations. The first cleanup failure may be surfaced after the
+remaining cleanup attempts have been made.
+
+`WorkspacePresentation` owns its workspace-view and application
+security-session event subscriptions, workspace presentation state, and
+workspace view lifetime. It also owns the collection of
+`WorkspaceDocumentPresentation` child wrappers. A cancellation callback
+failure during disposal must not prevent the remaining event detachment,
+workspace-state clearing, child-presentation release, or workspace-view
+disposal. A cancellation callback failure during session revocation must
+not prevent the attempt to schedule workspace cleanup on the owning UI
+thread.
+
+`WorkspaceDocumentPresentation` remains the sole owner of its document
+presenter/view pair. The workspace presentation, presentation manager,
+and main-form presenter do not introduce a second disposal owner for those
+child presenters or views.
+
+Search cancellation sources remain owned by their individual search
+operations. `MainFormPresenter` invalidates and cancels an active search
+when the presenter is disposed or protected access is withdrawn, but it
+does not dispose a cancellation source while its operation may still be
+using the associated token. The operation disposes its source from its
+completion/finally path after it has finished using that token.
+
+These ownership rules preserve deterministic teardown without introducing
+an application-wide lifecycle framework, changing the three-form WinForms
+Passive View MVP architecture, or transferring shared-host ownership from
+the application composition boundary.
+
 ### Session-Bound Modal Dialogs
 
 Information, warning, error, and confirmation dialogs are protected
@@ -1555,6 +1615,11 @@ The architecture will support multiple workspaces, but the first implementation 
 - Re-authentication creates fresh presentation state from authoritative repositories rather than restoring prior in-memory presentations.
 - Persistent document and workspace data remain separate from the in-memory presentation cleanup lifecycle.
 - Presentation and manager disposal attempt remaining cleanup operations when an individual resource disposal fails.
+- The main form releases its owned presenter and UI-lifetime resources through one idempotent cleanup path for normal closure and direct disposal.
+- Main-form presenter workspace-event subscriptions are tracked and detached before their presentations are released, replaced, or cleared.
+- The workspace presentation manager exposes only live, non-disposed presentations and removes registry entries before disposal.
+- Workspace cancellation callback failures do not prevent remaining presentation cleanup or the attempt to schedule session-revocation cleanup.
+- Search cancellation sources remain owned by their individual operations and are released only after those operations complete.
 
 ### Negative
 

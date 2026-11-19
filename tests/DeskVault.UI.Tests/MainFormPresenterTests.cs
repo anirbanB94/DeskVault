@@ -477,6 +477,630 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
+    public async Task Dispose_WhenSearchIsPending_CancelsButDoesNotDisposeOperationOwnedTokenSourceUntilCompletion()
+    {
+        // Arrange
+        var searchStarted =
+            new TaskCompletionSource<CancellationToken>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var searchCompletion =
+            new TaskCompletionSource<IReadOnlyList<SearchDocumentsResult>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var searchStore =
+            new Mock<IDocumentSearchStore>();
+
+        searchStore
+            .Setup(x => x.SearchAsync(
+                It.IsAny<SearchDocumentsQuery>(),
+                It.IsAny<SearchDocumentsRankingKey?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                SearchDocumentsQuery _,
+                SearchDocumentsRankingKey? _,
+                int _,
+                CancellationToken cancellationToken) =>
+            {
+                searchStarted.TrySetResult(cancellationToken);
+
+                return searchCompletion.Task;
+            });
+
+        var view =
+            new Mock<IMainFormView>();
+
+        view
+            .SetupGet(x => x.SearchText)
+            .Returns("security");
+
+        MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                searchStore);
+
+        // Start a search and hold its completion.
+        view.Raise(
+            x => x.SearchRequested += null,
+            EventArgs.Empty);
+
+        CancellationToken searchToken =
+            await searchStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        FieldInfo sourceField =
+            typeof(MainFormPresenter).GetField(
+                "_searchCancellationTokenSource",
+                BindingFlags.Instance |
+                BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                "Search cancellation source field was not found.");
+
+        CancellationTokenSource cancellationTokenSource =
+            sourceField.GetValue(presenter) as CancellationTokenSource
+            ?? throw new InvalidOperationException(
+                "Active search cancellation source was not available.");
+
+        Assert.Equal(
+            searchToken,
+            cancellationTokenSource.Token);
+
+        // Act: disposing the presenter cancels the operation, but the
+        // operation still owns its source until its finally block executes.
+        presenter.Dispose();
+
+        // Assert: the source is cancelled but has not yet been disposed.
+        Assert.True(searchToken.IsCancellationRequested);
+
+        Assert.Equal(
+            searchToken,
+            cancellationTokenSource.Token);
+
+        // Complete the pending operation so its finally block can release
+        // the operation-owned cancellation source.
+        searchCompletion.SetResult([]);
+
+        await WaitForBackgroundOperationAsync();
+
+        // The source must now be disposed by CompleteSearchOperation().
+        Assert.Throws<ObjectDisposedException>(
+            () =>
+            {
+                _ = cancellationTokenSource.Token;
+            });
+
+        // Disposed presenters must not publish late search results.
+        view.Verify(
+            x => x.ShowSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.AppendSearchResults(
+                It.IsAny<IReadOnlyList<SearchResultListItem>>()),
+            Times.Never);
+
+        // Repeat disposal to verify presenter idempotence.
+        presenter.Dispose();
+    }
+
+    [Fact]
+    public async Task DocumentRemovedNotification_FromSupersededWorkspaceRevision_DoesNotStartDocumentRefresh()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+
+        var currentSession =
+            new Mock<IApplicationSecuritySession>();
+
+        currentSession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    1));
+
+        var workspaceSession =
+            new PresentationSessionRevisionTestSupport.SecuritySessionHarness(
+                ApplicationSecuritySessionState.Authenticated,
+                revision: 1);
+
+        WorkspacePresentation stalePresentation =
+            PresentationSessionRevisionTestSupport.CreateWorkspacePresentation(
+                workspaceId,
+                workspaceSession,
+                revision: 0);
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                Array.Empty<DeskVault.Domain.Documents.Document>());
+
+        var view =
+            new Mock<IMainFormView>();
+
+        MainFormPresenter presenter =
+            CreatePresenter(
+                view,
+                new Mock<IDocumentSearchStore>(),
+                repository: repository,
+                applicationSecuritySession: currentSession);
+
+        MethodInfo notificationHandler =
+            typeof(MainFormPresenter).GetMethod(
+                "OnDocumentRemoved",
+                BindingFlags.Instance |
+                BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                "OnDocumentRemoved method was not found.");
+
+        // Act: simulate a callback already captured by the event dispatcher
+        // before the old workspace's subscription was detached.
+        notificationHandler.Invoke(
+            presenter,
+            [
+                stalePresentation,
+                new DocumentRemovedEventArgs(Guid.NewGuid())
+            ]);
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert: an old workspace revision must not initiate a new
+        // document-list refresh in the currently authenticated session.
+        repository.Verify(
+            x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowDocuments(
+                It.IsAny<IReadOnlyList<DocumentListItem>>()),
+            Times.Never);
+
+        // Cleanup
+        presenter.Dispose();
+        stalePresentation.Dispose();
+    }
+
+    [Fact]
+    public void Dispose_UnsubscribesFromWorkspacePresentationEventsBeforeClosingManagedPresentations()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        var session =
+            new PresentationSessionRevisionTestSupport.SecuritySessionHarness(
+                ApplicationSecuritySessionState.Authenticated,
+                revision: 0);
+
+        WorkspacePresentation presentation =
+            PresentationSessionRevisionTestSupport.CreateWorkspacePresentation(
+                workspaceId,
+                session,
+                revision: 0);
+
+        var manager =
+            new Mock<IWorkspacePresentationManager>();
+
+        MainFormPresenter? presenter = null;
+
+        manager
+            .Setup(x => x.CloseAll())
+            .Callback(() =>
+            {
+                AssertWorkspacePresentationUnsubscribed(
+                    presentation,
+                    presenter!);
+            });
+
+        presenter =
+            CreatePresenter(
+                new Mock<IMainFormView>(),
+                new Mock<IDocumentSearchStore>(),
+                workspacePresentationManager: manager,
+                applicationSecuritySession: session.Session);
+
+        SubscribeWorkspacePresentationForTest(
+            presenter,
+            presentation);
+
+        AssertWorkspacePresentationSubscribed(
+            presentation,
+            presenter);
+
+        // Act
+        presenter.Dispose();
+
+        // Assert
+        AssertWorkspacePresentationUnsubscribed(
+            presentation,
+            presenter);
+
+        manager.Verify(
+            x => x.CloseAll(),
+            Times.Once);
+
+        presentation.Dispose();
+    }
+
+    [Fact]
+    public void ClearProtectedPresentation_UnsubscribesWorkspaceEventsBeforeClosingManagedPresentations()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        var session =
+            new PresentationSessionRevisionTestSupport.SecuritySessionHarness(
+                ApplicationSecuritySessionState.Authenticated,
+                revision: 0);
+
+        WorkspacePresentation presentation =
+            PresentationSessionRevisionTestSupport.CreateWorkspacePresentation(
+                workspaceId,
+                session,
+                revision: 0);
+
+        var manager =
+            new Mock<IWorkspacePresentationManager>();
+
+        MainFormPresenter? presenter = null;
+
+        manager
+            .Setup(x => x.CloseAll())
+            .Callback(() =>
+            {
+                AssertWorkspacePresentationUnsubscribed(
+                    presentation,
+                    presenter!);
+            });
+
+        presenter =
+            CreatePresenter(
+                new Mock<IMainFormView>(),
+                new Mock<IDocumentSearchStore>(),
+                workspacePresentationManager: manager,
+                applicationSecuritySession: session.Session);
+
+        SubscribeWorkspacePresentationForTest(
+            presenter,
+            presentation);
+
+        MethodInfo clearMethod =
+            typeof(MainFormPresenter).GetMethod(
+                "ClearProtectedPresentation",
+                BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                "ClearProtectedPresentation method was not found.");
+
+        // Act
+        clearMethod.Invoke(
+            presenter,
+            null);
+
+        // Assert
+        AssertWorkspacePresentationUnsubscribed(
+            presentation,
+            presenter);
+
+        manager.Verify(
+            x => x.CloseAll(),
+            Times.Once);
+
+        presenter.Dispose();
+        presentation.Dispose();
+    }
+
+    [Fact]
+    public void GetOrCreateWorkspacePresentation_DetachesSupersededSessionBeforeManagerReplacement()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        var oldSession =
+            new PresentationSessionRevisionTestSupport.SecuritySessionHarness(
+                ApplicationSecuritySessionState.Authenticated,
+                revision: 0);
+
+        var currentSession =
+            new PresentationSessionRevisionTestSupport.SecuritySessionHarness(
+                ApplicationSecuritySessionState.Authenticated,
+                revision: 1);
+
+        WorkspacePresentation oldPresentation =
+            PresentationSessionRevisionTestSupport.CreateWorkspacePresentation(
+                workspaceId,
+                oldSession,
+                revision: 0);
+
+        WorkspacePresentation replacement =
+            PresentationSessionRevisionTestSupport.CreateWorkspacePresentation(
+                workspaceId,
+                currentSession,
+                revision: 1);
+
+        var manager =
+            new Mock<IWorkspacePresentationManager>();
+
+        MainFormPresenter? presenter = null;
+
+        manager
+            .Setup(x => x.GetOrCreate(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                1L))
+            .Callback<Guid, WorkspaceType, string?, string?, long>(
+                (_, _, _, _, _) =>
+                {
+                    AssertWorkspacePresentationUnsubscribed(
+                        oldPresentation,
+                        presenter!);
+                })
+            .Returns(replacement);
+
+        presenter =
+            CreatePresenter(
+                new Mock<IMainFormView>(),
+                new Mock<IDocumentSearchStore>(),
+                workspacePresentationManager: manager,
+                applicationSecuritySession: currentSession.Session);
+
+        SubscribeWorkspacePresentationForTest(
+            presenter,
+            oldPresentation);
+
+        AssertWorkspacePresentationSubscribed(
+            oldPresentation,
+            presenter);
+
+        MethodInfo getOrCreateMethod =
+            typeof(MainFormPresenter).GetMethod(
+                "GetOrCreateWorkspacePresentation",
+                BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                "GetOrCreateWorkspacePresentation method was not found.");
+
+        // Act
+        WorkspacePresentation result =
+            (WorkspacePresentation?)getOrCreateMethod.Invoke(
+                presenter,
+                [
+                    workspaceId,
+                    WorkspaceType.Persistent,
+                    "Workspace",
+                    null,
+                    1L
+                ])
+            ?? throw new InvalidOperationException(
+                "The replacement workspace presentation was not returned.");
+
+        SubscribeWorkspacePresentationForTest(
+            presenter,
+            result);
+
+        // Assert
+        Assert.Same(replacement, result);
+
+        AssertWorkspacePresentationUnsubscribed(
+            oldPresentation,
+            presenter);
+
+        AssertWorkspacePresentationSubscribed(
+            replacement,
+            presenter);
+
+        presenter.Dispose();
+        oldPresentation.Dispose();
+        replacement.Dispose();
+    }
+
+    [Fact]
+    public async Task WorkspaceCloseRequested_UnsubscribesWorkspaceEventsBeforeManagerClose()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                workspaceId,
+                "Workspace");
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns(workspace);
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Remove(workspaceId))
+            .Returns(true);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var workspaceView =
+            new Mock<IWorkspacePresentationView>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        WorkspacePresentation presentation =
+            CreateWorkspacePresentationForCloseTesting(
+                workspaceId,
+                workspace.Name,
+                workspace.Description,
+                workspaceView,
+                workspaceRepository,
+                activeWorkspaceRegistry,
+                securitySession);
+
+        var manager =
+            new Mock<IWorkspacePresentationManager>();
+
+        MainFormPresenter? presenter = null;
+
+        manager
+            .Setup(x => x.Close(workspaceId))
+            .Callback(() =>
+            {
+                AssertWorkspacePresentationUnsubscribed(
+                    presentation,
+                    presenter!);
+            })
+            .Returns(true);
+
+        presenter =
+            CreatePresenter(
+                new Mock<IMainFormView>(),
+                new Mock<IDocumentSearchStore>(),
+                workspacePresentationManager: manager,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                applicationSecuritySession: securitySession);
+
+        SubscribeWorkspacePresentationForTest(
+            presenter,
+            presentation);
+
+        // Act: raise the real workspace close event.
+        workspaceView.Raise(
+            x => x.CloseWorkspaceRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert
+        manager.Verify(
+            x => x.Close(workspaceId),
+            Times.Once);
+
+        AssertWorkspacePresentationUnsubscribed(
+            presentation,
+            presenter);
+
+        presenter.Dispose();
+        presentation.Dispose();
+    }
+
+    [Fact]
+    public async Task WorkspaceDeleteRequested_UnsubscribesWorkspaceEventsBeforeManagerClose()
+    {
+        Guid workspaceId = Guid.NewGuid();
+
+        Workspace workspace =
+            Workspace.CreatePersistent(
+                workspaceId,
+                "Workspace");
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns(workspace);
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Remove(workspaceId))
+            .Returns(true);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.DeleteAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        workspaceRepository
+            .Setup(x => x.GetAllAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var workspaceView =
+            new Mock<IWorkspacePresentationView>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        WorkspacePresentation presentation =
+            CreateWorkspacePresentationForCloseTesting(
+                workspaceId,
+                workspace.Name,
+                workspace.Description,
+                workspaceView,
+                workspaceRepository,
+                activeWorkspaceRegistry,
+                securitySession);
+
+        var mainView =
+            new Mock<IMainFormView>();
+
+        mainView
+            .Setup(x => x.ConfirmWorkspaceRemoval(
+                It.IsAny<string>(),
+                It.IsAny<long>()))
+            .Returns(true);
+
+        var manager =
+            new Mock<IWorkspacePresentationManager>();
+
+        MainFormPresenter? presenter = null;
+
+        manager
+            .Setup(x => x.Close(workspaceId))
+            .Callback(() =>
+            {
+                AssertWorkspacePresentationUnsubscribed(
+                    presentation,
+                    presenter!);
+            })
+            .Returns(true);
+
+        presenter =
+            CreatePresenter(
+                mainView,
+                new Mock<IDocumentSearchStore>(),
+                workspacePresentationManager: manager,
+                workspaceRepository: workspaceRepository,
+                activeWorkspaceRegistry: activeWorkspaceRegistry,
+                applicationSecuritySession: securitySession);
+
+        SubscribeWorkspacePresentationForTest(
+            presenter,
+            presentation);
+
+        // Act: raise the real workspace deletion event.
+        workspaceView.Raise(
+            x => x.DeleteWorkspaceRequested += null,
+            EventArgs.Empty);
+
+        await WaitForBackgroundOperationAsync();
+
+        // Assert
+        workspaceRepository.Verify(
+            x => x.DeleteAsync(
+                workspaceId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        manager.Verify(
+            x => x.Close(workspaceId),
+            Times.Once);
+
+        AssertWorkspacePresentationUnsubscribed(
+            presentation,
+            presenter);
+
+        presenter.Dispose();
+        presentation.Dispose();
+    }
+
+    [Fact]
     public async Task LockAndReauthenticationBeforeUiDispatch_ClearsOldPresentationAndReloadsFreshMetadata()
     {
         Guid documentId =
@@ -4310,6 +4934,84 @@ public sealed class MainFormPresenterTests
         }
 
         presentation.Dispose();
+    }
+
+    private static readonly string[] WorkspacePresentationEventNames =
+    [
+        "DocumentRemoved",
+        "WorkspaceDetailsUpdated",
+        "WorkspaceDeleteRequested",
+        "WorkspaceDocumentsUpdated",
+        "WorkspaceCloseRequested"
+    ];
+
+    private static void SubscribeWorkspacePresentationForTest(
+        MainFormPresenter presenter,
+        WorkspacePresentation presentation)
+    {
+        MethodInfo subscribeMethod =
+            typeof(MainFormPresenter).GetMethod(
+                "SubscribeWorkspacePresentation",
+                BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                "SubscribeWorkspacePresentation method was not found.");
+
+        subscribeMethod.Invoke(
+            presenter,
+            [presentation]);
+    }
+
+    private static bool HasWorkspacePresentationSubscription(
+        WorkspacePresentation presentation,
+        MainFormPresenter presenter,
+        string eventName)
+    {
+        FieldInfo eventField =
+            typeof(WorkspacePresentation).GetField(
+                eventName,
+                BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                $"Workspace event backing field '{eventName}' was not found.");
+
+        Delegate? handlers =
+            eventField.GetValue(presentation) as Delegate;
+
+        return handlers?
+            .GetInvocationList()
+            .Any(handler =>
+                ReferenceEquals(
+                    handler.Target,
+                    presenter)) == true;
+    }
+
+    private static void AssertWorkspacePresentationSubscribed(
+        WorkspacePresentation presentation,
+        MainFormPresenter presenter)
+    {
+        foreach (string eventName in WorkspacePresentationEventNames)
+        {
+            Assert.True(
+                HasWorkspacePresentationSubscription(
+                    presentation,
+                    presenter,
+                    eventName),
+                $"Presenter was not subscribed to {eventName}.");
+        }
+    }
+
+    private static void AssertWorkspacePresentationUnsubscribed(
+        WorkspacePresentation presentation,
+        MainFormPresenter presenter)
+    {
+        foreach (string eventName in WorkspacePresentationEventNames)
+        {
+            Assert.False(
+                HasWorkspacePresentationSubscription(
+                    presentation,
+                    presenter,
+                    eventName),
+                $"Presenter remained subscribed to {eventName}.");
+        }
     }
 
     private static WorkspacePresentation CreateWorkspacePresentationForCloseTesting(

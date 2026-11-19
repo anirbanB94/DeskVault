@@ -36,7 +36,7 @@ public sealed class WorkspacePresentation : IDisposable
     private readonly IApplicationSecuritySession _applicationSecuritySession;
     private readonly long _securitySessionRevision;
     private readonly UpdateWorkspaceLastActiveDocumentHandler _updateWorkspaceLastActiveDocumentHandler;
-    private readonly object _activeDocumentPersistenceSync = new();
+    private readonly Lock _activeDocumentPersistenceSync = new();
     private readonly CancellationTokenSource _lifetimeCancellationTokenSource = new();
     private Task _activeDocumentPersistenceTask = Task.CompletedTask;
     private long _activeDocumentSelectionVersion;
@@ -158,6 +158,8 @@ public sealed class WorkspacePresentation : IDisposable
 
     internal long SecuritySessionRevision => _securitySessionRevision;
 
+    internal bool IsDisposed => _disposed;
+
     public event EventHandler<DocumentRemovedEventArgs> DocumentRemoved = null!;
 
     public event EventHandler WorkspaceDocumentsUpdated = null!;
@@ -225,7 +227,7 @@ public sealed class WorkspacePresentation : IDisposable
         }
 
         HashSet<Guid> requestedDocumentIds =
-            workspaceDocumentIds.ToHashSet();
+            [.. workspaceDocumentIds];
 
         IReadOnlyList<DeskVaultDocument> documents =
             await _listDocumentsHandler.HandleAsync(
@@ -560,8 +562,6 @@ public sealed class WorkspacePresentation : IDisposable
         Interlocked.Increment(
             ref _activeDocumentSelectionVersion);
 
-        _lifetimeCancellationTokenSource.Cancel();
-
         Exception? disposalException = null;
 
         void TryCleanup(Action cleanup)
@@ -575,6 +575,11 @@ public sealed class WorkspacePresentation : IDisposable
                 disposalException ??= exception;
             }
         }
+
+        // Cancellation callbacks are external cleanup participants and can
+        // throw. Capture that failure without preventing event detachment,
+        // retained-state clearing, child disposal, or view disposal.
+        TryCleanup(_lifetimeCancellationTokenSource.Cancel);
 
         // Detach workspace event handlers independently.
         TryCleanup(() =>
@@ -616,7 +621,7 @@ public sealed class WorkspacePresentation : IDisposable
 
         // Snapshot and clear retained workspace state before disposing children.
         WorkspaceDocumentPresentation[] documentPresentations =
-            _documentPresentations.Values.ToArray();
+            [.. _documentPresentations.Values];
 
         _documentPresentations.Clear();
         _workspaceDocumentIds.Clear();
@@ -969,11 +974,10 @@ public sealed class WorkspacePresentation : IDisposable
             }
 
             IReadOnlyList<DeskVault.Domain.Documents.Document> workspaceDocuments =
-                documents
+                [.. documents
                     .Where(document =>
                         _workspaceDocumentIds.Contains(document.Id))
-                    .OrderBy(document => document.FileName)
-                    .ToList();
+                    .OrderBy(document => document.FileName)];
 
             WorkspaceDocumentSelectionResult? result =
                 _dialogService.ShowDocumentRemoval(
@@ -1573,7 +1577,18 @@ public sealed class WorkspacePresentation : IDisposable
         Interlocked.Increment(
             ref _activeDocumentSelectionVersion);
 
-        _lifetimeCancellationTokenSource.Cancel();
+        // Cancellation must not prevent cleanup from being scheduled on the
+        // workspace view's owning UI thread.
+        try
+        {
+            _lifetimeCancellationTokenSource.Cancel();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                "Workspace presentation cancellation after session revocation failed. FailureType={FailureType}",
+                exception.GetType().Name);
+        }
 
         try
         {
