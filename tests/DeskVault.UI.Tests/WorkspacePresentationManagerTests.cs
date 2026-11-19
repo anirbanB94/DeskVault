@@ -391,6 +391,435 @@ public sealed class WorkspacePresentationManagerTests
     }
 
     [Fact]
+    public async Task FindTemporaryByDocument_WhenPresentationWasDisposedExternally_DoesNotReturnOrAccessIt()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        WorkspacePresentation presentation =
+            CreatePresentation(
+                workspaceId,
+                WorkspaceType.Temporary,
+                null,
+                null);
+
+        await presentation.SetWorkspaceDocumentsAsync(
+            [documentId],
+            TestContext.Current.CancellationToken);
+
+        var factory =
+            new Mock<IWorkspacePresentationFactory>();
+
+        factory
+            .Setup(x => x.Create(
+                workspaceId,
+                WorkspaceType.Temporary,
+                null,
+                null,
+                0))
+            .Returns(presentation);
+
+        WorkspacePresentationManager manager =
+            new(
+                factory.Object,
+                CreateAuthenticatedApplicationSecuritySession());
+
+        manager.GetOrCreate(
+            workspaceId,
+            WorkspaceType.Temporary,
+            null,
+            null,
+            0);
+
+        // Simulate disposal initiated outside the manager.
+        presentation.Dispose();
+
+        // Act and assert
+        Assert.Null(
+            manager.FindTemporaryByDocument(documentId));
+
+        Assert.Null(
+            manager.Get(workspaceId));
+
+        Assert.False(
+            manager.Contains(workspaceId));
+
+        Assert.False(
+            manager.Activate(workspaceId));
+
+        Assert.False(
+            manager.Close(workspaceId));
+    }
+
+    [Fact]
+    public void GetOrCreate_WhenExistingPresentationWasDisposedExternally_CreatesReplacement()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+
+        WorkspacePresentation disposedPresentation =
+            CreatePresentation(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null);
+
+        WorkspacePresentation replacement =
+            CreatePresentation(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null);
+
+        var factory =
+            new Mock<IWorkspacePresentationFactory>();
+
+        factory
+            .SetupSequence(x => x.Create(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                0))
+            .Returns(disposedPresentation)
+            .Returns(replacement);
+
+        WorkspacePresentationManager manager =
+            new(
+                factory.Object,
+                CreateAuthenticatedApplicationSecuritySession());
+
+        WorkspacePresentation first =
+            manager.GetOrCreate(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                0);
+
+        Assert.Same(disposedPresentation, first);
+
+        disposedPresentation.Dispose();
+
+        // Act
+        WorkspacePresentation second =
+            manager.GetOrCreate(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                0);
+
+        // Assert
+        Assert.NotSame(disposedPresentation, second);
+        Assert.Same(replacement, second);
+        Assert.Same(replacement, manager.Get(workspaceId));
+        Assert.True(manager.Contains(workspaceId));
+
+        factory.Verify(
+            x => x.Create(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                0),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public void GetOrCreate_WhenFactoryReturnsDisposedPresentation_RejectsIt()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+
+        var view =
+            new Mock<IWorkspacePresentationView>();
+
+        WorkspacePresentation presentation =
+            CreatePresentation(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view);
+
+        presentation.Dispose();
+
+        var factory =
+            new Mock<IWorkspacePresentationFactory>();
+
+        factory
+            .Setup(x => x.Create(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                0))
+            .Returns(presentation);
+
+        WorkspacePresentationManager manager =
+            new(
+                factory.Object,
+                CreateAuthenticatedApplicationSecuritySession());
+
+        // Act
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => manager.GetOrCreate(
+                    workspaceId,
+                    WorkspaceType.Persistent,
+                    "Workspace",
+                    null,
+                    0));
+
+        // Assert
+        Assert.Contains(
+            "disposed presentation",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+
+        Assert.False(manager.Contains(workspaceId));
+        Assert.Null(manager.Get(workspaceId));
+
+        view.Verify(
+            x => x.ActivateWorkspace(),
+            Times.Never);
+    }
+
+    [Fact]
+    public void Close_RemovesPresentationFromRegistryBeforeDisposalStarts()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+
+        var view =
+            new Mock<IWorkspacePresentationView>();
+
+        WorkspacePresentation presentation =
+            CreatePresentation(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view);
+
+        var factory =
+            new Mock<IWorkspacePresentationFactory>();
+
+        factory
+            .Setup(x => x.Create(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                0))
+            .Returns(presentation);
+
+        WorkspacePresentationManager manager =
+            new(
+                factory.Object,
+                CreateAuthenticatedApplicationSecuritySession());
+
+        manager.GetOrCreate(
+            workspaceId,
+            WorkspaceType.Persistent,
+            "Workspace",
+            null,
+            0);
+
+        bool registryWasEmptyDuringDisposal = false;
+
+        view
+            .Setup(x => x.Dispose())
+            .Callback(() =>
+            {
+                registryWasEmptyDuringDisposal =
+                    !manager.Contains(workspaceId) &&
+                    manager.Get(workspaceId) is null;
+            });
+
+        // Act
+        bool closed =
+            manager.Close(workspaceId);
+
+        // Assert
+        Assert.True(closed);
+        Assert.True(registryWasEmptyDuringDisposal);
+        Assert.False(manager.Contains(workspaceId));
+        Assert.Null(manager.Get(workspaceId));
+    }
+
+    [Fact]
+    public void CloseAll_ClearsRegistryBeforeDisposingAnyPresentation()
+    {
+        // Arrange
+        Guid firstWorkspaceId = Guid.NewGuid();
+        Guid secondWorkspaceId = Guid.NewGuid();
+
+        var firstView =
+            new Mock<IWorkspacePresentationView>();
+
+        var secondView =
+            new Mock<IWorkspacePresentationView>();
+
+        WorkspacePresentation first =
+            CreatePresentation(
+                firstWorkspaceId,
+                WorkspaceType.Persistent,
+                "First",
+                null,
+                firstView);
+
+        WorkspacePresentation second =
+            CreatePresentation(
+                secondWorkspaceId,
+                WorkspaceType.Persistent,
+                "Second",
+                null,
+                secondView);
+
+        var factory =
+            new Mock<IWorkspacePresentationFactory>();
+
+        factory
+            .Setup(x => x.Create(
+                firstWorkspaceId,
+                WorkspaceType.Persistent,
+                "First",
+                null,
+                0))
+            .Returns(first);
+
+        factory
+            .Setup(x => x.Create(
+                secondWorkspaceId,
+                WorkspaceType.Persistent,
+                "Second",
+                null,
+                0))
+            .Returns(second);
+
+        WorkspacePresentationManager manager =
+            new(
+                factory.Object,
+                CreateAuthenticatedApplicationSecuritySession());
+
+        manager.GetOrCreate(
+            firstWorkspaceId,
+            WorkspaceType.Persistent,
+            "First",
+            null,
+            0);
+
+        manager.GetOrCreate(
+            secondWorkspaceId,
+            WorkspaceType.Persistent,
+            "Second",
+            null,
+            0);
+
+        bool registryWasEmptyDuringDisposal = false;
+
+        firstView
+            .Setup(x => x.Dispose())
+            .Callback(() =>
+            {
+                registryWasEmptyDuringDisposal =
+                    !manager.Contains(firstWorkspaceId) &&
+                    !manager.Contains(secondWorkspaceId) &&
+                    manager.Get(firstWorkspaceId) is null &&
+                    manager.Get(secondWorkspaceId) is null;
+            });
+
+        // Act
+        manager.CloseAll();
+
+        // Assert
+        Assert.True(registryWasEmptyDuringDisposal);
+
+        Assert.False(manager.Contains(firstWorkspaceId));
+        Assert.False(manager.Contains(secondWorkspaceId));
+
+        Assert.Null(manager.Get(firstWorkspaceId));
+        Assert.Null(manager.Get(secondWorkspaceId));
+    }
+
+    [Fact]
+    public void Close_WhenWorkspaceDisposalThrows_RemovesRegistryEntryAndCompletesViewCleanup()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        const string expectedFailure =
+            "Workspace view disposal failed.";
+
+        var view =
+            new Mock<IWorkspacePresentationView>();
+
+        view
+            .Setup(x => x.Dispose())
+            .Throws(new InvalidOperationException(expectedFailure));
+
+        WorkspacePresentation presentation =
+            CreatePresentation(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view);
+
+        var factory =
+            new Mock<IWorkspacePresentationFactory>();
+
+        factory
+            .Setup(x => x.Create(
+                workspaceId,
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                0))
+            .Returns(presentation);
+
+        WorkspacePresentationManager manager =
+            new(
+                factory.Object,
+                CreateAuthenticatedApplicationSecuritySession());
+
+        manager.GetOrCreate(
+            workspaceId,
+            WorkspaceType.Persistent,
+            "Workspace",
+            null,
+            0);
+
+        // Act
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => manager.Close(workspaceId));
+
+        // Assert
+        Assert.Equal(expectedFailure, exception.Message);
+
+        // The registry entry must be removed before disposal begins,
+        // and must remain absent when disposal reports a failure.
+        Assert.False(manager.Contains(workspaceId));
+        Assert.Null(manager.Get(workspaceId));
+
+        // WorkspacePresentation must still attempt all independent
+        // view cleanup operations after the view's Dispose throws.
+        view.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        view.Verify(
+            x => x.Dispose(),
+            Times.Once);
+
+        Assert.Throws<ObjectDisposedException>(
+            () => presentation.Activate());
+    }
+
+    [Fact]
     public void Close_RemovesManagedPresentation()
     {
         Guid workspaceId = Guid.NewGuid();
@@ -838,7 +1267,7 @@ public sealed class WorkspacePresentationManagerTests
             .Setup(x => x.GetAllAsync(
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-                Array.Empty<DeskVault.Domain.Documents.Document>());
+                []);
 
         var listDocumentsHandler =
             new ListDocumentsHandler(

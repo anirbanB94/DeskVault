@@ -10,6 +10,7 @@ using DeskVault.Application.Workspaces.Commands.CreateWorkspace;
 using DeskVault.Application.Workspaces.Commands.DeleteWorkspace;
 using DeskVault.Application.Workspaces.Commands.OpenWorkspace;
 using DeskVault.Application.Workspaces.Queries.GetWorkspaces;
+using DeskVault.Domain.Workspaces;
 using DeskVault.Shared.Extensions;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
@@ -34,6 +35,7 @@ public sealed class MainFormPresenter : IDisposable
     private readonly OpenWorkspaceHandler _openWorkspaceHandler;
     private readonly CloseWorkspaceHandler _closeWorkspaceHandler;
     private readonly IWorkspacePresentationManager _workspacePresentationManager;
+    private readonly HashSet<WorkspacePresentation> _subscribedWorkspacePresentations = [];
     private readonly IDocumentProcessingService _documentProcessingService;
     private readonly DocumentTextExtractorResolver _documentTextExtractorResolver;
     private readonly ILogger<MainFormPresenter> _logger;
@@ -432,6 +434,9 @@ public sealed class MainFormPresenter : IDisposable
         // Lock the main application surface before disposing child workspace views.
         _view.ShowLockedState();
 
+        // Detach presenter callbacks before workspace presentations are released.
+        UnsubscribeAllWorkspacePresentations();
+
         // Attempt workspace cleanup without allowing disposal failures to
         // interrupt security-session processing.
         try
@@ -564,6 +569,9 @@ public sealed class MainFormPresenter : IDisposable
         _view.WorkspaceRemoveRequested -= OnWorkspaceRemoveRequested;
 
         InvalidateSearchState();
+
+        UnsubscribeAllWorkspacePresentations();
+
         _workspacePresentationManager.CloseAll();
     }
 
@@ -877,7 +885,7 @@ public sealed class MainFormPresenter : IDisposable
             }
 
             var presentation =
-                _workspacePresentationManager.GetOrCreate(
+                GetOrCreateWorkspacePresentation(
                     workspaceResult.Workspace.Id,
                     workspaceResult.Workspace.TypeOfWorkspace,
                     workspaceResult.Workspace.Name,
@@ -1326,6 +1334,8 @@ public sealed class MainFormPresenter : IDisposable
                 return;
             }
 
+            UnsubscribeWorkspacePresentation(presentation);
+
             _workspacePresentationManager.Close(
                 workspaceId);
 
@@ -1505,6 +1515,8 @@ public sealed class MainFormPresenter : IDisposable
                 return;
             }
 
+            UnsubscribeWorkspacePresentations(workspaceId);
+
             _workspacePresentationManager.Close(
                 workspaceId);
 
@@ -1654,7 +1666,7 @@ public sealed class MainFormPresenter : IDisposable
             }
 
             var presentation =
-                _workspacePresentationManager.GetOrCreate(
+                GetOrCreateWorkspacePresentation(
                     result.Workspace.Id,
                     result.Workspace.TypeOfWorkspace,
                     result.Workspace.Name,
@@ -1767,35 +1779,122 @@ public sealed class MainFormPresenter : IDisposable
     private void SubscribeWorkspacePresentation(
         WorkspacePresentation presentation)
     {
-        presentation.DocumentRemoved -=
-            OnDocumentRemoved;
+        if (_disposed ||
+            presentation.IsDisposed)
+        {
+            return;
+        }
+
+        DetachSupersededWorkspacePresentations(
+            presentation.WorkspaceId,
+            presentation.SecuritySessionRevision);
+
+        if (!_subscribedWorkspacePresentations.Add(presentation))
+        {
+            return;
+        }
 
         presentation.DocumentRemoved +=
+            OnDocumentRemoved;
+
+        presentation.WorkspaceDetailsUpdated +=
+            OnWorkspaceDetailsUpdated;
+
+        presentation.WorkspaceDeleteRequested +=
+            OnWorkspaceDeleteRequested;
+
+        presentation.WorkspaceDocumentsUpdated +=
+            OnWorkspaceDocumentsUpdated;
+
+        presentation.WorkspaceCloseRequested +=
+            OnWorkspaceCloseRequested;
+    }
+
+    private void UnsubscribeWorkspacePresentation(
+        WorkspacePresentation presentation)
+    {
+        if (!_subscribedWorkspacePresentations.Remove(presentation))
+        {
+            return;
+        }
+
+        presentation.DocumentRemoved -=
             OnDocumentRemoved;
 
         presentation.WorkspaceDetailsUpdated -=
             OnWorkspaceDetailsUpdated;
 
-        presentation.WorkspaceDetailsUpdated +=
-            OnWorkspaceDetailsUpdated;
-
         presentation.WorkspaceDeleteRequested -=
-            OnWorkspaceDeleteRequested;
-
-        presentation.WorkspaceDeleteRequested +=
             OnWorkspaceDeleteRequested;
 
         presentation.WorkspaceDocumentsUpdated -=
             OnWorkspaceDocumentsUpdated;
 
-        presentation.WorkspaceDocumentsUpdated +=
-            OnWorkspaceDocumentsUpdated;
-
         presentation.WorkspaceCloseRequested -=
             OnWorkspaceCloseRequested;
+    }
 
-        presentation.WorkspaceCloseRequested +=
-            OnWorkspaceCloseRequested;
+    private void UnsubscribeWorkspacePresentations(
+        Guid workspaceId)
+    {
+        WorkspacePresentation[] presentations =
+            [.. _subscribedWorkspacePresentations
+                .Where(presentation =>
+                    presentation.WorkspaceId == workspaceId)];
+
+        foreach (WorkspacePresentation presentation in presentations)
+        {
+            UnsubscribeWorkspacePresentation(presentation);
+        }
+    }
+
+    private void UnsubscribeAllWorkspacePresentations()
+    {
+        WorkspacePresentation[] presentations =
+            [.. _subscribedWorkspacePresentations];
+
+        foreach (WorkspacePresentation presentation in presentations)
+        {
+            UnsubscribeWorkspacePresentation(presentation);
+        }
+    }
+
+    private void DetachSupersededWorkspacePresentations(
+        Guid workspaceId,
+        long expectedSessionRevision)
+    {
+        WorkspacePresentation[] supersededPresentations =
+            [.. _subscribedWorkspacePresentations
+                .Where(presentation =>
+                    presentation.WorkspaceId == workspaceId &&
+                    (presentation.IsDisposed ||
+                     presentation.SecuritySessionRevision != expectedSessionRevision))];
+
+        foreach (WorkspacePresentation presentation in supersededPresentations)
+        {
+            UnsubscribeWorkspacePresentation(presentation);
+        }
+    }
+
+    private WorkspacePresentation GetOrCreateWorkspacePresentation(
+        Guid workspaceId,
+        WorkspaceType workspaceType,
+        string? workspaceName,
+        string? description,
+        long expectedSessionRevision)
+    {
+        // The manager may replace an older-session presentation inside
+        // GetOrCreate. Detach the presenter's handlers before that can happen.
+        DetachSupersededWorkspacePresentations(
+            workspaceId,
+            expectedSessionRevision);
+
+        return _workspacePresentationManager.GetOrCreate(
+            workspaceId,
+            workspaceType,
+            workspaceName,
+            description,
+            expectedSessionRevision);
     }
 
     private async void OnRemoveRequested(
@@ -2695,7 +2794,7 @@ public sealed class MainFormPresenter : IDisposable
     private static List<SearchResultListItem> MapSearchResults(
         IReadOnlyList<SearchDocumentsResult> results)
     {
-        return results
+        return [.. results
             .Select(result => new SearchResultListItem(
                 result.DocumentId,
                 result.DisplayName,
@@ -2705,8 +2804,7 @@ public sealed class MainFormPresenter : IDisposable
                     .FirstOrDefault(
                         context => !string.IsNullOrWhiteSpace(context))
                     ?? string.Empty,
-                result.MatchCount))
-            .ToList();
+                result.MatchCount))];
     }
 
     private async Task<int> RefreshDocumentsAsync(
@@ -2973,7 +3071,26 @@ public sealed class MainFormPresenter : IDisposable
         object? sender,
         DocumentRemovedEventArgs e)
     {
-        if (!EnsureProtectedAccessAvailable())
+        // A document-removal notification belongs to the workspace
+        // presentation that raised it. Never let a callback from an
+        // earlier session revision initiate work in a newer session.
+        if (sender is not WorkspacePresentation presentation)
+        {
+            return;
+        }
+
+        long expectedSessionRevision =
+            presentation.SecuritySessionRevision;
+
+        if (!IsAuthorizedSessionRevisionCurrent(
+                expectedSessionRevision))
+        {
+            return;
+        }
+
+        if (!EnsureProtectedAccessAvailable() ||
+            !IsAuthorizedSessionRevisionCurrent(
+                expectedSessionRevision))
         {
             return;
         }
@@ -2981,6 +3098,7 @@ public sealed class MainFormPresenter : IDisposable
         _logger.LogDebug(
             LogMessages.DocumentWorkspaceRemovalNotificationReceived);
 
-        await RefreshDocumentsAsync();
+        await RefreshDocumentsAsync(
+            expectedSessionRevision);
     }
 }

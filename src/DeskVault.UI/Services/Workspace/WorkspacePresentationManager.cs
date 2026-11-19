@@ -30,17 +30,19 @@ public sealed class WorkspacePresentationManager :
     {
         ThrowIfDisposed();
 
-        return _presentations.TryGetValue(
+        return TryGetManagedPresentation(
             workspaceId,
-            out WorkspacePresentation? presentation)
-            ? presentation
-            : null;
+            out WorkspacePresentation presentation)
+                ? presentation
+                : null;
     }
 
     public WorkspacePresentation? FindTemporaryByDocument(
         Guid documentId)
     {
         ThrowIfDisposed();
+
+        PruneDisposedPresentations();
 
         ApplicationSecuritySessionSnapshot snapshot =
             _applicationSecuritySession.CurrentSnapshot;
@@ -68,9 +70,9 @@ public sealed class WorkspacePresentationManager :
 
         EnsureSessionRevisionCurrent(expectedSessionRevision);
 
-        if (_presentations.TryGetValue(
+        if (TryGetManagedPresentation(
                 workspaceId,
-                out WorkspacePresentation? existing))
+                out WorkspacePresentation existing))
         {
             if (existing.SecuritySessionRevision ==
                 expectedSessionRevision)
@@ -102,6 +104,12 @@ public sealed class WorkspacePresentationManager :
                 workspaceName,
                 description,
                 expectedSessionRevision);
+
+        if (presentation.IsDisposed)
+        {
+            throw new InvalidOperationException(
+                "The workspace presentation factory returned a disposed presentation.");
+        }
 
         if (presentation.SecuritySessionRevision != expectedSessionRevision ||
             !IsSessionRevisionCurrent(expectedSessionRevision))
@@ -144,17 +152,18 @@ public sealed class WorkspacePresentationManager :
     {
         ThrowIfDisposed();
 
-        return _presentations.ContainsKey(
-            workspaceId);
+        return TryGetManagedPresentation(
+            workspaceId,
+            out _);
     }
 
     public bool Activate(Guid workspaceId)
     {
         ThrowIfDisposed();
 
-        if (!_presentations.TryGetValue(
+        if (!TryGetManagedPresentation(
                 workspaceId,
-                out WorkspacePresentation? presentation))
+                out WorkspacePresentation presentation))
         {
             return false;
         }
@@ -178,12 +187,15 @@ public sealed class WorkspacePresentationManager :
     {
         ThrowIfDisposed();
 
-        if (!_presentations.Remove(
+        if (!TryGetManagedPresentation(
                 workspaceId,
-                out WorkspacePresentation? presentation))
+                out WorkspacePresentation presentation))
         {
             return false;
         }
+
+        // Remove the live entry before beginning disposal.
+        _presentations.Remove(workspaceId);
 
         presentation.Dispose();
 
@@ -212,7 +224,7 @@ public sealed class WorkspacePresentationManager :
     private void DisposeManagedPresentations()
     {
         WorkspacePresentation[] presentations =
-            _presentations.Values.ToArray();
+            [.. _presentations.Values];
 
         // Remove all managed presentations from the registry before cleanup.
         _presentations.Clear();
@@ -238,6 +250,40 @@ public sealed class WorkspacePresentationManager :
             System.Runtime.ExceptionServices.ExceptionDispatchInfo
                 .Capture(disposalException)
                 .Throw();
+        }
+    }
+
+    private bool TryGetManagedPresentation(
+        Guid workspaceId,
+        out WorkspacePresentation presentation)
+    {
+        if (_presentations.TryGetValue(
+                workspaceId,
+                out WorkspacePresentation? registeredPresentation) &&
+            !registeredPresentation.IsDisposed)
+        {
+            presentation = registeredPresentation;
+            return true;
+        }
+
+        // A presentation disposed outside this manager must not remain
+        // discoverable or be reused.
+        _presentations.Remove(workspaceId);
+
+        presentation = null!;
+        return false;
+    }
+
+    private void PruneDisposedPresentations()
+    {
+        Guid[] disposedWorkspaceIds =
+            [.. _presentations
+                .Where(entry => entry.Value.IsDisposed)
+                .Select(entry => entry.Key)];
+
+        foreach (Guid workspaceId in disposedWorkspaceIds)
+        {
+            _presentations.Remove(workspaceId);
         }
     }
 

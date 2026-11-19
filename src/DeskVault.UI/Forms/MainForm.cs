@@ -7,6 +7,7 @@ using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Security;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
+using System.Runtime.ExceptionServices;
 using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 using Timer = System.Windows.Forms.Timer;
 
@@ -25,6 +26,7 @@ public partial class MainForm : Form, IMainFormView
     private readonly ISessionBoundDialogCoordinator _dialogCoordinator;
     private readonly IStartupAuthenticationDialogService _startupAuthenticationDialogService;
     private readonly WinFormsUserActivityMessageFilter _userActivityMessageFilter;
+    private int _ownedResourcesDisposed;
 
     public MainForm(
         IApplicationInfoService applicationInfo,
@@ -108,6 +110,7 @@ public partial class MainForm : Form, IMainFormView
         workspaceGridView.SelectionChanged += OnWorkspaceSelectionChanged;
         workspaceGridView.CellDoubleClick += OnWorkspaceDoubleClick;
         FormClosed += OnFormClosed;
+        Disposed += OnMainFormDisposed;
         Shown += OnMainFormShown;
         unlockButton.Click += OnUnlockButtonClick;
     }
@@ -369,9 +372,57 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         FormClosedEventArgs e)
     {
-        _userActivityMessageFilter.Dispose();
-        _presenter.Dispose();
-        _searchDebounceTimer.Dispose();
+        DisposeOwnedResources();
+    }
+
+    private void OnMainFormDisposed(
+        object? sender,
+        EventArgs e)
+    {
+        DisposeOwnedResources();
+    }
+
+    private void DisposeOwnedResources()
+    {
+        if (Interlocked.Exchange(
+                ref _ownedResourcesDisposed,
+                1) != 0)
+        {
+            return;
+        }
+
+        Exception? disposalException = null;
+
+        void TryDispose(Action dispose)
+        {
+            try
+            {
+                dispose();
+            }
+            catch (Exception exception)
+            {
+                // Preserve the first failure while still attempting
+                // disposal of every independently owned resource.
+                disposalException ??= exception;
+            }
+        }
+
+        // Stop user-activity observation before releasing the presenter.
+        TryDispose(_userActivityMessageFilter.Dispose);
+
+        // The presenter owns its own subscription cleanup and asks the
+        // workspace manager to release all managed workspace presentations.
+        TryDispose(_presenter.Dispose);
+
+        // Timer disposal must still be attempted if presenter cleanup fails.
+        TryDispose(_searchDebounceTimer.Dispose);
+
+        if (disposalException is not null)
+        {
+            ExceptionDispatchInfo
+                .Capture(disposalException)
+                .Throw();
+        }
     }
 
     private void OnDocumentSelectionChanged(

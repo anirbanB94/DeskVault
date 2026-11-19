@@ -21,6 +21,7 @@ using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.Reflection;
 using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationCodes;
 
 namespace DeskVault.UI.Tests;
@@ -1672,6 +1673,317 @@ public sealed class WorkspacePresentationTests
                 It.IsAny<string>(),
                 It.IsAny<string?>()),
             Times.Never);
+    }
+
+    [Fact]
+    public void Dispose_WhenLifetimeCancellationCallbackThrows_StillCompletesWorkspaceCleanup()
+    {
+        // Arrange
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Sensitive workspace name",
+                "Sensitive workspace description",
+                view);
+
+        CancellationTokenSource lifetimeCancellationTokenSource =
+            GetLifetimeCancellationTokenSource(presentation);
+
+        using CancellationTokenRegistration registration =
+            lifetimeCancellationTokenSource.Token.Register(
+                static () => throw new InvalidOperationException(
+                    "Lifetime cancellation callback failed."));
+
+        // Act
+        AggregateException exception =
+            Assert.Throws<AggregateException>(
+                () => presentation.Dispose());
+
+        // Assert: cancellation failure is preserved.
+        Assert.IsType<InvalidOperationException>(
+            Assert.Single(exception.InnerExceptions));
+
+        // Retained workspace state must still be cleared.
+        Assert.Null(presentation.WorkspaceName);
+        Assert.Null(presentation.WorkspaceDescription);
+        Assert.Null(presentation.ActiveDocumentId);
+        Assert.Empty(presentation.WorkspaceDocumentIds);
+        Assert.Empty(presentation.PresentedDocumentIds);
+
+        // Both workspace-view cleanup operations must still run.
+        view.View.Verify(
+            workspaceView => workspaceView.ClearPresentation(),
+            Times.Once);
+
+        view.View.Verify(
+            workspaceView => workspaceView.Dispose(),
+            Times.Once);
+
+        // A repeated Dispose must remain idempotent, even after the
+        // first Dispose propagated the cancellation callback failure.
+        presentation.Dispose();
+
+        view.View.Verify(
+            workspaceView => workspaceView.ClearPresentation(),
+            Times.Once);
+
+        view.View.Verify(
+            workspaceView => workspaceView.Dispose(),
+            Times.Once);
+    }
+
+    [Fact]
+    public void SessionRevocation_WhenLifetimeCancellationCallbackThrows_StillSchedulesWorkspaceCleanup()
+    {
+        // Arrange
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(session => session.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        Action? scheduledCleanup = null;
+
+        view.View
+            .Setup(workspaceView => workspaceView.PostToUi(
+                It.IsAny<Action>()))
+            .Callback<Action>(action => scheduledCleanup = action);
+
+        WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Sensitive workspace name",
+                "Sensitive workspace description",
+                view,
+                applicationSecuritySession: securitySession.Object);
+
+        CancellationTokenSource lifetimeCancellationTokenSource =
+            GetLifetimeCancellationTokenSource(presentation);
+
+        using CancellationTokenRegistration registration =
+            lifetimeCancellationTokenSource.Token.Register(
+                static () => throw new InvalidOperationException(
+                    "Lifetime cancellation callback failed."));
+
+        // Act: revoke the presentation's owning security-session revision.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            session => session.StateChanged += null,
+            currentSnapshot);
+
+        // Cancellation failure must not prevent posting cleanup.
+        Assert.NotNull(scheduledCleanup);
+
+        // Execute the cleanup action as if it were dispatched to the UI thread.
+        scheduledCleanup();
+
+        // Assert
+        Assert.Null(presentation.WorkspaceName);
+        Assert.Null(presentation.WorkspaceDescription);
+        Assert.Null(presentation.ActiveDocumentId);
+
+        Assert.Empty(presentation.WorkspaceDocumentIds);
+        Assert.Empty(presentation.PresentedDocumentIds);
+
+        view.View.Verify(
+            workspaceView => workspaceView.PostToUi(
+                It.IsAny<Action>()),
+            Times.Once);
+
+        view.View.Verify(
+            workspaceView => workspaceView.ClearPresentation(),
+            Times.Once);
+
+        view.View.Verify(
+            workspaceView => workspaceView.Dispose(),
+            Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_UnsubscribesFromWorkspaceViewAndApplicationSecuritySessionEvents()
+    {
+        // Arrange
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(
+                new ApplicationSecuritySessionSnapshot(
+                    ApplicationSecuritySessionState.Authenticated,
+                    0));
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                applicationSecuritySession: securitySession.Object);
+
+        // Act
+        presentation.Dispose();
+
+        // Assert: every workspace-view subscription is added and removed once.
+        view.View.VerifyAdd(
+            x => x.DocumentActivated +=
+                It.IsAny<EventHandler<DocumentActivatedEventArgs>>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.DocumentActivated -=
+                It.IsAny<EventHandler<DocumentActivatedEventArgs>>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.NavigationModeChanged +=
+                It.IsAny<EventHandler<NavigationModeChangedEventArgs>>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.NavigationModeChanged -=
+                It.IsAny<EventHandler<NavigationModeChangedEventArgs>>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.AddDocumentsRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.AddDocumentsRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.RemoveDocumentsRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.RemoveDocumentsRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.RemoveDocumentRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.RemoveDocumentRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.UpdateWorkspaceDetailsRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.UpdateWorkspaceDetailsRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.SaveAsWorkspaceRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.SaveAsWorkspaceRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.DocumentInformationRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.DocumentInformationRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.DeleteWorkspaceRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.DeleteWorkspaceRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.CloseWorkspaceRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.CloseWorkspaceRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyAdd(
+            x => x.CloseDocumentRequested +=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        view.View.VerifyRemove(
+            x => x.CloseDocumentRequested -=
+                It.IsAny<EventHandler>(),
+            Times.Once);
+
+        // The application security-session subscription must also be removed.
+        securitySession.VerifyAdd(
+            x => x.StateChanged +=
+                It.IsAny<Action<ApplicationSecuritySessionSnapshot>>(),
+            Times.Once);
+
+        securitySession.VerifyRemove(
+            x => x.StateChanged -=
+                It.IsAny<Action<ApplicationSecuritySessionSnapshot>>(),
+            Times.Once);
+
+        // A later lock notification must not call back into the disposed
+        // workspace presentation or schedule further UI cleanup.
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1));
+
+        view.View.Verify(
+            x => x.PostToUi(It.IsAny<Action>()),
+            Times.Never);
+
+        view.View.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        view.View.Verify(
+            x => x.Dispose(),
+            Times.Once);
     }
 
     [Fact]
@@ -4568,6 +4880,22 @@ public sealed class WorkspacePresentationTests
             presentation.ActiveDocumentId);
 
         presentation.Dispose();
+    }
+
+    private static CancellationTokenSource GetLifetimeCancellationTokenSource(
+        WorkspacePresentation presentation)
+    {
+        FieldInfo field =
+            typeof(WorkspacePresentation).GetField(
+                "_lifetimeCancellationTokenSource",
+                BindingFlags.Instance |
+                BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                "Workspace lifetime cancellation source was not found.");
+
+        return field.GetValue(presentation) as CancellationTokenSource
+            ?? throw new InvalidOperationException(
+                "Workspace lifetime cancellation source had an unexpected type.");
     }
 
     private static WorkspacePresentation CreatePresentation(
