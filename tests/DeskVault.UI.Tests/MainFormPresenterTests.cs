@@ -5107,7 +5107,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task RemoveRequested_WhenHandlerThrows_LogsSafeDiagnosticAndShowsGenericError()
+    public async Task RemoveDocumentRequested_WhenHandlerThrows_LogsSafeDiagnosticAndShowsGenericError()
     {
         Guid documentId = Guid.NewGuid();
 
@@ -5158,7 +5158,7 @@ public sealed class MainFormPresenterTests
             logger: logger);
 
         view.Raise(
-            x => x.RemoveRequested += null,
+            x => x.RemoveDocumentRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();
@@ -5249,7 +5249,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task RemoveRequested_WhenSessionLocksDuringConfirmation_DoesNotInvokeRemovalHandler()
+    public async Task RemoveDocumentRequested_WhenSessionLocksDuringConfirmation_DoesNotInvokeRemovalHandler()
     {
         Guid documentId = Guid.NewGuid();
 
@@ -5310,7 +5310,7 @@ public sealed class MainFormPresenterTests
                 applicationSecuritySession: securitySession);
 
         view.Raise(
-            x => x.RemoveRequested += null,
+            x => x.RemoveDocumentRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();
@@ -5337,7 +5337,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task WorkspaceRemoveRequested_WhenDeletionThrows_LogsSafeDiagnosticAndShowsGenericError()
+    public async Task DeleteWorkspaceRequested_WhenDeletionThrows_LogsSafeDiagnosticAndShowsGenericError()
     {
         Guid workspaceId = Guid.NewGuid();
 
@@ -5402,7 +5402,7 @@ public sealed class MainFormPresenterTests
             logger: logger);
 
         view.Raise(
-            x => x.WorkspaceRemoveRequested += null,
+            x => x.DeleteWorkspaceRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();
@@ -5478,7 +5478,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task WorkspaceRemoveRequested_WhenSessionLocksDuringConfirmation_DoesNotDeleteWorkspace()
+    public async Task DeleteWorkspaceRequested_WhenSessionLocksDuringConfirmation_DoesNotDeleteWorkspace()
     {
         Guid workspaceId = Guid.NewGuid();
 
@@ -5554,7 +5554,7 @@ public sealed class MainFormPresenterTests
                 applicationSecuritySession: securitySession);
 
         view.Raise(
-            x => x.WorkspaceRemoveRequested += null,
+            x => x.DeleteWorkspaceRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();

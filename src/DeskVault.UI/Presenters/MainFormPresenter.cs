@@ -125,7 +125,7 @@ public sealed class MainFormPresenter : IDisposable
 
         _view.ImportRequested += OnImportRequested;
         _view.OpenRequested += OnOpenRequested;
-        _view.RemoveRequested += OnRemoveRequested;
+        _view.RemoveDocumentRequested += OnRemoveDocumentRequested;
         _view.DocumentSelectionChanged += OnDocumentSelectionChanged;
         _view.SearchRequested += OnSearchRequested;
         _view.LoadMoreSearchResultsRequested += OnLoadMoreSearchResultsRequested;
@@ -133,7 +133,7 @@ public sealed class MainFormPresenter : IDisposable
         _view.WorkspaceSelectionChanged += OnWorkspaceSelectionChanged;
         _view.WorkspaceCreateRequested += OnWorkspaceCreateRequested;
         _view.WorkspaceOpenRequested += OnWorkspaceOpenRequested;
-        _view.WorkspaceRemoveRequested += OnWorkspaceRemoveRequested;
+        _view.DeleteWorkspaceRequested += OnMainFormDeleteWorkspaceRequested;
     }
 
     private void OnApplicationSecuritySessionStateChanged(
@@ -558,7 +558,7 @@ public sealed class MainFormPresenter : IDisposable
 
         _view.ImportRequested -= OnImportRequested;
         _view.OpenRequested -= OnOpenRequested;
-        _view.RemoveRequested -= OnRemoveRequested;
+        _view.RemoveDocumentRequested -= OnRemoveDocumentRequested;
         _view.DocumentSelectionChanged -= OnDocumentSelectionChanged;
         _view.SearchRequested -= OnSearchRequested;
         _view.LoadMoreSearchResultsRequested -= OnLoadMoreSearchResultsRequested;
@@ -566,7 +566,7 @@ public sealed class MainFormPresenter : IDisposable
         _view.WorkspaceSelectionChanged -= OnWorkspaceSelectionChanged;
         _view.WorkspaceCreateRequested -= OnWorkspaceCreateRequested;
         _view.WorkspaceOpenRequested -= OnWorkspaceOpenRequested;
-        _view.WorkspaceRemoveRequested -= OnWorkspaceRemoveRequested;
+        _view.DeleteWorkspaceRequested -= OnMainFormDeleteWorkspaceRequested;
 
         InvalidateSearchState();
 
@@ -1161,7 +1161,7 @@ public sealed class MainFormPresenter : IDisposable
             openSessionRevision);
     }
 
-    private async void OnWorkspaceRemoveRequested(
+    private async void OnMainFormDeleteWorkspaceRequested(
         object? sender,
         EventArgs e)
     {
@@ -1897,7 +1897,7 @@ public sealed class MainFormPresenter : IDisposable
             expectedSessionRevision);
     }
 
-    private async void OnRemoveRequested(
+    private async void OnRemoveDocumentRequested(
         object? sender,
         EventArgs e)
     {

@@ -6,7 +6,7 @@ public interface IMainFormView
 
     event EventHandler OpenRequested;
 
-    event EventHandler RemoveRequested;
+    event EventHandler RemoveDocumentRequested;
 
     event EventHandler ReprocessRequested;
 
@@ -22,7 +22,7 @@ public interface IMainFormView
 
     event EventHandler WorkspaceOpenRequested;
 
-    event EventHandler WorkspaceRemoveRequested;
+    event EventHandler DeleteWorkspaceRequested;
 
     Guid? SelectedDocumentId { get; }
 

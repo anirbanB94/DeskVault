@@ -119,7 +119,7 @@ public partial class MainForm : Form, IMainFormView
 
     public event EventHandler? OpenRequested;
 
-    public event EventHandler? RemoveRequested;
+    public event EventHandler? RemoveDocumentRequested;
 
     public event EventHandler? ReprocessRequested;
 
@@ -135,7 +135,7 @@ public partial class MainForm : Form, IMainFormView
 
     public event EventHandler? WorkspaceOpenRequested;
 
-    public event EventHandler? WorkspaceRemoveRequested;
+    public event EventHandler? DeleteWorkspaceRequested;
 
     public Guid? SelectedDocumentId
     {
@@ -262,7 +262,7 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         EventArgs e)
     {
-        RemoveRequested?.Invoke(this, EventArgs.Empty);
+        RemoveDocumentRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnReprocessButtonClick(
@@ -290,7 +290,7 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         EventArgs e)
     {
-        WorkspaceRemoveRequested?.Invoke(this, EventArgs.Empty);
+        DeleteWorkspaceRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnSearchButtonClick(

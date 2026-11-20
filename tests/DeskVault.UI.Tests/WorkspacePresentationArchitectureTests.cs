@@ -491,6 +491,40 @@ public sealed class WorkspacePresentationArchitectureTests
             parameterTypes);
     }
 
+    [Fact]
+    public void ApplicationShellAndWorkspaceContracts_UseConsistentNamesForSharedActions()
+    {
+        // Arrange
+        string[] sharedActionEventNames =
+        [
+            nameof(IMainFormView.RemoveDocumentRequested),
+        nameof(IMainFormView.DeleteWorkspaceRequested)
+        ];
+
+        Type[] viewContracts =
+        [
+            typeof(IMainFormView),
+        typeof(IWorkspacePresentationView)
+        ];
+
+        // Act and Assert
+        foreach (Type viewContract in viewContracts)
+        {
+            string[] eventNames =
+                [.. viewContract.GetEvents().Select(@event => @event.Name)];
+
+            foreach (string sharedActionEventName in sharedActionEventNames)
+            {
+                Assert.Contains(
+                    sharedActionEventName,
+                    eventNames);
+            }
+
+            Assert.DoesNotContain("RemoveRequested", eventNames);
+            Assert.DoesNotContain("WorkspaceRemoveRequested", eventNames);
+        }
+    }
+
     private static bool ReferencesDocumentViewForm(Type type)
     {
         if (type == typeof(DocumentViewForm))
