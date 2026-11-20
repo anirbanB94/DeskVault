@@ -29,9 +29,7 @@ public sealed class MainFormArchitectureTests
 
         // Act
         Type[] declaredMemberTypes =
-            GetDeclaredMemberTypes(mainFormType)
-                .SelectMany(ExpandType)
-                .ToArray();
+            [.. GetDeclaredMemberTypes(mainFormType).SelectMany(ExpandType)];
 
         // Assert
         Assert.Contains(
@@ -59,14 +57,10 @@ public sealed class MainFormArchitectureTests
                     BindingFlags.Instance));
 
         Type[] parameterTypes =
-            constructor.GetParameters()
-                .Select(parameter => parameter.ParameterType)
-                .ToArray();
+            [.. constructor.GetParameters().Select(parameter => parameter.ParameterType)];
 
         Type[] declaredMemberTypes =
-            GetDeclaredMemberTypes(presenterType)
-                .SelectMany(ExpandType)
-                .ToArray();
+            [.. GetDeclaredMemberTypes(presenterType).SelectMany(ExpandType)];
 
         // Assert
         Assert.NotEmpty(parameterTypes);
@@ -123,6 +117,35 @@ public sealed class MainFormArchitectureTests
                 forbiddenMemberName,
                 actualMemberNames);
         }
+    }
+
+    [Fact]
+    public void MainFormViewContract_ExposesFileSelectionAsAnActionInsteadOfState()
+    {
+        // Arrange
+        Type viewContractType =
+            typeof(IMainFormView);
+
+        PropertyInfo? selectedFilePath =
+            viewContractType.GetProperty("SelectedFilePath");
+
+        MethodInfo? selectFileToImport =
+            viewContractType.GetMethod(
+                nameof(IMainFormView.SelectFileToImport),
+                Type.EmptyTypes);
+
+        // Assert
+        Assert.Null(selectedFilePath);
+
+        Assert.NotNull(selectFileToImport);
+
+        Assert.Equal(
+            typeof(string),
+            selectFileToImport.ReturnType);
+
+        Assert.Contains(
+            typeof(IMainFormView),
+            typeof(MainForm).GetInterfaces());
     }
 
     private static IEnumerable<Type> GetDeclaredMemberTypes(

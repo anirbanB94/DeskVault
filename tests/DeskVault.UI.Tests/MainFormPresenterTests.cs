@@ -620,7 +620,7 @@ public sealed class MainFormPresenterTests
             .Setup(x => x.GetAllAsync(
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-                Array.Empty<DeskVault.Domain.Documents.Document>());
+                []);
 
         var view =
             new Mock<IMainFormView>();
@@ -3402,7 +3402,7 @@ public sealed class MainFormPresenterTests
             new Mock<IMainFormView>();
 
         view
-            .SetupGet(x => x.SelectedFilePath)
+            .Setup(x => x.SelectFileToImport())
             .Returns(filePath);
 
         var repository =
@@ -3497,7 +3497,7 @@ public sealed class MainFormPresenterTests
             new Mock<IMainFormView>();
 
         view
-            .SetupGet(x => x.SelectedFilePath)
+            .Setup(x => x.SelectFileToImport())
             .Returns(filePath);
 
         var repository =
@@ -3674,7 +3674,7 @@ public sealed class MainFormPresenterTests
             new Mock<IMainFormView>();
 
         view
-            .SetupGet(x => x.SelectedFilePath)
+            .Setup(x => x.SelectFileToImport())
             .Returns(filePath);
 
         var repository =
@@ -3851,7 +3851,7 @@ public sealed class MainFormPresenterTests
             new Mock<IMainFormView>();
 
         view
-            .SetupGet(x => x.SelectedFilePath)
+            .Setup(x => x.SelectFileToImport())
             .Returns(filePath);
 
         var repository =
@@ -4043,7 +4043,7 @@ public sealed class MainFormPresenterTests
             new Mock<IMainFormView>();
 
         view
-            .SetupGet(x => x.SelectedFilePath)
+            .Setup(x => x.SelectFileToImport())
             .Returns(filePath);
 
         var repository =
@@ -5107,7 +5107,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task RemoveRequested_WhenHandlerThrows_LogsSafeDiagnosticAndShowsGenericError()
+    public async Task RemoveDocumentRequested_WhenHandlerThrows_LogsSafeDiagnosticAndShowsGenericError()
     {
         Guid documentId = Guid.NewGuid();
 
@@ -5158,7 +5158,7 @@ public sealed class MainFormPresenterTests
             logger: logger);
 
         view.Raise(
-            x => x.RemoveRequested += null,
+            x => x.RemoveDocumentRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();
@@ -5249,7 +5249,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task RemoveRequested_WhenSessionLocksDuringConfirmation_DoesNotInvokeRemovalHandler()
+    public async Task RemoveDocumentRequested_WhenSessionLocksDuringConfirmation_DoesNotInvokeRemovalHandler()
     {
         Guid documentId = Guid.NewGuid();
 
@@ -5310,7 +5310,7 @@ public sealed class MainFormPresenterTests
                 applicationSecuritySession: securitySession);
 
         view.Raise(
-            x => x.RemoveRequested += null,
+            x => x.RemoveDocumentRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();
@@ -5337,7 +5337,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task WorkspaceRemoveRequested_WhenDeletionThrows_LogsSafeDiagnosticAndShowsGenericError()
+    public async Task DeleteWorkspaceRequested_WhenDeletionThrows_LogsSafeDiagnosticAndShowsGenericError()
     {
         Guid workspaceId = Guid.NewGuid();
 
@@ -5402,7 +5402,7 @@ public sealed class MainFormPresenterTests
             logger: logger);
 
         view.Raise(
-            x => x.WorkspaceRemoveRequested += null,
+            x => x.DeleteWorkspaceRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();
@@ -5478,7 +5478,7 @@ public sealed class MainFormPresenterTests
     }
 
     [Fact]
-    public async Task WorkspaceRemoveRequested_WhenSessionLocksDuringConfirmation_DoesNotDeleteWorkspace()
+    public async Task DeleteWorkspaceRequested_WhenSessionLocksDuringConfirmation_DoesNotDeleteWorkspace()
     {
         Guid workspaceId = Guid.NewGuid();
 
@@ -5554,7 +5554,7 @@ public sealed class MainFormPresenterTests
                 applicationSecuritySession: securitySession);
 
         view.Raise(
-            x => x.WorkspaceRemoveRequested += null,
+            x => x.DeleteWorkspaceRequested += null,
             EventArgs.Empty);
 
         await WaitForBackgroundOperationAsync();
@@ -5928,11 +5928,13 @@ public sealed class MainFormPresenterTests
 
         workspaceView
             .Setup(x => x.AddDocumentPresentation(
-                It.IsAny<WorkspaceDocumentPresentation>()))
-            .Callback<WorkspaceDocumentPresentation>(
-                presentation =>
+                It.IsAny<Guid>(),
+                It.IsAny<string?>(),
+                It.IsAny<System.Windows.Forms.Form>()))
+            .Callback<Guid, string?, System.Windows.Forms.Form>(
+                (documentId, _, _) =>
                     presentationEvents.Add(
-                        ("Added", presentation.DocumentId)));
+                        ("Added", documentId)));
 
         workspaceView
             .Setup(x => x.ActivateDocumentPresentation(
@@ -6053,6 +6055,10 @@ public sealed class MainFormPresenterTests
                     It.IsAny<CancellationToken>()))
                 .Returns(Task.CompletedTask);
 
+            IDocumentView hostedDocumentView =
+                PresentationSessionRevisionTestSupport.CreateHostedDocumentView(
+                    documentView.Object);
+
             var getDocumentHandler =
                 new GetDocumentHandler(
                     documentRepository.Object,
@@ -6074,7 +6080,7 @@ public sealed class MainFormPresenterTests
 
             var documentPresenter =
                 new DocumentWorkspacePresenter(
-                    documentView.Object,
+                    hostedDocumentView,
                     new Mock<IDocumentViewer>().Object,
                     getDocumentHandler,
                     openDocumentHandler,
@@ -6086,7 +6092,7 @@ public sealed class MainFormPresenterTests
             return new WorkspaceDocumentPresentation(
                 documentId,
                 documentPresenter,
-                documentView.Object);
+                hostedDocumentView);
         }
     }
 
@@ -6436,13 +6442,12 @@ public sealed class MainFormPresenterTests
                 "OnWorkspaceDeleteRequested",
                 BindingFlags.Instance | BindingFlags.NonPublic)!;
 
-        handler.Invoke(
+        _ = handler.Invoke(
             presenter,
-            new object?[]
-            {
-            stalePresentation,
-            EventArgs.Empty
-            });
+            [
+                stalePresentation,
+                EventArgs.Empty
+            ]);
 
         view.Verify(
             x => x.ConfirmWorkspaceRemoval(
@@ -6491,11 +6496,10 @@ public sealed class MainFormPresenterTests
 
         handler.Invoke(
             presenter,
-            new object?[]
-            {
-            stalePresentation,
-            EventArgs.Empty
-            });
+            [
+                stalePresentation,
+                EventArgs.Empty
+            ]);
 
         activeWorkspaceRegistry.Verify(
             x => x.Remove(workspaceId),
@@ -6596,12 +6600,11 @@ public sealed class MainFormPresenterTests
         CreateSearchResultsForBatching(
             int count)
     {
-        return Enumerable
+        return [.. Enumerable
             .Range(1, count)
             .Select(index =>
                 CreateResult(
-                    $"Search Result {index:D2}"))
-            .ToList();
+                    $"Search Result {index:D2}"))];
     }
 
     private static SearchDocumentsResult CreateResult(

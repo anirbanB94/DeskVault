@@ -395,7 +395,9 @@ public sealed class WorkspacePresentationTests
 
         view.View
             .Setup(x => x.AddDocumentPresentation(
-                documentPresentation))
+                documentPresentation.DocumentId,
+                documentPresentation.FileName,
+                documentPresentation.HostedForm))
             .Throws(hostingException);
 
         view.View
@@ -496,7 +498,9 @@ public sealed class WorkspacePresentationTests
 
         view.View.Verify(
             x => x.AddDocumentPresentation(
-                documentPresentation),
+                documentPresentation.DocumentId,
+                documentPresentation.FileName,
+                documentPresentation.HostedForm),
             Times.Once);
 
         view.View.Verify(
@@ -565,7 +569,9 @@ public sealed class WorkspacePresentationTests
 
         view.View.Verify(
             x => x.AddDocumentPresentation(
-                documentPresentation),
+                documentPresentation.DocumentId,
+                documentPresentation.FileName,
+                documentPresentation.HostedForm),
             Times.Exactly(2));
 
         view.View.Verify(
@@ -896,12 +902,16 @@ public sealed class WorkspacePresentationTests
 
         view.View.Verify(
             x => x.AddDocumentPresentation(
-                firstPresentation),
+                firstPresentation.DocumentId,
+                firstPresentation.FileName,
+                firstPresentation.HostedForm),
             Times.Once);
 
         view.View.Verify(
             x => x.AddDocumentPresentation(
-                secondPresentation),
+                secondPresentation.DocumentId,
+                secondPresentation.FileName,
+                secondPresentation.HostedForm),
             Times.Once);
 
         view.View.Verify(
@@ -1019,7 +1029,9 @@ public sealed class WorkspacePresentationTests
 
         view.View.Verify(
             x => x.AddDocumentPresentation(
-                It.IsAny<WorkspaceDocumentPresentation>()),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Form>()),
             Times.Never);
     }
 
@@ -1617,6 +1629,245 @@ public sealed class WorkspacePresentationTests
             x => x.Create(
                 documentId,
                 0),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RemoveDocumentRequested_ForTemporaryWorkspace_DelegatesToActiveDocumentPresentation()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid inactiveDocumentId = Guid.NewGuid();
+        Guid activeDocumentId = Guid.NewGuid();
+
+        Document inactiveDocument = Document.Create(
+            inactiveDocumentId,
+            "inactive.csv",
+            "Inactive document",
+            "inactive-sha256",
+            $"Data\\{inactiveDocumentId}\\inactive.csv");
+
+        Document activeDocument = Document.Create(
+            activeDocumentId,
+            "active.csv",
+            "Active document",
+            "active-sha256",
+            $"Data\\{activeDocumentId}\\active.csv");
+
+        var documentRepository = new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([inactiveDocument, activeDocument]);
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                inactiveDocumentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inactiveDocument);
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                activeDocumentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(activeDocument);
+
+        documentRepository
+            .Setup(x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var storageService = new Mock<IStorageService>();
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var inactiveDocumentView = new Mock<IDocumentView>();
+        var activeDocumentView = new Mock<IDocumentView>();
+
+        inactiveDocumentView
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        activeDocumentView
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        inactiveDocumentView
+            .Setup(x => x.ConfirmRemoval(
+                inactiveDocument.FileName,
+                It.IsAny<long>()))
+            .Returns(true);
+
+        activeDocumentView
+            .Setup(x => x.ConfirmRemoval(
+                activeDocument.FileName,
+                It.IsAny<long>()))
+            .Returns(true);
+
+        WorkspaceDocumentPresentation inactivePresentation =
+            CreateDocumentPresentation(
+                inactiveDocumentId,
+                documentView: inactiveDocumentView,
+                documentRepository: documentRepository,
+                storageService: storageService);
+
+        WorkspaceDocumentPresentation activePresentation =
+            CreateDocumentPresentation(
+                activeDocumentId,
+                documentView: activeDocumentView,
+                documentRepository: documentRepository,
+                storageService: storageService);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(x => x.Create(inactiveDocumentId, 0))
+            .Returns(inactivePresentation);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(activeDocumentId, 0))
+            .Returns(activePresentation);
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Temporary,
+                null,
+                null,
+                view,
+                workspaceId: workspaceId,
+                documentPresentationFactory: documentPresentationFactory,
+                documentRepository: documentRepository);
+
+        await presentation.SetWorkspaceDocumentsAsync(
+            [inactiveDocumentId, activeDocumentId],
+            TestContext.Current.CancellationToken);
+
+        WorkspaceDocumentPresentation openedInactivePresentation =
+            presentation.OpenDocument(inactiveDocumentId);
+
+        WorkspaceDocumentPresentation openedActivePresentation =
+            presentation.OpenDocument(activeDocumentId);
+
+        var inactiveDocumentStream =
+            new MemoryStream("Id,Name\r\n1,Inactive\r\n"u8.ToArray());
+
+        var activeDocumentStream =
+            new MemoryStream("Id,Name\r\n2,Active\r\n"u8.ToArray());
+
+        await openedInactivePresentation.Presenter.OpenAsync(
+            inactiveDocumentId,
+            inactiveDocumentStream,
+            inactiveDocument.FileName,
+            TestContext.Current.CancellationToken);
+
+        await openedActivePresentation.Presenter.OpenAsync(
+            activeDocumentId,
+            activeDocumentStream,
+            activeDocument.FileName,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(activeDocumentId, presentation.ActiveDocumentId);
+
+        TaskCompletionSource<bool> workspaceDocumentsUpdated =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        int workspaceDocumentsUpdatedCount = 0;
+
+        presentation.WorkspaceDocumentsUpdated +=
+            (_, _) =>
+            {
+                workspaceDocumentsUpdatedCount++;
+                workspaceDocumentsUpdated.TrySetResult(true);
+            };
+
+        // Act: invoke the workspace-level temporary "Remove Document" action.
+        view.View.Raise(
+            x => x.RemoveDocumentRequested += null,
+            EventArgs.Empty);
+
+        await workspaceDocumentsUpdated.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Assert: only the active child presenter handled the request.
+        activeDocumentView.Verify(
+            x => x.ConfirmRemoval(
+                activeDocument.FileName,
+                It.IsAny<long>()),
+            Times.Once);
+
+        inactiveDocumentView.Verify(
+            x => x.ConfirmRemoval(
+                inactiveDocument.FileName,
+                It.IsAny<long>()),
+            Times.Never);
+
+        documentRepository.Verify(
+            x => x.DeleteAsync(
+                activeDocumentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        documentRepository.Verify(
+            x => x.DeleteAsync(
+                inactiveDocumentId,
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                activeDocumentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                inactiveDocumentId,
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        Assert.DoesNotContain(
+            activeDocumentId,
+            presentation.WorkspaceDocumentIds);
+
+        Assert.Contains(
+            inactiveDocumentId,
+            presentation.WorkspaceDocumentIds);
+
+        Assert.DoesNotContain(
+            activeDocumentId,
+            presentation.PresentedDocumentIds);
+
+        Assert.Contains(
+            inactiveDocumentId,
+            presentation.PresentedDocumentIds);
+
+        Assert.Equal(
+            inactiveDocumentId,
+            presentation.ActiveDocumentId);
+
+        Assert.Equal(1, workspaceDocumentsUpdatedCount);
+
+        Assert.False(activeDocumentStream.CanRead);
+        Assert.True(inactiveDocumentStream.CanRead);
+
+        view.View.Verify(
+            x => x.RemoveDocumentPresentation(activeDocumentId),
             Times.Once);
     }
 
@@ -3772,7 +4023,9 @@ public sealed class WorkspacePresentationTests
 
         workspaceView.View.Verify(
             x => x.AddDocumentPresentation(
-                It.IsAny<WorkspaceDocumentPresentation>()),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Form>()),
             Times.Never);
 
         workspaceView.View.Verify(
@@ -3929,7 +4182,10 @@ public sealed class WorkspacePresentationTests
             Times.Once);
 
         workspaceView.View.Verify(
-            x => x.AddDocumentPresentation(replacementPresentation),
+            x => x.AddDocumentPresentation(
+                replacementPresentation.DocumentId,
+                replacementPresentation.FileName,
+                replacementPresentation.HostedForm),
             Times.Once);
     }
 
@@ -4066,7 +4322,9 @@ public sealed class WorkspacePresentationTests
 
         workspaceView.View.Verify(
             x => x.AddDocumentPresentation(
-                It.IsAny<WorkspaceDocumentPresentation>()),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Form>()),
             Times.Never);
 
         workspaceView.View.Verify(
@@ -4434,7 +4692,9 @@ public sealed class WorkspacePresentationTests
 
         view.View.Verify(
             x => x.AddDocumentPresentation(
-                It.IsAny<WorkspaceDocumentPresentation>()),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Form>()),
             Times.Never);
     }
 
@@ -4882,6 +5142,141 @@ public sealed class WorkspacePresentationTests
         presentation.Dispose();
     }
 
+    [Fact]
+    public async Task DocumentInformationRequested_DelegatesToActiveDocumentPresentation()
+    {
+        // Arrange
+        Guid inactiveDocumentId = Guid.NewGuid();
+        Guid activeDocumentId = Guid.NewGuid();
+
+        Document inactiveDocument = Document.Create(
+            inactiveDocumentId,
+            "inactive.csv",
+            "Inactive document",
+            "inactive-sha256",
+            $"Data\\{inactiveDocumentId}\\inactive.csv");
+
+        Document activeDocument = Document.Create(
+            activeDocumentId,
+            "active.csv",
+            "Active document",
+            "active-sha256",
+            $"Data\\{activeDocumentId}\\active.csv");
+
+        var documentRepository = new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                inactiveDocumentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(inactiveDocument);
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                activeDocumentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(activeDocument);
+
+        var inactiveDocumentView = new Mock<IDocumentView>();
+        var activeDocumentView = new Mock<IDocumentView>();
+
+        inactiveDocumentView
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        activeDocumentView
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        WorkspaceDocumentPresentation inactivePresentation =
+            CreateDocumentPresentation(
+                inactiveDocumentId,
+                documentView: inactiveDocumentView,
+                documentRepository: documentRepository);
+
+        WorkspaceDocumentPresentation activePresentation =
+            CreateDocumentPresentation(
+                activeDocumentId,
+                documentView: activeDocumentView,
+                documentRepository: documentRepository);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(x => x.Create(inactiveDocumentId, 0))
+            .Returns(inactivePresentation);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(activeDocumentId, 0))
+            .Returns(activePresentation);
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Persistent,
+                "Workspace",
+                null,
+                view,
+                documentPresentationFactory: documentPresentationFactory);
+
+        WorkspaceDocumentPresentation openedInactivePresentation =
+            presentation.OpenDocument(inactiveDocumentId);
+
+        WorkspaceDocumentPresentation openedActivePresentation =
+            presentation.OpenDocument(activeDocumentId);
+
+        await openedInactivePresentation.Presenter.OpenAsync(
+            inactiveDocumentId,
+            new MemoryStream("Id,Name\r\n1,Inactive\r\n"u8.ToArray()),
+            inactiveDocument.FileName,
+            TestContext.Current.CancellationToken);
+
+        await openedActivePresentation.Presenter.OpenAsync(
+            activeDocumentId,
+            new MemoryStream("Id,Name\r\n2,Active\r\n"u8.ToArray()),
+            activeDocument.FileName,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(activeDocumentId, presentation.ActiveDocumentId);
+
+        // Act
+        view.View.Raise(
+            x => x.DocumentInformationRequested += null,
+            EventArgs.Empty);
+
+        // Assert
+        activeDocumentView.Verify(
+            x => x.ShowDocumentInformation(
+                activeDocument.DisplayName,
+                activeDocument.FileName,
+                "CSV",
+                activeDocument.ImportedAt,
+                activeDocument.ProcessingState.ToString(),
+                activeDocument.Sha256Hash,
+                It.IsAny<long>()),
+            Times.Once);
+
+        inactiveDocumentView.Verify(
+            x => x.ShowDocumentInformation(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<DateTime>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>()),
+            Times.Never);
+    }
+
     private static CancellationTokenSource GetLifetimeCancellationTokenSource(
         WorkspacePresentation presentation)
     {
@@ -5024,6 +5419,9 @@ public sealed class WorkspacePresentationTests
         documentView ??= new Mock<IDocumentView>();
         documentRepository ??= new Mock<IDocumentRepository>();
         documentReader ??= new Mock<IDocumentReader>();
+        IDocumentView hostedDocumentView =
+            PresentationSessionRevisionTestSupport.CreateHostedDocumentView(
+                documentView.Object);
 
         if (openException is not null)
         {
@@ -5074,7 +5472,7 @@ public sealed class WorkspacePresentationTests
 
         var presenter =
             new DocumentWorkspacePresenter(
-                documentView.Object,
+                hostedDocumentView,
                 documentViewer.Object,
                 getDocumentHandler,
                 openDocumentHandler,
@@ -5086,7 +5484,7 @@ public sealed class WorkspacePresentationTests
         return new WorkspaceDocumentPresentation(
             documentId,
             presenter,
-            documentView.Object);
+            hostedDocumentView);
     }
 
     private static IApplicationSecuritySession CreateAuthenticatedApplicationSecuritySession(

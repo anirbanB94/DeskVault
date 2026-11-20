@@ -119,7 +119,7 @@ public partial class MainForm : Form, IMainFormView
 
     public event EventHandler? OpenRequested;
 
-    public event EventHandler? RemoveRequested;
+    public event EventHandler? RemoveDocumentRequested;
 
     public event EventHandler? ReprocessRequested;
 
@@ -135,7 +135,7 @@ public partial class MainForm : Form, IMainFormView
 
     public event EventHandler? WorkspaceOpenRequested;
 
-    public event EventHandler? WorkspaceRemoveRequested;
+    public event EventHandler? DeleteWorkspaceRequested;
 
     public Guid? SelectedDocumentId
     {
@@ -165,24 +165,21 @@ public partial class MainForm : Form, IMainFormView
         }
     }
 
-    public string? SelectedFilePath
+    public string? SelectFileToImport()
     {
-        get
+        using var dialog = new OpenFileDialog
         {
-            using var dialog = new OpenFileDialog
-            {
-                Title = UiMessages.SelectDocumentToImportTitle,
-                CheckFileExists = true,
-                Multiselect = false,
-                Filter =
-                    UiMessages.SupportedDocumentsFilter +
-                    UiMessages.AllFilesFilter
-            };
+            Title = UiMessages.SelectDocumentToImportTitle,
+            CheckFileExists = true,
+            Multiselect = false,
+            Filter =
+                UiMessages.SupportedDocumentsFilter +
+                UiMessages.AllFilesFilter
+        };
 
-            return dialog.ShowDialog(this) == DialogResult.OK
-                ? dialog.FileName
-                : null;
-        }
+        return dialog.ShowDialog(this) == DialogResult.OK
+            ? dialog.FileName
+            : null;
     }
 
     public string SearchText => searchTextBox.Text;
@@ -265,7 +262,7 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         EventArgs e)
     {
-        RemoveRequested?.Invoke(this, EventArgs.Empty);
+        RemoveDocumentRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnReprocessButtonClick(
@@ -293,7 +290,7 @@ public partial class MainForm : Form, IMainFormView
         object? sender,
         EventArgs e)
     {
-        WorkspaceRemoveRequested?.Invoke(this, EventArgs.Empty);
+        DeleteWorkspaceRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnSearchButtonClick(
