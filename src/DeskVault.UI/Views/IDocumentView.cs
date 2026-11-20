@@ -8,6 +8,8 @@ public interface IDocumentView
 
     event EventHandler RemoveDocumentRequested;
 
+    void SetDocumentChromeVisible(bool visible);
+
     Task ShowDocumentAsync(
         Stream documentStream,
         string fileName,

@@ -185,6 +185,17 @@ public partial class DocumentViewForm :
         unsupportedPreviewPanel.BringToFront();
     }
 
+    public void SetDocumentChromeVisible(bool visible)
+    {
+        if (!visible)
+        {
+            documentContextMenu.Close(
+                ToolStripDropDownCloseReason.CloseCalled);
+        }
+
+        workspaceHeaderPanel.Visible = visible;
+    }
+
     public void PostToUi(Action action)
     {
         ArgumentNullException.ThrowIfNull(action);

@@ -339,6 +339,11 @@ internal static class PresentationSessionRevisionTestSupport
             _innerView.ShowUnsupportedPreview(message);
         }
 
+        public void SetDocumentChromeVisible(bool visible)
+        {
+            _innerView.SetDocumentChromeVisible(visible);
+        }
+
         public void ShowDocumentInformation(
             string displayName,
             string fileName,

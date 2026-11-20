@@ -26,10 +26,9 @@ public sealed class DocumentViewFormTests
 
         // Act
         string[] actualMenuItems =
-            documentContextMenu.Items
+            [.. documentContextMenu.Items
                 .Cast<ToolStripItem>()
-                .Select(item => item.Name ?? string.Empty)
-                .ToArray();
+                .Select(item => item.Name ?? string.Empty)];
 
         // Assert
         Assert.Equal(
@@ -116,6 +115,38 @@ public sealed class DocumentViewFormTests
                 nameof(form.RemoveDocumentRequested)
             ],
             observedRequests);
+    }
+
+    [Fact]
+    public void SetDocumentChromeVisible_TogglesDocumentHeaderVisibility()
+    {
+        // Arrange
+        var resolver =
+            new Mock<IDocumentContentRendererResolver>();
+
+        using var form =
+            CreateForm(resolver.Object);
+
+        form.Show();
+
+        Panel workspaceHeaderPanel =
+            GetPrivateField<Panel>(
+                form,
+                "workspaceHeaderPanel");
+
+        Assert.True(workspaceHeaderPanel.Visible);
+
+        // Act: hide the document chrome.
+        form.SetDocumentChromeVisible(false);
+
+        // Assert: the complete document header is hidden.
+        Assert.False(workspaceHeaderPanel.Visible);
+
+        // Act: restore the document chrome.
+        form.SetDocumentChromeVisible(true);
+
+        // Assert: the document header is visible again.
+        Assert.True(workspaceHeaderPanel.Visible);
     }
 
     [Fact]
