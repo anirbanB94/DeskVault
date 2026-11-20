@@ -901,6 +901,10 @@ public sealed class WorkspaceViewFormTests
         {
         }
 
+        public void SetDocumentChromeVisible(bool visible)
+        {
+        }
+
         public void ShowDocumentInformation(
             string displayName,
             string fileName,

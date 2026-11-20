@@ -19,14 +19,13 @@ public sealed class DocumentViewContractTests
 
         // Act
         string[] actualEvents =
-            typeof(IDocumentView)
+            [.. typeof(IDocumentView)
                 .GetEvents(
                     BindingFlags.Public |
                     BindingFlags.Instance |
                     BindingFlags.DeclaredOnly)
                 .Select(documentEvent => documentEvent.Name)
-                .OrderBy(name => name, StringComparer.Ordinal)
-                .ToArray();
+                .OrderBy(name => name, StringComparer.Ordinal)];
 
         // Assert
         Assert.Equal(
@@ -42,6 +41,7 @@ public sealed class DocumentViewContractTests
         // Arrange
         string[] expectedMethods =
         [
+            nameof(IDocumentView.SetDocumentChromeVisible),
             nameof(IDocumentView.ShowDocumentAsync),
             nameof(IDocumentView.ShowUnsupportedPreview),
             nameof(IDocumentView.ShowDocumentInformation),
@@ -53,15 +53,14 @@ public sealed class DocumentViewContractTests
 
         // Act
         string[] actualMethods =
-            typeof(IDocumentView)
+            [.. typeof(IDocumentView)
                 .GetMethods(
                     BindingFlags.Public |
                     BindingFlags.Instance |
                     BindingFlags.DeclaredOnly)
                 .Where(method => !method.IsSpecialName)
                 .Select(method => method.Name)
-                .OrderBy(name => name, StringComparer.Ordinal)
-                .ToArray();
+                .OrderBy(name => name, StringComparer.Ordinal)];
 
         // Assert
         Assert.Equal(

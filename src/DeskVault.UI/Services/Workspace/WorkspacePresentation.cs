@@ -320,6 +320,8 @@ public sealed class WorkspacePresentation : IDisposable
                     cancellationToken);
             }
 
+            presentation.View.SetDocumentChromeVisible(!IsTemporary);
+
             if (IsTemporary &&
                 !string.IsNullOrWhiteSpace(presentation.FileName))
             {
@@ -1159,6 +1161,12 @@ public sealed class WorkspacePresentation : IDisposable
             _view.SetWorkspaceIdentity(
                 WorkspaceName ?? UiMessages.Workspace,
                 WorkspaceDescription);
+
+            foreach (WorkspaceDocumentPresentation childPresentation in
+                     _documentPresentations.Values)
+            {
+                childPresentation.View.SetDocumentChromeVisible(true);
+            }
 
             WorkspaceDetailsUpdated?.Invoke(
                 this,

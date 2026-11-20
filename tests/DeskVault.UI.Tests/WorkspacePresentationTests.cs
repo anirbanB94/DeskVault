@@ -514,6 +514,124 @@ public sealed class WorkspacePresentationTests
             Times.Once);
     }
 
+    [Theory]
+    [InlineData(WorkspaceType.Persistent, true)]
+    [InlineData(WorkspaceType.Temporary, false)]
+    public async Task OpenDocumentAsync_SetsDocumentChromeVisibilityBeforeHosting(
+        WorkspaceType workspaceType,
+        bool expectedChromeVisible)
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid documentId = Guid.NewGuid();
+
+        Document document = Document.Create(
+            documentId,
+            "document.csv",
+            "Document",
+            "test-sha256",
+            $"Data\\{documentId}\\document.csv");
+
+        var documentRepository =
+            new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        documentReader
+            .Setup(x => x.OpenReadAsync(
+                documentId,
+                document.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                () => new MemoryStream(
+                    "Id,Name\r\n1,Example\r\n"u8.ToArray()));
+
+        var documentView =
+            new Mock<IDocumentView>();
+
+        List<string> operationOrder = [];
+
+        documentView
+            .Setup(x => x.SetDocumentChromeVisible(
+                expectedChromeVisible))
+            .Callback(() => operationOrder.Add("Chrome"));
+
+        documentView
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                document.FileName,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        WorkspaceDocumentPresentation documentPresentation =
+            CreateDocumentPresentation(
+                documentId,
+                documentView: documentView,
+                documentRepository: documentRepository,
+                documentReader: documentReader);
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        documentPresentationFactory
+            .Setup(x => x.Create(
+                documentId,
+                0))
+            .Returns(documentPresentation);
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        view.View
+            .Setup(x => x.AddDocumentPresentation(
+                documentPresentation.DocumentId,
+                It.IsAny<string?>(),
+                documentPresentation.HostedForm))
+            .Callback(() => operationOrder.Add("Host"));
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                workspaceType,
+                workspaceType == WorkspaceType.Persistent
+                    ? "Workspace"
+                    : null,
+                null,
+                view,
+                documentPresentationFactory:
+                    documentPresentationFactory,
+                documentRepository: documentRepository);
+
+        // Act
+        await presentation.OpenDocumentAsync(
+            documentId,
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        documentView.Verify(
+            x => x.SetDocumentChromeVisible(
+                expectedChromeVisible),
+            Times.Once);
+
+        Assert.Equal(
+            ["Chrome", "Host"],
+            operationOrder);
+
+        view.View.Verify(
+            x => x.AddDocumentPresentation(
+                documentPresentation.DocumentId,
+                documentPresentation.FileName,
+                documentPresentation.HostedForm),
+            Times.Once);
+    }
+
     [Fact]
     public void OpenDocument_WhenDocumentAlreadyPresented_ReusesExistingPresentation()
     {
@@ -2484,6 +2602,274 @@ public sealed class WorkspacePresentationTests
                 string.Empty,
                 null,
                 "Save as Workspace"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveAsWorkspace_Success_RestoresDocumentChromeForAllOpenPresentations()
+    {
+        // Arrange
+        Guid workspaceId = Guid.NewGuid();
+        Guid firstDocumentId = Guid.NewGuid();
+        Guid secondDocumentId = Guid.NewGuid();
+
+        Document firstDocument = Document.Create(
+            firstDocumentId,
+            "first.csv",
+            "First document",
+            "first-sha256",
+            $"Data\\{firstDocumentId}\\first.csv");
+
+        Document secondDocument = Document.Create(
+            secondDocumentId,
+            "second.csv",
+            "Second document",
+            "second-sha256",
+            $"Data\\{secondDocumentId}\\second.csv");
+
+        var documentRepository =
+            new Mock<IDocumentRepository>();
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                firstDocumentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(firstDocument);
+
+        documentRepository
+            .Setup(x => x.GetByIdAsync(
+                secondDocumentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(secondDocument);
+
+        var documentReader =
+            new Mock<IDocumentReader>();
+
+        documentReader
+            .Setup(x => x.OpenReadAsync(
+                firstDocumentId,
+                firstDocument.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                () => new MemoryStream(
+                    "Id,Name\r\n1,First\r\n"u8.ToArray()));
+
+        documentReader
+            .Setup(x => x.OpenReadAsync(
+                secondDocumentId,
+                secondDocument.Sha256Hash,
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                () => new MemoryStream(
+                    "Id,Name\r\n2,Second\r\n"u8.ToArray()));
+
+        var firstDocumentView =
+            new Mock<IDocumentView>();
+
+        firstDocumentView
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                firstDocument.FileName,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var secondDocumentView =
+            new Mock<IDocumentView>();
+
+        secondDocumentView
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                secondDocument.FileName,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        List<string> transitionOrder = [];
+
+        firstDocumentView
+            .Setup(x => x.SetDocumentChromeVisible(true))
+            .Callback(() => transitionOrder.Add("FirstDocumentChrome"));
+
+        secondDocumentView
+            .Setup(x => x.SetDocumentChromeVisible(true))
+            .Callback(() => transitionOrder.Add("SecondDocumentChrome"));
+
+        var documentPresentationFactory =
+            new Mock<IWorkspaceDocumentPresentationFactory>();
+
+        WorkspaceDocumentPresentation firstPresentation =
+            CreateDocumentPresentation(
+                firstDocumentId,
+                documentView: firstDocumentView,
+                documentRepository: documentRepository,
+                documentReader: documentReader);
+
+        WorkspaceDocumentPresentation secondPresentation =
+            CreateDocumentPresentation(
+                secondDocumentId,
+                documentView: secondDocumentView,
+                documentRepository: documentRepository,
+                documentReader: documentReader);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(firstDocumentId, 0))
+            .Returns(firstPresentation);
+
+        documentPresentationFactory
+            .Setup(x => x.Create(secondDocumentId, 0))
+            .Returns(secondPresentation);
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        workspaceRepository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Workspace temporaryWorkspace =
+            Workspace.CreateTemporary(workspaceId);
+
+        temporaryWorkspace.AddDocument(firstDocumentId);
+        temporaryWorkspace.AddDocument(secondDocumentId);
+
+        Workspace? persistedWorkspace = null;
+
+        var activeWorkspaceRegistry =
+            new Mock<IActiveWorkspaceRegistry>();
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Get(workspaceId))
+            .Returns(temporaryWorkspace);
+
+        activeWorkspaceRegistry
+            .Setup(x => x.Replace(It.IsAny<Workspace>()))
+            .Callback<Workspace>(
+                workspace => persistedWorkspace = workspace);
+
+        var dialogService =
+            new Mock<IWorkspaceDialogService>();
+
+        dialogService
+            .Setup(x => x.ShowWorkspaceDetails(
+                string.Empty,
+                null,
+                UiMessages.SaveAsWorkspace,
+                0))
+            .Returns(
+                new WorkspaceDetailsDialogResult(
+                    "Saved Workspace",
+                    "Saved description"));
+
+        WorkspacePresentationViewHarness view =
+            CreateViewHarness();
+
+        view.View
+            .Setup(x => x.SetWorkspaceIdentity(
+                "Saved Workspace",
+                "Saved description"))
+            .Callback(
+                () => transitionOrder.Add("WorkspaceIdentity"));
+
+        using WorkspacePresentation presentation =
+            CreatePresentation(
+                WorkspaceType.Temporary,
+                null,
+                null,
+                view,
+                dialogService,
+                workspaceRepository,
+                activeWorkspaceRegistry,
+                workspaceId,
+                documentPresentationFactory,
+                documentRepository: documentRepository);
+
+        var workspaceDetailsUpdated =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        presentation.WorkspaceDetailsUpdated +=
+            (_, _) =>
+            {
+                transitionOrder.Add("WorkspaceDetailsUpdated");
+                workspaceDetailsUpdated.TrySetResult();
+            };
+
+        // Act: open both documents while the workspace is temporary.
+        await presentation.OpenDocumentAsync(
+            firstDocumentId,
+            TestContext.Current.CancellationToken);
+
+        await presentation.OpenDocumentAsync(
+            secondDocumentId,
+            TestContext.Current.CancellationToken);
+
+        // Request conversion to a persistent workspace.
+        view.View.Raise(
+            x => x.SaveAsWorkspaceRequested += null,
+            EventArgs.Empty);
+
+        await workspaceDetailsUpdated.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Assert: each child was initially configured for temporary mode.
+        firstDocumentView.Verify(
+            x => x.SetDocumentChromeVisible(false),
+            Times.Once);
+
+        secondDocumentView.Verify(
+            x => x.SetDocumentChromeVisible(false),
+            Times.Once);
+
+        // Assert: conversion restored chrome on every already-open child.
+        firstDocumentView.Verify(
+            x => x.SetDocumentChromeVisible(true),
+            Times.Once);
+
+        secondDocumentView.Verify(
+            x => x.SetDocumentChromeVisible(true),
+            Times.Once);
+
+        Assert.False(presentation.IsTemporary);
+        Assert.Equal("Saved Workspace", presentation.WorkspaceName);
+        Assert.Equal("Saved description", presentation.WorkspaceDescription);
+
+        Assert.NotNull(persistedWorkspace);
+        Assert.Equal(
+            WorkspaceType.Persistent,
+            persistedWorkspace!.TypeOfWorkspace);
+
+        // The outer workspace identity is applied before child chrome is
+        // restored, and the details update is published after both.
+        int workspaceIdentityIndex =
+            transitionOrder.IndexOf("WorkspaceIdentity");
+
+        int firstChromeIndex =
+            transitionOrder.IndexOf("FirstDocumentChrome");
+
+        int secondChromeIndex =
+            transitionOrder.IndexOf("SecondDocumentChrome");
+
+        int detailsUpdatedIndex =
+            transitionOrder.IndexOf("WorkspaceDetailsUpdated");
+
+        Assert.True(workspaceIdentityIndex >= 0);
+        Assert.True(firstChromeIndex > workspaceIdentityIndex);
+        Assert.True(secondChromeIndex > workspaceIdentityIndex);
+        Assert.True(detailsUpdatedIndex > firstChromeIndex);
+        Assert.True(detailsUpdatedIndex > secondChromeIndex);
+
+        workspaceRepository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Workspace>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        activeWorkspaceRegistry.Verify(
+            x => x.Replace(It.IsAny<Workspace>()),
             Times.Once);
     }
 

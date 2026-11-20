@@ -107,6 +107,9 @@ Currently implemented:
 - document content area
 - document information
 - workspace/document actions
+- mode-dependent child document-header visibility for temporary and
+  persistent presentations, including restoration during Save as Workspace
+  conversion
 - document presentation close independent from persistent membership removal
 - reopening workspace members after their presentation has been closed
 - explicit Save as Workspace conversion
@@ -185,12 +188,21 @@ appropriate to the current workspace type, workspace or temporary-document
 identity, the contextual workspace/document menu, and workspace-level
 presentation actions.
 
-The document view does not provide a second workspace header. Its own
-presentation surface is limited to document identity and document-specific
-presentation actions where that surface is displayed independently. When
-hosted as the active document content within a workspace, the surrounding
-workspace view is the owner of the visible workspace chrome and its
-contextual action surface.
+The document view does not provide a second workspace header. It retains a
+document-specific header for the active document identity and document-
+specific presentation actions. This child header is distinct from the
+workspace header and does not own workspace identity, navigation, or
+workspace actions.
+
+The child document header follows the authoritative workspace mode.
+`WorkspacePresentation` applies its visibility through
+`IDocumentView.SetDocumentChromeVisible(bool)` before the child view is
+hosted. For a temporary presentation, it hides the child header because
+`WorkspaceViewForm` already identifies the opened document and exposes the
+document-level requests and temporary-session actions. For a persistent
+workspace, it keeps the child header visible because `WorkspaceViewForm`
+identifies the workspace while the child identifies the active document
+and exposes its document-specific presentation actions.
 
 For a temporary document presentation, the `WorkspaceViewForm` identity
 indicates the opened document and the contextual menu provides document-level
@@ -1373,6 +1385,35 @@ workspace management actions, or the workspace contextual menu. The
 visible workspace chrome and the temporary/persistent workspace action menu
 belong to `WorkspaceViewForm`.
 
+The child document header is a separate document-level presentation surface.
+`WorkspacePresentation` controls its visibility through
+`IDocumentView.SetDocumentChromeVisible(bool)`, using the authoritative
+workspace type as the mode source. After the document presenter completes
+opening and the workspace operation revalidates its captured security-session
+revision, the workspace presentation applies the child-header visibility
+before attaching the generic Form hosting surface.
+
+For a temporary workspace, the child document header is hidden because the
+outer workspace presentation already identifies the directly opened document
+and exposes the applicable document-level requests and temporary-session
+actions. For a persistent workspace, the child document header remains
+visible because the outer workspace header identifies the workspace while
+the child header identifies the active document and exposes its
+document-specific presentation actions.
+
+A successful Save as Workspace conversion updates the existing
+`WorkspacePresentation` in place. After applying the persistent workspace
+identity to the outer view, it restores child document-header visibility on
+each already-presented document view before publishing
+`WorkspaceDetailsUpdated`. The existing child presenters and views are
+reused; conversion does not recreate their presentations. Newly opened child
+presentations receive visibility based on the current workspace type before
+they are hosted.
+
+`DocumentViewForm` renders the requested visibility through its explicit
+view contract. It does not infer workspace mode from its WinForms parent,
+inspect parent controls, or depend on a concrete workspace Form type.
+
 The document-interaction contract and the WinForms hosting surface are
 separate. `WorkspaceDocumentPresentation.View` exposes document-specific
 behavior through `IDocumentView`, while its `HostedForm` property exposes
@@ -1443,13 +1484,23 @@ removal execution, external-viewing lifecycle, or document rendering.
 Temporary and persistent workspace behavior remains distinct. A temporary
 workspace presents the directly opened document and exposes document-level
 requests and temporary-session actions through `WorkspaceViewForm`, without
-persistent-workspace navigation choices. A persistent workspace supports
-multiple workspace members, workspace-level membership and management
-actions, and the Tabs or Sidebar navigation choice. The workspace
-presentation owns the navigation-mode value; the Form renders the selected
-mode and reports user changes through its view event. Conversion from
-temporary to persistent workspace continues to update the existing
-presentation rather than creating a second presentation.
+persistent-workspace navigation choices. Its child document header is
+hidden because the outer temporary presentation already provides the
+document identity and applicable document actions.
+
+A persistent workspace supports multiple workspace members, workspace-level
+membership and management actions, and the Tabs or Sidebar navigation
+choice. Its outer header identifies the workspace, while the child document
+header remains visible to identify the active document and expose its
+document-specific presentation actions. These are separate identity and
+action surfaces rather than duplicated workspace chrome.
+
+The workspace presentation owns the navigation-mode value; the Form renders
+the selected mode and reports user changes through its view event.
+Conversion from temporary to persistent workspace continues to update the
+existing presentation rather than creating a second presentation. After
+the persistent workspace identity has been applied, the existing child
+document headers are restored before `WorkspaceDetailsUpdated` is published.
 
 This boundary defines state ownership, interaction flow, and the separation
 between document interaction and WinForms hosting. Persistent active-document

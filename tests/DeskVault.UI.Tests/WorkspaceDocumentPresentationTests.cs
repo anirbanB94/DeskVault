@@ -372,6 +372,10 @@ public sealed class WorkspaceDocumentPresentationTests
         {
         }
 
+        public void SetDocumentChromeVisible(bool visible)
+        {
+        }
+
         public void ShowDocumentInformation(
             string displayName,
             string fileName,
