@@ -38,6 +38,17 @@ workspace menu, or workspace lifecycle.
 `MainForm` will remain responsible for the document library and
 document-management workflow.
 
+Document import-file selection is an application-shell interaction, not
+authoritative view state. `IMainFormView` exposes the selection request as
+the explicit `SelectFileToImport()` interaction. Because invoking this
+interaction may display the native file-selection dialog, it is an action
+rather than a property whose read appears to retrieve passive view state.
+`MainFormPresenter` coordinates that interaction and the returned optional
+file path with the existing import workflow. Reading a view-state property
+must not initiate a file-selection dialog or another user interaction.
+Import validation and document creation remain within their existing
+Application workflow.
+
 Opening a document from `MainForm` will open the document inside DeskVault
 rather than launching the document through the operating system's default
 external application.
@@ -329,6 +340,17 @@ its tab and sidebar containers. The workspace view does not cast the
 document interaction contract to `DocumentViewForm` or search its hosted
 controls for that concrete type. Moving between tab and sidebar hosting
 reparents the same Form instance.
+
+`WorkspacePresentation` retains each `WorkspaceDocumentPresentation` in
+its document-presentation collection and passes only the document
+identifier, optional filename, and generic `Form` host to
+`IWorkspacePresentationView.AddDocumentPresentation`. The workspace view
+contract therefore receives the minimum inputs required to host the child;
+it does not receive the child wrapper, document presenter, or `IDocumentView`.
+`WorkspaceViewForm` attaches or detaches the supplied Form for presentation
+layout and does not acquire ownership of or dispose the child presenter/view
+pair. `WorkspaceDocumentPresentation` remains the owner of that pair's
+lifecycle.
 
 The generic Form hosting surface is a WinForms presentation boundary only.
 It does not add Form, parent-control, or workspace-navigation members to

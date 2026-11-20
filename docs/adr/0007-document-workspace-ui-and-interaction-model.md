@@ -1351,6 +1351,18 @@ where required. It then projects the resulting presentation state back
 through the view contract. The Form does not receive workspace repositories
 or Application command handlers to perform these operations itself.
 
+`WorkspacePresentation` retains the `WorkspaceDocumentPresentation`
+objects in its document-presentation collection. When adding a child
+presentation to the view, it passes only the document identifier, optional
+document filename, and generic `System.Windows.Forms.Form` hosting surface
+through `IWorkspacePresentationView.AddDocumentPresentation`. The view
+contract does not expose or receive the child wrapper,
+`DocumentWorkspacePresenter`, or `IDocumentView`. `WorkspaceViewForm`
+attaches and detaches the supplied Form for its layout; it does not become
+the lifecycle owner or dispose the child presenter/view pair.
+`WorkspaceDocumentPresentation` remains the sole disposal owner for that
+pair.
+
 `DocumentViewForm` implements `IDocumentView` and remains a WinForms
 Passive View for the document-specific content surface. It is responsible
 for hosting the active rendered document content, displaying the
