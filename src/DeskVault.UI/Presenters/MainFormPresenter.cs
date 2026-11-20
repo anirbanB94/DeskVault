@@ -596,7 +596,7 @@ public sealed class MainFormPresenter : IDisposable
             return;
         }
 
-        string? filePath = _view.SelectedFilePath;
+        string? filePath = _view.SelectFileToImport();
 
         // The native file picker may return after protected access has been withdrawn.
         // Discard its selection rather than starting an import from the earlier session.

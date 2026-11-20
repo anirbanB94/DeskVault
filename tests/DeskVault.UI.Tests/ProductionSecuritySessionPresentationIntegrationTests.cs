@@ -365,10 +365,14 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        IDocumentView hostedChildView =
+            PresentationSessionRevisionTestSupport.CreateHostedDocumentView(
+                childView.Object);
+
         using DocumentWorkspacePresenter childPresenter =
             CreateDocumentWorkspacePresenter(
                 securitySession,
-                childView.Object,
+                hostedChildView,
                 documentRepository,
                 owningSnapshot.Revision);
 
@@ -376,7 +380,7 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
             new WorkspaceDocumentPresentation(
                 documentId,
                 childPresenter,
-                childView.Object);
+                hostedChildView);
 
         var documentPresentationFactory =
             new Mock<IWorkspaceDocumentPresentationFactory>(

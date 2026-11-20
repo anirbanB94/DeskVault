@@ -217,9 +217,7 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             documentListBox.Items.Clear();
 
             TabPage[] tabPages =
-                documentTabControl.TabPages
-                    .Cast<TabPage>()
-                    .ToArray();
+                [.. documentTabControl.TabPages.Cast<TabPage>()];
 
             // Detach every hosted document Form from its tab page.
             // These Forms remain owned by their WorkspaceDocumentPresentation.
@@ -300,19 +298,20 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
     }
 
     public void AddDocumentPresentation(
-        WorkspaceDocumentPresentation presentation)
+        Guid documentId,
+        string? documentFileName,
+        Form documentForm)
     {
-        ArgumentNullException.ThrowIfNull(presentation);
+        ArgumentNullException.ThrowIfNull(documentForm);
 
-        if (_documentTabs.ContainsKey(presentation.DocumentId))
+        if (_documentTabs.ContainsKey(documentId))
         {
             ActivateDocumentPresentation(
-                presentation.DocumentId);
+                documentId);
 
             return;
         }
 
-        Form documentForm = presentation.HostedForm;
         TabPage? tabPage = null;
 
         try
@@ -320,12 +319,12 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             PrepareDocumentView(documentForm);
 
             string fileName =
-                presentation.FileName ??
+                documentFileName ??
                 UiMessages.DocumentWorkspaceFallbackName;
 
             tabPage = new TabPage
             {
-                Name = $"documentTab_{presentation.DocumentId:N}",
+                Name = $"documentTab_{documentId:N}",
                 Text = fileName,
                 UseVisualStyleBackColor = true
             };
@@ -333,7 +332,7 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             tabPage.Controls.Add(documentForm);
 
             _documentTabs.Add(
-                presentation.DocumentId,
+                documentId,
                 tabPage);
 
             bool wasSynchronizingDocumentSelection =
@@ -358,12 +357,12 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
             // Remove only the registry entry created by this attempt.
             if (tabPage is not null &&
                 _documentTabs.TryGetValue(
-                    presentation.DocumentId,
+                    documentId,
                     out TabPage? registeredTabPage) &&
                 ReferenceEquals(registeredTabPage, tabPage))
             {
                 _documentTabs.Remove(
-                    presentation.DocumentId);
+                    documentId);
             }
 
             if (tabPage is not null)
@@ -619,7 +618,7 @@ public partial class WorkspaceViewForm : Form, IWorkspacePresentationView
         ]);
     }
 
-    private void PrepareDocumentView(
+    private static void PrepareDocumentView(
         Form documentForm)
     {
         documentForm.TopLevel = false;

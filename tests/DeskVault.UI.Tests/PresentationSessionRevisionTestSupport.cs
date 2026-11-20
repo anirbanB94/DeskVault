@@ -36,6 +36,30 @@ internal static class PresentationSessionRevisionTestSupport
         return session.Object;
     }
 
+
+    internal static IDocumentView CreateHostedDocumentView(
+        IDocumentView innerView)
+    {
+        ArgumentNullException.ThrowIfNull(innerView);
+
+        // WinForms Form construction can install a WindowsFormsSynchronizationContext
+        // on the current thread. These tests do not run a WinForms message loop, so
+        // prevent that context from leaking into asynchronous test continuations.
+        SynchronizationContext? originalSynchronizationContext =
+            SynchronizationContext.Current;
+
+        try
+        {
+            return new HostedDocumentView(innerView);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(
+                originalSynchronizationContext);
+        }
+    }
+
+
     internal sealed class SecuritySessionHarness
     {
         public SecuritySessionHarness(
@@ -85,7 +109,7 @@ internal static class PresentationSessionRevisionTestSupport
         documentRepository
             .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-                Array.Empty<DeskVault.Domain.Documents.Document>());
+                []);
 
         var workspaceRepository = new Mock<IWorkspaceRepository>();
         var activeWorkspaceRegistry = new Mock<IActiveWorkspaceRegistry>();
@@ -193,7 +217,7 @@ internal static class PresentationSessionRevisionTestSupport
         var documentRepository = new Mock<IDocumentRepository>();
         documentRepository
             .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<DeskVault.Domain.Documents.Document>());
+            .ReturnsAsync([]);
 
         var workspaceRepository = new Mock<IWorkspaceRepository>();
         var activeWorkspaceRegistry = new Mock<IActiveWorkspaceRegistry>();
@@ -265,5 +289,127 @@ internal static class PresentationSessionRevisionTestSupport
             NullLogger<DocumentWorkspacePresenter>.Instance,
             securitySession,
             new Mock<ISessionBoundDialogCoordinator>().Object);
+    }
+
+    private sealed class HostedDocumentView :
+        Form,
+        IDocumentView
+    {
+        private readonly IDocumentView _innerView;
+        private bool _innerViewDisposed;
+
+        public HostedDocumentView(IDocumentView innerView)
+        {
+            ArgumentNullException.ThrowIfNull(innerView);
+
+            _innerView = innerView;
+        }
+
+        public event EventHandler OpenExternallyRequested
+        {
+            add => _innerView.OpenExternallyRequested += value;
+            remove => _innerView.OpenExternallyRequested -= value;
+        }
+
+        public event EventHandler DocumentInformationRequested
+        {
+            add => _innerView.DocumentInformationRequested += value;
+            remove => _innerView.DocumentInformationRequested -= value;
+        }
+
+        public event EventHandler RemoveDocumentRequested
+        {
+            add => _innerView.RemoveDocumentRequested += value;
+            remove => _innerView.RemoveDocumentRequested -= value;
+        }
+
+        public Task ShowDocumentAsync(
+            Stream documentStream,
+            string fileName,
+            CancellationToken cancellationToken = default)
+        {
+            return _innerView.ShowDocumentAsync(
+                documentStream,
+                fileName,
+                cancellationToken);
+        }
+
+        public void ShowUnsupportedPreview(string message)
+        {
+            _innerView.ShowUnsupportedPreview(message);
+        }
+
+        public void ShowDocumentInformation(
+            string displayName,
+            string fileName,
+            string fileType,
+            DateTime importedAt,
+            string status,
+            string sha256Hash,
+            long expectedSessionRevision = 0)
+        {
+            _innerView.ShowDocumentInformation(
+                displayName,
+                fileName,
+                fileType,
+                importedAt,
+                status,
+                sha256Hash,
+                expectedSessionRevision);
+        }
+
+        public bool ConfirmRemoval(
+            string fileName,
+            long expectedSessionRevision = 0)
+        {
+            return _innerView.ConfirmRemoval(
+                fileName,
+                expectedSessionRevision);
+        }
+
+        public void ClearPresentation()
+        {
+            _innerView.ClearPresentation();
+        }
+
+        public void PostToUi(Action action)
+        {
+            _innerView.PostToUi(action);
+        }
+
+        public void ShowError(
+            string message,
+            string title,
+            long expectedSessionRevision = 0)
+        {
+            _innerView.ShowError(
+                message,
+                title,
+                expectedSessionRevision);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !_innerViewDisposed)
+            {
+                _innerViewDisposed = true;
+
+                try
+                {
+                    if (_innerView is IDisposable disposable)
+                    {
+                        disposable.Dispose();
+                    }
+                }
+                finally
+                {
+                    base.Dispose(disposing);
+                }
+
+                return;
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

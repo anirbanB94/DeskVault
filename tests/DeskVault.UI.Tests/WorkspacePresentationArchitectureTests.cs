@@ -173,10 +173,9 @@ public sealed class WorkspacePresentationArchitectureTests
     {
         // Arrange
         string[] actualPropertyNames =
-            typeof(IWorkspacePresentationView)
+            [.. typeof(IWorkspacePresentationView)
                 .GetProperties()
-                .Select(property => property.Name)
-                .ToArray();
+                .Select(property => property.Name)];
 
         // Assert
         foreach (string propertyName in AuthoritativeWorkspacePropertyNames)
@@ -188,6 +187,45 @@ public sealed class WorkspacePresentationArchitectureTests
     }
 
     [Fact]
+    public void WorkspaceAndDocumentViewContracts_DoNotExposeApplicationShellSelectionOrSearchState()
+    {
+        // Arrange
+        string[] applicationShellStateMemberNames =
+        [
+            nameof(IMainFormView.SelectedDocumentId),
+            nameof(IMainFormView.SelectedDocumentFileName),
+            "SelectedFilePath",
+            nameof(IMainFormView.SearchText),
+            nameof(IMainFormView.SearchFileType),
+            nameof(IMainFormView.SelectedWorkspaceId),
+            nameof(IMainFormView.SelectedWorkspaceName)
+        ];
+
+        Type[] childViewContracts =
+        [
+            typeof(IWorkspacePresentationView),
+            typeof(IDocumentView)
+        ];
+
+        // Act and Assert
+        foreach (Type contractType in childViewContracts)
+        {
+            HashSet<string> actualMemberNames =
+                contractType
+                    .GetMembers()
+                    .Select(member => member.Name)
+                    .ToHashSet(StringComparer.Ordinal);
+
+            foreach (string stateMemberName in applicationShellStateMemberNames)
+            {
+                Assert.DoesNotContain(
+                    stateMemberName,
+                    actualMemberNames);
+            }
+        }
+    }
+
+    [Fact]
     public void WorkspaceViewForm_ImplementsPassiveViewContractWithoutExposingAuthoritativeWorkspaceState()
     {
         // Arrange
@@ -195,10 +233,9 @@ public sealed class WorkspacePresentationArchitectureTests
             typeof(WorkspaceViewForm);
 
         string[] actualPropertyNames =
-            workspaceViewFormType
+            [.. workspaceViewFormType
                 .GetProperties(DeclaredPublicInstanceProperties)
-                .Select(property => property.Name)
-                .ToArray();
+                .Select(property => property.Name)];
 
         // Assert
         Assert.Contains(
@@ -314,25 +351,21 @@ public sealed class WorkspacePresentationArchitectureTests
                     BindingFlags.Public));
 
         string[] constructorParameterNames =
-            constructor.GetParameters()
-                .Select(parameter => parameter.Name!)
-                .ToArray();
+            [.. constructor.GetParameters().Select(parameter => parameter.Name!)];
 
         string[] publicMethodNames =
-            presenterType.GetMethods(
+            [.. presenterType.GetMethods(
                     BindingFlags.Instance |
                     BindingFlags.Public |
                     BindingFlags.DeclaredOnly)
-                .Select(method => method.Name)
-                .ToArray();
+                .Select(method => method.Name)];
 
         string[] publicEventNames =
-            presenterType.GetEvents(
+            [.. presenterType.GetEvents(
                     BindingFlags.Instance |
                     BindingFlags.Public |
                     BindingFlags.DeclaredOnly)
-                .Select(@event => @event.Name)
-                .ToArray();
+                .Select(@event => @event.Name)];
 
         // Assert
         Assert.Null(workspaceId);
@@ -413,6 +446,49 @@ public sealed class WorkspacePresentationArchitectureTests
 
         // Assert
         Assert.Null(activateMethod);
+    }
+
+    [Fact]
+    public void WorkspacePresentationViewContract_ReceivesOnlyDocumentHostInputs()
+    {
+        // Arrange
+        MethodInfo[] methods =
+            [.. typeof(IWorkspacePresentationView)
+                .GetMethods()
+                .Where(method =>
+                    method.Name ==
+                    nameof(IWorkspacePresentationView.AddDocumentPresentation))];
+
+        MethodInfo method =
+            Assert.Single(methods);
+
+        Type[] parameterTypes =
+            [.. method.GetParameters().Select(parameter => parameter.ParameterType)];
+
+        // Assert
+        Assert.Equal(
+            typeof(void),
+            method.ReturnType);
+
+        Assert.Equal(
+            [
+            typeof(Guid),
+            typeof(string),
+            typeof(Form)
+            ],
+            parameterTypes);
+
+        Assert.DoesNotContain(
+            typeof(WorkspaceDocumentPresentation),
+            parameterTypes);
+
+        Assert.DoesNotContain(
+            typeof(IDocumentView),
+            parameterTypes);
+
+        Assert.DoesNotContain(
+            typeof(DocumentWorkspacePresenter),
+            parameterTypes);
     }
 
     private static bool ReferencesDocumentViewForm(Type type)

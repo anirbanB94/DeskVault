@@ -295,7 +295,10 @@ public sealed class WorkspaceViewFormTests
                 "documentSidebarContentPanel");
 
         // Act
-        workspaceView.AddDocumentPresentation(presentation);
+        workspaceView.AddDocumentPresentation(
+            presentation.DocumentId,
+            presentation.FileName,
+            presentation.HostedForm);
 
         TabPage tabPage =
             Assert.Single(
@@ -380,8 +383,15 @@ public sealed class WorkspaceViewFormTests
                 "documentTabControl");
 
         // Act
-        workspaceView.AddDocumentPresentation(firstPresentation);
-        workspaceView.AddDocumentPresentation(secondPresentation);
+        workspaceView.AddDocumentPresentation(
+            firstPresentation.DocumentId,
+            firstPresentation.FileName,
+            firstPresentation.HostedForm);
+
+        workspaceView.AddDocumentPresentation(
+            secondPresentation.DocumentId,
+            secondPresentation.FileName,
+            secondPresentation.HostedForm);
 
         // Assert
         Assert.Empty(activatedDocumentIds);
@@ -426,8 +436,15 @@ public sealed class WorkspaceViewFormTests
                 workspaceView,
                 "documentTabControl");
 
-        workspaceView.AddDocumentPresentation(firstPresentation);
-        workspaceView.AddDocumentPresentation(secondPresentation);
+        workspaceView.AddDocumentPresentation(
+            firstPresentation.DocumentId,
+            firstPresentation.FileName,
+            firstPresentation.HostedForm);
+
+        workspaceView.AddDocumentPresentation(
+            secondPresentation.DocumentId,
+            secondPresentation.FileName,
+            secondPresentation.HostedForm);
 
         // Act: select the second tab as the user.
         tabControl.SelectedIndex = 1;
@@ -469,7 +486,10 @@ public sealed class WorkspaceViewFormTests
                 workspaceView,
                 "documentTabControl");
 
-        workspaceView.AddDocumentPresentation(presentation);
+        workspaceView.AddDocumentPresentation(
+            presentation.DocumentId,
+            presentation.FileName,
+            presentation.HostedForm);
 
         TabPage tabPage =
             Assert.Single(tabControl.TabPages.Cast<TabPage>());
@@ -519,7 +539,9 @@ public sealed class WorkspaceViewFormTests
         InvalidOperationException exception =
             Assert.Throws<InvalidOperationException>(
                 () => workspaceView.AddDocumentPresentation(
-                    presentation));
+                    presentation.DocumentId,
+                    presentation.FileName,
+                    presentation.HostedForm));
 
         // Assert: the original hosting failure is preserved.
         Assert.Equal(
@@ -569,7 +591,10 @@ public sealed class WorkspaceViewFormTests
                 workspaceView,
                 "documentSidebarContentPanel");
 
-        workspaceView.AddDocumentPresentation(presentation);
+        workspaceView.AddDocumentPresentation(
+            presentation.DocumentId,
+            presentation.FileName,
+            presentation.HostedForm);
 
         Assert.True(
             workspaceView.ActivateDocumentPresentation(
@@ -638,8 +663,15 @@ public sealed class WorkspaceViewFormTests
                 workspaceView,
                 "documentSidebarContentPanel");
 
-        workspaceView.AddDocumentPresentation(tabPresentation);
-        workspaceView.AddDocumentPresentation(sidebarPresentation);
+        workspaceView.AddDocumentPresentation(
+            tabPresentation.DocumentId,
+            tabPresentation.FileName,
+            tabPresentation.HostedForm);
+
+        workspaceView.AddDocumentPresentation(
+            sidebarPresentation.DocumentId,
+            sidebarPresentation.FileName,
+            sidebarPresentation.HostedForm);
 
         // Move one document into Sidebar while keeping the other in Tabs.
         Assert.True(
@@ -803,6 +835,16 @@ public sealed class WorkspaceViewFormTests
             documentId,
             presenter,
             documentView);
+    }
+
+    private static void AddPresentationToView(
+        WorkspaceViewForm workspaceView,
+        WorkspaceDocumentPresentation presentation)
+    {
+        workspaceView.AddDocumentPresentation(
+            presentation.DocumentId,
+            presentation.FileName,
+            presentation.HostedForm);
     }
 
     private sealed class TestDocumentViewForm :

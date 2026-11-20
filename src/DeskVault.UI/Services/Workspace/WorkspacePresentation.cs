@@ -328,7 +328,9 @@ public sealed class WorkspacePresentation : IDisposable
             }
 
             _view.AddDocumentPresentation(
-                presentation);
+                presentation.DocumentId,
+                presentation.FileName,
+                presentation.HostedForm);
 
             if (activate)
             {
@@ -391,7 +393,9 @@ public sealed class WorkspacePresentation : IDisposable
         try
         {
             _view.AddDocumentPresentation(
-                presentation);
+                presentation.DocumentId,
+                presentation.FileName,
+                presentation.HostedForm);
 
             ActivateDocumentPresentation(
                 documentId);

@@ -28,7 +28,7 @@ public interface IMainFormView
 
     string? SelectedDocumentFileName { get; }
 
-    string? SelectedFilePath { get; }
+    string? SelectFileToImport();
 
     string? SearchText { get; }
 

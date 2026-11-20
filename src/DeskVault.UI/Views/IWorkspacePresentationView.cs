@@ -37,7 +37,9 @@ public interface IWorkspacePresentationView : IDisposable
         IReadOnlyDictionary<Guid, string> documents);
 
     void AddDocumentPresentation(
-        WorkspaceDocumentPresentation presentation);
+        Guid documentId,
+        string? documentFileName,
+        Form documentForm);
 
     bool RemoveDocumentPresentation(
         Guid documentId);

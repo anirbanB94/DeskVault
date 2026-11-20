@@ -165,24 +165,21 @@ public partial class MainForm : Form, IMainFormView
         }
     }
 
-    public string? SelectedFilePath
+    public string? SelectFileToImport()
     {
-        get
+        using var dialog = new OpenFileDialog
         {
-            using var dialog = new OpenFileDialog
-            {
-                Title = UiMessages.SelectDocumentToImportTitle,
-                CheckFileExists = true,
-                Multiselect = false,
-                Filter =
-                    UiMessages.SupportedDocumentsFilter +
-                    UiMessages.AllFilesFilter
-            };
+            Title = UiMessages.SelectDocumentToImportTitle,
+            CheckFileExists = true,
+            Multiselect = false,
+            Filter =
+                UiMessages.SupportedDocumentsFilter +
+                UiMessages.AllFilesFilter
+        };
 
-            return dialog.ShowDialog(this) == DialogResult.OK
-                ? dialog.FileName
-                : null;
-        }
+        return dialog.ShowDialog(this) == DialogResult.OK
+            ? dialog.FileName
+            : null;
     }
 
     public string SearchText => searchTextBox.Text;
