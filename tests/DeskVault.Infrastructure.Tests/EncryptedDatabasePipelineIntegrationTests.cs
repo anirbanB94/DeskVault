@@ -1015,15 +1015,15 @@ public sealed class EncryptedDatabasePipelineIntegrationTests
                         // Assert that runtime facts match the pinned provider baseline.
                         Assert.True(
                             sqliteVersion.StartsWith(
-                                "3.54.0",
+                                "3.54.1",
                                 StringComparison.Ordinal),
-                            $"Expected SQLite 3.54.0 for the pinned SQLite3MC package; actual version was '{sqliteVersion}'.");
+                            $"Expected SQLite 3.54.1 for the pinned SQLite3MC package; actual version was '{sqliteVersion}'.");
 
                         Assert.True(
                             sqlite3McVersion.Contains(
-                                "2.6.1",
+                                "2.7.1",
                                 StringComparison.OrdinalIgnoreCase),
-                            $"Expected SQLite3MC 2.6.1; actual runtime version was '{sqlite3McVersion}'.");
+                            $"Expected SQLite3MC 2.7.1; actual runtime version was '{sqlite3McVersion}'.");
 
                         Assert.Equal(
                             "wal",
