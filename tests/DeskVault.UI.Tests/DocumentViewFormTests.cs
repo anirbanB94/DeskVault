@@ -1,7 +1,9 @@
 using DeskVault.UI.Forms;
+using DeskVault.UI.Presenters;
 using DeskVault.UI.Rendering;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
+using DeskVault.UI.Services.Workspace;
 using Moq;
 using System.Reflection;
 
@@ -115,6 +117,59 @@ public sealed class DocumentViewFormTests
                 nameof(form.RemoveDocumentRequested)
             ],
             observedRequests);
+    }
+
+    [Fact]
+    public void DocumentPresentationComponents_DoNotDependOnRendererImplementations()
+    {
+        // Arrange
+        Type[] presentationComponents =
+        [
+            typeof(DocumentViewForm),
+            typeof(DocumentWorkspacePresenter),
+            typeof(WorkspaceDocumentPresentationFactory)
+        ];
+
+        // Act / Assert
+        foreach (Type componentType in presentationComponents)
+        {
+            Type[] constructorDependencies =
+                [.. componentType.GetConstructors(
+                        BindingFlags.Instance |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic)
+                    .SelectMany(constructor =>
+                        constructor.GetParameters())
+                    .Select(parameter => parameter.ParameterType)];
+
+            Type[] fieldDependencies =
+                [.. componentType.GetFields(
+                        BindingFlags.Instance |
+                        BindingFlags.Static |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic |
+                        BindingFlags.DeclaredOnly)
+                    .Select(field => field.FieldType)];
+
+            IEnumerable<Type> dependencies =
+                constructorDependencies.Concat(fieldDependencies);
+
+            Assert.DoesNotContain(
+                dependencies,
+                dependencyType =>
+                    typeof(IDocumentContentRenderer)
+                        .IsAssignableFrom(dependencyType));
+        }
+
+        Assert.Contains(
+            typeof(IDocumentContentRendererResolver),
+            typeof(DocumentViewForm)
+                .GetConstructors(
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic)
+                .SelectMany(constructor => constructor.GetParameters())
+                .Select(parameter => parameter.ParameterType));
     }
 
     [Fact]
@@ -275,11 +330,17 @@ public sealed class DocumentViewFormTests
     }
 
     [Fact]
-    public async Task ShowDocumentAsync_SupportedRenderer_RendersWithoutShowingOrActivatingForm()
+    public async Task ShowDocumentAsync_SupportedRenderer_PassesOriginalStreamAndActiveTokenWithoutShowingOrActivatingForm()
     {
         // Arrange
         const string fileName =
             "document.csv";
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        CancellationToken activeCancellationToken =
+            cancellationTokenSource.Token;
 
         var resolver =
             new Mock<IDocumentContentRendererResolver>();
@@ -310,7 +371,7 @@ public sealed class DocumentViewFormTests
         await form.ShowDocumentAsync(
             stream,
             fileName,
-            TestContext.Current.CancellationToken);
+            activeCancellationToken);
 
         // Assert
         resolver.Verify(
@@ -320,10 +381,26 @@ public sealed class DocumentViewFormTests
         renderer.Verify(
             x => x.RenderAsync(
                 It.IsAny<Control>(),
-                stream,
+                It.Is<Stream>(
+                    actualStream =>
+                        ReferenceEquals(actualStream, stream)),
                 fileName,
+                It.Is<CancellationToken>(
+                    actualToken =>
+                        actualToken == activeCancellationToken)),
+            Times.Once);
+
+        // Verify there was exactly one renderer invocation in total.
+        renderer.Verify(
+            x => x.RenderAsync(
+                It.IsAny<Control>(),
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+
+        // The caller retains ownership of the original stream.
+        Assert.True(stream.CanRead);
 
         Assert.False(form.Visible);
         Assert.Equal(0, shownEventCount);
@@ -657,6 +734,89 @@ public sealed class DocumentViewFormTests
         Assert.True(lateControl.IsDisposed);
         Assert.Empty(contentPanel.Controls);
         Assert.False(documentViewForm.Visible);
+    }
+
+    [Fact]
+    public async Task ShowDocumentAsync_RendererFails_DisposesUncommittedRenderHostAndChildControls()
+    {
+        const string fileName = "document.csv";
+
+        Panel? renderHost = null;
+        TextBox? renderedControl = null;
+
+        var resolver =
+            new Mock<IDocumentContentRendererResolver>();
+
+        var renderer =
+            new Mock<IDocumentContentRenderer>();
+
+        renderer
+            .Setup(x => x.RenderAsync(
+                It.IsAny<Control>(),
+                It.IsAny<Stream>(),
+                fileName,
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                Control contentHost,
+                Stream documentStream,
+                string requestedFileName,
+                CancellationToken cancellationToken) =>
+            {
+                renderHost = Assert.IsType<Panel>(contentHost);
+
+                renderedControl =
+                    new TextBox
+                    {
+                        Text = "Partially rendered document content"
+                    };
+
+                contentHost.Controls.Add(renderedControl);
+
+                return Task.FromException(
+                    new InvalidOperationException("Renderer failure."));
+            });
+
+        resolver
+            .Setup(x => x.Resolve(fileName))
+            .Returns(renderer.Object);
+
+        using var form =
+            CreateForm(resolver.Object);
+
+        using var stream =
+            CreateDocumentStream();
+
+        // Act
+        InvalidOperationException exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => form.ShowDocumentAsync(
+                    stream,
+                    fileName,
+                    TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Equal("Renderer failure.", exception.Message);
+
+        resolver.Verify(
+            x => x.Resolve(fileName),
+            Times.Once);
+
+        renderer.Verify(
+            x => x.RenderAsync(
+                It.IsAny<Control>(),
+                It.IsAny<Stream>(),
+                fileName,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        Assert.NotNull(renderHost);
+        Assert.True(renderHost!.IsDisposed);
+
+        Assert.NotNull(renderedControl);
+        Assert.True(renderedControl!.IsDisposed);
+
+        // The view must not take ownership of the caller's stream.
+        Assert.True(stream.CanRead);
     }
 
     [Fact]
