@@ -626,35 +626,80 @@ caller-owned stream contract. Temporary plaintext materialization is an
 implementation detail of the external viewer and must remain outside the
 workspace presenter and view lifecycle.
 
+The temporary artifact storage and ownership contract is defined by
+ADR-0006. The workspace presenter and view must not create temporary files,
+choose temporary paths, apply filesystem access-control rules, or own
+temporary artifact cleanup.
+
+`DocumentWorkspacePresenter` delegates the explicit external-open request
+through `IDocumentViewer`. The viewer owns each temporary artifact through
+its `TemporaryDocumentArtifactStore` and `TemporaryDocumentArtifact`
+collaborators. The store creates artifacts in the dedicated per-user
+`%LOCALAPPDATA%\DeskVault\TemporaryDocuments` namespace, applies the
+protected Windows user access-control policy, and assigns generated
+GUID-based artifact identities with validated filename extensions.
+
+The viewer creates an artifact exclusively without overwriting an existing
+file, copies the caller-owned source stream, flushes the content, and closes
+its write handle before passing the artifact path to the external launcher.
+The source stream remains caller-owned and is not disposed by the viewer.
+
 The external viewing lifecycle is:
 
 ```text
 Caller-owned document stream
         ↓
+DocumentWorkspacePresenter
+        ↓
 IDocumentViewer
         ↓
-Temporary plaintext artifact
+TemporaryDocumentArtifactStore
+        ↓
+Protected temporary artifact
+        ↓
+Fully written, flushed and closed
         ↓
 External application launch
         ↓
-External lifecycle completion
+External lifecycle observation
         ↓
 Temporary artifact cleanup
 ```
 
-The temporary artifact must be fully written and its file handle closed before
-the external application is launched.
+A successful external application launch is not proof that the external
+application has finished consuming the file. The viewer retains an artifact
+when the current launch contract exposes an observable completion task and
+attempts cleanup only after that task completes. When external completion
+cannot be observed, the viewer retains the artifact until its own disposal
+lifecycle permits cleanup.
 
-A successful launch is not treated as proof that the external application has
-finished consuming the artifact. When external lifecycle completion is
-observable, the viewer retains the artifact until completion before cleaning
-it up.
+The meaning of external completion, including the limitations of Windows
+Shell handoff and process lifetime, is governed by the separate
+external-consumer lifecycle decision. The workspace UI and temporary
+artifact store must not infer that a Shell process handle proves that the
+external application has finished consuming the file.
 
-When external lifecycle completion is not observable, the viewer retains the
-artifact until its own lifetime ends and then performs best-effort cleanup.
+Creation, cancellation, copy, and launch failures cause the viewer to
+attempt cleanup at the artifact owner boundary. Cleanup returns an explicit
+success or failure outcome. A failed cleanup is logged using the generated
+artifact identity and bounded failure category; physical paths, original
+filenames, and document content are not included in the diagnostic. The
+viewer retains ownership registration when cleanup fails and removes it
+only after successful deletion, allowing a later owner cleanup attempt to
+retry. Viewer disposal must not delete an artifact while an observable
+external lifecycle remains active.
 
-Failures during temporary-file creation, copying, or external launch must
-attempt cleanup of the temporary artifact.
+The generated namespace and naming convention allow the separately owned
+startup recovery work to identify DeskVault viewing artifacts without
+scanning or cleaning the general operating-system temporary directory.
+Startup stale-artifact enumeration and reconciliation are not implemented
+by this workspace interaction decision.
+
+The canonical encrypted `.dvault` artifact remains unchanged and is never
+replaced by the temporary external-viewing representation. Filesystem
+deletion is not cryptographic zeroization, does not revoke copies already
+consumed by an external application, and does not guarantee cleanup after
+abrupt process termination. These limitations remain explicit.
 
 This lifecycle must not change the canonical encrypted document artifact or
 move external-viewing responsibilities into the Application layer,
@@ -1718,6 +1763,9 @@ The architecture will support multiple workspaces, but the first implementation 
 - The workspace presentation manager exposes only live, non-disposed presentations and removes registry entries before disposal.
 - Workspace cancellation callback failures do not prevent remaining presentation cleanup or the attempt to schedule session-revocation cleanup.
 - Search cancellation sources remain owned by their individual operations and are released only after those operations complete.
+- External document materialization remains owned by `IDocumentViewer`, separate from workspace and document presentation ownership.
+- The explicit external-open workflow uses the protected per-user artifact namespace and ownership contract defined by ADR-0006.
+- Artifact cleanup failures are reported without silently relinquishing ownership, and a later owner cleanup attempt can retry deletion.
 
 ### Negative
 
@@ -1737,6 +1785,9 @@ The architecture will support multiple workspaces, but the first implementation 
 - Session-revision checks add lifecycle coordination to asynchronous presentation operations.
 - Lock-time teardown requires coordinated cleanup across the main application view, workspace presentations, document presentations, and their owned streams.
 - Best-effort disposal must preserve failure diagnostics while ensuring that one cleanup failure does not prevent attempts to release other owned resources.
+- Temporary plaintext artifacts can remain on disk when an external consumer holds a file, deletion fails, or DeskVault terminates before cleanup; deletion is not cryptographic erasure.
+- The user-scoped filesystem access-control boundary does not isolate the temporary artifact from other processes running as the same Windows user.
+- Startup stale-artifact discovery and reconciliation require a separate recovery capability and are not provided by the workspace interaction layer.
 
 These trade-offs are acceptable because they establish a scalable foundation while keeping the first implementation focused.
 
