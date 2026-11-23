@@ -4,6 +4,7 @@ using DeskVault.Application.Documents.Queries.OpenDocument;
 using DeskVault.Application.Interfaces;
 using DeskVault.Application.Security.Sessions;
 using DeskVault.Shared.Extensions;
+using DeskVault.UI.Rendering;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Views;
@@ -28,7 +29,7 @@ public sealed class DocumentWorkspacePresenter :
     private long _pendingDocumentStreamOperationVersion;
     private string? _currentFileName;
     private bool _disposed;
-    private readonly object _openOperationSyncRoot = new();
+    private readonly Lock _openOperationSyncRoot = new();
     private CancellationTokenSource? _openOperationCancellationTokenSource;
     private long _openOperationVersion;
     private readonly IApplicationSecuritySession _applicationSecuritySession;
@@ -244,7 +245,7 @@ public sealed class DocumentWorkspacePresenter :
             _logger.LogInformation(
                 LogMessages.DocumentWorkspaceOpenCompleted);
         }
-        catch (NotSupportedException)
+        catch (DocumentContentRendererNotFoundException)
         {
             if (!IsOpenOperationCurrent(operation))
             {

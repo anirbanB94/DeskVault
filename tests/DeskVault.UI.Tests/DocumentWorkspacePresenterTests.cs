@@ -10,6 +10,7 @@ using DeskVault.Application.Security.Sessions;
 using DeskVault.Application.Security.Workstation;
 using DeskVault.Domain.Documents;
 using DeskVault.UI.Presenters;
+using DeskVault.UI.Rendering;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Tests.TestDoubles;
@@ -339,7 +340,8 @@ public sealed class DocumentWorkspacePresenterTests
                 document.FileName,
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(
-                new NotSupportedException());
+                new DocumentContentRendererNotFoundException(
+                    document.FileName));
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -423,6 +425,106 @@ public sealed class DocumentWorkspacePresenterTests
     }
 
     [Fact]
+    public async Task OpenAsync_CancelledDuringRendering_PropagatesWithoutFailureUi()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document document =
+            CreateDocument(
+                documentId,
+                "document.csv");
+
+        var repository =
+            CreateRepository(document);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var view =
+            new Mock<IDocumentView>();
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        var renderingStarted =
+            new TaskCompletionSource<CancellationToken>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        view
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                document.FileName,
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                Stream documentStream,
+                string fileName,
+                CancellationToken renderingToken) =>
+            {
+                renderingStarted.TrySetResult(renderingToken);
+
+                return Task.Delay(
+                    Timeout.Infinite,
+                    renderingToken);
+            });
+
+        var documentViewer =
+            new Mock<IDocumentViewer>();
+
+        var presenter =
+            CreatePresenter(
+                view,
+                documentViewer,
+                repository,
+                storageService);
+
+        using var stream =
+            CreateDocumentStream();
+
+        Task openTask =
+            presenter.OpenAsync(
+                documentId,
+                stream,
+                document.FileName,
+                cancellationTokenSource.Token);
+
+        CancellationToken renderingToken =
+            await renderingStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        Assert.True(stream.CanRead);
+        Assert.True(renderingToken.CanBeCanceled);
+
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => openTask);
+
+        Assert.False(stream.CanRead);
+        Assert.Null(presenter.CurrentDocumentId);
+        Assert.Null(presenter.CurrentDocumentDisplayName);
+
+        view.Verify(
+            x => x.ShowUnsupportedPreview(
+                It.IsAny<string>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowError(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        presenter.Dispose();
+    }
+
+    [Fact]
     public async Task OpenAsync_UnexpectedRendererFailure_ShowsError()
     {
         Guid documentId =
@@ -481,6 +583,203 @@ public sealed class DocumentWorkspacePresenterTests
             DiagnosticOperationCodes.DocumentWorkspaceOpenFailure,
             LogMessages.DocumentWorkspaceOpenFailed,
             "PBI232_DOCUMENT_WORKSPACE_OPEN_SENTINEL");
+    }
+
+    [Fact]
+    public async Task OpenAsync_RendererThrowsNotSupportedException_ShowsError()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document document =
+            CreateDocument(
+                documentId,
+                "document.csv");
+
+        const string sensitiveMarker =
+            "PBI159_RENDERER_NOT_SUPPORTED_SENTINEL";
+
+        var repository =
+            CreateRepository(
+                document);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var view =
+            new Mock<IDocumentView>();
+
+        view
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                document.FileName,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new NotSupportedException(
+                    sensitiveMarker));
+
+        var documentViewer =
+            new Mock<IDocumentViewer>();
+
+        var logger =
+            new RecordingLogger<DocumentWorkspacePresenter>();
+
+        var presenter =
+            CreatePresenter(
+                view,
+                documentViewer,
+                repository,
+                storageService,
+                logger);
+
+        using var stream =
+            CreateDocumentStream();
+
+        await presenter.OpenAsync(
+            documentId,
+            stream,
+            document.FileName,
+            TestContext.Current.CancellationToken);
+
+        view.Verify(
+            x => x.ShowError(
+                UiMessages.UnableToOpenDocument,
+                UiMessages.DeskVaultTitle),
+            Times.Once);
+
+        view.Verify(
+            x => x.ShowUnsupportedPreview(
+                It.IsAny<string>()),
+            Times.Never);
+
+        AssertSafeFailureLog(
+            logger,
+            DiagnosticOperationCodes.DocumentWorkspaceOpenFailure,
+            LogMessages.DocumentWorkspaceOpenFailed,
+            sensitiveMarker,
+            typeof(NotSupportedException));
+    }
+
+    [Fact]
+    public async Task OpenAsync_WhenSupersededDuringRendering_SuppressesLateRendererFailure()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document document =
+            CreateDocument(
+                documentId,
+                "document.csv");
+
+        var repository =
+            CreateRepository(document);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var view =
+            new Mock<IDocumentView>();
+
+        var firstRenderingStarted =
+            new TaskCompletionSource<CancellationToken>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var firstRenderingCompletion =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var firstStream =
+            CreateDocumentStream();
+
+        using var secondStream =
+            CreateDocumentStream();
+
+        view
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                document.FileName,
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                Stream documentStream,
+                string requestedFileName,
+                CancellationToken cancellationToken) =>
+            {
+                if (ReferenceEquals(documentStream, firstStream))
+                {
+                    firstRenderingStarted.TrySetResult(
+                        cancellationToken);
+
+                    return firstRenderingCompletion.Task;
+                }
+
+                return Task.CompletedTask;
+            });
+
+        var documentViewer =
+            new Mock<IDocumentViewer>();
+
+        var presenter =
+            CreatePresenter(
+                view,
+                documentViewer,
+                repository,
+                storageService);
+
+        Task firstOpenTask =
+            presenter.OpenAsync(
+                documentId,
+                firstStream,
+                document.FileName,
+                TestContext.Current.CancellationToken);
+
+        CancellationToken firstRenderingToken =
+            await firstRenderingStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        Assert.True(firstStream.CanRead);
+
+        // Starting another open supersedes and cancels the first operation.
+        await presenter.OpenAsync(
+            documentId,
+            secondStream,
+            document.FileName,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(firstRenderingToken.IsCancellationRequested);
+        Assert.False(firstStream.CanRead);
+        Assert.True(secondStream.CanRead);
+
+        // Simulate a renderer that ignores cancellation and fails late.
+        firstRenderingCompletion.SetException(
+            new NotSupportedException(
+                "PBI159_SUPERSEDED_RENDERER_FAILURE_SENTINEL"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => firstOpenTask);
+
+        view.Verify(
+            x => x.ShowUnsupportedPreview(
+                It.IsAny<string>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowError(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>()),
+            Times.Never);
+
+        // The stale operation must not clear or dispose the newer document.
+        Assert.Equal(
+            documentId,
+            presenter.CurrentDocumentId);
+
+        Assert.True(secondStream.CanRead);
+
+        presenter.Dispose();
+
+        Assert.False(secondStream.CanRead);
     }
 
     [Fact]
@@ -569,7 +868,8 @@ public sealed class DocumentWorkspacePresenterTests
             document.FileName,
             It.IsAny<CancellationToken>()))
         .ThrowsAsync(
-            new NotSupportedException());
+            new DocumentContentRendererNotFoundException(
+                document.FileName));
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -1456,22 +1756,25 @@ public sealed class DocumentWorkspacePresenterTests
         RecordingLogger<DocumentWorkspacePresenter> logger,
         string operationCode,
         string safeMessage,
-        string sensitiveMarker)
+        string sensitiveMarker,
+        Type? expectedExceptionType = null)
     {
+        expectedExceptionType ??= typeof(IOException);
+
         RecordedLogEntry entry = Assert.Single(
             logger.Entries,
             item => item.Level == LogLevel.Error);
 
         Assert.Contains(safeMessage, entry.Message);
         Assert.Contains($"OperationCode={operationCode}", entry.Message);
-        Assert.Contains($"FailureType={nameof(IOException)}", entry.Message);
+        Assert.Contains($"FailureType={expectedExceptionType.Name}", entry.Message);
 
         Assert.Equal(
             operationCode,
             Assert.IsType<string>(entry.Properties["OperationCode"]));
 
         Assert.Equal(
-            nameof(IOException),
+            expectedExceptionType.Name,
             Assert.IsType<string>(entry.Properties["FailureType"]));
 
         Assert.Null(entry.Exception);
@@ -1688,7 +1991,7 @@ public sealed class DocumentWorkspacePresenterTests
     }
 
     [Fact]
-    public async Task Dispose_DuringRendering_CancelsOperationAndSuppressesLateCompletion()
+    public async Task Dispose_DuringRendering_SuppressesLateResolverMiss()
     {
         Guid documentId = Guid.NewGuid();
 
@@ -1759,7 +2062,9 @@ public sealed class DocumentWorkspacePresenterTests
         Assert.True(renderingToken.IsCancellationRequested);
         Assert.False(stream.CanRead);
 
-        renderingCompletion.SetResult();
+        renderingCompletion.SetException(
+            new DocumentContentRendererNotFoundException(
+                document.FileName));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => openTask);
@@ -1905,6 +2210,137 @@ public sealed class DocumentWorkspacePresenterTests
                 It.IsAny<string>(),
                 It.IsAny<string>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task OpenAsync_WhenSessionIsLockedDuringRendering_SuppressesLateResolverMiss()
+    {
+        Guid documentId =
+            Guid.NewGuid();
+
+        Document document =
+            CreateDocument(
+                documentId,
+                "document.csv");
+
+        var repository =
+            CreateRepository(document);
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var view =
+            new Mock<IDocumentView>();
+
+        var securitySession =
+            new Mock<IApplicationSecuritySession>();
+
+        ApplicationSecuritySessionSnapshot currentSnapshot =
+            new(
+                ApplicationSecuritySessionState.Authenticated,
+                0);
+
+        securitySession
+            .SetupGet(x => x.CurrentSnapshot)
+            .Returns(() => currentSnapshot);
+
+        var renderingStarted =
+            new TaskCompletionSource<CancellationToken>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var renderingCompletion =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        view
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                document.FileName,
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                Stream documentStream,
+                string fileName,
+                CancellationToken cancellationToken) =>
+            {
+                renderingStarted.TrySetResult(
+                    cancellationToken);
+
+                // Deliberately ignore cancellation and fail later.
+                return renderingCompletion.Task;
+            });
+
+        // Execute session-revocation cleanup synchronously in this test.
+        view
+            .Setup(x => x.PostToUi(It.IsAny<Action>()))
+            .Callback<Action>(action => action());
+
+        var documentViewer =
+            new Mock<IDocumentViewer>();
+
+        var presenter =
+            CreatePresenter(
+                view,
+                documentViewer,
+                repository,
+                storageService,
+                applicationSecuritySession: securitySession);
+
+        var stream =
+            CreateDocumentStream();
+
+        Task openTask =
+            presenter.OpenAsync(
+                documentId,
+                stream,
+                document.FileName,
+                TestContext.Current.CancellationToken);
+
+        CancellationToken renderingToken =
+            await renderingStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
+
+        // Withdraw protected access while rendering is pending.
+        currentSnapshot =
+            new ApplicationSecuritySessionSnapshot(
+                ApplicationSecuritySessionState.Locked,
+                1);
+
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        Assert.True(renderingToken.IsCancellationRequested);
+        Assert.False(stream.CanRead);
+
+        // Simulate a resolver miss arriving after session invalidation.
+        renderingCompletion.SetException(
+            new DocumentContentRendererNotFoundException(
+                document.FileName));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => openTask);
+
+        view.Verify(
+            x => x.ShowUnsupportedPreview(
+                It.IsAny<string>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ShowError(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>()),
+            Times.Never);
+
+        view.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        Assert.Null(presenter.CurrentDocumentId);
+        Assert.Null(presenter.CurrentDocumentDisplayName);
+
+        presenter.Dispose();
     }
 
     [Fact]
@@ -2877,10 +3313,7 @@ public sealed class DocumentWorkspacePresenterTests
 
         public void Advance(TimeSpan elapsed)
         {
-            if (elapsed < TimeSpan.Zero)
-            {
-                throw new ArgumentOutOfRangeException(nameof(elapsed));
-            }
+            ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
 
             Interlocked.Add(
                 ref _timestamp,

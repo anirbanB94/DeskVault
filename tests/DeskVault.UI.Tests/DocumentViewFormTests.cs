@@ -292,7 +292,7 @@ public sealed class DocumentViewFormTests
     }
 
     [Fact]
-    public async Task ShowDocumentAsync_UnsupportedRenderer_PropagatesNotSupportedException()
+    public async Task ShowDocumentAsync_UnsupportedRenderer_PropagatesDocumentContentRendererNotFoundException()
     {
         const string fileName =
             "document.pdf";
@@ -306,8 +306,8 @@ public sealed class DocumentViewFormTests
         resolver
             .Setup(x => x.Resolve(fileName))
             .Throws(
-                new NotSupportedException(
-                    expectedMessage));
+                new DocumentContentRendererNotFoundException(
+                    fileName));
 
         using var form =
             CreateForm(resolver.Object);
@@ -315,10 +315,13 @@ public sealed class DocumentViewFormTests
         using var stream =
             CreateDocumentStream();
 
-        NotSupportedException exception =
-            await Assert.ThrowsAsync<NotSupportedException>(
+        DocumentContentRendererNotFoundException exception =
+            await Assert.ThrowsAsync<DocumentContentRendererNotFoundException>(
                 () =>
-                    form.ShowDocumentAsync(stream, fileName, TestContext.Current.CancellationToken));
+                    form.ShowDocumentAsync(
+                        stream,
+                        fileName,
+                        TestContext.Current.CancellationToken));
 
         Assert.Equal(
             expectedMessage,
@@ -618,6 +621,8 @@ public sealed class DocumentViewFormTests
         using var cancellationTokenSource =
             new CancellationTokenSource();
 
+        TextBox? renderedControl = null;
+
         var resolver =
             new Mock<IDocumentContentRendererResolver>();
 
@@ -636,11 +641,13 @@ public sealed class DocumentViewFormTests
                 string requestedFileName,
                 CancellationToken cancellationToken) =>
             {
-                contentHost.Controls.Add(
+                renderedControl =
                     new TextBox
                     {
                         Text = "Sensitive rendered content"
-                    });
+                    };
+
+                contentHost.Controls.Add(renderedControl);
 
                 cancellationTokenSource.Cancel();
 
@@ -664,6 +671,19 @@ public sealed class DocumentViewFormTests
                 cancellationTokenSource.Token));
 
         Assert.False(form.Visible);
+
+        Panel contentPanel =
+            Assert.IsType<Panel>(
+                Assert.Single(
+                    form.Controls.Find(
+                        "documentContentPanel",
+                        true)));
+
+        Assert.NotNull(renderedControl);
+        Assert.True(renderedControl!.IsDisposed);
+        Assert.Empty(contentPanel.Controls);
+
+        Assert.True(stream.CanRead);
     }
 
     [Fact]
@@ -736,13 +756,21 @@ public sealed class DocumentViewFormTests
         Assert.False(documentViewForm.Visible);
     }
 
-    [Fact]
-    public async Task ShowDocumentAsync_RendererFails_DisposesUncommittedRenderHostAndChildControls()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ShowDocumentAsync_RendererFails_DisposesUncommittedRenderHostAndChildControls(
+        bool throwNotSupportedException)
     {
         const string fileName = "document.csv";
 
         Panel? renderHost = null;
         TextBox? renderedControl = null;
+
+        Exception rendererFailure =
+            throwNotSupportedException
+                ? new NotSupportedException("Renderer failure.")
+                : new InvalidOperationException("Renderer failure.");
 
         var resolver =
             new Mock<IDocumentContentRendererResolver>();
@@ -772,8 +800,7 @@ public sealed class DocumentViewFormTests
 
                 contentHost.Controls.Add(renderedControl);
 
-                return Task.FromException(
-                    new InvalidOperationException("Renderer failure."));
+                return Task.FromException(rendererFailure);
             });
 
         resolver
@@ -787,15 +814,21 @@ public sealed class DocumentViewFormTests
             CreateDocumentStream();
 
         // Act
-        InvalidOperationException exception =
-            await Assert.ThrowsAsync<InvalidOperationException>(
+        Exception exception =
+            await Assert.ThrowsAnyAsync<Exception>(
                 () => form.ShowDocumentAsync(
                     stream,
                     fileName,
                     TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal("Renderer failure.", exception.Message);
+        Assert.Equal(
+            rendererFailure.GetType(),
+            exception.GetType());
+
+        Assert.Equal(
+            rendererFailure.Message,
+            exception.Message);
 
         resolver.Verify(
             x => x.Resolve(fileName),
@@ -814,6 +847,15 @@ public sealed class DocumentViewFormTests
 
         Assert.NotNull(renderedControl);
         Assert.True(renderedControl!.IsDisposed);
+
+        Panel contentPanel =
+            Assert.IsType<Panel>(
+                Assert.Single(
+                    form.Controls.Find(
+                        "documentContentPanel",
+                        true)));
+
+        Assert.Empty(contentPanel.Controls);
 
         // The view must not take ownership of the caller's stream.
         Assert.True(stream.CanRead);

@@ -133,7 +133,7 @@ public sealed class DocumentContentRendererResolverTests
     [InlineData("document.docx")]
     [InlineData("document.xlsx")]
     [InlineData("document.xyz")]
-    public void Resolve_UnsupportedExtension_ThrowsNotSupportedException(
+    public void Resolve_UnsupportedExtension_ThrowsDocumentContentRendererNotFoundException(
         string fileName)
     {
         // Arrange
@@ -144,8 +144,8 @@ public sealed class DocumentContentRendererResolverTests
                 CreateCsvRenderer());
 
         // Act
-        NotSupportedException exception =
-            Assert.Throws<NotSupportedException>(
+        DocumentContentRendererNotFoundException exception =
+            Assert.Throws<DocumentContentRendererNotFoundException>(
                 () => resolver.Resolve(fileName));
 
         // Assert
@@ -155,7 +155,7 @@ public sealed class DocumentContentRendererResolverTests
     }
 
     [Fact]
-    public void Resolve_EmptyFileName_ThrowsNotSupportedException()
+    public void Resolve_EmptyFileName_ThrowsDocumentContentRendererNotFoundException()
     {
         // Arrange
         var resolver =
@@ -165,8 +165,8 @@ public sealed class DocumentContentRendererResolverTests
                 CreateCsvRenderer());
 
         // Act
-        NotSupportedException exception =
-            Assert.Throws<NotSupportedException>(
+        DocumentContentRendererNotFoundException exception =
+            Assert.Throws<DocumentContentRendererNotFoundException>(
                 () => resolver.Resolve(string.Empty));
 
         // Assert
@@ -242,10 +242,10 @@ public sealed class DocumentContentRendererResolverTests
 
             if (capability.InAppPreview == DocumentInAppPreviewKind.None)
             {
-                Assert.Throws<NotSupportedException>(
+                Assert.Throws<DocumentContentRendererNotFoundException>(
                     () => resolver.Resolve(fileName));
 
-                Assert.Throws<NotSupportedException>(
+                Assert.Throws<DocumentContentRendererNotFoundException>(
                     () => resolver.Resolve(uppercaseFileName));
 
                 continue;
