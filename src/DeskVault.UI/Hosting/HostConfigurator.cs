@@ -17,10 +17,10 @@ using DeskVault.UI.Services.Dialogs;
 using DeskVault.UI.Services.Document;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
-using DeskVault.UI.Views;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -223,7 +223,15 @@ internal static class HostConfigurator
         services.AddTransient<MainForm>();
         services.AddTransient<IMainFormPresenterFactory, MainFormPresenterFactory>();
         services.AddTransient<IExternalDocumentLauncher, ExternalDocumentLauncher>();
-        services.AddSingleton<IDocumentViewer, DocumentViewer>();
+        // The store is shared with the singleton viewer so artifact creation and cleanup
+        // use one consistent per-user temporary namespace.
+        services.AddSingleton<TemporaryDocumentArtifactStore>();
+        services.AddSingleton<IDocumentViewer>(
+            provider =>
+                new DocumentViewer(
+                    provider.GetRequiredService<IExternalDocumentLauncher>(),
+                    provider.GetRequiredService<TemporaryDocumentArtifactStore>(),
+                    provider.GetRequiredService<ILogger<DocumentViewer>>()));
         services.AddTransient<IWorkspaceDocumentPresentationFactory, WorkspaceDocumentPresentationFactory>();
         services.AddTransient<IWorkspacePresentationFactory, WorkspacePresentationFactory>();
         services.AddTransient<IWorkspaceDialogService, WorkspaceDialogService>();
