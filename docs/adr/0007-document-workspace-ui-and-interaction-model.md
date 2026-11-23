@@ -689,6 +689,41 @@ IDocumentContentRenderer
 └── ...
 ```
 
+### Renderer Resolution and Execution Failure Boundaries
+
+Renderer resolution and renderer execution are distinct presentation
+operations and must have distinct failure outcomes.
+
+When the resolver cannot find a registered renderer whose
+`CanRender` method accepts the requested filename, it reports a
+dedicated no-renderer outcome. The document workspace presents the
+existing unsupported-preview message for this outcome. External
+viewing remains an explicit user-controlled fallback.
+
+Once a renderer has been selected and its `RenderAsync` operation
+has been invoked, an exception is a renderer execution failure,
+not evidence that the document format is unsupported. This includes
+`NotSupportedException` raised by the renderer. Renderer execution
+failures follow the existing safe document-open error and diagnostic
+logging path; exception details and document content must not be
+exposed in the user-facing error.
+
+Cancellation and operation invalidation remain separate outcomes.
+Caller cancellation, superseding document-open operations, document
+presentation disposal, and protected security-session revision
+invalidation must not be converted into unsupported-preview or
+generic renderer-failure feedback. A late completion from an
+invalidated operation must not publish content or display a stale
+error or unsupported-format message.
+
+A document preview is committed only after rendering completes
+successfully and the presentation operation remains current.
+A failed or cancelled rendering operation must not leave a partial
+render host or its child controls presented as a successful preview.
+Uncommitted rendering resources are disposed through the document
+view's host lifecycle. Document streams remain caller-owned and
+must not be disposed by a renderer.
+
 ## Unsupported Formats
 
 When no in-app renderer is available, DeskVault will not automatically
