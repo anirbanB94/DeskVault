@@ -497,19 +497,92 @@ when an in-app renderer is unavailable.
 
 ### External Viewing Temporary Artifact Lifecycle
 
-When external viewing requires a temporary plaintext artifact, the artifact is
-owned by the document-viewing lifecycle rather than by canonical document
-storage or workspace membership.
+When external viewing requires temporary plaintext materialization, the
+document-viewing lifecycle owns the temporary artifact. The artifact is not
+owned by canonical document storage, workspace membership, the workspace
+presenter, or the document view.
 
-The temporary artifact lifecycle is:
+`DocumentViewer` coordinates the lifecycle through
+`TemporaryDocumentArtifactStore` and `TemporaryDocumentArtifact`.
+The store owns namespace creation and protected file creation. Each
+`TemporaryDocumentArtifact` represents one uniquely identified artifact and
+owns its writable stream and cleanup operation. `DocumentViewer` retains
+the artifact registration until cleanup succeeds or an external lifecycle
+remains active.
+
+Temporary viewing content is created in the dedicated per-user namespace:
 
 ```text
-Decrypted document stream
+%LOCALAPPDATA%
+    └── DeskVault
+        └── TemporaryDocuments
+            └── <artifact-guid-N><validated-extension>
+```
+
+The namespace is separate from the general operating-system temporary
+directory and from canonical encrypted document storage.
+
+The namespace directory is created with a protected Windows access-control
+descriptor. Inherited access rules are disabled. The current Windows user
+SID receives namespace traversal (`ReadAndExecute`), file-creation
+(`CreateFiles`), permission-management (`ChangePermissions`), and
+synchronization (`Synchronize`) rights. Each artifact file has a separate
+protected access-control descriptor granting the current user `Read`,
+`Write`, `Delete`, and `Synchronize` rights. The handle used to populate
+an artifact requests only `Write` and `Synchronize`. The explicit
+synchronization permission is included in the expected access masks and
+verified as part of the protected ACL; it reflects the Windows access-rule
+representation observed for this namespace and artifact policy. These rules
+restrict access at the Windows user boundary; they do not isolate processes
+that run under the same Windows identity or provide a security boundary
+against an administrator.
+
+The original document filename is not used as the physical artifact name.
+The store derives only a validated extension and combines it with a new
+GUID-based identity. The resulting filename follows the
+`<artifact-guid-N><validated-extension>` convention. The generated
+identity is the artifact owner key and provides a stable namespace and
+naming convention for the separately owned stale-artifact recovery work.
+Recovery enumeration and deletion policy are not part of this ADR's
+implementation scope.
+
+File creation uses exclusive create-new semantics and an explicit file
+access-control descriptor. A collision or failed exclusive creation must
+not overwrite, truncate, or delete a pre-existing artifact. The operation
+that successfully creates the file is the owner of that artifact; a
+generated identity or candidate path alone does not transfer ownership of
+an existing file.
+
+The materialization and viewing sequence is:
+
+```text
+Caller-owned decrypted document stream
         ↓
-Temporary plaintext artifact
+DocumentViewer
         ↓
-Fully written and closed
+TemporaryDocumentArtifactStore
         ↓
+Protected temporary artifact
+        ↓
+Copy complete content and flush
+        ↓
+Close owned write stream
+        ↓
+External application launch
+        ↓
+External lifecycle observation
+        ↓
+Artifact cleanup by DocumentViewer
+```
+
+The source document stream remains caller-owned. The temporary artifact
+owns only its own write stream and filesystem artifact. The artifact is
+fully written, flushed, and its write handle is closed before the external
+launcher receives its path.
+
+The external viewing lifecycle is:
+
+```text
 External application launch
         ↓
 Observable external lifecycle ──→ completion ──→ cleanup
@@ -517,22 +590,49 @@ Observable external lifecycle ──→ completion ──→ cleanup
         └── lifecycle not observable ──→ retain until viewer disposal
 ```
 
-A successful external application launch does not by itself establish that the
-application has finished consuming the temporary file. The temporary artifact
-must therefore not be deleted immediately after launch.
+A successful external application launch does not by itself establish that
+the application has finished consuming the temporary file. The artifact
+must not be deleted merely because launch succeeded. External lifecycle
+classification and Shell handoff semantics remain a separate responsibility
+defined by the external-viewing lifecycle work item; the temporary artifact
+store does not infer consumer completion from the existence of a process
+handle.
 
-When the external lifecycle is observable, DeskVault retains the temporary
-artifact until that lifecycle completes and then performs cleanup.
+When the current external lifecycle contract provides an observable
+completion task, `DocumentViewer` retains the artifact until that task
+completes before attempting cleanup. When external lifecycle completion
+cannot be observed, `DocumentViewer` retains the artifact until viewer
+disposal. Changes to external-consumer lifetime classification must be
+documented by the separate external lifecycle decision.
 
-When the external lifecycle cannot be observed, DeskVault retains the
-temporary artifact for the lifetime of the document viewer and performs
-best-effort cleanup when that viewer is disposed.
+Cancellation, source-copy failure, and launch failure cause the owning
+viewer to attempt cleanup of the artifact. Viewer disposal attempts cleanup
+for artifacts whose current lifecycle state permits disposal cleanup.
+An artifact with an active observable external lifecycle is not deleted
+merely because the viewer is disposed.
 
-If temporary-file materialization, copying, or external launch fails, the
-temporary artifact is cleaned up through the failure path.
+Cleanup is an explicit outcome rather than an assumed side effect.
+`TemporaryDocumentArtifact.TryCleanup()` reports success or the exception
+category associated with a failure. When deletion fails, `DocumentViewer`
+records a bounded warning containing the generated artifact identity and
+failure category; it must not disclose the physical path, original
+filename, or document content. The artifact remains registered with its
+owner when cleanup has not succeeded. A later owner cleanup attempt can
+retry deletion, and ownership is removed only after successful cleanup.
+
+Filesystem deletion is best-effort with respect to operating-system locks,
+access failures, and process termination. Deleting a plaintext file is not
+cryptographic zeroization and does not prove that external applications,
+filesystem components, backups, or other processes retained no copies.
+If the process terminates before cleanup, stale-artifact discovery and
+reconciliation remain the responsibility of the separate recovery work
+item. This lifecycle does not scan or clean the general operating-system
+temporary directory.
 
 The canonical encrypted `.dvault` artifact is never replaced or modified by
-the external-viewing lifecycle.
+the external-viewing lifecycle. Temporary viewing content is a disposable
+presentation representation and is never an alternative authoritative
+document store.
 
 ## Document Workspace Model
 
@@ -857,6 +957,11 @@ The rendering boundary allows document-format support to grow independently.
 - Protected workspace content is invalidated when the authoritative application security session withdraws access.
 - Session-revision fencing prevents stale asynchronous presentation work from publishing content after revocation.
 - Workspace and document presentation cleanup is performed independently of workspace membership and persistent document data.
+- External viewing uses a dedicated per-user temporary namespace with explicit Windows access-control rules rather than arbitrary files directly in the general operating-system temporary directory.
+- Generated artifact identities and create-new semantics prevent a viewing operation from overwriting an existing file it does not own.
+- Temporary artifact stream and file ownership remain within the viewer boundary, separate from caller-owned source streams and canonical document storage.
+- Cleanup results and bounded diagnostics make deletion failures observable; unsuccessful cleanup does not silently discard the owner's artifact registration.
+- The stable namespace and generated naming convention provide a narrow identification boundary for the separately owned stale-artifact recovery work.
 
 ### Negative
 
@@ -868,6 +973,10 @@ The rendering boundary allows document-format support to grow independently.
 - Multi-document AI processing will require retrieval and context-management infrastructure.
 - Some document formats may initially require fallback handling through external applications.
 - Protected presentation consumers must observe session snapshots, compare revisions, invalidate stale operations, and coordinate resource cleanup when access is withdrawn.
+- The protected per-user temporary namespace adds filesystem access-control and lifecycle management requirements.
+- Deletion can fail while an external application or another process holds a file; cleanup diagnostics and later recovery are therefore required, and file deletion is not cryptographic erasure.
+- The current in-memory owner registry cannot survive abrupt process termination; stale-artifact discovery and reconciliation remain a separate recovery responsibility.
+- The Windows user ACL boundary does not isolate DeskVault from other processes running under the same user identity or from administrators.
 
 These trade-offs are acceptable because the decisions align with DeskVault's long-term product direction.
 
