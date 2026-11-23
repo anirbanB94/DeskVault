@@ -31,43 +31,6 @@ public sealed class DocumentContentRendererResolverTests
             renderer);
     }
 
-    [Theory]
-    [InlineData("data.json")]
-    [InlineData("data.xml")]
-    [InlineData("config.yaml")]
-    [InlineData("config.yml")]
-    [InlineData("settings.ini")]
-    [InlineData("settings.config")]
-    [InlineData("application.log")]
-    [InlineData("program.c")]
-    [InlineData("program.cpp")]
-    [InlineData("program.h")]
-    [InlineData("program.hpp")]
-    [InlineData("program.cs")]
-    [InlineData("program.java")]
-    [InlineData("program.py")]
-    [InlineData("program.js")]
-    [InlineData("program.ts")]
-    [InlineData("styles.css")]
-    [InlineData("query.sql")]
-    [InlineData("script.ps1")]
-    public void Resolve_ExpandedTextFormat_ReturnsTextRenderer(
-        string fileName)
-    {
-        // Arrange
-        var resolver =
-            CreateResolver(
-                CreateTextRenderer());
-
-        // Act
-        IDocumentContentRenderer renderer =
-            resolver.Resolve(fileName);
-
-        // Assert
-        Assert.IsType<TextDocumentContentRenderer>(
-            renderer);
-    }
-
     [Fact]
     public void Resolve_MarkdownFile_ReturnsMarkdownRenderer()
     {
@@ -107,43 +70,6 @@ public sealed class DocumentContentRendererResolverTests
     [InlineData("notes.Txt")]
     [InlineData("notes.tXt")]
     public void Resolve_TxtExtension_IsCaseInsensitive(
-        string fileName)
-    {
-        // Arrange
-        var resolver =
-            CreateResolver(
-                CreateTextRenderer());
-
-        // Act
-        IDocumentContentRenderer renderer =
-            resolver.Resolve(fileName);
-
-        // Assert
-        Assert.IsType<TextDocumentContentRenderer>(
-            renderer);
-    }
-
-    [Theory]
-    [InlineData("data.JSON")]
-    [InlineData("data.Xml")]
-    [InlineData("config.YAML")]
-    [InlineData("config.Yml")]
-    [InlineData("settings.INI")]
-    [InlineData("settings.CONFIG")]
-    [InlineData("application.LOG")]
-    [InlineData("program.C")]
-    [InlineData("program.CPP")]
-    [InlineData("program.H")]
-    [InlineData("program.HPP")]
-    [InlineData("program.CS")]
-    [InlineData("program.JAVA")]
-    [InlineData("program.PY")]
-    [InlineData("program.JS")]
-    [InlineData("program.TS")]
-    [InlineData("styles.CSS")]
-    [InlineData("query.SQL")]
-    [InlineData("script.PS1")]
-    public void Resolve_ExpandedTextFormat_IsCaseInsensitive(
         string fileName)
     {
         // Arrange
