@@ -187,11 +187,15 @@ public sealed class DocumentViewer :
     }
 
     /// <summary>
-    /// Observes an external launch when the launcher exposes a completion task.
+    /// Observes a trustworthy external-consumer lifecycle when one is available.
     /// </summary>
     /// <param name="activeArtifact">The artifact associated with the launch.</param>
     /// <param name="launch">The external launch handle.</param>
     /// <param name="completion">The captured external lifecycle task, if available.</param>
+    /// <remarks>
+    /// An absent, faulted, or cancelled completion signal is treated as unobservable.
+    /// In those cases the artifact remains retained for the separate recovery lifecycle.
+    /// </remarks>
     private async Task ObserveExternalLaunchAsync(
         ActiveArtifact activeArtifact,
         IExternalDocumentLaunch launch,
@@ -199,25 +203,32 @@ public sealed class DocumentViewer :
     {
         try
         {
-            if (completion is not null)
+            if (completion is null)
             {
-                try
-                {
-                    await completion.ConfigureAwait(false);
-                }
-                catch (Exception exception)
-                {
-                    // External lifecycle classification remains owned by #196.
-                    _logger.LogWarning(
-                        "External document lifecycle observation failed. ArtifactId: {ArtifactId}; FailureCategory: {FailureCategory}",
-                        activeArtifact.Artifact.Id,
-                        exception.GetType().Name);
-                }
-
-                activeArtifact.MarkExternalLifecycleCompleted();
-
-                TryCleanupAndRemove(activeArtifact);
+                return;
             }
+
+            try
+            {
+                await completion.ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                // A failed observation does not establish that the consumer
+                // has finished reading the temporary document.
+                activeArtifact.SetExternalLifecycleObservable(false);
+
+                _logger.LogWarning(
+                    "External document lifecycle observation failed. ArtifactId: {ArtifactId}; FailureCategory: {FailureCategory}",
+                    activeArtifact.Artifact.Id,
+                    exception.GetType().Name);
+
+                return;
+            }
+
+            activeArtifact.MarkExternalLifecycleCompleted();
+
+            TryCleanupAndRemove(activeArtifact);
         }
         finally
         {
@@ -337,16 +348,19 @@ public sealed class DocumentViewer :
         public TemporaryDocumentArtifact Artifact { get; }
 
         /// <summary>
-        /// Gets whether viewer disposal may attempt cleanup for this artifact.
+        /// Gets whether viewer disposal may safely attempt artifact cleanup.
         /// </summary>
+        /// <remarks>
+        /// Preparation failures and successfully completed external lifecycles
+        /// permit cleanup. An unobservable or active external lifecycle does not.
+        /// </remarks>
         public bool CanBeCleanedOnViewerDisposal
         {
             get
             {
                 int state = Volatile.Read(ref _externalLifecycleState);
 
-                return state is UnobservableExternalLifecycle
-                    or ExternalLifecycleCompleted
+                return state is ExternalLifecycleCompleted
                     or PreparationFailed;
             }
         }

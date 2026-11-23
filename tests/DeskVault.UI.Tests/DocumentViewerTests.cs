@@ -116,7 +116,7 @@ public sealed class DocumentViewerTests
     }
 
     [Fact]
-    public async Task OpenAsync_WhenExternalLifecycleIsNotObservable_RetainsFileUntilViewerDisposed()
+    public async Task OpenAsync_WhenExternalLifecycleIsNotObservable_RetainsFileAfterViewerDisposed()
     {
         // Arrange
         var launcher = new TestExternalDocumentLauncher
@@ -137,12 +137,100 @@ public sealed class DocumentViewerTests
 
         string filePath = Assert.IsType<string>(launcher.FilePath);
 
+        fixture.Viewer.Dispose();
+
         // Assert
         Assert.True(File.Exists(filePath));
         Assert.True(launcher.LaunchDisposed);
 
-        // An unobservable launch retains the artifact until viewer disposal.
+        // The test cleans up its isolated artifact after verifying retention.
+        File.Delete(filePath);
+
+        Assert.False(File.Exists(filePath));
+    }
+
+    [Fact]
+    public async Task OpenAsync_WhenExternalLifecycleFaults_RetainsFileAfterViewerDisposed()
+    {
+        // Arrange
+        var launcher = new TestExternalDocumentLauncher();
+
+        using var fixture = new ViewerFixture(launcher);
+
+        using var stream = CreateDocumentStream(
+            "DeskVault document content.");
+
+        await fixture.Viewer.OpenAsync(
+            stream,
+            "document.txt",
+            TestContext.Current.CancellationToken);
+
+        string filePath = Assert.IsType<string>(launcher.FilePath);
+
+        // Act
+        launcher.Fail(
+            new InvalidOperationException(
+                "External lifecycle observation failed."));
+
+        await WaitForConditionAsync(
+            () => fixture.Logger.Entries.Any(
+                entry =>
+                    entry.Level == LogLevel.Warning &&
+                    entry.Message.Contains(
+                        "External document lifecycle observation failed",
+                        StringComparison.Ordinal)),
+            TestContext.Current.CancellationToken);
+
         fixture.Viewer.Dispose();
+
+        // Assert
+        Assert.True(File.Exists(filePath));
+        Assert.True(launcher.LaunchDisposed);
+
+        // The test cleans up its isolated artifact after verifying retention.
+        File.Delete(filePath);
+
+        Assert.False(File.Exists(filePath));
+    }
+
+    [Fact]
+    public async Task OpenAsync_WhenExternalLifecycleIsCancelled_RetainsFileAfterViewerDisposed()
+    {
+        // Arrange
+        var launcher = new TestExternalDocumentLauncher();
+
+        using var fixture = new ViewerFixture(launcher);
+
+        using var stream = CreateDocumentStream(
+            "DeskVault document content.");
+
+        await fixture.Viewer.OpenAsync(
+            stream,
+            "document.txt",
+            TestContext.Current.CancellationToken);
+
+        string filePath = Assert.IsType<string>(launcher.FilePath);
+
+        // Act
+        launcher.Cancel();
+
+        await WaitForConditionAsync(
+            () => fixture.Logger.Entries.Any(
+                entry =>
+                    entry.Level == LogLevel.Warning &&
+                    entry.Message.Contains(
+                        "External document lifecycle observation failed",
+                        StringComparison.Ordinal)),
+            TestContext.Current.CancellationToken);
+
+        fixture.Viewer.Dispose();
+
+        // Assert
+        Assert.True(File.Exists(filePath));
+        Assert.True(launcher.LaunchDisposed);
+
+        // The test cleans up its isolated artifact after verifying retention.
+        File.Delete(filePath);
 
         Assert.False(File.Exists(filePath));
     }
@@ -560,10 +648,7 @@ public sealed class DocumentViewerTests
     public async Task Dispose_WhenArtifactDeletionFails_RetainsOwnershipForRetry()
     {
         // Arrange
-        var launcher = new TestExternalDocumentLauncher
-        {
-            ReturnUnobservableLaunch = true
-        };
+        var launcher = new TestExternalDocumentLauncher();
 
         using var fixture = new ViewerFixture(launcher);
 
@@ -583,10 +668,24 @@ public sealed class DocumentViewerTests
             FileAccess.Read,
             FileShare.None))
         {
-            // Act: the first cleanup attempt cannot delete the locked artifact.
+            // Establish a completed, observable lifecycle while cleanup is blocked.
+            launcher.Complete();
+
+            await WaitForConditionAsync(
+                () =>
+                    launcher.LaunchDisposed &&
+                    fixture.Logger.Entries.Any(
+                        entry =>
+                            entry.Level == LogLevel.Warning &&
+                            entry.Message.Contains(
+                                "Temporary document artifact cleanup failed",
+                                StringComparison.Ordinal)),
+                TestContext.Current.CancellationToken);
+
+            // Act: disposal retries cleanup but must retain ownership on failure.
             fixture.Viewer.Dispose();
 
-            // Assert: ownership remains tracked and the failure is observable.
+            // Assert: the locked artifact remains and the cleanup failure is observable.
             Assert.True(File.Exists(filePath));
 
             Assert.Contains(
@@ -800,6 +899,18 @@ public sealed class DocumentViewerTests
         public void Complete()
         {
             _completionSource.TrySetResult(null);
+        }
+
+        public void Fail(Exception exception)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+
+            _completionSource.TrySetException(exception);
+        }
+
+        public void Cancel()
+        {
+            _completionSource.TrySetCanceled();
         }
     }
 

@@ -667,27 +667,46 @@ Temporary artifact cleanup
 ```
 
 A successful external application launch is not proof that the external
-application has finished consuming the file. The viewer retains an artifact
-when the current launch contract exposes an observable completion task and
-attempts cleanup only after that task completes. When external completion
-cannot be observed, the viewer retains the artifact until its own disposal
-lifecycle permits cleanup.
+application has finished consuming the file. The viewer attempts
+completion-based cleanup only when its launch contract supplies a
+trustworthy task representing the lifecycle of the application actually
+consuming the document, and only after that task completes successfully.
+A missing completion task, or a task that faults or is cancelled, is
+unobservable and does not authorize cleanup. Unobservable artifacts remain
+retained beyond viewer disposal for the separate recovery capability
+defined by ADR-0006.
 
-The meaning of external completion, including the limitations of Windows
-Shell handoff and process lifetime, is governed by the separate
-external-consumer lifecycle decision. The workspace UI and temporary
-artifact store must not infer that a Shell process handle proves that the
-external application has finished consuming the file.
+The Windows Shell launch boundary does not infer consumer completion from
+the `Process` returned by `Process.Start` with `UseShellExecute = true`.
+That process may represent a short-lived Shell activation or handoff and
+may exit while an already-running browser or other associated application
+continues to consume the file. The current Shell launcher therefore reports
+no trustworthy external-consumer completion task. Disposing its process
+wrapper does not terminate the external application.
 
-Creation, cancellation, copy, and launch failures cause the viewer to
-attempt cleanup at the artifact owner boundary. Cleanup returns an explicit
-success or failure outcome. A failed cleanup is logged using the generated
-artifact identity and bounded failure category; physical paths, original
-filenames, and document content are not included in the diagnostic. The
-viewer retains ownership registration when cleanup fails and removes it
-only after successful deletion, allowing a later owner cleanup attempt to
-retry. Viewer disposal must not delete an artifact while an observable
-external lifecycle remains active.
+The external application owns its windows and tabs. DeskVault does not
+track, close, or terminate external browser tabs or processes. Users close
+those tabs through the external application. Closing a tab is not observed
+by the workspace or viewer and does not establish that the temporary
+artifact can safely be deleted. A workspace or document presentation
+closing is likewise not an external-consumer completion signal.
+
+The exact artifact ownership, cleanup eligibility, viewer-disposal, and
+recovery semantics are defined by ADR-0006. The workspace UI and temporary
+artifact store must not infer that a Shell process handle, application
+shutdown, or browser-tab closure proves that the external application has
+finished consuming the file.
+
+Creation, cancellation before external launch, copy, and launch failures
+cause the viewer to attempt cleanup at the artifact owner boundary. Cleanup
+returns an explicit success or failure outcome. A failed cleanup is logged
+using the generated artifact identity and bounded failure category;
+physical paths, original filenames, and document content are not included
+in the diagnostic. The viewer retains ownership registration when cleanup
+fails and removes it only after successful deletion, allowing a later owner
+cleanup attempt to retry. Viewer disposal must not delete an artifact while
+an external-consumer lifecycle is active or unobservable. Faulted or
+cancelled completion observation is not successful completion.
 
 The generated namespace and naming convention allow the separately owned
 startup recovery work to identify DeskVault viewing artifacts without
@@ -1766,6 +1785,12 @@ The architecture will support multiple workspaces, but the first implementation 
 - External document materialization remains owned by `IDocumentViewer`, separate from workspace and document presentation ownership.
 - The explicit external-open workflow uses the protected per-user artifact namespace and ownership contract defined by ADR-0006.
 - Artifact cleanup failures are reported without silently relinquishing ownership, and a later owner cleanup attempt can retry deletion.
+- Windows Shell process exit is not treated as consumer completion;
+  unobservable external-viewing artifacts remain retained beyond viewer
+  disposal for separate recovery.
+- External browser tabs remain owned and closed by the external application;
+  DeskVault does not terminate browser processes or treat tab closure as a
+  cleanup signal.
 
 ### Negative
 
@@ -1785,7 +1810,10 @@ The architecture will support multiple workspaces, but the first implementation 
 - Session-revision checks add lifecycle coordination to asynchronous presentation operations.
 - Lock-time teardown requires coordinated cleanup across the main application view, workspace presentations, document presentations, and their owned streams.
 - Best-effort disposal must preserve failure diagnostics while ensuring that one cleanup failure does not prevent attempts to release other owned resources.
-- Temporary plaintext artifacts can remain on disk when an external consumer holds a file, deletion fails, or DeskVault terminates before cleanup; deletion is not cryptographic erasure.
+- Temporary plaintext artifacts can remain on disk when external-consumer
+  completion is unobservable, deletion fails, or DeskVault terminates before
+  cleanup; deletion is not cryptographic erasure. External browser tabs
+  remain outside DeskVault's control.
 - The user-scoped filesystem access-control boundary does not isolate the temporary artifact from other processes running as the same Windows user.
 - Startup stale-artifact discovery and reconciliation require a separate recovery capability and are not provided by the workspace interaction layer.
 

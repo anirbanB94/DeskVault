@@ -502,13 +502,29 @@ document-viewing lifecycle owns the temporary artifact. The artifact is not
 owned by canonical document storage, workspace membership, the workspace
 presenter, or the document view.
 
+The production composition registers `IDocumentViewer` as an
+application-host-owned singleton. Document and workspace presenters
+delegate through this interface; closing an individual document or
+workspace does not dispose the shared viewer or transfer temporary-artifact
+ownership to those presentation objects.
+
 `DocumentViewer` coordinates the lifecycle through
 `TemporaryDocumentArtifactStore` and `TemporaryDocumentArtifact`.
 The store owns namespace creation and protected file creation. Each
 `TemporaryDocumentArtifact` represents one uniquely identified artifact and
-owns its writable stream and cleanup operation. `DocumentViewer` retains
-the artifact registration until cleanup succeeds or an external lifecycle
-remains active.
+owns its writable stream and cleanup operation. While the viewer is alive,
+it retains the artifact registration until cleanup succeeds. A failed
+cleanup does not relinquish that registration and remains eligible for a
+later owner cleanup attempt.
+
+Viewer disposal may attempt cleanup only for artifacts whose preparation
+failed or whose trustworthy external-consumer lifecycle completed
+successfully. An active or unobservable external lifecycle is not eligible
+for disposal-triggered deletion. An unobservable artifact therefore remains
+on disk after the application-host-owned viewer is disposed. The disposed
+viewer instance may still hold its in-memory registration, but that
+registration is not durable and cannot support recovery after process
+termination.
 
 Temporary viewing content is created in the dedicated per-user namespace:
 
@@ -584,32 +600,64 @@ The external viewing lifecycle is:
 
 ```text
 External application launch
-        ↓
-Observable external lifecycle ──→ completion ──→ cleanup
-        │
-        └── lifecycle not observable ──→ retain until viewer disposal
+  |
+  v
+Trustworthy external-consumer completion task available?
+  |-- Yes --> await completion
+  |             |-- successful completion --> cleanup
+  |             `-- faulted/cancelled --> unobservable; retain
+  |
+  `-- No --> unobservable; retain beyond viewer disposal
 ```
 
 A successful external application launch does not by itself establish that
 the application has finished consuming the temporary file. The artifact
-must not be deleted merely because launch succeeded. External lifecycle
-classification and Shell handoff semantics remain a separate responsibility
-defined by the external-viewing lifecycle work item; the temporary artifact
-store does not infer consumer completion from the existence of a process
-handle.
+must not be deleted merely because launch succeeded. A non-null
+`IExternalDocumentLaunch.Completion` task is trustworthy only when it
+represents the relevant lifecycle of the application actually consuming
+the document. A null task means that consumer completion is unobservable.
+A task that faults or is cancelled also fails to establish completion and
+must be treated as unobservable.
 
-When the current external lifecycle contract provides an observable
-completion task, `DocumentViewer` retains the artifact until that task
-completes before attempting cleanup. When external lifecycle completion
-cannot be observed, `DocumentViewer` retains the artifact until viewer
-disposal. Changes to external-consumer lifetime classification must be
-documented by the separate external lifecycle decision.
+The Windows `ExternalDocumentLauncher` uses `Process.Start` with
+`UseShellExecute = true`. The returned `Process`, when one is returned,
+may represent only a short-lived Windows Shell activation or handoff. It
+may exit successfully while an already-running browser or other associated
+application continues to open and read the temporary document. The current
+Windows Shell adapter therefore reports no consumer-completion task.
+Disposing the returned `Process` wrapper releases the launcher-owned
+process handle; it does not terminate the external application or establish
+that document consumption has finished.
 
-Cancellation, source-copy failure, and launch failure cause the owning
-viewer to attempt cleanup of the artifact. Viewer disposal attempts cleanup
-for artifacts whose current lifecycle state permits disposal cleanup.
-An artifact with an active observable external lifecycle is not deleted
-merely because the viewer is disposed.
+The Shell handoff process must never be treated as the external consumer.
+No fixed delay or arbitrary grace period is used as a substitute for a
+trustworthy completion signal.
+
+The external application owns its own windows and tabs. DeskVault does not
+track, close, or terminate an external browser tab or process. The user
+closes the external tab through that application. Tab closure is not
+observed by `DocumentViewer` and does not supply a consumer-completion
+signal.
+
+When a trustworthy completion task completes successfully,
+`DocumentViewer` marks the external lifecycle completed and attempts
+artifact cleanup. If that task faults or is cancelled, the viewer marks
+the lifecycle unobservable, records a bounded warning, and retains the
+artifact without attempting completion-based cleanup. When no trustworthy
+completion task is available, the artifact is likewise unobservable and
+must remain retained beyond viewer disposal. Stale-artifact discovery and
+reconciliation remain the responsibility of the separate recovery
+capability.
+
+Cancellation before external launch, source-copy failure, and launch failure
+cause the owning viewer to attempt cleanup of the artifact. A trustworthy
+external-consumer completion task permits cleanup only after successful
+completion. An active, absent, faulted, or cancelled external lifecycle
+does not permit disposal-triggered cleanup. Repeated disposal may retry
+cleanup for an artifact whose preparation failed or whose external
+consumer lifecycle completed successfully but whose previous deletion
+attempt failed. It must not delete an unobservable artifact merely because
+the viewer or application host is being disposed.
 
 Cleanup is an explicit outcome rather than an assumed side effect.
 `TemporaryDocumentArtifact.TryCleanup()` reports success or the exception
@@ -624,10 +672,15 @@ Filesystem deletion is best-effort with respect to operating-system locks,
 access failures, and process termination. Deleting a plaintext file is not
 cryptographic zeroization and does not prove that external applications,
 filesystem components, backups, or other processes retained no copies.
-If the process terminates before cleanup, stale-artifact discovery and
-reconciliation remain the responsibility of the separate recovery work
-item. This lifecycle does not scan or clean the general operating-system
-temporary directory.
+When external-consumer completion is unobservable, the temporary artifact
+may remain after the external tab is closed and after the DeskVault
+application host is shut down. If the process terminates before cleanup,
+stale-artifact discovery and reconciliation remain the responsibility of
+the separate recovery capability. That recovery policy is not defined by
+this lifecycle decision and must not infer safe deletion solely from
+external Shell-process exit, browser-process state, artifact extension, or
+age. Active or ambiguous artifacts must be preserved. This lifecycle does
+not scan or clean the general operating-system temporary directory.
 
 The canonical encrypted `.dvault` artifact is never replaced or modified by
 the external-viewing lifecycle. Temporary viewing content is a disposable
@@ -962,6 +1015,11 @@ The rendering boundary allows document-format support to grow independently.
 - Temporary artifact stream and file ownership remain within the viewer boundary, separate from caller-owned source streams and canonical document storage.
 - Cleanup results and bounded diagnostics make deletion failures observable; unsuccessful cleanup does not silently discard the owner's artifact registration.
 - The stable namespace and generated naming convention provide a narrow identification boundary for the separately owned stale-artifact recovery work.
+- Windows Shell activation-process exit is not treated as external-consumer
+  completion; absent, faulted, or cancelled consumer observation leaves the
+  artifact unobservable.
+- Unobservable external-viewing artifacts remain on disk beyond viewer
+  disposal for separate recovery rather than being deleted speculatively.
 
 ### Negative
 
@@ -974,7 +1032,10 @@ The rendering boundary allows document-format support to grow independently.
 - Some document formats may initially require fallback handling through external applications.
 - Protected presentation consumers must observe session snapshots, compare revisions, invalidate stale operations, and coordinate resource cleanup when access is withdrawn.
 - The protected per-user temporary namespace adds filesystem access-control and lifecycle management requirements.
-- Deletion can fail while an external application or another process holds a file; cleanup diagnostics and later recovery are therefore required, and file deletion is not cryptographic erasure.
+- Windows Shell handoff may make external-consumer completion unobservable.
+  Temporary plaintext artifacts can remain after the external tab and
+  DeskVault are closed until the separate recovery capability safely
+  reconciles them; deletion is not cryptographic erasure.
 - The current in-memory owner registry cannot survive abrupt process termination; stale-artifact discovery and reconciliation remain a separate recovery responsibility.
 - The Windows user ACL boundary does not isolate DeskVault from other processes running under the same user identity or from administrators.
 
