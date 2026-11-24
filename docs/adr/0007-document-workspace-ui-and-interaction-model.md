@@ -612,7 +612,13 @@ When a renderer replaces existing content in the content host, existing child co
 
 The renderer also disposes a newly created WebView2 control if initialization or rendering fails after the control has been attached to the host.
 
-Document streams remain owned by the caller. Renderers may read the supplied stream but must not close the underlying document stream as part of normal rendering.
+Document streams remain owned by the caller. A concrete renderer borrows
+the supplied source stream only for the lifetime of its `RenderAsync`
+operation. It may read the stream while that task is in progress, but it
+must neither dispose the caller-owned stream nor retain the source-stream
+reference after the task completes. Renderer-owned controls and derived
+presentation data follow their own view lifecycle and do not extend the
+source-stream borrow.
 
 This preserves a consistent ownership boundary across multiple renderer implementations.
 
@@ -621,10 +627,27 @@ This preserves a consistent ownership boundary across multiple renderer implemen
 External document opening remains an explicit workspace action for formats
 without an appropriate in-app renderer.
 
-The `IDocumentViewer` boundary receives document content through the existing
-caller-owned stream contract. Temporary plaintext materialization is an
-implementation detail of the external viewer and must remain outside the
-workspace presenter and view lifecycle.
+The `IDocumentViewer` boundary receives document content through the
+existing caller-owned stream contract. `DocumentWorkspacePresenter`
+remains the authoritative source-stream owner and lends the current
+stream to `IDocumentViewer.OpenAsync` for that operation only. The
+presenter keeps the stream valid until the returned task completes,
+because the viewer may still be reading it while materializing its
+separately owned protected temporary artifact.
+
+If replacement, removal, session revocation, or presenter disposal
+invalidates the stream while that borrow is active, the presenter
+requests cancellation and defers physical disposal until the operation
+completion path has discharged the borrow. The source stream is never
+transferred to the viewer.
+
+Completion of `IDocumentViewer.OpenAsync` ends only the source-stream
+borrow. It does not establish external-application consumption
+completion or authorize temporary-artifact deletion.
+
+Temporary plaintext materialization remains an implementation detail
+of the external viewer and must remain outside the workspace presenter
+and view lifecycle.
 
 The temporary artifact storage and ownership contract is defined by
 ADR-0006. The workspace presenter and view must not create temporary files,
@@ -970,7 +993,12 @@ distinct responsibilities:
   membership presentation, navigation state and document presentations.
 - Each document workspace presenter invalidates in-flight open operations,
   clears the document view, and releases its owned active and pending
-  document streams.
+  document streams. If the current stream is still borrowed by an
+  in-flight `IDocumentViewer.OpenAsync` operation, cancellation is
+  requested and physical disposal is deferred until that operation
+  completes and discharges the borrow. UI-dispatched presentation cleanup
+  still clears the document view and requests release; it does not dispose
+  a source stream that is still in use by the canceled operation.
 
 Locking is an in-memory presentation invalidation boundary. It does not
 delete canonical documents, delete persistent workspaces, or remove

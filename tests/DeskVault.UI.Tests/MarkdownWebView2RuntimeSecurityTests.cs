@@ -17,6 +17,10 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
     private static readonly TimeSpan BrowserEventTimeout =
         TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// Verifies the real WebView2 rendering security policy and confirms
+    /// that Markdown rendering leaves the caller-owned source stream open.
+    /// </summary>
     [Fact]
     public Task RenderAsync_UsesWebView2RuntimeAndEnforcesInitialDocumentPolicy()
     {
@@ -49,6 +53,9 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
                     form,
                     documentStream,
                     "runtime-security.md");
+
+                // Markdown extraction must not take ownership of the supplied source stream.
+                Assert.True(documentStream.CanRead);
 
                 WebView2 webView =
                     Assert.Single(
@@ -122,15 +129,15 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
                 coreWebView2.Navigate(
                     "https://example.invalid/mvp2-runtime-probe");
 
-                (bool IsUserInitiated, bool CancelledByRenderer) navigationResult =
+                (bool IsUserInitiated, bool CancelledByRenderer) =
                     await externalNavigation.Task.WaitAsync(
                         BrowserEventTimeout);
 
                 Assert.True(
-                    navigationResult.IsUserInitiated);
+                    IsUserInitiated);
 
                 Assert.True(
-                    navigationResult.CancelledByRenderer);
+                    CancelledByRenderer);
             });
     }
 
@@ -208,12 +215,12 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
                 await server.FinalRequestReceived.WaitAsync(
                     BrowserEventTimeout);
 
-                (bool IsSuccess, CoreWebView2WebErrorStatus Status) result =
+                (bool IsSuccess, CoreWebView2WebErrorStatus Status) =
                     await navigationCompleted.Task.WaitAsync(
                         BrowserEventTimeout);
 
                 NavigationObservation[] observations =
-                    navigationEvents.ToArray();
+                    [.. navigationEvents];
 
                 // Assert
                 Assert.Equal(2, observations.Length);
@@ -254,7 +261,7 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
                 Assert.False(
                     redirectedNavigation.CancelledByRenderer);
 
-                Assert.True(result.IsSuccess);
+                Assert.True(IsSuccess);
 
                 Assert.Equal(
                     server.FinalUri,
@@ -337,16 +344,13 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
 
                         // Fail safely if the production handler did not
                         // provide a response: do not allow a network request.
-                        if (args.Response is null)
-                        {
-                            args.Response =
+                        args.Response ??=
                                 coreWebView2.Environment
                                     .CreateWebResourceResponse(
                                         null,
                                         451,
                                         "Test fallback",
                                         "Content-Type: text/plain");
-                        }
                     };
 
                 coreWebView2.FrameCreated +=
@@ -723,9 +727,10 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
                 {
                     completion.TrySetException(exception);
                 }
-            });
-
-        thread.IsBackground = true;
+            })
+        {
+            IsBackground = true
+        };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
 
@@ -1026,7 +1031,7 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
                             stream,
                             "302 Found",
                             $"Location: {FinalUri}\r\n",
-                            Array.Empty<byte>(),
+                            [],
                             _shutdown.Token);
                     }
                     else if (string.Equals(
@@ -1059,7 +1064,7 @@ public sealed class MarkdownWebView2RuntimeSecurityTests
                             stream,
                             "404 Not Found",
                             "Content-Type: text/plain\r\n",
-                            Array.Empty<byte>(),
+                            [],
                             _shutdown.Token);
                     }
                 }

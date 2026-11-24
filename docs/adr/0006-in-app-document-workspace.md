@@ -492,6 +492,45 @@ document presentation boundary. It renders document content through the
 renderer resolver and exposes document-specific presentation behavior
 without owning workspace navigation or workspace actions.
 
+### Decrypted Source-Stream Ownership and Borrowed Operations
+
+`DocumentWorkspacePresenter` is the authoritative in-memory owner of each
+pending or current decrypted source stream received through the existing
+Application opening boundary. The presenter owns a pending stream until it
+is promoted or rejected. After promotion, the current stream remains
+available for the active document presentation and its existing actions.
+Receiving the stream does not transfer disposal ownership to
+`DocumentViewForm`, a renderer, or `IDocumentViewer`.
+
+`DocumentViewForm` and its concrete renderer borrow the source stream only
+for the duration of the asynchronous presentation/rendering operation.
+A renderer may read the supplied stream while `RenderAsync` is in progress,
+but must neither dispose it nor retain the source-stream reference after
+the operation completes. Renderer-owned controls and materialized
+presentation data follow their own view lifecycle; they do not extend the
+lifetime of the decrypted source stream.
+
+The explicit `IDocumentViewer.OpenAsync` operation also borrows the
+presenter-owned current stream. The presenter keeps that stream valid until
+the returned task completes because the viewer may still be reading it
+while materializing its separately owned protected temporary artifact.
+Only one active external-open operation may borrow a given source stream
+at a time. A duplicate request is rejected rather than allowing concurrent
+operations to reset or consume the shared stream position.
+
+If replacement, successful removal, session revocation, or presenter
+disposal requires release of a current stream while an external-open
+borrow is active, the presenter requests cancellation and marks the stream
+for deferred release. It must not dispose the stream while the borrowed
+operation may still be reading it. The operation completion/finally path
+discharges the borrow and performs the deferred disposal exactly once.
+A stale operation completion must not republish the released stream or
+replace a newer presentation.
+
+Completion of `IDocumentViewer.OpenAsync` ends only the source-stream
+borrow. It does not establish external-application consumption completion
+or change the separate temporary-artifact lifecycle.
+
 The external viewer remains available as an explicit user-controlled action
 when an in-app renderer is unavailable.
 
