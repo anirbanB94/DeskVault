@@ -111,6 +111,12 @@ public sealed class SessionRevocationPresentationCleanupTests
                 ApplicationSecuritySessionState.Locked,
                 1);
 
+        // Repeated delivery of the same revocation must not schedule
+        // duplicate document-view cleanup.
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
         securitySession.Raise(
             x => x.StateChanged += null,
             currentSnapshot);
@@ -221,17 +227,23 @@ public sealed class SessionRevocationPresentationCleanupTests
                 ApplicationSecuritySessionState.Locked,
                 1);
 
+        // Repeated revocation notifications may enqueue multiple callbacks.
+        // Workspace disposal must remain idempotent across those callbacks.
         securitySession.Raise(
             x => x.StateChanged += null,
             currentSnapshot);
 
-        Assert.Single(postedActions);
+        securitySession.Raise(
+            x => x.StateChanged += null,
+            currentSnapshot);
+
+        Assert.Equal(2, postedActions.Count);
 
         view.Verify(
             x => x.ClearPresentation(),
             Times.Never);
 
-        // Workspace disposal occurs only when its owning UI dispatcher runs.
+        // Apply the first cleanup callback.
         postedActions[0]();
 
         Assert.Null(presentation.WorkspaceName);
@@ -245,7 +257,30 @@ public sealed class SessionRevocationPresentationCleanupTests
             x => x.Dispose(),
             Times.Once);
 
+        // The second callback must recognize that the presentation
+        // has already been disposed and must not repeat cleanup.
+        postedActions[1]();
+
+        view.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        view.Verify(
+            x => x.Dispose(),
+            Times.Once);
+
         Assert.Throws<ObjectDisposedException>(
             () => presentation.Activate());
+
+        // Explicit repeated disposal must also remain harmless.
+        presentation.Dispose();
+
+        view.Verify(
+            x => x.ClearPresentation(),
+            Times.Once);
+
+        view.Verify(
+            x => x.Dispose(),
+            Times.Once);
     }
 }
