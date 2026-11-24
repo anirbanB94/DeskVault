@@ -35,6 +35,256 @@ internal sealed class TemporaryDocumentArtifactStore
     private readonly string _applicationDirectoryPath;
     private readonly string _directoryPath;
 
+    /// <summary>
+    /// Enumerates ownership metadata files in the existing protected namespace.
+    /// The method does not create the namespace or recurse into subdirectories.
+    /// </summary>
+    /// <returns>The top-level ownership metadata paths.</returns>
+    internal IReadOnlyList<string> EnumerateOwnershipMetadataFiles()
+    {
+        FileAttributes? applicationDirectoryAttributes =
+            GetExistingDirectoryAttributes(
+                _applicationDirectoryPath,
+                "The DeskVault temporary storage parent is not a directory.");
+
+        if (applicationDirectoryAttributes is null)
+        {
+            return [];
+        }
+
+        if ((applicationDirectoryAttributes.Value &
+             FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException(
+                "The DeskVault temporary storage parent is a reparse point.");
+        }
+
+        FileAttributes? artifactDirectoryAttributes =
+            GetExistingDirectoryAttributes(
+                _directoryPath,
+                "The DeskVault temporary storage namespace is not a directory.");
+
+        if (artifactDirectoryAttributes is null)
+        {
+            return [];
+        }
+
+        if ((artifactDirectoryAttributes.Value &
+             FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException(
+                "The DeskVault temporary storage namespace is a reparse point.");
+        }
+
+        DirectoryInfo artifactDirectory =
+            new(_directoryPath);
+
+        VerifyAccessRules(
+            artifactDirectory.GetAccessControl(),
+            NamespaceDirectoryRights,
+            InheritanceFlags.ContainerInherit |
+            InheritanceFlags.ObjectInherit);
+
+        return [.. Directory
+            .EnumerateFiles(
+                _directoryPath,
+                "*.owner.json",
+                SearchOption.TopDirectoryOnly)];
+    }
+
+    /// <summary>
+    /// Gets attributes for an existing directory without treating access or
+    /// structural errors as an absent namespace.
+    /// </summary>
+    /// <param name="directoryPath">The expected directory path.</param>
+    /// <param name="notDirectoryMessage">The validation message for a non-directory object.</param>
+    /// <returns>The directory attributes, or <see langword="null"/> only when the path is absent.</returns>
+    private static FileAttributes? GetExistingDirectoryAttributes(
+        string directoryPath,
+        string notDirectoryMessage)
+    {
+        try
+        {
+            FileAttributes attributes =
+                File.GetAttributes(directoryPath);
+
+            if ((attributes & FileAttributes.Directory) == 0)
+            {
+                throw new InvalidDataException(
+                    notDirectoryMessage);
+            }
+
+            return attributes;
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Opens ownership metadata for recovery after validating its namespace,
+    /// file attributes and protected access policy.
+    /// </summary>
+    /// <param name="metadataPath">The candidate metadata path.</param>
+    /// <returns>An ownership object holding the exclusive recovery lease.</returns>
+    internal TemporaryDocumentArtifactOwnership OpenOwnershipForRecovery(
+        string metadataPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(metadataPath);
+
+        string fullDirectoryPath =
+            Path.GetFullPath(_directoryPath);
+
+        string fullMetadataPath =
+            Path.GetFullPath(metadataPath);
+
+        if (!string.Equals(
+            Path.GetDirectoryName(fullMetadataPath),
+            fullDirectoryPath,
+            StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(fullMetadataPath).EndsWith(
+                ".owner.json",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "The candidate ownership metadata is outside the DeskVault namespace.");
+        }
+
+        FileAttributes attributes =
+            File.GetAttributes(fullMetadataPath);
+
+        if ((attributes &
+             (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+        {
+            throw new InvalidDataException(
+                "The candidate ownership metadata is not a regular file.");
+        }
+
+        VerifyAccessRules(
+            new FileInfo(fullMetadataPath).GetAccessControl(),
+            ArtifactFileRights,
+            InheritanceFlags.None);
+
+        return TemporaryDocumentArtifactOwnership.OpenForRecovery(
+            fullDirectoryPath,
+            fullMetadataPath);
+    }
+
+    /// <summary>
+    /// Resolves and validates the physical path for a recorded artifact.
+    /// </summary>
+    /// <param name="record">The validated ownership record.</param>
+    /// <returns>The artifact path inside the dedicated namespace.</returns>
+    internal string GetArtifactPathForRecovery(
+        TemporaryDocumentArtifactOwnershipRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+
+        if (!TemporaryDocumentArtifactOwnership.IsValidArtifactFileName(
+            record.ArtifactId,
+            record.ArtifactFileName))
+        {
+            throw new InvalidDataException(
+                "The temporary artifact filename does not match its ownership identity.");
+        }
+
+        string fullDirectoryPath =
+            Path.GetFullPath(_directoryPath);
+
+        string artifactPath =
+            Path.GetFullPath(
+                Path.Combine(
+                    fullDirectoryPath,
+                    record.ArtifactFileName));
+
+        if (!string.Equals(
+            Path.GetDirectoryName(artifactPath),
+            fullDirectoryPath,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "The temporary artifact path is outside the DeskVault namespace.");
+        }
+
+        return artifactPath;
+    }
+
+    /// <summary>
+    /// Determines whether a filesystem object occupies the validated artifact path.
+    /// An existing object is preserved when creation ownership is unconfirmed.
+    /// </summary>
+    /// <param name="record">The validated creation-pending ownership record.</param>
+    /// <returns><see langword="true"/> when an object exists at the artifact path.</returns>
+    internal bool ArtifactPathExistsForRecovery(
+        TemporaryDocumentArtifactOwnershipRecord record)
+    {
+        string artifactPath =
+            GetArtifactPathForRecovery(record);
+
+        try
+        {
+            _ = File.GetAttributes(artifactPath);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Deletes an artifact after verifying its recorded identity, regular-file
+    /// attributes and protected access policy. An already absent artifact is safe.
+    /// </summary>
+    /// <param name="record">The validated ownership record.</param>
+    internal void DeleteArtifactForRecovery(
+        TemporaryDocumentArtifactOwnershipRecord record)
+    {
+        string artifactPath =
+            GetArtifactPathForRecovery(record);
+
+        FileAttributes attributes;
+
+        try
+        {
+            attributes = File.GetAttributes(artifactPath);
+        }
+        catch (FileNotFoundException)
+        {
+            return;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return;
+        }
+
+        if ((attributes &
+             (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+        {
+            throw new InvalidDataException(
+                "The recorded temporary artifact is not a regular file.");
+        }
+
+        VerifyAccessRules(
+            new FileInfo(artifactPath).GetAccessControl(),
+            ArtifactFileRights,
+            InheritanceFlags.None);
+
+        // File.Delete is intentionally used without an existence check.
+        // The ownership lease prevents a new owner from reusing this sidecar
+        // while recovery is reconciling the associated artifact.
+        File.Delete(artifactPath);
+    }
+
     private readonly SecurityIdentifier _currentUserSid;
     private readonly Func<Guid> _idFactory;
 
@@ -105,6 +355,25 @@ internal sealed class TemporaryDocumentArtifactStore
     internal string DirectoryPath => _directoryPath;
 
     /// <summary>
+    /// Creates a durable reservation before attempting exclusive artifact creation.
+    /// </summary>
+    /// <param name="artifactId">The proposed artifact identity.</param>
+    /// <param name="artifactFileName">The exact generated artifact filename.</param>
+    /// <returns>An ownership reservation in the <see cref="TemporaryDocumentArtifactLifecycleState.CreationPending"/> state.</returns>
+    internal TemporaryDocumentArtifactOwnership CreateOwnershipReservation(
+        Guid artifactId,
+        string artifactFileName)
+    {
+        EnsureProtectedNamespace();
+
+        return TemporaryDocumentArtifactOwnership.Create(
+            _directoryPath,
+            artifactId,
+            artifactFileName,
+            CreateFileSecurity());
+    }
+
+    /// <summary>
     /// Creates a new artifact using the extension of the supplied document filename.
     /// </summary>
     /// <param name="fileName">The original document filename used to determine its extension.</param>
@@ -120,8 +389,6 @@ internal sealed class TemporaryDocumentArtifactStore
 
         string extension =
             GetSafeExtension(fileName);
-
-        EnsureProtectedNamespace();
 
         Guid artifactId = _idFactory();
 
@@ -139,25 +406,76 @@ internal sealed class TemporaryDocumentArtifactStore
                 _directoryPath,
                 artifactFileName);
 
-        FileInfo fileInfo =
-            new(artifactPath);
+        // Establish a durable reservation before attempting to create the artifact.
+        // CreationPending does not prove that an existing file belongs to us.
+        TemporaryDocumentArtifactOwnership ownership =
+            CreateOwnershipReservation(
+                artifactId,
+                artifactFileName);
 
-        // Apply the protected file DACL as part of exclusive creation.
-        // CreateNew prevents an existing artifact from being overwritten.
-        FileStream writeStream =
-            fileInfo.Create(
-                FileMode.CreateNew,
-                ArtifactWriteHandleRights,
-                FileShare.Read,
-                DefaultBufferSize,
-                FileOptions.Asynchronous |
-                FileOptions.SequentialScan,
-                CreateFileSecurity());
+        FileStream? writeStream = null;
 
-        return new TemporaryDocumentArtifact(
-            artifactId,
-            artifactPath,
-            writeStream);
+        try
+        {
+            FileInfo fileInfo =
+                new(artifactPath);
+
+            // Preserve create-new semantics and the existing protected ACL.
+            // Never overwrite or delete an artifact that already exists.
+            writeStream =
+                fileInfo.Create(
+                    FileMode.CreateNew,
+                    ArtifactWriteHandleRights,
+                    FileShare.Read,
+                    DefaultBufferSize,
+                    FileOptions.Asynchronous |
+                    FileOptions.SequentialScan,
+                    CreateFileSecurity());
+
+            // The successful CreateNew handle establishes ownership of the file.
+            // Persist that fact before exposing the artifact to the caller.
+            ownership.MarkPreparing();
+
+            return new TemporaryDocumentArtifact(
+                artifactId,
+                artifactPath,
+                writeStream,
+                ownership);
+        }
+        catch
+        {
+            if (writeStream is null)
+            {
+                // CreateNew did not give us an owned file handle.
+                // Remove only the ownership record created by this operation.
+                try
+                {
+                    ownership.DeleteRecord();
+                }
+                catch
+                {
+                    ownership.Dispose();
+                }
+            }
+            else
+            {
+                // A successfully returned write handle proves this operation
+                // created the artifact. Only now may its path be cleaned up.
+                try
+                {
+                    writeStream.Dispose();
+                    File.Delete(artifactPath);
+                    ownership.DeleteRecord();
+                }
+                catch
+                {
+                    // Preserve the CreationPending record for subsequent recovery.
+                    ownership.Dispose();
+                }
+            }
+
+            throw;
+        }
     }
 
     /// <summary>

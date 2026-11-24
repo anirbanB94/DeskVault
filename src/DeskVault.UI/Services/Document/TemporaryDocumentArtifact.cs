@@ -38,32 +38,39 @@ internal readonly record struct TemporaryDocumentArtifactCleanupResult(
 }
 
 /// <summary>
-/// Owns the writable stream and cleanup lifecycle of one temporary plaintext document artifact.
+/// Owns one temporary plaintext document artifact, its writable stream,
+/// and its durable lifecycle record.
 /// </summary>
 /// <remarks>
-/// The artifact is created by <see cref="TemporaryDocumentArtifactStore"/> with an explicit
-/// access-control policy. The source document stream supplied to <see cref="CopyFromAsync"/>
-/// remains owned by the caller.
+/// The caller retains ownership of the source document stream.
+/// The artifact owns its temporary file and ownership metadata.
 /// </remarks>
 internal sealed class TemporaryDocumentArtifact
 {
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
+    private readonly TemporaryDocumentArtifactOwnership _ownership;
+
     private FileStream? _writeStream;
+
     private bool _cleanupCompleted;
 
     /// <summary>
-    /// Initializes an artifact using its assigned identity, path and exclusively owned write stream.
+    /// Initializes an artifact using its assigned identity, path, exclusively owned write stream,
+    /// and durable ownership record.
     /// </summary>
     /// <param name="id">The artifact identity.</param>
     /// <param name="filePath">The artifact's fully qualified file path.</param>
     /// <param name="writeStream">The writable stream owned by this artifact.</param>
+    /// <param name="ownership">The durable ownership record owned by this artifact.</param>
     internal TemporaryDocumentArtifact(
         Guid id,
         string filePath,
-        FileStream writeStream)
+        FileStream writeStream,
+        TemporaryDocumentArtifactOwnership ownership)
     {
         ArgumentNullException.ThrowIfNull(writeStream);
+        ArgumentNullException.ThrowIfNull(ownership);
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
 
         if (id == Guid.Empty)
@@ -73,9 +80,17 @@ internal sealed class TemporaryDocumentArtifact
                 nameof(id));
         }
 
+        if (ownership.ArtifactId != id)
+        {
+            throw new ArgumentException(
+                "The ownership record does not match the artifact identity.",
+                nameof(ownership));
+        }
+
         Id = id;
         FilePath = filePath;
         _writeStream = writeStream;
+        _ownership = ownership;
     }
 
     /// <summary>
@@ -87,6 +102,55 @@ internal sealed class TemporaryDocumentArtifact
     /// Gets the fully qualified path of the temporary artifact.
     /// </summary>
     public string FilePath { get; }
+
+    internal string OwnershipMetadataPath =>
+        _ownership.MetadataPath;
+
+    internal TemporaryDocumentArtifactLifecycleState OwnershipState =>
+        _ownership.CurrentState;
+
+    /// <summary>
+    /// Reads the current durable ownership record.
+    /// </summary>
+    internal TemporaryDocumentArtifactOwnershipRecord ReadOwnershipRecord()
+    {
+        return _ownership.ReadCurrentRecord();
+    }
+
+    /// <summary>
+    /// Marks the artifact as potentially required by an external consumer.
+    /// This state is persisted before the external launch operation.
+    /// </summary>
+    internal void MarkExternalConsumerMayNeedArtifact()
+    {
+        _ownership.MarkExternalConsumerMayNeedArtifact();
+    }
+
+    /// <summary>
+    /// Marks preparation as failed and makes the artifact eligible for cleanup.
+    /// </summary>
+    public void MarkPreparationFailed()
+    {
+        MarkCleanupEligible();
+    }
+
+    /// <summary>
+    /// Marks successful external-consumer completion and makes the artifact
+    /// eligible for owner-controlled cleanup.
+    /// </summary>
+    public void MarkExternalLifecycleCompleted()
+    {
+        MarkCleanupEligible();
+    }
+
+    /// <summary>
+    /// Makes the artifact eligible for cleanup after the caller has established
+    /// that no external consumer may still require it.
+    /// </summary>
+    internal void MarkCleanupEligible()
+    {
+        _ownership.MarkCleanupEligible();
+    }
 
     /// <summary>
     /// Copies document content into the artifact and closes its write stream.
@@ -157,7 +221,7 @@ internal sealed class TemporaryDocumentArtifact
     }
 
     /// <summary>
-    /// Attempts to close the owned write stream and delete the artifact.
+    /// Attempts cleanup only after durable cleanup eligibility has been established.
     /// </summary>
     /// <returns>
     /// A cleanup result that identifies success or the category of the first failure.
@@ -175,6 +239,13 @@ internal sealed class TemporaryDocumentArtifact
             if (_cleanupCompleted)
             {
                 return TemporaryDocumentArtifactCleanupResult.Success();
+            }
+
+            if (_ownership.CurrentState !=
+                TemporaryDocumentArtifactLifecycleState.CleanupEligible)
+            {
+                throw new InvalidOperationException(
+                    "The temporary artifact is not eligible for cleanup.");
             }
 
             string? failureCategory = null;
@@ -203,6 +274,21 @@ internal sealed class TemporaryDocumentArtifact
                 failureCategory ??= exception.GetType().Name;
             }
 
+            if (failureCategory is null)
+            {
+                try
+                {
+                    // Delete the metadata only after the artifact deletion
+                    // has succeeded. A crash before this point leaves a
+                    // CleanupEligible record for startup recovery.
+                    _ownership.DeleteRecord();
+                }
+                catch (Exception exception)
+                {
+                    failureCategory = exception.GetType().Name;
+                }
+            }
+
             if (failureCategory is not null)
             {
                 return TemporaryDocumentArtifactCleanupResult.Failure(
@@ -217,5 +303,15 @@ internal sealed class TemporaryDocumentArtifact
         {
             _lifecycleGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Releases the process lease while preserving the durable ownership record.
+    /// Used when an owner is ending without proving that external consumption
+    /// has completed.
+    /// </summary>
+    internal void ReleaseOwnershipLease()
+    {
+        _ownership.ReleaseLease();
     }
 }

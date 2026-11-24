@@ -66,13 +66,27 @@ public sealed class DocumentViewerTests
             TestContext.Current.CancellationToken);
 
         string filePath = Assert.IsType<string>(launcher.FilePath);
+        string ownershipMetadataPath = $"{filePath}.owner.json";
 
         Assert.True(File.Exists(filePath));
+        Assert.True(File.Exists(ownershipMetadataPath));
 
         fixture.Viewer.Dispose();
 
-        // Assert
+        // Assert: an observable, still-active consumer retains both the artifact
+        // and its exclusive process lease after viewer disposal.
         Assert.True(File.Exists(filePath));
+        Assert.True(File.Exists(ownershipMetadataPath));
+
+        Assert.Throws<IOException>(
+            () =>
+            {
+                using var competingLease = new FileStream(
+                    ownershipMetadataPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.None);
+            });
 
         // Completing the external lifecycle makes cleanup eligible.
         launcher.Complete();
@@ -82,6 +96,44 @@ public sealed class DocumentViewerTests
             TestContext.Current.CancellationToken);
 
         Assert.False(File.Exists(filePath));
+    }
+
+    [Fact]
+    public async Task OpenAsync_WhenViewerIsDisposedDuringFailedLaunch_CleansTemporaryFileAndOwnershipMetadata()
+    {
+        // Arrange
+        DocumentViewer? viewer = null;
+
+        var launcher = new TestExternalDocumentLauncher
+        {
+            LaunchException = new InvalidOperationException(
+                "External launch failed before a launch handle was returned."),
+            BeforeLaunch = _ => viewer!.Dispose()
+        };
+
+        using var fixture = new ViewerFixture(launcher);
+
+        viewer = fixture.Viewer;
+
+        using var stream = CreateDocumentStream(
+            "DeskVault document content.");
+
+        // Act
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Viewer.OpenAsync(
+                stream,
+                "document.txt",
+                TestContext.Current.CancellationToken));
+
+        string filePath = Assert.IsType<string>(launcher.FilePath);
+        string ownershipMetadataPath = $"{filePath}.owner.json";
+
+        // Assert
+        // Disposal occurred re-entrantly while Launch() was executing.
+        // The unresolved launch state must have protected the ownership lease
+        // until the failed-launch outcome could be persisted and cleaned up.
+        Assert.False(File.Exists(filePath));
+        Assert.False(File.Exists(ownershipMetadataPath));
     }
 
     [Fact]
@@ -137,16 +189,34 @@ public sealed class DocumentViewerTests
 
         string filePath = Assert.IsType<string>(launcher.FilePath);
 
+        string ownershipMetadataPath = $"{filePath}.owner.json";
+
+        // Act
         fixture.Viewer.Dispose();
 
         // Assert
         Assert.True(File.Exists(filePath));
+        Assert.True(File.Exists(ownershipMetadataPath));
+
+        TemporaryDocumentArtifactOwnershipRecord ownershipRecord =
+            ReadRetainedOwnershipRecord(filePath);
+
+        Assert.Equal(
+            Path.GetFileName(filePath),
+            ownershipRecord.ArtifactFileName);
+
+        Assert.Equal(
+            TemporaryDocumentArtifactLifecycleState.ExternalConsumerMayNeedArtifact,
+            ownershipRecord.State);
+
         Assert.True(launcher.LaunchDisposed);
 
-        // The test cleans up its isolated artifact after verifying retention.
-        File.Delete(filePath);
+        // The test cleans up its isolated artifact and ownership record
+        // after verifying retention and process-lease release.
+        DeleteRetainedArtifactFiles(filePath);
 
         Assert.False(File.Exists(filePath));
+        Assert.False(File.Exists(ownershipMetadataPath));
     }
 
     [Fact]
@@ -181,16 +251,34 @@ public sealed class DocumentViewerTests
                         StringComparison.Ordinal)),
             TestContext.Current.CancellationToken);
 
+        string ownershipMetadataPath = $"{filePath}.owner.json";
+
+        // Act
         fixture.Viewer.Dispose();
 
         // Assert
         Assert.True(File.Exists(filePath));
+        Assert.True(File.Exists(ownershipMetadataPath));
+
+        TemporaryDocumentArtifactOwnershipRecord ownershipRecord =
+            ReadRetainedOwnershipRecord(filePath);
+
+        Assert.Equal(
+            Path.GetFileName(filePath),
+            ownershipRecord.ArtifactFileName);
+
+        Assert.Equal(
+            TemporaryDocumentArtifactLifecycleState.ExternalConsumerMayNeedArtifact,
+            ownershipRecord.State);
+
         Assert.True(launcher.LaunchDisposed);
 
-        // The test cleans up its isolated artifact after verifying retention.
-        File.Delete(filePath);
+        // The test cleans up its isolated artifact and ownership record
+        // after verifying retention and process-lease release.
+        DeleteRetainedArtifactFiles(filePath);
 
         Assert.False(File.Exists(filePath));
+        Assert.False(File.Exists(ownershipMetadataPath));
     }
 
     [Fact]
@@ -223,16 +311,34 @@ public sealed class DocumentViewerTests
                         StringComparison.Ordinal)),
             TestContext.Current.CancellationToken);
 
+        string ownershipMetadataPath = $"{filePath}.owner.json";
+
+        // Act
         fixture.Viewer.Dispose();
 
         // Assert
         Assert.True(File.Exists(filePath));
+        Assert.True(File.Exists(ownershipMetadataPath));
+
+        TemporaryDocumentArtifactOwnershipRecord ownershipRecord =
+            ReadRetainedOwnershipRecord(filePath);
+
+        Assert.Equal(
+            Path.GetFileName(filePath),
+            ownershipRecord.ArtifactFileName);
+
+        Assert.Equal(
+            TemporaryDocumentArtifactLifecycleState.ExternalConsumerMayNeedArtifact,
+            ownershipRecord.State);
+
         Assert.True(launcher.LaunchDisposed);
 
-        // The test cleans up its isolated artifact after verifying retention.
-        File.Delete(filePath);
+        // The test cleans up its isolated artifact and ownership record
+        // after verifying retention and process-lease release.
+        DeleteRetainedArtifactFiles(filePath);
 
         Assert.False(File.Exists(filePath));
+        Assert.False(File.Exists(ownershipMetadataPath));
     }
 
     [Fact]
@@ -272,6 +378,7 @@ public sealed class DocumentViewerTests
             filePath,
             TestContext.Current.CancellationToken);
     }
+
     [Fact]
     public async Task OpenAsync_ClosesWriteHandleBeforeExternalLaunch()
     {
@@ -331,7 +438,6 @@ public sealed class DocumentViewerTests
         Assert.False(File.Exists(filePath));
     }
 
-
     [Fact]
     public async Task OpenAsync_WhenCopyIsCancelled_CleansTemporaryFile()
     {
@@ -372,6 +478,7 @@ public sealed class DocumentViewerTests
         Assert.False(File.Exists(filePath));
         Assert.Null(launcher.FilePath);
     }
+
     [Fact]
     public async Task OpenAsync_WhenArtifactIdentityCollidesAcrossExtensions_CleansRejectedArtifactWithoutReplacingActiveOwner()
     {
@@ -429,7 +536,7 @@ public sealed class DocumentViewerTests
         var launcher = new TestExternalDocumentLauncher
         {
             LaunchException = new InvalidOperationException(
-                "External launch failed.")
+                "External launch failed before a launch handle was returned.")
         };
 
         using var fixture = new ViewerFixture(launcher);
@@ -439,16 +546,87 @@ public sealed class DocumentViewerTests
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () =>
-                fixture.Viewer.OpenAsync(
-                    stream,
-                    "document.txt",
-                    TestContext.Current.CancellationToken));
+            () => fixture.Viewer.OpenAsync(
+                stream,
+                "document.txt",
+                TestContext.Current.CancellationToken));
 
-        // Assert
         string filePath = Assert.IsType<string>(launcher.FilePath);
+        string ownershipMetadataPath = $"{filePath}.owner.json";
+
+        // Assert: a launch exception before a handle is returned is a known
+        // failed launch, so both the plaintext artifact and ownership record
+        // are cleaned up rather than retained indefinitely as an external use.
+        Assert.False(File.Exists(filePath));
+        Assert.False(File.Exists(ownershipMetadataPath));
+    }
+
+    [Fact]
+    public async Task OpenAsync_WhenCompletionAccessFailsAfterLaunchHandleReturned_RetainsArtifactForRecovery()
+    {
+        // Arrange
+        var launcher = new TestExternalDocumentLauncher
+        {
+            CompletionGetterException = new InvalidOperationException(
+                "The returned launch handle could not expose its completion task.")
+        };
+
+        using var fixture = new ViewerFixture(launcher);
+
+        using var stream = CreateDocumentStream(
+            "DeskVault document content.");
+
+        // Act
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Viewer.OpenAsync(
+                stream,
+                "document.txt",
+                TestContext.Current.CancellationToken));
+
+        string filePath = Assert.IsType<string>(launcher.FilePath);
+        string ownershipMetadataPath = $"{filePath}.owner.json";
+
+        // The launcher returned a handle before completion inspection failed.
+        // This is the ambiguous-handoff case and must remain conservative.
+        Assert.True(launcher.LaunchDisposed);
+        Assert.True(File.Exists(filePath));
+        Assert.True(File.Exists(ownershipMetadataPath));
+
+        // The viewer still holds the process lease while it owns the artifact.
+        Assert.Throws<IOException>(
+            () =>
+            {
+                using var competingLease = new FileStream(
+                    ownershipMetadataPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.None);
+            });
+
+        // Disposal releases the process lease but must not delete the file or
+        // downgrade the durable external-consumer state.
+        fixture.Viewer.Dispose();
+
+        Assert.True(File.Exists(filePath));
+        Assert.True(File.Exists(ownershipMetadataPath));
+
+        TemporaryDocumentArtifactOwnershipRecord ownershipRecord =
+            ReadRetainedOwnershipRecord(filePath);
+
+        Assert.Equal(
+            Path.GetFileName(filePath),
+            ownershipRecord.ArtifactFileName);
+
+        Assert.Equal(
+            TemporaryDocumentArtifactLifecycleState.ExternalConsumerMayNeedArtifact,
+            ownershipRecord.State);
+
+        // ReadRetainedOwnershipRecord opens the sidecar exclusively. Its
+        // success proves that viewer disposal released the process lease.
+        DeleteRetainedArtifactFiles(filePath);
 
         Assert.False(File.Exists(filePath));
+        Assert.False(File.Exists(ownershipMetadataPath));
     }
 
     [Fact]
@@ -529,9 +707,9 @@ public sealed class DocumentViewerTests
 
             RecordedLogEntry cleanupEntry =
                 Assert.Single(fixture.Logger.Entries, entry =>
-                            entry.Message.Contains(
-                                "Temporary document artifact cleanup failed",
-                                StringComparison.Ordinal));
+                    entry.Message.Contains(
+                        "Temporary document artifact cleanup failed",
+                        StringComparison.Ordinal));
 
             Assert.Equal(LogLevel.Warning, cleanupEntry.Level);
             Assert.DoesNotContain(filePath, cleanupEntry.Message, StringComparison.OrdinalIgnoreCase);
@@ -556,11 +734,10 @@ public sealed class DocumentViewerTests
 
         // Act
         await Assert.ThrowsAsync<IOException>(
-            () =>
-                fixture.Viewer.OpenAsync(
-                    stream,
-                    "document.txt",
-                    TestContext.Current.CancellationToken));
+            () => fixture.Viewer.OpenAsync(
+                stream,
+                "document.txt",
+                TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Empty(
@@ -631,11 +808,10 @@ public sealed class DocumentViewerTests
 
         // Act
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () =>
-                fixture.Viewer.OpenAsync(
-                    stream,
-                    "document.txt",
-                    cancellationTokenSource.Token));
+            () => fixture.Viewer.OpenAsync(
+                stream,
+                "document.txt",
+                cancellationTokenSource.Token));
 
         // Assert
         Assert.False(
@@ -704,64 +880,39 @@ public sealed class DocumentViewerTests
         Assert.False(File.Exists(filePath));
     }
 
-    [Fact]
-    public async Task OpenAsync_WhenLaunchFailsAndCleanupFails_RetainsOwnershipForDisposalRetry()
+    /// <summary>
+    /// Reads a retained ownership record while requiring the process lease
+    /// to have been released.
+    /// </summary>
+    /// <param name="artifactPath">The retained temporary artifact path.</param>
+    /// <returns>The latest validated ownership record.</returns>
+    private static TemporaryDocumentArtifactOwnershipRecord ReadRetainedOwnershipRecord(
+        string artifactPath)
     {
-        // Arrange
-        FileStream? fileLock = null;
+        string ownershipMetadataPath =
+            $"{artifactPath}.owner.json";
 
-        var launcher = new TestExternalDocumentLauncher
-        {
-            LaunchException = new InvalidOperationException(
-                "Simulated external launch failure."),
-            BeforeLaunch = path =>
-                fileLock = new FileStream(
-                    path,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.None)
-        };
+        using var ownershipStream = new FileStream(
+            ownershipMetadataPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.None);
 
-        using var fixture = new ViewerFixture(launcher);
+        return TemporaryDocumentArtifactOwnership.ReadLatestRecord(
+            ownershipStream);
+    }
 
-        using var stream = CreateDocumentStream(
-            "DeskVault document content.");
+    /// <summary>
+    /// Removes an isolated retained artifact and its ownership metadata.
+    /// </summary>
+    /// <param name="artifactPath">The retained temporary artifact path.</param>
+    private static void DeleteRetainedArtifactFiles(
+        string artifactPath)
+    {
+        File.Delete(artifactPath);
 
-        try
-        {
-            // Act
-            await Assert.ThrowsAsync<InvalidOperationException>(
-                () =>
-                    fixture.Viewer.OpenAsync(
-                        stream,
-                        "document.txt",
-                        TestContext.Current.CancellationToken));
-
-            string filePath = Assert.IsType<string>(launcher.FilePath);
-
-            // Assert: locked artifact remains tracked after cleanup failure.
-            Assert.True(File.Exists(filePath));
-
-            Assert.Contains(
-                fixture.Logger.Entries,
-                entry =>
-                    entry.Level == LogLevel.Warning &&
-                    entry.Message.Contains(
-                        "Temporary document artifact cleanup failed",
-                        StringComparison.Ordinal));
-
-            // Release the blocking handle before retrying through owner disposal.
-            fileLock!.Dispose();
-            fileLock = null;
-
-            fixture.Viewer.Dispose();
-
-            Assert.False(File.Exists(filePath));
-        }
-        finally
-        {
-            fileLock?.Dispose();
-        }
+        File.Delete(
+            $"{artifactPath}.owner.json");
     }
 
     private static MemoryStream CreateDocumentStream(string content)
@@ -867,6 +1018,8 @@ public sealed class DocumentViewerTests
 
         public Exception? LaunchException { get; init; }
 
+        public Exception? CompletionGetterException { get; init; }
+
         public bool ReturnUnobservableLaunch { get; init; }
 
         public bool LaunchDisposed { get; private set; }
@@ -893,7 +1046,8 @@ public sealed class DocumentViewerTests
 
             return new TestExternalDocumentLaunch(
                 _completionSource.Task,
-                onDispose: () => LaunchDisposed = true);
+                onDispose: () => LaunchDisposed = true,
+                completionGetterException: CompletionGetterException);
         }
 
         public void Complete()
@@ -917,24 +1071,38 @@ public sealed class DocumentViewerTests
     private sealed class TestExternalDocumentLaunch :
         IExternalDocumentLaunch
     {
+        private readonly Task? _completion;
         private readonly Action _onDispose;
+        private readonly Exception? _completionGetterException;
 
         public TestExternalDocumentLaunch(
             Task? completion,
-            Action onDispose)
+            Action onDispose,
+            Exception? completionGetterException = null)
         {
-            Completion = completion;
+            _completion = completion;
             _onDispose = onDispose;
+            _completionGetterException = completionGetterException;
         }
 
-        public Task? Completion { get; }
+        public Task? Completion
+        {
+            get
+            {
+                if (_completionGetterException is not null)
+                {
+                    throw _completionGetterException;
+                }
+
+                return _completion;
+            }
+        }
 
         public void Dispose()
         {
             _onDispose();
         }
     }
-
 
     /// <summary>
     /// Simulates a source stream that fails during asynchronous document copying.

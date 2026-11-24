@@ -98,21 +98,20 @@ public sealed class DocumentViewer :
         {
             // Preserve the existing GUID owner while retaining this distinct artifact
             // for retry if its immediate cleanup attempt fails.
-            activeArtifact.MarkPreparationFailed();
-
             lock (_lifecycleSync)
             {
                 _unregisteredCleanupArtifacts[activeArtifact] = 0;
-                TryCleanupAndRemove(activeArtifact);
             }
+
+            MarkPreparationFailedAndCleanup(activeArtifact);
 
             throw new InvalidOperationException(
                 "The temporary document artifact identity is already active.");
         }
 
         IExternalDocumentLaunch? launch = null;
+        bool launchHandleReturned = false;
         bool launchOwnershipTransferred = false;
-        bool externalLaunchStarted = false;
 
         try
         {
@@ -129,25 +128,33 @@ public sealed class DocumentViewer :
             Task? completion;
 
             // Launch admission and lifecycle classification are atomic with respect
-            // to viewer disposal. Disposal cannot observe a preparing artifact and
-            // then race past a launch that has already been admitted.
+            // to viewer disposal. The in-progress state prevents disposal from
+            // releasing the ownership lease before Launch() returns an outcome.
             lock (_lifecycleSync)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
 
+                activeArtifact.MarkExternalLaunchInvocationInProgress();
+
                 launch = _externalDocumentLauncher.Launch(
                     artifact.FilePath);
 
-                externalLaunchStarted = true;
-
-                // Until the completion contract is successfully inspected, retain the
-                // artifact conservatively as an unobservable external lifecycle.
-                activeArtifact.SetExternalLifecycleObservable(false);
+                // Set this immediately after Launch returns and before inspecting
+                // the returned handle's completion contract.
+                launchHandleReturned = true;
 
                 completion = launch.Completion;
 
                 activeArtifact.SetExternalLifecycleObservable(
                     completion is not null);
+
+                // A re-entrant Dispose() may have occurred inside the launcher.
+                // Once an unobservable outcome is established, release the lease
+                // if the viewer has already been disposed.
+                if (completion is null && _disposed)
+                {
+                    ReleaseOwnershipForRecovery(activeArtifact);
+                }
             }
 
             _ = ObserveExternalLaunchAsync(
@@ -164,21 +171,25 @@ public sealed class DocumentViewer :
                 DisposeLaunch(launch);
             }
 
-            if (!externalLaunchStarted)
+            if (!launchHandleReturned)
             {
-                // Copy or launch creation failed before an external launch was established.
-                // Mark the completed preparation as eligible for owner-disposal retry.
-                activeArtifact.MarkPreparationFailed();
-
-                TryCleanupAndRemove(activeArtifact);
+                // Copy failed or Launch() failed before returning a handle.
+                // The in-progress state prevented disposal from releasing the
+                // lease, so cleanup eligibility can now be persisted safely.
+                lock (_lifecycleSync)
+                {
+                    MarkPreparationFailedAndCleanup(activeArtifact);
+                }
             }
             else
             {
-                // An external launch was established, but its lifecycle could not be
-                // transferred to the observer. Do not risk deleting content that may
-                // still be consumed by the external application.
+                // A launch handle was returned. A failure while inspecting its
+                // completion contract or establishing observation is ambiguous:
+                // retain the artifact for recovery rather than deleting it.
+                MarkExternalLifecycleUnobservable(activeArtifact);
+
                 _logger.LogWarning(
-                    "External document lifecycle could not be established. ArtifactId: {ArtifactId}; Artifact retained until viewer disposal.",
+                    "External document launch handle did not establish a trustworthy lifecycle observation. ArtifactId: {ArtifactId}; Artifact retained for recovery.",
                     activeArtifact.Artifact.Id);
             }
 
@@ -216,7 +227,7 @@ public sealed class DocumentViewer :
             {
                 // A failed observation does not establish that the consumer
                 // has finished reading the temporary document.
-                activeArtifact.SetExternalLifecycleObservable(false);
+                MarkExternalLifecycleUnobservable(activeArtifact);
 
                 _logger.LogWarning(
                     "External document lifecycle observation failed. ArtifactId: {ArtifactId}; FailureCategory: {FailureCategory}",
@@ -226,13 +237,49 @@ public sealed class DocumentViewer :
                 return;
             }
 
-            activeArtifact.MarkExternalLifecycleCompleted();
+            try
+            {
+                // Persist cleanup eligibility before attempting physical deletion.
+                activeArtifact.MarkExternalLifecycleCompleted();
+            }
+            catch (Exception exception)
+            {
+                // If the durable transition cannot be committed, preserve the
+                // external-consumer state and let recovery handle the artifact.
+                MarkExternalLifecycleUnobservable(activeArtifact);
+
+                _logger.LogWarning(
+                    "External document completion could not be persisted. ArtifactId: {ArtifactId}; FailureCategory: {FailureCategory}",
+                    activeArtifact.Artifact.Id,
+                    exception.GetType().Name);
+
+                return;
+            }
 
             TryCleanupAndRemove(activeArtifact);
         }
         finally
         {
             DisposeLaunch(launch);
+        }
+    }
+
+    /// <summary>
+    /// Marks an external lifecycle as unobservable and releases ownership for recovery
+    /// when the viewer has already been disposed.
+    /// </summary>
+    /// <param name="activeArtifact">The artifact whose external lifecycle is unobservable.</param>
+    private void MarkExternalLifecycleUnobservable(
+        ActiveArtifact activeArtifact)
+    {
+        lock (_lifecycleSync)
+        {
+            activeArtifact.SetExternalLifecycleObservable(false);
+
+            if (_disposed)
+            {
+                ReleaseOwnershipForRecovery(activeArtifact);
+            }
         }
     }
 
@@ -255,14 +302,55 @@ public sealed class DocumentViewer :
     }
 
     /// <summary>
+    /// Marks a preparation or pre-invocation failure as cleanup-eligible and attempts cleanup.
+    /// </summary>
+    /// <param name="activeArtifact">The artifact whose preparation did not establish an external consumer.</param>
+    private void MarkPreparationFailedAndCleanup(
+        ActiveArtifact activeArtifact)
+    {
+        try
+        {
+            activeArtifact.MarkPreparationFailed();
+        }
+        catch (Exception exception)
+        {
+            // Preserve the original operation failure. If the durable transition
+            // cannot be written, leave the artifact and metadata for recovery.
+            _logger.LogWarning(
+                "Temporary document artifact cleanup eligibility could not be persisted. ArtifactId: {ArtifactId}; FailureCategory: {FailureCategory}",
+                activeArtifact.Artifact.Id,
+                exception.GetType().Name);
+
+            ReleaseOwnershipForRecovery(activeArtifact);
+
+            return;
+        }
+
+        TryCleanupAndRemove(activeArtifact);
+    }
+
+    /// <summary>
     /// Attempts cleanup and removes ownership only after deletion succeeds.
     /// </summary>
     /// <param name="activeArtifact">The artifact whose cleanup is being attempted.</param>
     private void TryCleanupAndRemove(
         ActiveArtifact activeArtifact)
     {
-        TemporaryDocumentArtifactCleanupResult result =
-            activeArtifact.Artifact.TryCleanup();
+        TemporaryDocumentArtifactCleanupResult result;
+
+        try
+        {
+            result = activeArtifact.Artifact.TryCleanup();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                "Temporary document artifact cleanup could not be completed. ArtifactId: {ArtifactId}; FailureCategory: {FailureCategory}",
+                activeArtifact.Artifact.Id,
+                exception.GetType().Name);
+
+            return;
+        }
 
         if (!result.Succeeded)
         {
@@ -285,12 +373,50 @@ public sealed class DocumentViewer :
     }
 
     /// <summary>
+    /// Releases the process lease without deleting an artifact whose external
+    /// consumer may still need it.
+    /// </summary>
+    /// <param name="activeArtifact">The artifact to leave for startup recovery.</param>
+    private void ReleaseOwnershipForRecovery(
+        ActiveArtifact activeArtifact)
+    {
+        lock (_lifecycleSync)
+        {
+            try
+            {
+                activeArtifact.ReleaseOwnershipLease();
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    "Temporary document artifact ownership lease release failed. ArtifactId: {ArtifactId}; FailureCategory: {FailureCategory}",
+                    activeArtifact.Artifact.Id,
+                    exception.GetType().Name);
+
+                return;
+            }
+
+            // The durable record and artifact remain on disk. Remove only this
+            // viewer's in-memory references after the lease has been released.
+            ((ICollection<KeyValuePair<Guid, ActiveArtifact>>)_activeArtifacts).Remove(
+                new KeyValuePair<Guid, ActiveArtifact>(
+                    activeArtifact.Artifact.Id,
+                    activeArtifact));
+
+            _unregisteredCleanupArtifacts.TryRemove(activeArtifact, out _);
+        }
+    }
+
+    /// <summary>
     /// Cleans artifacts whose external lifecycle permits owner disposal cleanup.
     /// </summary>
     /// <remarks>
     /// Preparing artifacts remain owned by their in-flight operation, which checks the
     /// disposed state before launch admission. Observable external lifecycles retain
     /// ownership until their completion task finishes.
+    ///
+    /// Unobservable external lifecycles retain their files and durable ownership records,
+    /// but release the process lease so startup recovery can inspect them.
     ///
     /// Repeated disposal calls retry cleanup for artifacts whose prior deletion failed.
     /// </remarks>
@@ -304,23 +430,27 @@ public sealed class DocumentViewer :
             {
                 ActiveArtifact activeArtifact = entry.Value;
 
-                if (!activeArtifact.CanBeCleanedOnViewerDisposal)
+                if (activeArtifact.CanBeCleanedOnViewerDisposal)
                 {
-                    continue;
+                    TryCleanupAndRemove(activeArtifact);
                 }
-
-                TryCleanupAndRemove(activeArtifact);
+                else if (activeArtifact.MustBePreservedForRecovery)
+                {
+                    ReleaseOwnershipForRecovery(activeArtifact);
+                }
             }
 
             // Retry artifacts that could not enter the primary GUID registry.
             foreach (ActiveArtifact activeArtifact in _unregisteredCleanupArtifacts.Keys)
             {
-                if (!activeArtifact.CanBeCleanedOnViewerDisposal)
+                if (activeArtifact.CanBeCleanedOnViewerDisposal)
                 {
-                    continue;
+                    TryCleanupAndRemove(activeArtifact);
                 }
-
-                TryCleanupAndRemove(activeArtifact);
+                else if (activeArtifact.MustBePreservedForRecovery)
+                {
+                    ReleaseOwnershipForRecovery(activeArtifact);
+                }
             }
         }
     }
@@ -335,6 +465,7 @@ public sealed class DocumentViewer :
         private const int UnobservableExternalLifecycle = 2;
         private const int ExternalLifecycleCompleted = 3;
         private const int PreparationFailed = 4;
+        private const int LaunchInvocationInProgress = 5;
 
         private int _externalLifecycleState = Preparing;
 
@@ -350,10 +481,6 @@ public sealed class DocumentViewer :
         /// <summary>
         /// Gets whether viewer disposal may safely attempt artifact cleanup.
         /// </summary>
-        /// <remarks>
-        /// Preparation failures and successfully completed external lifecycles
-        /// permit cleanup. An unobservable or active external lifecycle does not.
-        /// </remarks>
         public bool CanBeCleanedOnViewerDisposal
         {
             get
@@ -365,6 +492,26 @@ public sealed class DocumentViewer :
             }
         }
 
+        /// <summary>
+        /// Gets whether the artifact must be retained for startup recovery
+        /// when this viewer is disposed.
+        /// </summary>
+        public bool MustBePreservedForRecovery =>
+            Volatile.Read(ref _externalLifecycleState) ==
+            UnobservableExternalLifecycle;
+
+        /// <summary>
+        /// Persists the conservative external-consumer state before launch admission.
+        /// </summary>
+        public void MarkExternalConsumerMayNeedArtifact()
+        {
+            Artifact.MarkExternalConsumerMayNeedArtifact();
+
+            Volatile.Write(
+                ref _externalLifecycleState,
+                UnobservableExternalLifecycle);
+        }
+
         public void SetExternalLifecycleObservable(bool isObservable)
         {
             Volatile.Write(
@@ -374,21 +521,49 @@ public sealed class DocumentViewer :
                     : UnobservableExternalLifecycle);
         }
 
+        /// <summary>
+        /// Persists cleanup eligibility after confirmed external lifecycle completion.
+        /// </summary>
         public void MarkExternalLifecycleCompleted()
         {
+            Artifact.MarkCleanupEligible();
+
             Volatile.Write(
                 ref _externalLifecycleState,
                 ExternalLifecycleCompleted);
         }
 
         /// <summary>
-        /// Marks materialization as failed before an external consumer was established.
+        /// Persists cleanup eligibility when preparation or pre-invocation admission fails.
         /// </summary>
         public void MarkPreparationFailed()
         {
+            Artifact.MarkCleanupEligible();
+
             Volatile.Write(
                 ref _externalLifecycleState,
                 PreparationFailed);
+        }
+
+        /// <summary>
+        /// Releases the process lease while preserving the artifact and its durable record.
+        /// </summary>
+        public void ReleaseOwnershipLease()
+        {
+            Artifact.ReleaseOwnershipLease();
+        }
+
+        /// <summary>
+        /// Persists the external-consumer state and marks the synchronous
+        /// launcher invocation as unresolved until it returns an outcome.
+        /// </summary>
+        public void MarkExternalLaunchInvocationInProgress()
+        {
+            Artifact.MarkExternalConsumerMayNeedArtifact();
+
+            Volatile.Write(
+                ref _externalLifecycleState,
+                LaunchInvocationInProgress);
         }
     }
 }

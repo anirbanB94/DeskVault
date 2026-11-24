@@ -30,7 +30,7 @@ public sealed class DeskVaultStartupCompositionTests
                 using IHost host = HostConfigurator.Build();
 
                 IHostedService[] hostedServices =
-                    host.Services.GetServices<IHostedService>().ToArray();
+                    [.. host.Services.GetServices<IHostedService>()];
 
                 // Act
                 DeskVaultStartupCoordinator firstCoordinator =
@@ -71,6 +71,9 @@ public sealed class DeskVaultStartupCompositionTests
                 Assert.Single(
                     hostedServices.OfType<ApplicationAutomaticLockHostedService>());
 
+                Assert.Single(
+                    hostedServices.OfType<TemporaryDocumentArtifactRecoveryHostedService>());
+
                 int workstationMonitorIndex =
                     Array.FindIndex(
                         hostedServices,
@@ -83,9 +86,18 @@ public sealed class DeskVaultStartupCompositionTests
                         service =>
                             service is ApplicationAutomaticLockHostedService);
 
+                int recoveryIndex =
+                    Array.FindIndex(
+                        hostedServices,
+                        service =>
+                            service is TemporaryDocumentArtifactRecoveryHostedService);
+
                 Assert.True(workstationMonitorIndex >= 0);
                 Assert.True(automaticLockIndex >= 0);
                 Assert.True(workstationMonitorIndex < automaticLockIndex);
+                Assert.True(recoveryIndex >= 0);
+                Assert.True(recoveryIndex < workstationMonitorIndex);
+                Assert.True(recoveryIndex < automaticLockIndex);
 
                 Assert.Same(
                     workstationMonitor,
@@ -685,7 +697,7 @@ public sealed class WorkstationSecurityMonitorHostedServiceTests
         private readonly ConcurrentQueue<CapturedLogEntry> _entries = new();
 
         public CapturedLogEntry[] Entries =>
-            _entries.ToArray();
+            [.. _entries];
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull

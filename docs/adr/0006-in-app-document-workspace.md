@@ -521,10 +521,10 @@ Viewer disposal may attempt cleanup only for artifacts whose preparation
 failed or whose trustworthy external-consumer lifecycle completed
 successfully. An active or unobservable external lifecycle is not eligible
 for disposal-triggered deletion. An unobservable artifact therefore remains
-on disk after the application-host-owned viewer is disposed. The disposed
-viewer instance may still hold its in-memory registration, but that
-registration is not durable and cannot support recovery after process
-termination.
+on disk after the application-host-owned viewer is disposed. The viewer's
+in-memory registration is not itself durable. The protected ownership
+journal described below is the durable recovery evidence and survives
+viewer disposal and process termination.
 
 Temporary viewing content is created in the dedicated per-user namespace:
 
@@ -558,9 +558,17 @@ The store derives only a validated extension and combines it with a new
 GUID-based identity. The resulting filename follows the
 `<artifact-guid-N><validated-extension>` convention. The generated
 identity is the artifact owner key and provides a stable namespace and
-naming convention for the separately owned stale-artifact recovery work.
-Recovery enumeration and deletion policy are not part of this ADR's
-implementation scope.
+naming convention for stale-artifact recovery. Each artifact is associated
+with a protected ownership sidecar whose filename includes the complete
+artifact filename:
+`<artifact-guid-N><validated-extension>.owner.json`. Including the
+validated extension in the sidecar identity prevents different artifact
+filenames that share a GUID from sharing or overwriting one ownership
+record. The sidecar is created exclusively before artifact creation; an
+existing sidecar is a collision and is never replaced or adopted by a new
+viewing operation. Its initial `CreationPending` record reserves the
+identity but does not prove ownership of an artifact already at the
+candidate path.
 
 File creation uses exclusive create-new semantics and an explicit file
 access-control descriptor. A collision or failed exclusive creation must
@@ -578,7 +586,11 @@ DocumentViewer
         ↓
 TemporaryDocumentArtifactStore
         ↓
-Protected temporary artifact
+Create exclusive CreationPending ownership reservation
+        ↓
+Create artifact with FileMode.CreateNew
+        ↓
+Persist Preparing state after successful artifact creation
         ↓
 Copy complete content and flush
         ↓
@@ -588,7 +600,7 @@ External application launch
         ↓
 External lifecycle observation
         ↓
-Artifact cleanup by DocumentViewer
+Artifact cleanup by DocumentViewer or startup recovery
 ```
 
 The source document stream remains caller-owned. The temporary artifact
@@ -676,11 +688,162 @@ When external-consumer completion is unobservable, the temporary artifact
 may remain after the external tab is closed and after the DeskVault
 application host is shut down. If the process terminates before cleanup,
 stale-artifact discovery and reconciliation remain the responsibility of
-the separate recovery capability. That recovery policy is not defined by
-this lifecycle decision and must not infer safe deletion solely from
-external Shell-process exit, browser-process state, artifact extension, or
-age. Active or ambiguous artifacts must be preserved. This lifecycle does
-not scan or clean the general operating-system temporary directory.
+the separate recovery capability defined below. Recovery must not infer
+safe deletion solely from external Shell-process exit, browser-process
+state, artifact extension, or age. Active or ambiguous artifacts must be
+preserved. This lifecycle does not scan or clean the general
+operating-system temporary directory.
+
+### Durable Temporary Artifact Ownership
+
+Each temporary viewing artifact has a protected, durable ownership sidecar
+in the same dedicated per-user namespace. The sidecar name is derived from
+the complete artifact filename, not only its GUID. Its append-only journal
+contains versioned ownership records identifying the artifact ID, exact
+artifact filename, and lifecycle state. The sidecar uses the protected
+current-user access-control policy established for the namespace and
+artifact.
+
+The ownership lifecycle uses four states:
+
+- `CreationPending` — the store has created the durable ownership sidecar
+  and appended its initial reservation record, but has not yet established
+  ownership of an artifact file. The reservation records the intended
+  artifact ID and exact filename; it is not proof that an existing object
+  at that path was created by this operation.
+- `Preparing` — `FileMode.CreateNew` has successfully returned the
+  artifact's write handle and the store has persisted the corresponding
+  ownership transition. The operation now has positive evidence that it
+  created the artifact and is preparing/materializing it. No external
+  consumer has been given the path.
+- `ExternalConsumerMayNeedArtifact` — persisted before invoking the
+  external launcher. The external application may have received the path
+  and may still require the artifact.
+- `CleanupEligible` — the owner has established that no usable external
+  launch lifecycle was established, or that a trustworthy external-consumer
+  lifecycle completed successfully, and cleanup may be attempted.
+
+The allowed transitions are
+`CreationPending → Preparing`,
+`Preparing → ExternalConsumerMayNeedArtifact`,
+`Preparing → CleanupEligible`, and
+`ExternalConsumerMayNeedArtifact → CleanupEligible`. Transitions are
+monotonic; a record cannot move backwards. Each committed transition is
+appended to the journal and flushed before the owner proceeds across the
+corresponding lifecycle boundary. `CreationPending → Preparing` is
+committed only after exclusive artifact creation succeeds. A partial
+trailing journal entry that was not terminated as a complete record is
+not treated as a committed state. A malformed complete record or an
+invalid transition makes the ownership evidence uncertain and the artifact
+is preserved.
+
+The artifact owner holds an exclusive process lease on its sidecar while
+the owned operation is active. The lease prevents startup recovery from
+mistaking an active in-process owner for an abandoned one. Releasing the
+lease does not itself change the durable lifecycle state and is not
+evidence that an external consumer has finished. In particular, disposing
+the viewer or terminating DeskVault cannot convert
+`ExternalConsumerMayNeedArtifact` into `CleanupEligible`.
+
+The viewer records
+`ExternalConsumerMayNeedArtifact` durably before invoking the external
+launcher. A successful launch, a short-lived Shell activation-process exit,
+a missing completion task, or a faulted/cancelled completion task does not
+establish that the consuming application has finished. After a launch
+handle has been returned, only a successful trustworthy completion
+observation permits the transition to `CleanupEligible`. Under the
+current launcher contract, a synchronous `Launch()` exception before a
+launch handle is returned is a failed launch; the viewer transitions the
+artifact to `CleanupEligible` and attempts owner cleanup. Once a handle has
+been returned, a failure while reading its completion task or establishing
+observation is an unobservable handoff: the viewer retains
+`ExternalConsumerMayNeedArtifact` and does not infer that the artifact is
+safe to delete. A launcher implementation that can hand off the path and
+then fail before returning a handle must expose that ambiguous outcome
+explicitly rather than report it as an ordinary pre-handle launch failure.
+
+### Startup Recovery of Temporary Viewing Artifacts
+
+Startup recovery is a separate capability from canonical encrypted
+document-artifact reconciliation. The production host registers the
+temporary-artifact store and recovery service as shared singletons and
+registers the recovery hosted service before workstation-security
+monitoring and automatic-lock hosted services. The host starts hosted
+services before presenting startup authentication or allowing normal
+document viewing. Recovery therefore runs before a new viewing operation
+can create conflicting ownership state.
+
+Recovery enumerates only top-level ownership sidecars in the exact
+`%LOCALAPPDATA%\DeskVault\TemporaryDocuments` namespace. It does not
+enumerate the general operating-system temporary directory, recurse into
+other directories, or select files based on age, extension, or filename
+fragment. Candidate artifact paths are derived from the validated ownership
+record and must resolve to the exact artifact filename within the dedicated
+namespace. A genuinely absent namespace produces no candidates. An
+inaccessible namespace or a path that exists but is not a valid directory
+is reported as a recovery failure rather than silently treated as an empty
+namespace.
+
+Before deleting anything, recovery validates the namespace and artifact
+security boundary, rejects reparse-point candidates, verifies the sidecar
+and artifact identity relationship, validates the complete ownership
+journal, and acquires the exclusive ownership lease. A live owner lease
+means the artifact is active and it is preserved. If the lease cannot be
+acquired, ownership is unreadable, metadata is malformed, the artifact
+identity/path is inconsistent, ACL or file-type checks fail, or any other
+evidence is insufficient, recovery preserves the artifact and records an
+observable finding rather than deleting speculatively.
+
+The recovery eligibility policy is deliberately conservative:
+
+- A valid `CreationPending` reservation is reconciled without assuming
+  ownership of the candidate artifact path. If the owner lease is no
+  longer held and the recorded artifact path is absent, recovery removes
+  the empty reservation sidecar. If any filesystem object exists at that
+  path, recovery preserves both the object and the reservation because
+  `CreationPending` does not prove that the interrupted operation created
+  it. This applies even when the object has the expected generated name.
+- A valid `Preparing` artifact is eligible for cleanup only when its
+  owner lease is no longer held and all ownership, path, file-type, and
+  access-control checks succeed. The transition to `Preparing` proves
+  exclusive artifact creation succeeded; by contract, the external
+  launcher has not yet received this artifact.
+- A valid `CleanupEligible` artifact is eligible for cleanup only when
+  its owner lease is no longer held and the same validation checks succeed.
+- An `ExternalConsumerMayNeedArtifact` artifact is preserved even when
+  its owner lease has been released. The durable state records that an
+  external consumer may still require it; process termination or lease
+  release cannot prove otherwise.
+- Ownership evidence with no valid complete record, a malformed complete
+  record, an invalid state transition, ambiguous identity, or another
+  unresolved validation failure is preserved for later review. A
+  non-terminated partial trailing append is ignored; the latest valid
+  complete record remains authoritative.
+
+For an eligible `Preparing` or `CleanupEligible` candidate, recovery
+removes the temporary artifact and then its ownership sidecar. An already
+absent artifact is treated idempotently; the corresponding validated
+sidecar can still be removed. An absent `CreationPending` artifact is a
+reservation-only cleanup and has no artifact deletion step. If artifact or
+sidecar deletion fails, the remaining ownership evidence is retained. If
+one candidate fails, recovery records the per-artifact failure and
+continues considering other independent candidates. Namespace-level
+enumeration and validation failures are also observable. Diagnostics are
+bounded and do not expose document content or unnecessary filesystem
+details.
+
+The ownership sidecar and artifact both use exclusive creation semantics.
+A new viewing operation cannot overwrite an existing artifact or replace
+its ownership sidecar. An existing retained artifact identity is never
+adopted by a new operation; a collision is reported and the new operation
+must use a distinct GUID-based identity.
+
+This recovery capability does not reuse or broaden
+`RecoverDocumentArtifacts` or `DocumentArtifactEnumerator`. Those
+components remain scoped to canonical encrypted `.dvault` artifacts.
+Temporary plaintext recovery operates only on the dedicated temporary
+namespace and its ownership metadata. The canonical encrypted document
+artifact and document metadata remain unchanged.
 
 The canonical encrypted `.dvault` artifact is never replaced or modified by
 the external-viewing lifecycle. Temporary viewing content is a disposable
@@ -1014,12 +1177,27 @@ The rendering boundary allows document-format support to grow independently.
 - Generated artifact identities and create-new semantics prevent a viewing operation from overwriting an existing file it does not own.
 - Temporary artifact stream and file ownership remain within the viewer boundary, separate from caller-owned source streams and canonical document storage.
 - Cleanup results and bounded diagnostics make deletion failures observable; unsuccessful cleanup does not silently discard the owner's artifact registration.
-- The stable namespace and generated naming convention provide a narrow identification boundary for the separately owned stale-artifact recovery work.
+- The stable namespace, generated artifact identity, and protected
+  ownership sidecar provide a narrow durable identification boundary for
+  temporary viewing recovery.
+- Versioned, append-only lifecycle records and an exclusive owner lease
+  distinguish active ownership from recoverable abandoned work.
+- Startup recovery runs before normal document viewing and selects only
+  validated ownership sidecars in the dedicated temporary-document
+  namespace.
+- Recovery preserves live owners, possible external consumers, and
+  uncertain ownership; it removes only validated `Preparing` or
+  `CleanupEligible` artifacts with no live owner lease and removes an
+  absent `CreationPending` reservation without touching an unconfirmed
+  filesystem object.
+- Per-artifact recovery failures remain observable and do not prevent
+  independent safe candidates from being considered.
 - Windows Shell activation-process exit is not treated as external-consumer
   completion; absent, faulted, or cancelled consumer observation leaves the
   artifact unobservable.
 - Unobservable external-viewing artifacts remain on disk beyond viewer
-  disposal for separate recovery rather than being deleted speculatively.
+  disposal and process termination for conservative recovery handling
+  rather than being deleted speculatively.
 
 ### Negative
 
@@ -1033,10 +1211,13 @@ The rendering boundary allows document-format support to grow independently.
 - Protected presentation consumers must observe session snapshots, compare revisions, invalidate stale operations, and coordinate resource cleanup when access is withdrawn.
 - The protected per-user temporary namespace adds filesystem access-control and lifecycle management requirements.
 - Windows Shell handoff may make external-consumer completion unobservable.
-  Temporary plaintext artifacts can remain after the external tab and
-  DeskVault are closed until the separate recovery capability safely
-  reconciles them; deletion is not cryptographic erasure.
-- The current in-memory owner registry cannot survive abrupt process termination; stale-artifact discovery and reconciliation remain a separate recovery responsibility.
+- A temporary artifact in
+  `ExternalConsumerMayNeedArtifact` remains retained even after its owner
+  lease is released and DeskVault terminates, because no reliable evidence
+  establishes that the external consumer has finished. A filesystem object
+  associated with `CreationPending` is also retained when ownership cannot
+  be established. Either category may remain indefinitely; filesystem
+  deletion is not cryptographic erasure.
 - The Windows user ACL boundary does not isolate DeskVault from other processes running under the same user identity or from administrators.
 
 These trade-offs are acceptable because the decisions align with DeskVault's long-term product direction.

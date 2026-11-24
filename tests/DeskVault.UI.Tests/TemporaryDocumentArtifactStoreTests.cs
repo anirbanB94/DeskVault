@@ -52,8 +52,148 @@ public sealed class TemporaryDocumentArtifactStoreTests
         Assert.True(
             File.Exists(artifact.FilePath));
 
+        artifact.MarkCleanupEligible();
+
         Assert.True(
             artifact.TryCleanup().Succeeded);
+    }
+
+    /// <summary>
+    /// Verifies that artifact creation persists protected ownership metadata
+    /// and maintains an exclusive ownership lease until cleanup.
+    /// </summary>
+    [Fact]
+    public void CreateArtifact_CreatesProtectedOwnershipRecordAndExclusiveLease()
+    {
+        // Arrange
+        using var temporaryRoot = new TemporaryRoot();
+
+        var store = new TemporaryDocumentArtifactStore(
+            temporaryRoot.DirectoryPath,
+            Guid.NewGuid);
+
+        // Act
+        TemporaryDocumentArtifact artifact =
+            store.CreateArtifact("confidential-report.docx");
+
+        TemporaryDocumentArtifactOwnershipRecord record =
+            artifact.ReadOwnershipRecord();
+
+        FileSecurity metadataSecurity =
+            new FileInfo(artifact.OwnershipMetadataPath)
+                .GetAccessControl();
+
+        // Assert
+        Assert.Equal(
+            1,
+            record.Version);
+
+        Assert.Equal(
+            artifact.Id,
+            record.ArtifactId);
+
+        Assert.Equal(
+            $"{artifact.Id:N}.docx",
+            record.ArtifactFileName);
+
+        Assert.Equal(
+            $"{artifact.Id:N}.docx.owner.json",
+            Path.GetFileName(artifact.OwnershipMetadataPath));
+
+        Assert.Equal(
+            TemporaryDocumentArtifactLifecycleState.Preparing,
+            record.State);
+
+        Assert.True(
+            File.Exists(artifact.OwnershipMetadataPath));
+
+        AssertAccessRules(
+            metadataSecurity,
+            FileSystemRights.Read |
+            FileSystemRights.Write |
+            FileSystemRights.Delete |
+            FileSystemRights.Synchronize,
+            InheritanceFlags.None);
+
+        Assert.Throws<IOException>(
+            () =>
+            {
+                using var competingStream = new FileStream(
+                    artifact.OwnershipMetadataPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite);
+            });
+
+        Assert.False(
+            record.ArtifactFileName.Contains(
+                "confidential-report",
+                StringComparison.OrdinalIgnoreCase));
+
+        // Cleanup
+        artifact.MarkCleanupEligible();
+
+        Assert.True(
+            artifact.TryCleanup().Succeeded);
+
+        Assert.False(
+            File.Exists(artifact.OwnershipMetadataPath));
+    }
+
+    /// <summary>
+    /// Verifies that ownership lifecycle transitions are persisted and
+    /// that backward transitions are rejected.
+    /// </summary>
+    [Fact]
+    public void ArtifactOwnership_TransitionsArePersistedAndCannotMoveBackwards()
+    {
+        // Arrange
+        using var temporaryRoot = new TemporaryRoot();
+
+        var store = new TemporaryDocumentArtifactStore(
+            temporaryRoot.DirectoryPath,
+            Guid.NewGuid);
+
+        TemporaryDocumentArtifact artifact =
+            store.CreateArtifact("document.txt");
+
+        // Act: transition into the external-consumer protection state.
+        artifact.MarkExternalConsumerMayNeedArtifact();
+
+        TemporaryDocumentArtifactOwnershipRecord externalRecord =
+            artifact.ReadOwnershipRecord();
+
+        // Assert
+        Assert.Equal(
+            TemporaryDocumentArtifactLifecycleState.ExternalConsumerMayNeedArtifact,
+            externalRecord.State);
+
+        // Act: establish safe cleanup eligibility.
+        artifact.MarkCleanupEligible();
+
+        TemporaryDocumentArtifactOwnershipRecord cleanupRecord =
+            artifact.ReadOwnershipRecord();
+
+        // Assert
+        Assert.Equal(
+            TemporaryDocumentArtifactLifecycleState.CleanupEligible,
+            cleanupRecord.State);
+
+        Assert.Throws<InvalidOperationException>(
+            artifact.MarkExternalConsumerMayNeedArtifact);
+
+        // Repeated transition to the same final state is idempotent.
+        artifact.MarkCleanupEligible();
+
+        Assert.Equal(
+            TemporaryDocumentArtifactLifecycleState.CleanupEligible,
+            artifact.OwnershipState);
+
+        Assert.True(
+            artifact.TryCleanup().Succeeded);
+
+        Assert.False(
+            File.Exists(artifact.OwnershipMetadataPath));
     }
 
     /// <summary>
@@ -86,6 +226,8 @@ public sealed class TemporaryDocumentArtifactStoreTests
             FileSystemRights.Synchronize,
             InheritanceFlags.ContainerInherit |
             InheritanceFlags.ObjectInherit);
+
+        artifact.MarkCleanupEligible();
 
         Assert.True(
             artifact.TryCleanup().Succeeded);
@@ -121,6 +263,8 @@ public sealed class TemporaryDocumentArtifactStoreTests
             FileSystemRights.Synchronize,
             InheritanceFlags.None);
 
+        artifact.MarkCleanupEligible();
+
         Assert.True(
             artifact.TryCleanup().Succeeded);
     }
@@ -143,6 +287,8 @@ public sealed class TemporaryDocumentArtifactStoreTests
         TemporaryDocumentArtifact initialArtifact =
             store.CreateArtifact("initial.txt");
 
+        initialArtifact.MarkCleanupEligible();
+
         Assert.True(
             initialArtifact.TryCleanup().Succeeded);
 
@@ -157,43 +303,43 @@ public sealed class TemporaryDocumentArtifactStoreTests
         File.WriteAllText(
             existingPath,
             existingContent);
+
         // Keep this unrelated collision file independently removable during fixture cleanup.
         // It must not inherit the artifact ACL.
-        System.Security.Principal.WindowsIdentity currentIdentity =
-            System.Security.Principal.WindowsIdentity.GetCurrent();
+        WindowsIdentity currentIdentity =
+            WindowsIdentity.GetCurrent();
 
         try
         {
-            System.Security.Principal.SecurityIdentifier currentUserSid =
+            SecurityIdentifier currentUserSid =
                 currentIdentity.User ??
                 throw new InvalidOperationException(
                     "The current Windows user SID is unavailable.");
 
             var existingFileSecurity =
-                new System.Security.AccessControl.FileSecurity();
+                new FileSecurity();
 
             existingFileSecurity.SetAccessRuleProtection(
                 isProtected: true,
                 preserveInheritance: false);
 
             existingFileSecurity.AddAccessRule(
-                new System.Security.AccessControl.FileSystemAccessRule(
+                new FileSystemAccessRule(
                     currentUserSid,
-                    System.Security.AccessControl.FileSystemRights.Read |
-                    System.Security.AccessControl.FileSystemRights.Write |
-                    System.Security.AccessControl.FileSystemRights.Delete |
-                    System.Security.AccessControl.FileSystemRights.Synchronize,
-                    System.Security.AccessControl.AccessControlType.Allow));
+                    FileSystemRights.Read |
+                    FileSystemRights.Write |
+                    FileSystemRights.Delete |
+                    FileSystemRights.Synchronize,
+                    AccessControlType.Allow));
 
-            System.IO.FileSystemAclExtensions.SetAccessControl(
-                new System.IO.FileInfo(existingPath),
+            FileSystemAclExtensions.SetAccessControl(
+                new FileInfo(existingPath),
                 existingFileSecurity);
         }
         finally
         {
             currentIdentity.Dispose();
         }
-
 
         // Act
         Assert.Throws<IOException>(
@@ -244,6 +390,8 @@ public sealed class TemporaryDocumentArtifactStoreTests
                 artifact.FilePath,
                 TestContext.Current.CancellationToken));
 
+        artifact.MarkCleanupEligible();
+
         Assert.True(
             artifact.TryCleanup().Succeeded);
 
@@ -287,6 +435,8 @@ public sealed class TemporaryDocumentArtifactStoreTests
         // Assert
         Assert.True(sourceStream.CanRead);
 
+        artifact.MarkCleanupEligible();
+
         Assert.True(
             artifact.TryCleanup().Succeeded);
 
@@ -316,6 +466,8 @@ public sealed class TemporaryDocumentArtifactStoreTests
         await artifact.CopyFromAsync(
             sourceStream,
             TestContext.Current.CancellationToken);
+
+        artifact.MarkCleanupEligible();
 
         // Prevent deletion using a Windows sharing restriction.
         using (var fileLock = new FileStream(

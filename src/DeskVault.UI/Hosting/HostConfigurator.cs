@@ -184,6 +184,16 @@ internal static class HostConfigurator
         // Shared runtime services
         services.AddSingleton<TimeProvider>(TimeProvider.System);
 
+        // Temporary document artifact recovery.
+        // The store and recovery service are singletons so the startup recovery
+        // and the document viewer use the same per-user artifact namespace.
+        services.AddSingleton<TemporaryDocumentArtifactStore>();
+        services.AddSingleton<TemporaryDocumentArtifactRecoveryService>();
+
+        // Recovery must finish before workstation monitoring, automatic-lock
+        // initialization, startup authentication, or normal document viewing.
+        services.AddHostedService<TemporaryDocumentArtifactRecoveryHostedService>();
+
         // Workstation security monitoring must be initialized before
         // subsequent hosted services and before startup authentication.
         services.AddHostedService<WorkstationSecurityMonitorHostedService>();
@@ -223,9 +233,6 @@ internal static class HostConfigurator
         services.AddTransient<MainForm>();
         services.AddTransient<IMainFormPresenterFactory, MainFormPresenterFactory>();
         services.AddTransient<IExternalDocumentLauncher, ExternalDocumentLauncher>();
-        // The store is shared with the singleton viewer so artifact creation and cleanup
-        // use one consistent per-user temporary namespace.
-        services.AddSingleton<TemporaryDocumentArtifactStore>();
         services.AddSingleton<IDocumentViewer>(
             provider =>
                 new DocumentViewer(
