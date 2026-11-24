@@ -38,10 +38,10 @@ public sealed class CsvDocumentParserTests
 
         Assert.Equal(2, document.Rows.Count);
         Assert.Equal(
-            new[] { "1001", "Alice Johnson", "Engineering" },
+            ["1001", "Alice Johnson", "Engineering"],
             document.Rows[0]);
         Assert.Equal(
-            new[] { "1002", "Bob Smith", "Design" },
+            ["1002", "Bob Smith", "Design"],
             document.Rows[1]);
 
         Assert.Empty(document.Warnings);
@@ -90,8 +90,8 @@ public sealed class CsvDocumentParserTests
         CsvDocument document =
             await ParseAsync(csv, TestContext.Current.CancellationToken);
 
-        Assert.Single(document.Columns);
-        Assert.Equal("Id;Name", document.Columns[0].Header);
+        var item = Assert.Single(document.Columns);
+        Assert.Equal("Id;Name", item.Header);
 
         IReadOnlyList<string> row =
             Assert.Single(document.Rows);
@@ -175,9 +175,8 @@ public sealed class CsvDocumentParserTests
         Assert.Equal(string.Empty, document.Rows[0][3]);
         Assert.Equal("Active", document.Rows[1][3]);
 
-        Assert.Single(document.Warnings);
-
-        Assert.Equal(2, document.Warnings[0].RowNumber);
+        var item = Assert.Single(document.Warnings);
+        Assert.Equal(2, item.RowNumber);
         Assert.Equal(
             "Row 2 contains 3 field(s), but the header contains 4 column(s).",
             document.Warnings[0].Message);
@@ -211,9 +210,8 @@ public sealed class CsvDocumentParserTests
             string.Empty,
             document.Rows[1][3]);
 
-        Assert.Single(document.Warnings);
-
-        Assert.Equal(2, document.Warnings[0].RowNumber);
+        var item = Assert.Single(document.Warnings);
+        Assert.Equal(2, item.RowNumber);
         Assert.Equal(
             "Row 2 contains 4 field(s), but the header contains 3 column(s).",
             document.Warnings[0].Message);
@@ -242,9 +240,7 @@ public sealed class CsvDocumentParserTests
 
         Assert.Equal(
             [2, 4],
-            document.Warnings
-                .Select(warning => warning.RowNumber)
-                .ToArray());
+            [.. document.Warnings.Select(warning => warning.RowNumber)]);
 
         Assert.Equal(
             "Row 2 contains 4 field(s), but the header contains 5 column(s).",
@@ -320,6 +316,53 @@ public sealed class CsvDocumentParserTests
                 ParseAsync(
                     csv,
                     cancellationTokenSource.Token));
+    }
+
+    /// <summary>
+    /// Verifies that CSV parsing consumes the supplied document content
+    /// without disposing the caller-owned source stream.
+    /// </summary>
+    [Fact]
+    public async Task ParseAsync_WhenReadingCallerOwnedStream_LeavesStreamOpen()
+    {
+        // Arrange
+        const string csv =
+            """
+        Id,Name
+        1,Alice
+        """;
+
+        using var stream =
+            new MemoryStream(
+                System.Text.Encoding.UTF8.GetBytes(csv));
+
+        var parser =
+            CreateParser();
+
+        // Act
+        CsvDocument document =
+            await parser.ParseAsync(
+                stream,
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(stream.CanRead);
+        Assert.Single(document.Rows);
+
+        // Verify that the original source remains readable.
+        stream.Position = 0;
+
+        using var reader = new StreamReader(
+            stream,
+            System.Text.Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true,
+            bufferSize: 1024,
+            leaveOpen: true);
+
+        Assert.Equal(
+            csv,
+            await reader.ReadToEndAsync(
+                TestContext.Current.CancellationToken));
     }
 
     private static async Task<CsvDocument> ParseAsync(

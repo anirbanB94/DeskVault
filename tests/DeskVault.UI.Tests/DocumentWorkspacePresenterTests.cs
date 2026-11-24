@@ -22,7 +22,7 @@ using DiagnosticOperationCodes = DeskVault.Shared.Resources.DiagnosticOperationC
 
 namespace DeskVault.UI.Tests;
 
-public sealed class DocumentWorkspacePresenterTests
+public sealed partial class DocumentWorkspacePresenterTests
 {
     [Fact]
     public async Task AutomaticLock_WhenSessionIsReauthenticated_AllowsNewDocumentWorkspaceToOpenDocument()
@@ -834,7 +834,8 @@ public sealed class DocumentWorkspacePresenterTests
         documentViewer.Verify(
             x => x.OpenAsync(
                 stream,
-                document.FileName),
+                document.FileName,
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -924,7 +925,8 @@ public sealed class DocumentWorkspacePresenterTests
         documentViewer.Verify(
             x => x.OpenAsync(
                 stream,
-                document.FileName),
+                document.FileName,
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -959,7 +961,8 @@ public sealed class DocumentWorkspacePresenterTests
         documentViewer.Verify(
             x => x.OpenAsync(
                 It.IsAny<Stream>(),
-                It.IsAny<string>()),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -990,7 +993,8 @@ public sealed class DocumentWorkspacePresenterTests
         documentViewer
             .Setup(x => x.OpenAsync(
                 It.IsAny<Stream>(),
-                document.FileName))
+                document.FileName,
+                It.IsAny<CancellationToken>()))
             .ThrowsAsync(
                 new IOException(
                     "PBI232_DOCUMENT_WORKSPACE_EXTERNAL_OPEN_SENTINEL"));

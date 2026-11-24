@@ -4,6 +4,10 @@ namespace DeskVault.UI.Tests;
 
 public sealed class TextDocumentContentRendererTests
 {
+    /// <summary>
+    /// Verifies that plain-text rendering displays the document content
+    /// without taking ownership of the caller-provided source stream.
+    /// </summary>
     [Fact]
     public async Task RenderAsync_PlainText_DisplaysReadOnlyTextBox()
     {
@@ -24,6 +28,11 @@ public sealed class TextDocumentContentRendererTests
         await renderer.RenderAsync(contentHost, stream, fileName, TestContext.Current.CancellationToken);
 
         // Assert
+
+        // The renderer consumes the source stream but must leave it open.
+        Assert.True(
+            stream.CanRead);
+
         TextBox textBox =
             Assert.IsType<TextBox>(
                 Assert.Single(contentHost.Controls));

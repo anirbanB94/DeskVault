@@ -27,6 +27,8 @@ public sealed class DocumentWorkspacePresenter :
     private Stream? _currentDocumentStream;
     private Stream? _pendingDocumentStream;
     private long _pendingDocumentStreamOperationVersion;
+    private readonly Dictionary<Stream, ExternalDocumentOpenOperation> _externalDocumentOpenOperations =
+        new(ReferenceEqualityComparer.Instance);
     private string? _currentFileName;
     private bool _disposed;
     private readonly Lock _openOperationSyncRoot = new();
@@ -217,7 +219,8 @@ public sealed class DocumentWorkspacePresenter :
                     document,
                     documentStream,
                     fileName,
-                    out Stream? previousDocumentStream))
+                    out Stream? previousDocumentStream,
+                    out CancellationTokenSource? previousExternalOpenCancellation))
             {
                 throw new OperationCanceledException(
                     operation.Token);
@@ -225,11 +228,15 @@ public sealed class DocumentWorkspacePresenter :
 
             streamRetained = true;
 
-            if (!ReferenceEquals(
-                    previousDocumentStream,
-                    documentStream))
+            try
             {
-                previousDocumentStream?.Dispose();
+                CancelOpenOperation(
+                    previousExternalOpenCancellation);
+            }
+            finally
+            {
+                DisposeCurrentDocumentStream(
+                    previousDocumentStream);
             }
 
             _logger.LogInformation(
@@ -470,11 +477,13 @@ public sealed class DocumentWorkspacePresenter :
         GetDocumentResult document,
         Stream documentStream,
         string fileName,
-        out Stream? previousDocumentStream)
+        out Stream? previousDocumentStream,
+        out CancellationTokenSource? previousExternalOpenCancellation)
     {
         lock (_openOperationSyncRoot)
         {
             previousDocumentStream = null;
+            previousExternalOpenCancellation = null;
 
             if (_disposed ||
                 operation.Version != _openOperationVersion ||
@@ -511,7 +520,15 @@ public sealed class DocumentWorkspacePresenter :
             _pendingDocumentStream = null;
             _pendingDocumentStreamOperationVersion = 0;
 
-            previousDocumentStream = _currentDocumentStream;
+            if (!ReferenceEquals(
+                    _currentDocumentStream,
+                    documentStream))
+            {
+                previousDocumentStream =
+                    ReleaseDocumentStreamLocked(
+                        _currentDocumentStream,
+                        out previousExternalOpenCancellation);
+            }
 
             _currentDocument = document;
             _currentDocumentStream = documentStream;
@@ -581,6 +598,167 @@ public sealed class DocumentWorkspacePresenter :
         operation.CancellationTokenSource.Dispose();
     }
 
+    private Stream? ReleaseDocumentStreamLocked(
+        Stream? documentStream,
+        out CancellationTokenSource? externalOperationToCancel)
+    {
+        externalOperationToCancel = null;
+
+        if (documentStream is null)
+        {
+            return null;
+        }
+
+        if (_externalDocumentOpenOperations.TryGetValue(
+                documentStream,
+                out ExternalDocumentOpenOperation? externalOperation))
+        {
+            externalOperation.ReleaseDocumentStreamOnCompletion = true;
+
+            externalOperationToCancel =
+                externalOperation.CancellationTokenSource;
+
+            return null;
+        }
+
+        return documentStream;
+    }
+
+    private void DisposeCurrentDocumentStream(
+        Stream? documentStream)
+    {
+        if (documentStream is null)
+        {
+            return;
+        }
+
+        try
+        {
+            documentStream.Dispose();
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                "Current document stream cleanup failed. FailureType={FailureType}",
+                exception.GetType().Name);
+        }
+    }
+
+    private ExternalDocumentOpenOperation? TryBeginExternalDocumentOpen()
+    {
+        lock (_openOperationSyncRoot)
+        {
+            if (_disposed ||
+                _currentDocument is null ||
+                _currentDocumentStream is not { } documentStream ||
+                _currentFileName is not { } fileName ||
+                string.IsNullOrWhiteSpace(fileName) ||
+                _externalDocumentOpenOperations.ContainsKey(documentStream))
+            {
+                return null;
+            }
+
+            ApplicationSecuritySessionSnapshot currentSnapshot =
+                _applicationSecuritySession.CurrentSnapshot;
+
+            ObserveSecuritySessionRevision(
+                currentSnapshot.Revision);
+
+            long currentDocumentRevision =
+                Volatile.Read(
+                    ref _currentDocumentSecuritySessionRevision);
+
+            if (!currentSnapshot.IsProtectedAccessAvailable ||
+                currentSnapshot.Revision != _securitySessionRevision ||
+                currentDocumentRevision != _securitySessionRevision ||
+                Volatile.Read(
+                    ref _latestObservedSecuritySessionRevision) >
+                        _securitySessionRevision)
+            {
+                return null;
+            }
+
+            var operation = new ExternalDocumentOpenOperation(
+                documentStream,
+                fileName,
+                _securitySessionRevision);
+
+            _externalDocumentOpenOperations.Add(
+                documentStream,
+                operation);
+
+            return operation;
+        }
+    }
+
+    private bool IsExternalDocumentOpenOperationCurrent(
+        ExternalDocumentOpenOperation operation)
+    {
+        lock (_openOperationSyncRoot)
+        {
+            if (_disposed ||
+                !_externalDocumentOpenOperations.TryGetValue(
+                    operation.DocumentStream,
+                    out ExternalDocumentOpenOperation? activeOperation) ||
+                !ReferenceEquals(activeOperation, operation) ||
+                !ReferenceEquals(
+                    _currentDocumentStream,
+                    operation.DocumentStream))
+            {
+                return false;
+            }
+
+            ApplicationSecuritySessionSnapshot currentSnapshot =
+                _applicationSecuritySession.CurrentSnapshot;
+
+            ObserveSecuritySessionRevision(
+                currentSnapshot.Revision);
+
+            return currentSnapshot.IsProtectedAccessAvailable &&
+                   currentSnapshot.Revision ==
+                       operation.SecuritySessionRevision &&
+                   Volatile.Read(
+                       ref _latestObservedSecuritySessionRevision) <=
+                           operation.SecuritySessionRevision;
+        }
+    }
+
+    private void CompleteExternalDocumentOpenOperation(
+        ExternalDocumentOpenOperation operation)
+    {
+        Stream? streamToDispose = null;
+
+        lock (_openOperationSyncRoot)
+        {
+            if (_externalDocumentOpenOperations.TryGetValue(
+                    operation.DocumentStream,
+                    out ExternalDocumentOpenOperation? activeOperation) &&
+                ReferenceEquals(activeOperation, operation))
+            {
+                _externalDocumentOpenOperations.Remove(
+                    operation.DocumentStream);
+
+                if (operation.ReleaseDocumentStreamOnCompletion ||
+                    _disposed ||
+                    !ReferenceEquals(
+                        _currentDocumentStream,
+                        operation.DocumentStream))
+                {
+                    streamToDispose = operation.DocumentStream;
+                }
+            }
+        }
+
+        try
+        {
+            DisposeCurrentDocumentStream(streamToDispose);
+        }
+        finally
+        {
+            operation.CancellationTokenSource.Dispose();
+        }
+    }
+
     private bool HasAuthorizedCurrentDocument()
     {
         Stream? documentStream =
@@ -625,28 +803,48 @@ public sealed class DocumentWorkspacePresenter :
     private void ClearCurrentDocumentIfOwned(
         Stream documentStream)
     {
-        if (!ReferenceEquals(
-                _currentDocumentStream,
-                documentStream))
+        Stream? streamToDispose;
+        CancellationTokenSource? externalOperationToCancel;
+
+        lock (_openOperationSyncRoot)
         {
-            return;
+            if (!ReferenceEquals(
+                    _currentDocumentStream,
+                    documentStream))
+            {
+                return;
+            }
+
+            _currentDocument = null;
+            _currentDocumentStream = null;
+            _currentFileName = null;
+
+            Volatile.Write(
+                ref _currentDocumentSecuritySessionRevision,
+                0);
+
+            streamToDispose =
+                ReleaseDocumentStreamLocked(
+                    documentStream,
+                    out externalOperationToCancel);
         }
-
-        _currentDocument = null;
-        _currentDocumentStream = null;
-        _currentFileName = null;
-
-        Volatile.Write(
-            ref _currentDocumentSecuritySessionRevision,
-            0);
 
         try
         {
-            _view.ClearPresentation();
+            CancelOpenOperation(
+                externalOperationToCancel);
         }
         finally
         {
-            documentStream.Dispose();
+            try
+            {
+                _view.ClearPresentation();
+            }
+            finally
+            {
+                DisposeCurrentDocumentStream(
+                    streamToDispose);
+            }
         }
     }
 
@@ -691,9 +889,16 @@ public sealed class DocumentWorkspacePresenter :
 
         CancellationTokenSource? operationToCancel = null;
         Stream? pendingStreamToDispose = null;
+        CancellationTokenSource[] externalOperationsToCancel = [];
 
         lock (_openOperationSyncRoot)
         {
+            if (!_disposed)
+            {
+                externalOperationsToCancel =
+                    [.. _externalDocumentOpenOperations.Values.Select(operation => operation.CancellationTokenSource)];
+            }
+
             if (!_disposed &&
                 _openOperationCancellationTokenSource is not null &&
                 (notification.Revision >
@@ -719,6 +924,13 @@ public sealed class DocumentWorkspacePresenter :
         try
         {
             CancelOpenOperation(operationToCancel);
+
+            foreach (CancellationTokenSource externalOperationToCancel
+                     in externalOperationsToCancel)
+            {
+                CancelOpenOperation(
+                    externalOperationToCancel);
+            }
         }
         finally
         {
@@ -761,7 +973,9 @@ public sealed class DocumentWorkspacePresenter :
             }
 
             currentDocumentStream =
-                _currentDocumentStream;
+                ReleaseDocumentStreamLocked(
+                    _currentDocumentStream,
+                    out _);
 
             _currentDocument = null;
             _currentDocumentStream = null;
@@ -785,28 +999,8 @@ public sealed class DocumentWorkspacePresenter :
         }
         finally
         {
-            DisposeCurrentDocumentStreamAfterSessionRevocation(
+            DisposeCurrentDocumentStream(
                 currentDocumentStream);
-        }
-    }
-
-    private void DisposeCurrentDocumentStreamAfterSessionRevocation(
-        Stream? documentStream)
-    {
-        if (documentStream is null)
-        {
-            return;
-        }
-
-        try
-        {
-            documentStream.Dispose();
-        }
-        catch (Exception exception)
-        {
-            _logger.LogError(
-                "Current document stream cleanup after session revocation failed. FailureType={FailureType}",
-                exception.GetType().Name);
         }
     }
 
@@ -851,10 +1045,18 @@ public sealed class DocumentWorkspacePresenter :
         object? sender,
         EventArgs e)
     {
-        if (!HasAuthorizedCurrentDocument() ||
-            _currentDocumentStream is not { } documentStream ||
-            _currentFileName is not { } fileName ||
-            string.IsNullOrWhiteSpace(fileName))
+        if (!HasAuthorizedCurrentDocument())
+        {
+            _logger.LogDebug(
+                LogMessages.DocumentWorkspaceOpenExternallySkipped);
+
+            return;
+        }
+
+        ExternalDocumentOpenOperation? operation =
+            TryBeginExternalDocumentOpen();
+
+        if (operation is null)
         {
             _logger.LogDebug(
                 LogMessages.DocumentWorkspaceOpenExternallySkipped);
@@ -867,24 +1069,35 @@ public sealed class DocumentWorkspacePresenter :
 
         try
         {
-            documentStream.Position = 0;
+            operation.CancellationTokenSource.Token
+                .ThrowIfCancellationRequested();
+
+            operation.DocumentStream.Position = 0;
 
             await _documentViewer.OpenAsync(
-                documentStream,
-                fileName);
+                operation.DocumentStream,
+                operation.FileName,
+                operation.CancellationTokenSource.Token);
 
             _logger.LogInformation(
                 LogMessages.DocumentWorkspaceOpenExternallyCompleted);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
+            when (operation.CancellationTokenSource.IsCancellationRequested ||
+                  !IsExternalDocumentOpenOperationCurrent(operation))
+        {
+            _logger.LogDebug(
+                LogMessages.DocumentWorkspaceOpenCancelled);
+        }
+        catch (Exception exception)
         {
             _logger.LogSafeFailure(
                 LogLevel.Error,
                 DiagnosticOperationCodes.DocumentWorkspaceOpenExternallyFailure,
                 LogMessages.DocumentWorkspaceOpenExternallyFailed,
-                ex);
+                exception);
 
-            if (!IsOwningSessionCurrent())
+            if (!IsExternalDocumentOpenOperationCurrent(operation))
             {
                 return;
             }
@@ -892,7 +1105,12 @@ public sealed class DocumentWorkspacePresenter :
             _view.ShowError(
                 UiMessages.UnableToOpenDocument,
                 UiMessages.OpenDocumentTitle,
-                _securitySessionRevision);
+                operation.SecuritySessionRevision);
+        }
+        finally
+        {
+            CompleteExternalDocumentOpenOperation(
+                operation);
         }
     }
 
@@ -980,15 +1198,40 @@ public sealed class DocumentWorkspacePresenter :
             if (result.Status ==
                 RemoveDocumentResultStatus.Success)
             {
-                _currentDocumentStream?.Dispose();
+                Stream? streamToDispose = null;
+                CancellationTokenSource? externalOperationToCancel = null;
 
-                _currentDocument = null;
-                _currentDocumentStream = null;
-                _currentFileName = null;
+                lock (_openOperationSyncRoot)
+                {
+                    // Do not clear a different document that may have become current
+                    // while the removal operation was awaiting storage/repository work.
+                    if (_currentDocument?.Id == currentDocument.Id)
+                    {
+                        streamToDispose =
+                            ReleaseDocumentStreamLocked(
+                                _currentDocumentStream,
+                                out externalOperationToCancel);
 
-                Volatile.Write(
-                    ref _currentDocumentSecuritySessionRevision,
-                    0);
+                        _currentDocument = null;
+                        _currentDocumentStream = null;
+                        _currentFileName = null;
+
+                        Volatile.Write(
+                            ref _currentDocumentSecuritySessionRevision,
+                            0);
+                    }
+                }
+
+                try
+                {
+                    CancelOpenOperation(
+                        externalOperationToCancel);
+                }
+                finally
+                {
+                    DisposeCurrentDocumentStream(
+                        streamToDispose);
+                }
 
                 _logger.LogInformation(
                     LogMessages.DocumentWorkspaceRemovalCompleted);
@@ -1033,8 +1276,9 @@ public sealed class DocumentWorkspacePresenter :
     public void Dispose()
     {
         CancellationTokenSource? activeOpenOperation;
+        CancellationTokenSource[] externalOperationsToCancel;
         Stream? pendingDocumentStream;
-        Stream? currentDocumentStream;
+        Stream? currentDocumentStreamToDispose;
 
         lock (_openOperationSyncRoot)
         {
@@ -1049,16 +1293,26 @@ public sealed class DocumentWorkspacePresenter :
             activeOpenOperation =
                 _openOperationCancellationTokenSource;
 
+            externalOperationsToCancel =
+                [.. _externalDocumentOpenOperations.Values.Select(operation => operation.CancellationTokenSource)];
+
             pendingDocumentStream =
                 TakePendingDocumentStreamLocked();
 
             _openOperationCancellationTokenSource = null;
 
-            currentDocumentStream = _currentDocumentStream;
+            currentDocumentStreamToDispose =
+                ReleaseDocumentStreamLocked(
+                    _currentDocumentStream,
+                    out _);
 
             _currentDocument = null;
             _currentDocumentStream = null;
             _currentFileName = null;
+
+            Volatile.Write(
+                ref _currentDocumentSecuritySessionRevision,
+                0);
         }
 
         Exception? disposalException = null;
@@ -1075,9 +1329,16 @@ public sealed class DocumentWorkspacePresenter :
             }
         }
 
-        // Cancellation callbacks can throw, but must not interrupt cleanup.
+        // Cancellation callbacks must not prevent the remaining cleanup.
         TryCleanup(() =>
             CancelOpenOperation(activeOpenOperation));
+
+        foreach (CancellationTokenSource externalOperationToCancel
+                 in externalOperationsToCancel)
+        {
+            TryCleanup(() =>
+                CancelOpenOperation(externalOperationToCancel));
+        }
 
         // Detach event handlers independently.
         TryCleanup(() =>
@@ -1096,16 +1357,18 @@ public sealed class DocumentWorkspacePresenter :
         // Clear the protected view even if cancellation or event detachment failed.
         TryCleanup(_view.ClearPresentation);
 
-        // Dispose both streams independently.
+        // Dispose the current stream only if no external operation still borrows it.
         TryCleanup(() =>
-            currentDocumentStream?.Dispose());
+            DisposeCurrentDocumentStream(
+                currentDocumentStreamToDispose));
 
         if (!ReferenceEquals(
                 pendingDocumentStream,
-                currentDocumentStream))
+                currentDocumentStreamToDispose))
         {
             TryCleanup(() =>
-                pendingDocumentStream?.Dispose());
+                DisposePendingDocumentStream(
+                    pendingDocumentStream));
         }
 
         // Preserve the first exception after all cleanup attempts.
@@ -1192,6 +1455,33 @@ public sealed class DocumentWorkspacePresenter :
                Volatile.Read(
                    ref _latestObservedSecuritySessionRevision) <=
                        _securitySessionRevision;
+    }
+
+    private sealed class ExternalDocumentOpenOperation
+    {
+        public ExternalDocumentOpenOperation(
+            Stream documentStream,
+            string fileName,
+            long securitySessionRevision)
+        {
+            ArgumentNullException.ThrowIfNull(documentStream);
+            ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+
+            DocumentStream = documentStream;
+            FileName = fileName;
+            SecuritySessionRevision = securitySessionRevision;
+            CancellationTokenSource = new CancellationTokenSource();
+        }
+
+        public Stream DocumentStream { get; }
+
+        public string FileName { get; }
+
+        public long SecuritySessionRevision { get; }
+
+        public CancellationTokenSource CancellationTokenSource { get; }
+
+        public bool ReleaseDocumentStreamOnCompletion { get; set; }
     }
 
     private sealed class OpenOperation
