@@ -118,6 +118,9 @@ Currently implemented:
 - TXT rendering
 - Markdown rendering with the documented security policy
 - CSV structured/grid rendering
+- dedicated imported-HTML WebView2 security policy, embedded-resource
+  validation and isolated profile-lifecycle infrastructure; this does not
+  establish the complete HTML renderer
 - renderer-owned presentation resources and lifecycle
 - separation between document lifecycle and workspace lifecycle
 
@@ -130,6 +133,7 @@ interpreted as implemented:
 - primary-document reassignment in a future workspace model that introduces
   primary-document semantics
 - PDF and DOCX in-app renderers
+- complete imported HTML/HTM renderer integration
 - future search, retrieval, and RAG behavior
 
 The current implementation therefore establishes the document-centric
@@ -621,6 +625,370 @@ presentation data follow their own view lifecycle and do not extend the
 source-stream borrow.
 
 This preserves a consistent ownership boundary across multiple renderer implementations.
+
+### Imported HTML Preview Security and Profile Lifecycle
+
+Imported `.html` and `.htm` documents are untrusted source documents. They
+are not generated Markdown output and must not inherit Markdown renderer
+options, URI rules, or generated-content assumptions implicitly.
+
+The HTML preview has a dedicated security boundary, independent of
+`MarkdownRenderingSecurityPolicy`. The implementation establishes the
+following policy and lifecycle components:
+
+- `HtmlDocumentRenderingSecurityPolicy` defines the initial-document
+  navigation rule, embedded-image data-URI rule, resource authorization
+  rule, and restrictive HTML Content Security Policy.
+- `HtmlDocumentEmbeddedResourcePolicy` validates imported markup and CSS.
+  It rejects prohibited constructs rather than attempting to rewrite
+  untrusted content into a permitted document.
+- `HtmlDocumentWebView2SecurityPolicy` configures the initialized WebView2
+  instance, registers the resource-request filter, applies runtime
+  restrictions, and owns its event subscriptions.
+- `HtmlDocumentWebView2ProfileSession` owns the WebView2 control, its
+  dedicated WebView2 environment, and its unique user-data folder.
+
+These components establish the policy, validation and profile-lifecycle
+primitives. The complete renderer integration that invokes the markup
+validator, applies the generated Content Security Policy and coordinates
+profile initialization with the initial document navigation is a separate
+renderer concern. These components alone do not implement that renderer.
+
+This is a format-specific presentation security boundary. It does not
+change the document-format capability declaration or establish HTML
+extraction or processing semantics.
+
+#### Imported HTML and Embedded-Resource Validation
+
+Imported HTML is treated as untrusted markup and must be validated before
+it is passed to WebView2.
+
+AngleSharp parses the markup with scripting disabled and without a
+configured resource loader, so validation does not fetch external
+content. The validator rejects documents containing prohibited constructs
+rather than silently sanitizing or rewriting them.
+
+The validator does not navigate to or display documents. The completed
+renderer must invoke it before passing source markup to WebView2.
+
+The preprocessing boundary rejects active or embedded document features,
+including:
+
+- script elements and inline event-handler attributes;
+- frame, iframe and frameset elements;
+- object, embed and applet elements;
+- SVG and MathML content;
+- canvas, portal and unsupported media elements;
+- form elements and form controls;
+- base elements and meta refresh navigation;
+- resource-bearing attributes that are not explicitly supported;
+- resource references through external links, local paths, UNC paths,
+  `srcset`, and other unsupported element attributes.
+
+Only the following embedded-resource form is permitted:
+
+- an `img` element with a `src` attribute;
+- a Base64 data URI using the exact `image/png` or `image/jpeg` MIME type;
+- a syntactically valid Base64 payload;
+- a decoded payload whose binary signature matches the declared PNG or
+  JPEG format.
+
+Other data MIME types, malformed Base64 payloads, SVG, GIF and other
+animated image formats, and unsupported image encodings are rejected.
+Declaring an allowed MIME type is not sufficient without a matching
+binary signature.
+
+The validator permits only fragment-form `href` values on supported
+`a` and `area` elements; these do not identify an external resource.
+Any resulting navigation remains subject to the WebView2 runtime
+navigation policy. Other resource-bearing attributes and arbitrary
+navigation references are rejected.
+
+Inline style attributes and inline style elements are parsed and validated
+without loading resources. CSS `url(...)` functions and imported stylesheets
+are rejected. Unsupported or unknown CSS at-rules fail closed rather than
+being silently discarded by parsing. Inline styles are presentation data;
+they do not authorize resource loading or active browser capabilities.
+
+This preprocessing boundary is authoritative for the source markup.
+WebView2 runtime interception and Content Security Policy provide
+additional independent enforcement and must not be treated as substitutes
+for HTML and CSS validation.
+
+#### HTML Preview Content Security Policy
+
+The HTML preview security policy defines a restrictive Content Security
+Policy with default-deny behavior. The completed renderer must apply the
+generated policy to the document before its initial navigation.
+
+The policy includes:
+
+```text
+default-src 'none'
+script-src 'none'
+object-src 'none'
+frame-src 'none'
+child-src 'none'
+worker-src 'none'
+connect-src 'none'
+base-uri 'none'
+form-action 'none'
+img-src data:
+font-src 'none'
+media-src 'none'
+manifest-src 'none'
+style-src 'unsafe-inline'
+```
+
+The `img-src data:` directive is required for the explicitly approved
+embedded PNG and JPEG images. It does not independently authorize every
+data URI or every way of embedding an image. The HTML preprocessing
+boundary and WebView2 resource policy continue to enforce the MIME,
+Base64-payload, image-context and signature restrictions.
+
+Inline styles are permitted for static presentation. CSS resource functions,
+imported stylesheets and unsupported CSS rules remain prohibited by the
+preprocessing boundary.
+
+The Content Security Policy blocks the resource and active-content
+categories listed above. Top-level navigation is enforced separately
+by the WebView2 navigation policy; CSP is not relied on to provide
+that control.
+
+#### WebView2 Runtime Enforcement
+
+The HTML preview uses a dedicated WebView2 configuration. It disables
+capabilities that are not required for displaying static imported HTML,
+including:
+
+- JavaScript execution;
+- WebView2 web messaging and native host-object access;
+- default script dialogs;
+- default context menus and DevTools;
+- browser accelerator keys and zoom controls;
+- the browser status bar and built-in error page;
+- general autofill and password autosave.
+
+The security policy registers a `WebResourceRequested` filter for all
+resource contexts and request source kinds before the initial document is
+loaded. A resource request is permitted only when it is an image request
+using an approved embedded PNG or JPEG data URI. Other resource requests
+receive an explicit HTTP 403 response.
+
+The resource-request filter is defense in depth. It must not be interpreted
+as a guarantee that every prohibited URI scheme, local-file attempt, or
+browser activity will necessarily raise the same resource-request event.
+The HTML preprocessing boundary, top-level navigation policy, Content
+Security Policy and WebView2 event handlers remain separate controls.
+
+The completed renderer must perform exactly one host-authorized initial
+`NavigateToString` operation. The host issues a one-time authorization
+immediately before the initial load. `NavigationStarting` consumes that
+authorization on the first top-level navigation event, whether the event
+is accepted or rejected. The navigation must represent the expected
+`data:text/html` document and must not be a redirect. Subsequent top-level
+navigation requests, including local-file navigation and unsupported
+schemes, are rejected.
+
+The runtime policy also:
+
+- cancels navigation initiated within created frames;
+- handles new-window requests without opening a new browser window;
+- cancels and handles downloads;
+- denies browser permission requests without saving the denial in the
+  WebView2 profile;
+- cancels external URI-scheme launch requests;
+- cancels browser basic-authentication prompts;
+- cancels client-certificate selection requests.
+
+External opening remains an explicit document-level user action. It must
+not result from automatic WebView2 navigation or from a URI scheme
+embedded in untrusted HTML.
+
+The `LaunchingExternalUriScheme` handler remains a defense-in-depth
+control. The top-level `NavigationStarting` policy rejects subsequent
+navigation before an external protocol handoff can be authorized. A
+runtime test that verifies cancellation at `NavigationStarting` does not
+by itself demonstrate that the later external-scheme event was raised.
+
+#### Isolated Off-the-Record Profile
+
+Imported HTML must not use the persistent/default WebView2 profile or the
+profile used by the Markdown renderer or general application browsing.
+
+Every HTML preview receives:
+
+- a dedicated WebView2 environment;
+- a unique user-data folder for that preview session;
+- a dedicated HTML preview profile name;
+- an InPrivate WebView2 profile.
+
+The user-data folder is created under the DeskVault-specific HTML preview
+profile directory beneath the current user's temporary directory. A
+unique generated identifier distinguishes each preview folder. The
+environment's actual user-data folder and the runtime's
+`IsInPrivateModeEnabled` state are checked after initialization rather
+than assuming that requested controller options were applied.
+
+InPrivate mode is not, by itself, a no-retention guarantee. WebView2 still
+uses a user-data folder, and browser-managed data may be written there
+during the session. The unique folder and its explicit cleanup lifecycle
+are therefore part of the security boundary.
+
+The dedicated profile must remain isolated from the default WebView2
+environment and the Markdown renderer's browsing profile. It must not be
+reused by another preview session.
+
+#### Profile Resource Ownership and Cleanup
+
+`HtmlDocumentWebView2ProfileSession` owns the supplied WebView2 control,
+the dedicated environment and the unique user-data folder. The HTML
+renderer coordinates the lifetime of the security-policy object and the
+profile session. It must apply the HTML-specific WebView2 security policy
+after the profile session has initialized and before the initial
+`NavigateToString` navigation.
+
+The security-policy event subscriptions and resource filter must be
+released before the profile session disposes its WebView2 control. The
+renderer must therefore dispose the HTML WebView2 security policy before
+disposing the profile session.
+
+Profile cleanup is an ordered resource-lifecycle operation:
+
+1. Stop remaining WebView2 navigation and resource activity.
+2. Clear browsing data associated with the dedicated preview profile.
+3. Dispose the owned WebView2 control.
+4. Wait for WebView2 to signal that its browser-process collection has
+   exited and released the resources associated with the profile.
+5. Delete the unique user-data folder and verify that the folder is
+   physically absent.
+
+An empty process-information snapshot alone is not sufficient evidence
+that WebView2 has released the profile's resources after initialization.
+The environment's browser-process-exited lifecycle notification is the
+authoritative process-exit signal. When initialization did not complete
+and no browser process was started, cleanup may establish that no
+browser-process collection exists to await.
+
+A preview profile is not considered fully cleaned up merely because
+`Dispose` was requested on the WebView2 control or because browsing-data
+clearing was attempted. The control must be disposed, browser-process
+termination must be established, and the unique user-data folder must
+be absent.
+
+Cleanup failures are observable through
+`HtmlDocumentWebView2ProfileCleanupException`, which identifies the
+cleanup stage that failed. Cleanup attempts the remaining safe teardown
+operations so that one failure does not silently prevent all subsequent
+cleanup work. An incomplete control, browser-process or directory-cleanup
+operation remains eligible for a later disposal attempt. A failure must
+not be represented as successful cleanup.
+
+A cleanup exception remains observable even when later teardown work
+succeeds in removing the user-data folder. Physical deletion is not
+cryptographic zeroization and does not revoke content already copied
+outside the profile by another process.
+
+Creation and disposal of the profile session are bound to the owning
+WinForms/WebView2 UI thread. The workspace remains responsible for its
+host control and overall workspace lifecycle; it does not become the
+owner of the browser profile, renderer-specific policy, or profile
+cleanup operation.
+
+#### Content-Retention and Diagnostics Boundary
+
+The completed HTML renderer must pass document content through its
+presentation input boundary and load it into the in-memory WebView2
+document. It must not create a separate plaintext source-document file.
+
+The isolated user-data folder may contain browser-managed data during the
+preview session. After the preview session ends, cleanup must clear the
+profile's browsing data, terminate the browser-process collection, and
+remove the unique folder. The resulting no-retention verification is
+based on the physical profile cleanup and inspection of disk-backed
+preview data, not on an assumption that InPrivate mode alone prevents
+writes.
+
+Runtime retention tests use unique synthetic document-content and
+embedded-image payload markers. They verify that the preview content is
+rendered during the session, then inspect disk-backed preview data after
+session cleanup to ensure those markers are not retained. The unique
+profile folder must also be absent after successful cleanup.
+
+Rejected navigation and resource requests must not disclose document
+content, embedded payloads, original filenames, or physical filesystem
+paths through user-facing diagnostics or logs. Cleanup failures are
+surfaced through a typed exception that identifies the cleanup stage.
+Callers must keep user-facing diagnostics and logs to the bounded stage
+and failure category; they must not serialize raw underlying exception
+details when those details could disclose document content or the
+user-data folder path.
+
+These guarantees apply to the resources and files owned by the HTML preview
+profile lifecycle. They do not claim cryptographic erasure of arbitrary
+memory copies, operating-system memory, or content that was independently
+copied outside the profile.
+
+#### HTML Policy Verification and Runtime Boundary
+
+The HTML-specific policy requires automated unit and runtime coverage for:
+
+- the one-time initial `data:text/html` navigation authorization;
+- rejection of subsequent, redirected and unsupported top-level navigation;
+- default-deny Content Security Policy directives;
+- disabled JavaScript, web messaging and native host-object access;
+- allowed PNG/JPEG Base64 data URIs with matching signatures;
+- rejected unsupported MIME types, SVG, GIF and other animated formats;
+- rejected malformed Base64 payloads and MIME/signature mismatches;
+- rejected remote and local resource references in markup;
+- rejected CSS `url(...)`, `@import`, and unsupported CSS rules;
+- prohibited active elements, event handlers, frames, forms and media;
+- WebView2 resource-request denial;
+- frame navigation, popup and download restrictions;
+- form-submission navigation rejection;
+- local-file top-level navigation rejection;
+- external URI-scheme navigation rejection;
+- unique InPrivate profile configuration and separation from the
+  default WebView2 user-data folder;
+- document and embedded-image marker retention after profile cleanup;
+- profile cleanup failure observability, retry and physical folder removal.
+
+Policy-method tests and generated CSP assertions establish the
+preprocessing and policy contracts. Actual WebView2 runtime tests verify
+representative browser behavior and resource lifecycle outcomes.
+
+The `NavigateToString` document has an `about:blank` location. A local
+resource reference embedded in that document does not necessarily reach
+`WebResourceRequested`; runtime resource interception must not be treated
+as universal proof that every local-file attempt raises that event.
+Local-file resource references are rejected by the HTML preprocessing
+boundary, while the top-level local-file navigation guard is verified
+through the actual WebView2 navigation event.
+
+The external URI-scheme launch handler remains registered as a
+defense-in-depth control. Since the top-level navigation policy rejects
+the external navigation first, a runtime test that observes cancellation
+at `NavigationStarting` does not claim to exercise the later
+`LaunchingExternalUriScheme` event.
+
+The permission handler denies requests and sets `SavesInProfile` to
+false. The opaque `NavigateToString` origin does not provide a suitable
+secure-context API for directly raising the permission event in the current
+runtime test harness. The handler's direct runtime event path therefore
+remains a separately identified verification limitation; production
+configuration must continue to deny the request and avoid persisting the
+decision.
+
+The HTML security policy and profile lifecycle remain independent of the
+Markdown security policy. Changes to the HTML policy must not weaken,
+reuse, or implicitly alter the Markdown rendering options, URI rules,
+Content Security Policy, or WebView2 profile.
+
+The HTML preview remains a format-specific renderer concern behind
+`IDocumentContentRenderer`. It does not move WebView2 into the workspace
+presenter or view contract and does not change the separation between
+document extraction, canonical document semantics, knowledge processing,
+and presentation.
 
 ### External Document Opening Lifecycle
 
@@ -1653,6 +2021,9 @@ Implemented capabilities include:
 - explicit Save as Workspace conversion
 - document information and removal behavior
 - TXT, Markdown, and CSV rendering
+- imported HTML WebView2 security-policy, embedded-resource validation
+  and isolated-profile lifecycle infrastructure; complete HTML renderer
+  integration remains deferred
 - explicit unsupported-format handling and external opening
 
 The following remain architectural targets or deferred capabilities:
@@ -1663,6 +2034,7 @@ The following remain architectural targets or deferred capabilities:
 - automatic workspace recovery
 - PDF renderer
 - DOCX renderer
+- complete imported HTML/HTM renderer integration
 - primary-document semantics in a future model that requires them
 
 The implementation establishes the correct boundaries without prematurely
@@ -1797,6 +2169,10 @@ The architecture will support multiple workspaces, but the first implementation 
 - Markdown rendering can evolve independently of the workspace contract.
 - Markdig provides a mature Markdown parsing boundary while WebView2 provides a rich presentation surface.
 - Markdown security/resource policy remains inside the renderer boundary.
+- Imported HTML has a separate security policy and profile lifecycle rather than inheriting Markdown-specific rendering assumptions.
+- The HTML policy validates embedded PNG/JPEG data, rejects unsupported active content and resource references, and applies dedicated WebView2 runtime restrictions.
+- HTML preview sessions use unique InPrivate profiles with explicit browsing-data cleanup, browser-process exit coordination and physical user-data-folder deletion.
+- Profile cleanup failures remain observable; incomplete control, process-exit or folder-deletion cleanup can be retried without treating an earlier failure as successful teardown.
 - Rendering and future extraction/AI processing remain separate concerns.
 - The current implementation remains intentionally scoped.
 - Protected in-app document and workspace presentations are bound to the authoritative application security-session state and revision.
@@ -1833,6 +2209,12 @@ The architecture will support multiple workspaces, but the first implementation 
 - Some document formats will initially lack in-app rendering.
 - WebView2 adds a UI/runtime dependency for rich Markdown presentation.
 - Markdown rendering requires an explicit security policy for HTML, links, and remote resources.
+- Imported HTML requires a separate markup, embedded-resource and WebView2 runtime security policy; Markdown policy options cannot be reused as a substitute.
+- InPrivate mode alone does not guarantee that profile data is absent from disk; the unique profile folder requires explicit cleanup and browser-process teardown.
+- Profile cleanup introduces asynchronous resource ownership, process-exit coordination, physical deletion and observable failure/retry behavior.
+- A filesystem deletion failure may leave preview-profile data on disk until a later cleanup attempt succeeds; the failure must remain observable and must not be represented as successful cleanup.
+- Filesystem deletion is not cryptographic zeroization and cannot erase copies already made outside the preview profile.
+- The WebView2 runtime does not expose every prohibited resource attempt through a single event. Preprocessing, navigation enforcement, CSP and resource interception must remain independent controls.
 - Structured document representations add parsing and testing complexity before rendering.
 - Bounded previews require explicit signaling so the UI does not mistake a partial representation for a complete document.
 - Session-revision checks add lifecycle coordination to asynchronous presentation operations.
@@ -1906,6 +2288,12 @@ AI / search processing
 
 The existing Application and Infrastructure boundaries remain responsible
 for document retrieval, decryption, persistence, and storage.
+
+Markdown and imported HTML remain separate format-specific presentation
+security boundaries. Imported HTML uses its dedicated WebView2 policy and
+isolated profile lifecycle; completion of the renderer integration remains
+a separate presentation concern. These controls do not change the canonical
+document-processing and persistence boundaries.
 
 This separation allows DeskVault to evolve toward multi-document workspaces,
 local AI, retrieval, RAG, and enterprise knowledge workflows without
