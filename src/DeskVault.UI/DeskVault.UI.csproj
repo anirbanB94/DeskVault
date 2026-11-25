@@ -33,6 +33,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AngleSharp" />
+    <PackageReference Include="AngleSharp.Css" />
     <PackageReference Include="CsvHelper" />
     <PackageReference Include="Markdig" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
