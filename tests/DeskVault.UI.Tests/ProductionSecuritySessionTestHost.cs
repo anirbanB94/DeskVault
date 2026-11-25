@@ -2,6 +2,8 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Infrastructure.Security.Authentication;
 using DeskVault.Infrastructure.Services;
 using DeskVault.UI.Hosting;
+using DeskVault.UI.Services.Document;
+using DeskVault.UI.Services.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -53,7 +55,9 @@ internal sealed class ProductionSecuritySessionTestHost : IAsyncDisposable
 
     public static ProductionSecuritySessionTestHost Create(
         TimeProvider? timeProvider = null,
-        IReadOnlyDictionary<string, string?>? configurationOverrides = null)
+        IReadOnlyDictionary<string, string?>? configurationOverrides = null,
+        TemporaryDocumentArtifactStore? temporaryDocumentArtifactStore = null,
+        IExternalDocumentLauncher? externalDocumentLauncher = null)
     {
         string rootDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -105,6 +109,22 @@ internal sealed class ProductionSecuritySessionTestHost : IAsyncDisposable
                     services.RemoveAll<DeskVaultDataPaths>();
 
                     services.AddSingleton(dataPaths);
+
+                    if (temporaryDocumentArtifactStore is not null)
+                    {
+                        services.RemoveAll<TemporaryDocumentArtifactStore>();
+
+                        services.AddSingleton(
+                            temporaryDocumentArtifactStore);
+                    }
+
+                    if (externalDocumentLauncher is not null)
+                    {
+                        services.RemoveAll<IExternalDocumentLauncher>();
+
+                        services.AddSingleton(
+                            externalDocumentLauncher);
+                    }
 
                     if (timeProvider is not null)
                     {
