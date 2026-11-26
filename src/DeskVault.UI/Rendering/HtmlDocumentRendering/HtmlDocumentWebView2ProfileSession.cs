@@ -179,6 +179,9 @@ internal sealed class HtmlDocumentWebView2ProfileSession : IAsyncDisposable
                 ?? throw new InvalidOperationException(
                     "WebView2 initialization completed without a CoreWebView2 instance.");
 
+            coreWebView2.Profile.PreferredColorScheme =
+                CoreWebView2PreferredColorScheme.Light;
+
             // Verify the actual runtime configuration rather than assuming
             // the requested controller options were applied.
             if (!coreWebView2.Profile.IsInPrivateModeEnabled)

@@ -57,10 +57,17 @@ public partial class DocumentViewForm :
 
         try
         {
-            DocumentContentHost.Clear(
+            await DocumentContentHost.ClearAsync(
                 documentContentPanel);
 
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested ||
+                presentationVersion !=
+                    Volatile.Read(ref _presentationOperationVersion))
+            {
+                throw new OperationCanceledException(
+                    "The document presentation operation was invalidated.",
+                    cancellationToken);
+            }
 
             documentTitleLabel.Text = fileName;
 

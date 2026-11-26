@@ -18,7 +18,8 @@ public enum DocumentInAppPreviewKind
     None,
     Text,
     Markdown,
-    Csv
+    Csv,
+    Html
 }
 
 public sealed record DocumentFormatCapability(
@@ -71,10 +72,9 @@ public static class SupportedFileTypes
             new(".sql", true, DocumentTextExtractionKind.PlainText, DocumentInAppPreviewKind.Text),
             new(".ps1", true, DocumentTextExtractionKind.PlainText, DocumentInAppPreviewKind.Text),
 
-            // Importable and explicitly externally viewable when
-            // an in-app preview is unavailable.
-            new(".html", true, DocumentTextExtractionKind.None, DocumentInAppPreviewKind.None),
-            new(".htm", true, DocumentTextExtractionKind.None, DocumentInAppPreviewKind.None),
+            // HTML documents support in-app preview but not text extraction.
+            new(".html", true, DocumentTextExtractionKind.None, DocumentInAppPreviewKind.Html),
+            new(".htm", true, DocumentTextExtractionKind.None, DocumentInAppPreviewKind.Html),
 
             // Other currently importable formats. These are not
             // currently exposed in the Supported Documents picker.
@@ -104,7 +104,7 @@ public static class SupportedFileTypes
             new(".msg", false, DocumentTextExtractionKind.None, DocumentInAppPreviewKind.None)
         ]);
 
-    private static readonly IReadOnlyDictionary<string, DocumentFormatCapability>
+    private static readonly Dictionary<string, DocumentFormatCapability>
         CapabilitiesByExtension =
             FormatCapabilities.ToDictionary(
                 capability => capability.Extension,

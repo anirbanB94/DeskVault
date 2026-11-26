@@ -5,8 +5,10 @@ using DeskVault.Application.Documents.Extraction.TextDocument;
 using DeskVault.Application.Documents.Parsing.Csv;
 using DeskVault.UI.Rendering;
 using DeskVault.UI.Rendering.CsvDocumentRendering;
+using DeskVault.UI.Rendering.HtmlDocumentRendering;
 using DeskVault.UI.Rendering.MarkdownDocumentRendering;
 using DeskVault.UI.Rendering.TextDocumentRendering;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 
@@ -62,6 +64,28 @@ public sealed class DocumentContentRendererResolverTests
 
         // Assert
         Assert.IsType<CsvDocumentContentRenderer>(
+            renderer);
+    }
+
+    [Theory]
+    [InlineData("document.html")]
+    [InlineData("document.htm")]
+    [InlineData("DOCUMENT.HTML")]
+    [InlineData("DOCUMENT.HTM")]
+    public void Resolve_HtmlFile_ReturnsHtmlRenderer(
+        string fileName)
+    {
+        // Arrange
+        var resolver =
+            CreateResolver(
+                CreateHtmlRenderer());
+
+        // Act
+        IDocumentContentRenderer renderer =
+            resolver.Resolve(fileName);
+
+        // Assert
+        Assert.IsType<HtmlDocumentContentRenderer>(
             renderer);
     }
 
@@ -141,7 +165,8 @@ public sealed class DocumentContentRendererResolverTests
             CreateResolver(
                 CreateTextRenderer(),
                 CreateMarkdownRenderer(),
-                CreateCsvRenderer());
+                CreateCsvRenderer(),
+                CreateHtmlRenderer());
 
         // Act
         DocumentContentRendererNotFoundException exception =
@@ -162,7 +187,8 @@ public sealed class DocumentContentRendererResolverTests
             CreateResolver(
                 CreateTextRenderer(),
                 CreateMarkdownRenderer(),
-                CreateCsvRenderer());
+                CreateCsvRenderer(),
+                CreateHtmlRenderer());
 
         // Act
         DocumentContentRendererNotFoundException exception =
@@ -219,16 +245,19 @@ public sealed class DocumentContentRendererResolverTests
     [Fact]
     public void RendererCapabilities_MatchDeclaredInAppPreviewCapabilities()
     {
+        // Arrange
         IDocumentContentRenderer[] renderers =
         [
             CreateTextRenderer(),
             CreateMarkdownRenderer(),
-            CreateCsvRenderer()
+            CreateCsvRenderer(),
+            CreateHtmlRenderer()
         ];
 
         DocumentContentRendererResolver resolver =
             CreateResolver(renderers);
 
+        // Act and Assert
         foreach (string extension in SupportedFileTypes.GetAll())
         {
             DocumentFormatCapability capability =
@@ -278,6 +307,9 @@ public sealed class DocumentContentRendererResolverTests
             DocumentInAppPreviewKind.Csv =>
                 typeof(CsvDocumentContentRenderer),
 
+            DocumentInAppPreviewKind.Html =>
+                typeof(HtmlDocumentContentRenderer),
+
             _ => throw new ArgumentOutOfRangeException(
                 nameof(previewKind),
                 previewKind,
@@ -310,6 +342,13 @@ public sealed class DocumentContentRendererResolverTests
         return new CsvDocumentContentRenderer(
             new CsvDocumentParser(
                 new CsvParsingOptions()));
+    }
+
+    private static HtmlDocumentContentRenderer CreateHtmlRenderer()
+    {
+        return new HtmlDocumentContentRenderer(
+            new HtmlDocumentWebView2ProfileSessionFactory(),
+            NullLogger<HtmlDocumentPreviewSurface>.Instance);
     }
 
     private static DocumentTextExtractorResolver CreateTextExtractorResolver()

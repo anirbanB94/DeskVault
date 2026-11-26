@@ -118,9 +118,10 @@ Currently implemented:
 - TXT rendering
 - Markdown rendering with the documented security policy
 - CSV structured/grid rendering
-- dedicated imported-HTML WebView2 security policy, embedded-resource
-  validation and isolated profile-lifecycle infrastructure; this does not
-  establish the complete HTML renderer
+- HTML/HTM in-app rendering through `HtmlDocumentContentRenderer`, including
+  strict bounded source loading, bounded composed payloads, embedded-resource
+  validation, dedicated InPrivate profile initialization, HTML policy
+  application before navigation, and renderer-owned resource cleanup
 - renderer-owned presentation resources and lifecycle
 - separation between document lifecycle and workspace lifecycle
 
@@ -133,7 +134,6 @@ interpreted as implemented:
 - primary-document reassignment in a future workspace model that introduces
   primary-document semantics
 - PDF and DOCX in-app renderers
-- complete imported HTML/HTM renderer integration
 - future search, retrieval, and RAG behavior
 
 The current implementation therefore establishes the document-centric
@@ -260,7 +260,7 @@ Conceptually:
 Large screen
 
 ┌──────────────────────────────────────────────────────────┬──────────────┐
-│ Workspace / document presentation                         │ AI Assistant │
+│ Workspace / document presentation                        │ AI Assistant │
 │                                                          │              │
 │   DocumentViewForm content                               │              │
 └──────────────────────────────────────────────────────────┴──────────────┘
@@ -313,6 +313,7 @@ Conceptually:
 .txt → Text renderer
 .md  → Markdown renderer
 .csv → CSV renderer
+.html/.htm → HTML renderer
 ```
 
 The architecture must allow new renderers to be added without changing `DocumentViewForm`.
@@ -322,9 +323,10 @@ The initial implementation prioritizes simple formats that can be rendered direc
 The current implementation includes:
 
 ```text
-TXT → in-app text renderer
-MD  → in-app Markdown renderer
-CSV → in-app structured/grid renderer
+TXT      → in-app text renderer
+MD       → in-app Markdown renderer
+CSV      → in-app structured/grid renderer
+HTML/HTM → in-app static HTML renderer
 ```
 
 PDF, DOCX, and other formats remain future renderer implementations.
@@ -341,6 +343,7 @@ The intended progression is:
 TXT       → current in-app renderer
 Markdown  → current in-app renderer
 CSV       → current in-app renderer
+HTML/HTM  → current in-app renderer
 
 PDF       → future renderer
 DOCX      → future renderer
@@ -648,15 +651,24 @@ following policy and lifecycle components:
 - `HtmlDocumentWebView2ProfileSession` owns the WebView2 control, its
   dedicated WebView2 environment, and its unique user-data folder.
 
-These components establish the policy, validation and profile-lifecycle
-primitives. The complete renderer integration that invokes the markup
-validator, applies the generated Content Security Policy and coordinates
-profile initialization with the initial document navigation is a separate
-renderer concern. These components alone do not implement that renderer.
+`HtmlDocumentContentRenderer` integrates these policy and profile-lifecycle
+components into the in-app preview path. The authoritative `.html` and
+`.htm` format capabilities resolve to this renderer through the existing
+`IDocumentContentRendererResolver` and dependency-injection composition.
 
-This is a format-specific presentation security boundary. It does not
-change the document-format capability declaration or establish HTML
-extraction or processing semantics.
+The renderer validates the imported source markup, builds the complete
+bounded HTML payload, initializes the dedicated preview profile, applies
+the HTML-specific WebView2 security policy, and only then performs the
+initial `NavigateToString` navigation. The renderer does not duplicate,
+weaken, or replace the security decisions established by the HTML policy.
+
+The renderer borrows the caller-owned source stream only during the
+rendering operation. It does not dispose the stream, retain its reference
+after rendering, or create a separate plaintext source-document file.
+
+This is a format-specific presentation integration. It changes the
+in-app preview capability for `.html` and `.htm`, but does not establish
+HTML extraction or processing semantics.
 
 #### Imported HTML and Embedded-Resource Validation
 
@@ -668,8 +680,9 @@ configured resource loader, so validation does not fetch external
 content. The validator rejects documents containing prohibited constructs
 rather than silently sanitizing or rewriting them.
 
-The validator does not navigate to or display documents. The completed
-renderer must invoke it before passing source markup to WebView2.
+The validator does not navigate to or display documents.
+`HtmlDocumentContentRenderer` invokes it before the composed document is
+passed to WebView2.
 
 The preprocessing boundary rejects active or embedded document features,
 including:
@@ -715,11 +728,43 @@ WebView2 runtime interception and Content Security Policy provide
 additional independent enforcement and must not be treated as substitutes
 for HTML and CSS validation.
 
+#### HTML Source and Composed-Payload Bounds
+
+The HTML renderer enforces two independent limits:
+
+- Raw source input is limited to 1 MiB (1,048,576 bytes). The source is read
+  through bounded reads, and input beyond the limit is rejected rather than
+  fully buffered or truncated.
+- The complete composed HTML string passed to `NavigateToString` is limited
+  to 1 MiB (1,048,576 bytes), measured as UTF-16 payload bytes. This bound
+  includes the original document, generated wrapper and metadata, Content
+  Security Policy, host-owned presentation defaults, and embedded image
+  payload data.
+
+The renderer rejects an input or composed payload that exceeds its limit.
+It does not truncate the source or present an incomplete document.
+
+The source decoding policy is strict UTF-8. A UTF-8 BOM is supported.
+UTF-16 and UTF-32 BOMs, invalid UTF-8 sequences, and non-UTF-8 encoding
+declarations are rejected before browser navigation.
+
+The composed document preserves the source document structure and its
+existing head and body content. DeskVault supplies a light color-scheme
+default and a white root-canvas background for documents that do not
+declare an opaque background. The host-owned default style is inserted
+before source style elements or stylesheets, allowing later document-authored
+CSS to override the default. Existing source color-scheme declarations are
+preserved.
+
+These limits are presentation-resource boundaries. They do not change
+document-processing limits, extraction completeness, or the semantic
+representation produced by the processing pipeline.
+
 #### HTML Preview Content Security Policy
 
 The HTML preview security policy defines a restrictive Content Security
-Policy with default-deny behavior. The completed renderer must apply the
-generated policy to the document before its initial navigation.
+Policy with default-deny behavior. `HtmlDocumentContentRenderer` applies
+the generated policy to the document before its initial navigation.
 
 The policy includes:
 
@@ -897,9 +942,9 @@ cleanup operation.
 
 #### Content-Retention and Diagnostics Boundary
 
-The completed HTML renderer must pass document content through its
-presentation input boundary and load it into the in-memory WebView2
-document. It must not create a separate plaintext source-document file.
+`HtmlDocumentContentRenderer` passes document content through its
+presentation input boundary and loads it into the in-memory WebView2
+document. It does not create a separate plaintext source-document file.
 
 The isolated user-data folder may contain browser-managed data during the
 preview session. After the preview session ends, cleanup must clear the
@@ -954,8 +999,13 @@ The HTML-specific policy requires automated unit and runtime coverage for:
 - profile cleanup failure observability, retry and physical folder removal.
 
 Policy-method tests and generated CSP assertions establish the
-preprocessing and policy contracts. Actual WebView2 runtime tests verify
-representative browser behavior and resource lifecycle outcomes.
+preprocessing and policy contracts. Payload-builder tests verify strict
+encoding, bounded source reads, complete UTF-16 payload sizing, and
+preservation of source document structure. Renderer tests verify caller-owned
+stream lifetime, controlled failure and cancellation cleanup, and the
+dedicated preview profile. Actual WebView2 runtime tests verify browser
+behavior, initial rendering, the default white canvas, preservation of
+document-authored styling, and profile resource lifecycle outcomes.
 
 The `NavigateToString` document has an `about:blank` location. A local
 resource reference embedded in that document does not necessarily reach
@@ -992,8 +1042,10 @@ and presentation.
 
 ### External Document Opening Lifecycle
 
-External document opening remains an explicit workspace action for formats
-without an appropriate in-app renderer.
+External document opening remains an explicit, user-controlled workspace
+action independently of in-app preview availability. It remains the fallback
+for formats without an appropriate in-app renderer; a format having an
+in-app renderer does not remove the user's explicit external-open choice.
 
 The `IDocumentViewer` boundary receives document content through the
 existing caller-owned stream contract. `DocumentWorkspacePresenter`
@@ -1125,7 +1177,8 @@ The intended composition is:
 IDocumentContentRenderer
 ├── TextDocumentContentRenderer
 ├── MarkdownDocumentContentRenderer
-└── CsvDocumentContentRenderer
+├── CsvDocumentContentRenderer
+└── HtmlDocumentContentRenderer
 ```
 
 The resolver discovers the registered implementations and selects the first renderer whose `CanRender` method accepts the document filename.
@@ -1139,6 +1192,7 @@ IDocumentContentRenderer
 ├── TextDocumentContentRenderer
 ├── MarkdownDocumentContentRenderer
 ├── CsvDocumentContentRenderer
+├── HtmlDocumentContentRenderer
 ├── PdfDocumentContentRenderer       ← future
 ├── DocxDocumentContentRenderer      ← future
 └── ...
@@ -2020,10 +2074,10 @@ Implemented capabilities include:
 - separation of document presentation from workspace membership
 - explicit Save as Workspace conversion
 - document information and removal behavior
-- TXT, Markdown, and CSV rendering
-- imported HTML WebView2 security-policy, embedded-resource validation
-  and isolated-profile lifecycle infrastructure; complete HTML renderer
-  integration remains deferred
+- TXT, Markdown, CSV, and HTML/HTM rendering through the existing renderer
+  resolution and dependency-injection composition
+- imported HTML security-policy, embedded-resource validation, bounded
+  payload construction, and isolated-profile lifecycle integration
 - explicit unsupported-format handling and external opening
 
 The following remain architectural targets or deferred capabilities:
@@ -2034,7 +2088,6 @@ The following remain architectural targets or deferred capabilities:
 - automatic workspace recovery
 - PDF renderer
 - DOCX renderer
-- complete imported HTML/HTM renderer integration
 - primary-document semantics in a future model that requires them
 
 The implementation establishes the correct boundaries without prematurely
@@ -2173,6 +2226,9 @@ The architecture will support multiple workspaces, but the first implementation 
 - The HTML policy validates embedded PNG/JPEG data, rejects unsupported active content and resource references, and applies dedicated WebView2 runtime restrictions.
 - HTML preview sessions use unique InPrivate profiles with explicit browsing-data cleanup, browser-process exit coordination and physical user-data-folder deletion.
 - Profile cleanup failures remain observable; incomplete control, process-exit or folder-deletion cleanup can be retried without treating an earlier failure as successful teardown.
+- Raw HTML source input and the complete composed HTML payload are each bounded to 1 MiB, with strict UTF-8 decoding before navigation.
+- The host-owned white root-canvas default keeps transparent HTML documents readable in dark-mode browser environments while later source-authored CSS retains precedence.
+- Explicit external opening remains available independently of whether HTML/HTM has an in-app renderer.
 - Rendering and future extraction/AI processing remain separate concerns.
 - The current implementation remains intentionally scoped.
 - Protected in-app document and workspace presentations are bound to the authoritative application security-session state and revision.
@@ -2207,7 +2263,7 @@ The architecture will support multiple workspaces, but the first implementation 
 - Recent activity will require a separate persistence and retention implementation.
 - AI functionality will require additional Application and AI-layer capabilities.
 - Some document formats will initially lack in-app rendering.
-- WebView2 adds a UI/runtime dependency for rich Markdown presentation.
+- WebView2 adds a UI/runtime dependency for rich Markdown and imported HTML presentation.
 - Markdown rendering requires an explicit security policy for HTML, links, and remote resources.
 - Imported HTML requires a separate markup, embedded-resource and WebView2 runtime security policy; Markdown policy options cannot be reused as a substitute.
 - InPrivate mode alone does not guarantee that profile data is absent from disk; the unique profile folder requires explicit cleanup and browser-process teardown.
@@ -2251,7 +2307,8 @@ WorkspaceViewForm
     │   └── Document Renderer Boundary
     │       ├── Text
     │       ├── Markdown
-    │       └── CSV
+    │       ├── CSV
+    │       └── HTML / HTM
     └── Future Adaptive Local AI Assistant
              ↓
         Save as Workspace
@@ -2291,9 +2348,11 @@ for document retrieval, decryption, persistence, and storage.
 
 Markdown and imported HTML remain separate format-specific presentation
 security boundaries. Imported HTML uses its dedicated WebView2 policy and
-isolated profile lifecycle; completion of the renderer integration remains
-a separate presentation concern. These controls do not change the canonical
-document-processing and persistence boundaries.
+isolated InPrivate profile lifecycle through the implemented
+`HtmlDocumentContentRenderer`. The HTML renderer's bounded source and
+composed-payload handling, strict encoding policy, and renderer-owned
+resource cleanup remain presentation concerns. They do not change the
+canonical document-processing, extraction, or persistence boundaries.
 
 This separation allows DeskVault to evolve toward multi-document workspaces,
 local AI, retrieval, RAG, and enterprise knowledge workflows without
