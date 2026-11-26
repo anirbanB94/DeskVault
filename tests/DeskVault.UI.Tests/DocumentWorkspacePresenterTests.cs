@@ -842,7 +842,7 @@ public sealed partial class DocumentWorkspacePresenterTests
     [Theory]
     [InlineData("document.html")]
     [InlineData("document.htm")]
-    public async Task OpenExternally_HtmlDocument_UsesExternalViewer(
+    public async Task OpenExternally_HtmlDocument_RemainsAvailableWithInAppPreview(
         string fileName)
     {
         Guid documentId =
@@ -864,13 +864,11 @@ public sealed partial class DocumentWorkspacePresenterTests
             new Mock<IDocumentView>();
 
         view
-        .Setup(x => x.ShowDocumentAsync(
-            It.IsAny<Stream>(),
-            document.FileName,
-            It.IsAny<CancellationToken>()))
-        .ThrowsAsync(
-            new DocumentContentRendererNotFoundException(
-                document.FileName));
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                document.FileName,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         var documentViewer =
             new Mock<IDocumentViewer>();
@@ -885,12 +883,23 @@ public sealed partial class DocumentWorkspacePresenterTests
         using var stream =
             CreateDocumentStream();
 
-        await presenter.OpenAsync(documentId, stream, document.FileName, TestContext.Current.CancellationToken);
+        await presenter.OpenAsync(
+            documentId,
+            stream,
+            document.FileName,
+            TestContext.Current.CancellationToken);
+
+        view.Verify(
+            x => x.ShowDocumentAsync(
+                stream,
+                document.FileName,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         view.Verify(
             x => x.ShowUnsupportedPreview(
                 UiMessages.UnsupportedDocumentPreviewMessage),
-            Times.Once);
+            Times.Never);
 
         DocumentFormatCapability capability =
             SupportedFileTypes.GetForExtension(
@@ -903,11 +912,11 @@ public sealed partial class DocumentWorkspacePresenterTests
             capability.TextExtraction);
 
         Assert.Equal(
-            DocumentInAppPreviewKind.None,
+            DocumentInAppPreviewKind.Html,
             capability.InAppPreview);
 
-        Assert.True(
-            capability.SupportsExternalViewFallback);
+        Assert.True(capability.SupportsInAppPreview);
+        Assert.False(capability.SupportsExternalViewFallback);
 
         stream.Position =
             stream.Length;

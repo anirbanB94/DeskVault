@@ -11,6 +11,7 @@ using DeskVault.UI.Forms;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Rendering;
 using DeskVault.UI.Rendering.CsvDocumentRendering;
+using DeskVault.UI.Rendering.HtmlDocumentRendering;
 using DeskVault.UI.Rendering.MarkdownDocumentRendering;
 using DeskVault.UI.Rendering.TextDocumentRendering;
 using DeskVault.UI.Services.Dialogs;
@@ -259,6 +260,11 @@ internal static class HostConfigurator
                         .Value,
                     provider.GetRequiredService<DocumentProcessingOptions>()));
         services.AddTransient<IDocumentContentRenderer, CsvDocumentContentRenderer>();
+
+        // HTML preview uses its own isolated WebView2 profile session.
+        services.AddTransient<IHtmlDocumentWebView2ProfileSessionFactory, HtmlDocumentWebView2ProfileSessionFactory>();
+        services.AddTransient<IDocumentContentRenderer, HtmlDocumentContentRenderer>();
+
         services.AddTransient<IDocumentContentRendererResolver, DocumentContentRendererResolver>();
     }
 }

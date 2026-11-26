@@ -5,6 +5,7 @@ using DeskVault.Application.Documents.Processing;
 using DeskVault.UI.Hosting;
 using DeskVault.UI.Rendering;
 using DeskVault.UI.Rendering.CsvDocumentRendering;
+using DeskVault.UI.Rendering.HtmlDocumentRendering;
 using DeskVault.UI.Rendering.MarkdownDocumentRendering;
 using DeskVault.UI.Rendering.TextDocumentRendering;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,8 +45,8 @@ public sealed class DocumentRendererCompositionTests
             host.Services
                 .GetRequiredService<IDocumentContentRendererResolver>();
 
-        // Assert: exactly the three current renderer registrations.
-        Assert.Equal(3, rendererRegistrations.Length);
+        // Assert: all four renderers are registered.
+        Assert.Equal(4, rendererRegistrations.Length);
 
         Assert.Collection(
             rendererRegistrations,
@@ -60,7 +61,11 @@ public sealed class DocumentRendererCompositionTests
             descriptor =>
                 AssertTransientRegistration(
                     descriptor,
-                    typeof(CsvDocumentContentRenderer)));
+                    typeof(CsvDocumentContentRenderer)),
+            descriptor =>
+                AssertTransientRegistration(
+                    descriptor,
+                    typeof(HtmlDocumentContentRenderer)));
 
         // Assert: the production provider constructs the complete collection.
         Assert.Collection(
@@ -70,13 +75,17 @@ public sealed class DocumentRendererCompositionTests
             renderer =>
                 Assert.IsType<MarkdownDocumentContentRenderer>(renderer),
             renderer =>
-                Assert.IsType<CsvDocumentContentRenderer>(renderer));
+                Assert.IsType<CsvDocumentContentRenderer>(renderer),
+            renderer =>
+                Assert.IsType<HtmlDocumentContentRenderer>(renderer));
 
         // Assert: the resolver is registered once with the existing lifetime.
         ServiceDescriptor resolverRegistration =
-            Assert.Single(capturedDescriptors, descriptor =>
-                        descriptor.ServiceType ==
-                        typeof(IDocumentContentRendererResolver));
+            Assert.Single(
+                capturedDescriptors,
+                descriptor =>
+                    descriptor.ServiceType ==
+                    typeof(IDocumentContentRendererResolver));
 
         AssertTransientRegistration(
             resolverRegistration,
@@ -95,11 +104,36 @@ public sealed class DocumentRendererCompositionTests
         Assert.IsType<CsvDocumentContentRenderer>(
             resolver.Resolve("data.csv"));
 
+        Assert.IsType<HtmlDocumentContentRenderer>(
+            resolver.Resolve("document.html"));
+
+        Assert.IsType<HtmlDocumentContentRenderer>(
+            resolver.Resolve("document.htm"));
+
+        // Assert: the dedicated HTML profile-session factory is registered
+        // through the production dependency-injection composition.
+        ServiceDescriptor profileFactoryRegistration =
+            Assert.Single(
+                capturedDescriptors,
+                descriptor =>
+                    descriptor.ServiceType ==
+                    typeof(IHtmlDocumentWebView2ProfileSessionFactory));
+
+        AssertTransientRegistration(
+            profileFactoryRegistration,
+            typeof(HtmlDocumentWebView2ProfileSessionFactory));
+
+        Assert.IsType<HtmlDocumentWebView2ProfileSessionFactory>(
+            host.Services.GetRequiredService<
+                IHtmlDocumentWebView2ProfileSessionFactory>());
+
         // Assert: the CSV parser remains a transient factory registration.
         ServiceDescriptor parserRegistration =
-            Assert.Single(capturedDescriptors, descriptor =>
-                        descriptor.ServiceType ==
-                        typeof(CsvDocumentParser));
+            Assert.Single(
+                capturedDescriptors,
+                descriptor =>
+                    descriptor.ServiceType ==
+                    typeof(CsvDocumentParser));
 
         Assert.Equal(
             ServiceLifetime.Transient,
