@@ -255,8 +255,10 @@ The current implementation includes:
 - workspace add/remove/details/delete actions for persistent workspaces
 - document information and document removal behavior
 - format-specific rendering through the renderer abstraction
-- TXT, Markdown, and CSV in-app rendering
-- an explicit user-controlled fallback for unsupported formats
+- TXT, Markdown, CSV, and HTML/HTM in-app rendering through their
+  format-specific renderers
+- explicit user-controlled external opening independently of in-app preview
+  availability, with unsupported formats using it as a fallback
 - renderer lifecycle and resource ownership boundaries
 - protected presentation invalidation when the application security session withdraws access
 - session-revision checks that prevent stale workspace operations from publishing protected presentation state
@@ -531,8 +533,9 @@ Completion of `IDocumentViewer.OpenAsync` ends only the source-stream
 borrow. It does not establish external-application consumption completion
 or change the separate temporary-artifact lifecycle.
 
-The external viewer remains available as an explicit user-controlled action
-when an in-app renderer is unavailable.
+The external viewer remains available through an explicit, user-controlled
+action independently of in-app preview availability. It also provides the
+fallback for formats without an appropriate in-app renderer.
 
 ### External Viewing Temporary Artifact Lifecycle
 
@@ -1040,9 +1043,10 @@ The initial implementation will prioritize formats that can be presented simply 
 Initial in-app support may include:
 
 ```text
-TXT → in-app text viewer
-MD  → in-app text viewer
-CSV → in-app structured/grid viewer
+TXT       → in-app text viewer
+MD        → in-app text viewer
+CSV       → in-app structured/grid viewer
+HTML/HTM  → in-app static HTML preview
 ```
 
 Additional renderers can be introduced independently as the application grows.
