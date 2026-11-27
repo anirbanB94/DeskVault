@@ -542,6 +542,27 @@ migration recovery protocol. It only serializes access to the lifecycle
 that owns migration staging, promotion, schema evolution, backfill, and
 cleanup.
 
+#### Separation from Active-Vault Coordination
+
+`VaultInitializationCoordinator` remains limited to database creation,
+migration staging and promotion, schema evolution, and required startup
+backfills. Its initialization lock is not an active-document or
+workspace-mutation lock and must not be extended to ordinary vault
+operations.
+
+Active encrypted document-artifact operations use the separate
+vault/document-scoped lease defined by ADR-0016. Persistent workspace
+aggregate mutations use the optimistic revision contract defined by
+ADR-0016. These mechanisms have different resource identities and
+lifetimes from initialization coordination.
+
+The initialization lock therefore does not serialize import, removal,
+artifact recovery, workspace updates, or all SQLite writes after startup.
+The active-document lease does not replace or extend the initialization
+critical section. This separation preserves per-document independence and
+prevents a global active-vault lock from being introduced under the
+initialization coordinator's existing responsibility.
+
 ### Startup Failure Handling
 
 Database initialization is a security-sensitive startup boundary.

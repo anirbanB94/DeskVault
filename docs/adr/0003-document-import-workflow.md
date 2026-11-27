@@ -227,6 +227,27 @@ duplicate outcome and its own provisional artifact is cleaned up.
 Cleanup is restricted to the artifact created by the unsuccessful import and
 does not perform general artifact reconciliation or document-removal work.
 
+### Active-Vault Coordination
+
+The provisional-artifact lifecycle is also protected by the active-vault
+coordination contract in ADR-0016. An import acquires the lease for its
+canonical vault/document identity before creating the encrypted artifact
+and retains it through metadata publication or the unsuccessful-import
+compensation attempt.
+
+The document lease protects the filesystem/metadata lifecycle for that
+generated document ID. It does not replace the SQLite unique SHA-256
+constraint: concurrent imports of identical content may use different
+document IDs and remain independently eligible to store provisional
+artifacts before the persistence uniqueness constraint selects the
+authoritative document.
+
+Artifact recovery uses the same document lease and revalidates metadata
+after acquiring it. This prevents recovery from deleting a provisional
+artifact while its import is still active. ADR-0016 defines the canonical
+vault identity, lease acquisition and release rules, failure behavior, and
+recovery revalidation contract.
+
 ### Boundary Preservation
 
 These reliability guarantees extend the existing import lifecycle without
