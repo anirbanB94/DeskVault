@@ -32,6 +32,13 @@ public static class DependencyInjection
 
         services.TryAddSingleton<DeskVaultDataPaths>();
 
+        // Document-artifact cross-process coordination.
+        services.AddSingleton<CanonicalVaultDirectoryResolver>();
+
+        services.AddSingleton<DocumentArtifactLeasePathResolver>();
+
+        services.AddSingleton<IDocumentArtifactCoordinator, DocumentArtifactCoordinator>();
+
         services.AddSingleton<DocumentArtifactPathResolver>();
 
         services.AddSingleton<IDbContextFactory<DeskVaultDbContext>, EncryptedDeskVaultDbContextFactory>();
