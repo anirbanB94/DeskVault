@@ -13,6 +13,9 @@ public sealed class DocumentArtifactCoordinatorTests
     private static readonly TimeSpan AcquisitionTimeout =
         TimeSpan.FromSeconds(5);
 
+    private static readonly TimeSpan ProcessReadinessTimeout =
+        TimeSpan.FromSeconds(30);
+
     /// <summary>
     /// Verifies that independent coordinator instances cannot simultaneously
     /// acquire a lease for the same document in the same vault.
@@ -404,10 +407,20 @@ public sealed class DocumentArtifactCoordinatorTests
             vault.LeasePathResolver.GetPath(
                 documentId);
 
+        string startedFilePath =
+            Path.Combine(
+                vault.TestDirectory,
+                "lease-owner-started.txt");
+
         string readyFilePath =
             Path.Combine(
                 vault.TestDirectory,
                 "lease-owner-ready.txt");
+
+        string errorFilePath =
+            Path.Combine(
+                vault.TestDirectory,
+                "lease-owner-error.txt");
 
         DocumentArtifactCoordinator coordinator =
             CreateCoordinator(vault.RootDirectory);
@@ -415,7 +428,9 @@ public sealed class DocumentArtifactCoordinatorTests
         using Process ownerProcess =
             StartExclusiveLockHolder(
                 leaseFilePath,
-                readyFilePath);
+                startedFilePath,
+                readyFilePath,
+                errorFilePath);
 
         Task<IAsyncDisposable>? acquisitionTask = null;
         IAsyncDisposable? acquiredLease = null;
@@ -426,11 +441,13 @@ public sealed class DocumentArtifactCoordinatorTests
         {
             await WaitForLockHolderReadyAsync(
                 ownerProcess,
+                startedFilePath,
                 readyFilePath,
+                errorFilePath,
                 TestContext.Current.CancellationToken);
 
-            // The ready signal is written only after the child process has
-            // successfully opened the coordination file exclusively.
+            // The readiness marker is written only after the child process
+            // successfully opens the coordination file exclusively.
             acquisitionTask =
                 coordinator.AcquireAsync(
                     documentId,
@@ -443,7 +460,7 @@ public sealed class DocumentArtifactCoordinatorTests
             acquisitionWasBlocked =
                 !acquisitionTask.IsCompleted;
 
-            // Process termination closes all of its operating-system handles.
+            // Process termination must release the operating-system handle.
             TerminateProcess(
                 ownerProcess);
 
@@ -454,7 +471,7 @@ public sealed class DocumentArtifactCoordinatorTests
         }
         finally
         {
-            // Always terminate the child before waiting for a pending
+            // Always terminate the child before waiting for any pending
             // acquisition, including when an assertion or timeout fails.
             TerminateProcess(
                 ownerProcess);
@@ -482,9 +499,17 @@ public sealed class DocumentArtifactCoordinatorTests
                 await acquiredLease.DisposeAsync();
             }
 
-            if (File.Exists(readyFilePath))
+            foreach (string markerFilePath in new[]
+                     {
+                     startedFilePath,
+                     readyFilePath,
+                     errorFilePath
+                 })
             {
-                File.Delete(readyFilePath);
+                if (File.Exists(markerFilePath))
+                {
+                    File.Delete(markerFilePath);
+                }
             }
         }
 
@@ -527,13 +552,19 @@ public sealed class DocumentArtifactCoordinatorTests
 
     /// <summary>
     /// Starts a separate Windows PowerShell process that opens the supplied
-    /// coordination file with exclusive sharing and remains alive.
+    /// coordination file exclusively and remains alive.
     /// </summary>
     /// <param name="leaseFilePath">
     /// The coordination file to hold exclusively.
     /// </param>
+    /// <param name="startedFilePath">
+    /// The startup marker written when the child script begins execution.
+    /// </param>
     /// <param name="readyFilePath">
-    /// The signal file written after exclusive ownership is obtained.
+    /// The readiness marker written after exclusive ownership is obtained.
+    /// </param>
+    /// <param name="errorFilePath">
+    /// The error marker written if the child script fails.
     /// </param>
     /// <returns>
     /// The started process.
@@ -546,7 +577,9 @@ public sealed class DocumentArtifactCoordinatorTests
     /// </exception>
     private static Process StartExclusiveLockHolder(
         string leaseFilePath,
-        string readyFilePath)
+        string startedFilePath,
+        string readyFilePath,
+        string errorFilePath)
     {
         string powerShellPath =
             Path.Combine(
@@ -568,10 +601,19 @@ public sealed class DocumentArtifactCoordinatorTests
                 Environment.NewLine,
                 "$ErrorActionPreference = 'Stop'",
                 $"$leasePath = '{EscapePowerShellLiteral(leaseFilePath)}'",
+                $"$startedPath = '{EscapePowerShellLiteral(startedFilePath)}'",
                 $"$readyPath = '{EscapePowerShellLiteral(readyFilePath)}'",
-                "$leaseStream = [System.IO.File]::Open($leasePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)",
-                "[System.IO.File]::WriteAllText($readyPath, 'ready')",
-                "while ($true) { Start-Sleep -Milliseconds 100 }");
+                $"$errorPath = '{EscapePowerShellLiteral(errorFilePath)}'",
+                "try {",
+                "    [System.IO.File]::WriteAllText($startedPath, 'started')",
+                "    $leaseStream = [System.IO.File]::Open($leasePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)",
+                "    [System.IO.File]::WriteAllText($readyPath, 'ready')",
+                "    while ($true) { Start-Sleep -Milliseconds 100 }",
+                "}",
+                "catch {",
+                "    [System.IO.File]::WriteAllText($errorPath, $_.ToString())",
+                "    exit 1",
+                "}");
 
         // Windows PowerShell -EncodedCommand expects UTF-16LE text.
         string encodedCommand =
@@ -588,6 +630,7 @@ public sealed class DocumentArtifactCoordinatorTests
                 RedirectStandardError = true
             };
 
+        startInfo.ArgumentList.Add("-NoLogo");
         startInfo.ArgumentList.Add("-NoProfile");
         startInfo.ArgumentList.Add("-NonInteractive");
         startInfo.ArgumentList.Add("-EncodedCommand");
@@ -623,32 +666,48 @@ public sealed class DocumentArtifactCoordinatorTests
     /// <param name="process">
     /// The child process holding the handle.
     /// </param>
+    /// <param name="startedFilePath">
+    /// The startup marker written when the child script begins execution.
+    /// </param>
     /// <param name="readyFilePath">
-    /// The ready signal file written after the exclusive open succeeds.
+    /// The readiness marker written after exclusive ownership is obtained.
+    /// </param>
+    /// <param name="errorFilePath">
+    /// The error marker written if the child script fails.
     /// </param>
     /// <param name="cancellationToken">
     /// Cancels the readiness wait.
     /// </param>
     /// <exception cref="InvalidOperationException">
-    /// The child process exits before announcing ownership.
+    /// The child process exits or reports an error before announcing ownership.
     /// </exception>
     /// <exception cref="TimeoutException">
-    /// The child process does not announce ownership within ten seconds.
+    /// The child process does not announce ownership within the bounded period.
     /// </exception>
     private static async Task WaitForLockHolderReadyAsync(
         Process process,
+        string startedFilePath,
         string readyFilePath,
+        string errorFilePath,
         CancellationToken cancellationToken)
     {
         Stopwatch stopwatch =
             Stopwatch.StartNew();
 
-        TimeSpan readinessTimeout =
-            TimeSpan.FromSeconds(10);
-
         while (!File.Exists(readyFilePath))
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (File.Exists(errorFilePath))
+            {
+                string childError =
+                    await File.ReadAllTextAsync(
+                        errorFilePath,
+                        cancellationToken);
+
+                throw new InvalidOperationException(
+                    $"The separate process failed while acquiring the coordination handle. Error: {childError}");
+            }
 
             if (process.HasExited)
             {
@@ -656,14 +715,35 @@ public sealed class DocumentArtifactCoordinatorTests
                     await process.StandardError.ReadToEndAsync(
                         cancellationToken);
 
+                string childError =
+                    File.Exists(errorFilePath)
+                        ? await File.ReadAllTextAsync(
+                            errorFilePath,
+                            cancellationToken)
+                        : "No child-process error marker was produced.";
+
+                string executionStage =
+                    File.Exists(startedFilePath)
+                        ? "after starting the helper script"
+                        : "before starting the helper script";
+
                 throw new InvalidOperationException(
-                    $"The process exited before acquiring the coordination handle. Exit code: {process.ExitCode}. Error: {standardError}");
+                    $"The process exited {executionStage} before acquiring the coordination handle. " +
+                    $"Exit code: {process.ExitCode}. " +
+                    $"Child error: {childError}. " +
+                    $"Standard error: {standardError}");
             }
 
-            if (stopwatch.Elapsed >= readinessTimeout)
+            if (stopwatch.Elapsed >= ProcessReadinessTimeout)
             {
+                string executionStage =
+                    File.Exists(startedFilePath)
+                        ? "started the helper script but did not confirm exclusive-handle acquisition"
+                        : "did not reach the helper-script startup marker";
+
                 throw new TimeoutException(
-                    "The separate process did not acquire the coordination handle within ten seconds.");
+                    $"The separate process (PID {process.Id}) {executionStage} " +
+                    $"within {ProcessReadinessTimeout.TotalSeconds:0} seconds.");
             }
 
             await Task.Delay(
