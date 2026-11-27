@@ -1414,13 +1414,19 @@ distinct responsibilities:
 - Each workspace presentation clears its workspace identity, document
   membership presentation, navigation state and document presentations.
 - Each document workspace presenter invalidates in-flight open operations,
-  clears the document view, and releases its owned active and pending
-  document streams. If the current stream is still borrowed by an
-  in-flight `IDocumentViewer.OpenAsync` operation, cancellation is
-  requested and physical disposal is deferred until that operation
-  completes and discharges the borrow. UI-dispatched presentation cleanup
-  still clears the document view and requests release; it does not dispose
-  a source stream that is still in use by the canceled operation.
+  clears the document view, and requests release of its owned active and
+  pending document streams. A current stream may still be borrowed by its
+  in-flight renderer `RenderAsync` operation, an explicit
+  `IDocumentViewer.OpenAsync` operation, or both. The presenter requests
+  cancellation of superseded operations, but cancellation alone does not
+  prove that a consumer has stopped reading. When release has been requested,
+  physical disposal is deferred until every active borrow has been
+  discharged by its operation's completion/finally path. UI-dispatched
+  presentation cleanup clears the document view and requests release
+  immediately; it does not dispose a source stream still used by a
+  canceled-but-not-yet-completed operation.
+  The presenter disposes the stream exactly once after release is requested
+  and the active borrow count reaches zero.
 
 Locking is an in-memory presentation invalidation boundary. It does not
 delete canonical documents, delete persistent workspaces, or remove
