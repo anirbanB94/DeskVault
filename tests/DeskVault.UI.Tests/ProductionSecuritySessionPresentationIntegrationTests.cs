@@ -212,20 +212,22 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
                 cancellationToken));
 
         // #320 dispatches presentation cleanup to the owning UI thread.
-        Assert.Single(queuedUiActions);
+        var item = Assert.Single(queuedUiActions);
 
         view.Verify(
             x => x.ClearPresentation(),
             Times.Never);
 
         // Apply the UI-dispatched revocation cleanup.
-        queuedUiActions[0]();
+        item();
 
         view.Verify(
             x => x.ClearPresentation(),
             Times.Once);
 
-        Assert.False(retainedStream.CanRead);
+        // Session revocation clears the presentation immediately,
+        // but cannot dispose the source while the renderer still borrows it.
+        Assert.True(retainedStream.CanRead);
 
         // Act: establish a newer authenticated revision before the
         // previous rendering operation returns its delayed result.
@@ -477,8 +479,8 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
             owningSnapshot.Revision + 1,
             lockedSnapshot.Revision);
 
-        Assert.Single(queuedWorkspaceUiActions);
-        Assert.Single(queuedChildUiActions);
+        var item = Assert.Single(queuedWorkspaceUiActions);
+        var item_2 = Assert.Single(queuedChildUiActions);
 
         Assert.Equal(
             "Protected Workspace",
@@ -496,11 +498,11 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
 
         // Act: dispatch parent workspace cleanup first. Its disposal
         // owns and disposes the child presentation as well.
-        queuedWorkspaceUiActions[0]();
+        item();
 
         // The child also had a cleanup callback queued independently.
         // It must safely observe that the parent already disposed it.
-        queuedChildUiActions[0]();
+        item_2();
 
         // Assert: all retained workspace metadata and document ownership
         // have been removed.

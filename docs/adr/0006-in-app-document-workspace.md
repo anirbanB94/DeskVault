@@ -521,13 +521,15 @@ at a time. A duplicate request is rejected rather than allowing concurrent
 operations to reset or consume the shared stream position.
 
 If replacement, successful removal, session revocation, or presenter
-disposal requires release of a current stream while an external-open
-borrow is active, the presenter requests cancellation and marks the stream
-for deferred release. It must not dispose the stream while the borrowed
-operation may still be reading it. The operation completion/finally path
-discharges the borrow and performs the deferred disposal exactly once.
-A stale operation completion must not republish the released stream or
-replace a newer presentation.
+disposal requires release of a current stream while one or more renderer
+or external-open borrows remain active, the presenter requests cancellation
+and marks the stream for deferred release. It must not dispose the stream
+while any borrowed operation may still be reading it. Each renderer and
+external-open operation discharges its borrow from its completion/finally
+path. Physical disposal occurs exactly once after release has been
+requested and the active borrow count reaches zero. A stale operation
+completion must not republish the released stream or replace a newer
+presentation.
 
 Completion of `IDocumentViewer.OpenAsync` ends only the source-stream
 borrow. It does not establish external-application consumption completion

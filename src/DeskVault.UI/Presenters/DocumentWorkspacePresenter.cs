@@ -29,6 +29,8 @@ public sealed class DocumentWorkspacePresenter :
     private long _pendingDocumentStreamOperationVersion;
     private readonly Dictionary<Stream, ExternalDocumentOpenOperation> _externalDocumentOpenOperations =
         new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<Stream, DocumentStreamBorrowState> _documentStreamBorrowStates =
+        new(ReferenceEqualityComparer.Instance);
     private string? _currentFileName;
     private bool _disposed;
     private readonly Lock _openOperationSyncRoot = new();
@@ -194,6 +196,7 @@ public sealed class DocumentWorkspacePresenter :
     {
         bool streamRegistered = false;
         bool streamRetained = false;
+        bool presentationStreamBorrowed = false;
 
         try
         {
@@ -226,6 +229,7 @@ public sealed class DocumentWorkspacePresenter :
                     operation.Token);
             }
 
+            presentationStreamBorrowed = true;
             streamRetained = true;
 
             try
@@ -302,6 +306,11 @@ public sealed class DocumentWorkspacePresenter :
         }
         finally
         {
+            if (presentationStreamBorrowed)
+            {
+                CompleteDocumentStreamBorrow(documentStream);
+            }
+
             if (!streamRetained && streamRegistered)
             {
                 DisposePendingDocumentStream(
@@ -517,6 +526,11 @@ public sealed class DocumentWorkspacePresenter :
                 return false;
             }
 
+            // The renderer borrows the promoted source stream for the complete
+            // asynchronous presentation operation. Acquire the borrow while the
+            // presenter synchronization boundary still protects promotion.
+            BeginDocumentStreamBorrowLocked(documentStream);
+
             _pendingDocumentStream = null;
             _pendingDocumentStreamOperationVersion = 0;
 
@@ -617,9 +631,18 @@ public sealed class DocumentWorkspacePresenter :
 
             externalOperationToCancel =
                 externalOperation.CancellationTokenSource;
+        }
 
+        if (_documentStreamBorrowStates.TryGetValue(
+                documentStream,
+                out DocumentStreamBorrowState? borrowState)
+            && borrowState.ActiveBorrowCount > 0)
+        {
+            borrowState.ReleaseRequested = true;
             return null;
         }
+
+        _documentStreamBorrowStates.Remove(documentStream);
 
         return documentStream;
     }
@@ -683,6 +706,8 @@ public sealed class DocumentWorkspacePresenter :
                 fileName,
                 _securitySessionRevision);
 
+            BeginDocumentStreamBorrowLocked(documentStream);
+
             _externalDocumentOpenOperations.Add(
                 documentStream,
                 operation);
@@ -732,20 +757,36 @@ public sealed class DocumentWorkspacePresenter :
         {
             if (_externalDocumentOpenOperations.TryGetValue(
                     operation.DocumentStream,
-                    out ExternalDocumentOpenOperation? activeOperation) &&
-                ReferenceEquals(activeOperation, operation))
+                    out ExternalDocumentOpenOperation? activeOperation)
+                && ReferenceEquals(activeOperation, operation))
             {
                 _externalDocumentOpenOperations.Remove(
                     operation.DocumentStream);
 
-                if (operation.ReleaseDocumentStreamOnCompletion ||
-                    _disposed ||
-                    !ReferenceEquals(
+                bool releaseStream =
+                    operation.ReleaseDocumentStreamOnCompletion
+                    || _disposed
+                    || !ReferenceEquals(
                         _currentDocumentStream,
-                        operation.DocumentStream))
+                        operation.DocumentStream);
+
+                if (releaseStream)
                 {
-                    streamToDispose = operation.DocumentStream;
+                    if (_documentStreamBorrowStates.TryGetValue(
+                            operation.DocumentStream,
+                            out DocumentStreamBorrowState? borrowState))
+                    {
+                        borrowState.ReleaseRequested = true;
+                    }
+                    else
+                    {
+                        streamToDispose = operation.DocumentStream;
+                    }
                 }
+
+                streamToDispose ??=
+                    CompleteDocumentStreamBorrowLocked(
+                        operation.DocumentStream);
             }
         }
 
@@ -1357,7 +1398,8 @@ public sealed class DocumentWorkspacePresenter :
         // Clear the protected view even if cancellation or event detachment failed.
         TryCleanup(_view.ClearPresentation);
 
-        // Dispose the current stream only if no external operation still borrows it.
+        // Disposal waits until renderer and external-open borrows
+        // have both completed.
         TryCleanup(() =>
             DisposeCurrentDocumentStream(
                 currentDocumentStreamToDispose));
@@ -1457,6 +1499,74 @@ public sealed class DocumentWorkspacePresenter :
                        _securitySessionRevision;
     }
 
+    private void BeginDocumentStreamBorrowLocked(
+        Stream documentStream)
+    {
+        if (_documentStreamBorrowStates.TryGetValue(
+                documentStream,
+                out DocumentStreamBorrowState? borrowState))
+        {
+            if (borrowState.ReleaseRequested)
+            {
+                throw new InvalidOperationException(
+                    "A document stream pending release cannot acquire another borrow.");
+            }
+
+            borrowState.ActiveBorrowCount =
+                checked(borrowState.ActiveBorrowCount + 1);
+
+            return;
+        }
+
+        _documentStreamBorrowStates.Add(
+            documentStream,
+            new DocumentStreamBorrowState());
+    }
+
+    private Stream? CompleteDocumentStreamBorrowLocked(
+        Stream documentStream)
+    {
+        if (!_documentStreamBorrowStates.TryGetValue(
+                documentStream,
+                out DocumentStreamBorrowState? borrowState))
+        {
+            return null;
+        }
+
+        if (borrowState.ActiveBorrowCount <= 0)
+        {
+            return null;
+        }
+
+        borrowState.ActiveBorrowCount--;
+
+        if (borrowState.ActiveBorrowCount > 0)
+        {
+            return null;
+        }
+
+        _documentStreamBorrowStates.Remove(documentStream);
+
+        return borrowState.ReleaseRequested
+            ? documentStream
+            : null;
+    }
+
+    private void CompleteDocumentStreamBorrow(
+        Stream documentStream)
+    {
+        Stream? streamToDispose;
+
+        lock (_openOperationSyncRoot)
+        {
+            streamToDispose =
+                CompleteDocumentStreamBorrowLocked(
+                    documentStream);
+        }
+
+        DisposeCurrentDocumentStream(streamToDispose);
+    }
+
     private sealed class ExternalDocumentOpenOperation
     {
         public ExternalDocumentOpenOperation(
@@ -1504,5 +1614,12 @@ public sealed class DocumentWorkspacePresenter :
         public CancellationTokenSource CancellationTokenSource { get; }
 
         public CancellationToken Token { get; }
+    }
+
+    private sealed class DocumentStreamBorrowState
+    {
+        public int ActiveBorrowCount { get; set; } = 1;
+
+        public bool ReleaseRequested { get; set; }
     }
 }

@@ -2,6 +2,7 @@ using DeskVault.Application.Interfaces;
 using DeskVault.Infrastructure.Security.Authentication;
 using DeskVault.Infrastructure.Services;
 using DeskVault.UI.Hosting;
+using DeskVault.UI.Rendering.HtmlDocumentRendering;
 using DeskVault.UI.Services.Document;
 using DeskVault.UI.Services.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
@@ -57,7 +58,8 @@ internal sealed class ProductionSecuritySessionTestHost : IAsyncDisposable
         TimeProvider? timeProvider = null,
         IReadOnlyDictionary<string, string?>? configurationOverrides = null,
         TemporaryDocumentArtifactStore? temporaryDocumentArtifactStore = null,
-        IExternalDocumentLauncher? externalDocumentLauncher = null)
+        IExternalDocumentLauncher? externalDocumentLauncher = null,
+        IHtmlDocumentWebView2ProfileSessionFactory? htmlPreviewProfileSessionFactory = null)
     {
         string rootDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -124,6 +126,14 @@ internal sealed class ProductionSecuritySessionTestHost : IAsyncDisposable
 
                         services.AddSingleton(
                             externalDocumentLauncher);
+                    }
+
+                    if (htmlPreviewProfileSessionFactory is not null)
+                    {
+                        services.RemoveAll<IHtmlDocumentWebView2ProfileSessionFactory>();
+
+                        services.AddSingleton(
+                            htmlPreviewProfileSessionFactory);
                     }
 
                     if (timeProvider is not null)
