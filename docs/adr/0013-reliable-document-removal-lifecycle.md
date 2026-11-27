@@ -145,6 +145,29 @@ to be safely retried.
 The Application workflow must not assume that an earlier operation is still
 pending merely because the overall removal command did not complete.
 
+### Active-Vault Coordination
+
+The removal sequence is protected by the document-scoped active-vault lease
+defined in ADR-0016. Removal acquires the lease for the canonical
+vault/document identity before reading and relying on document metadata.
+After acquiring the lease, it re-reads current metadata and retains the
+lease across artifact deletion, workspace membership cleanup, and metadata
+deletion, releasing it only when the sequence completes or exits through a
+failure/cancellation path.
+
+Artifact recovery uses the same lease identity. Recovery that encounters a
+candidate while removal is active must wait, then revalidate current metadata,
+canonical ownership, and artifact existence before deciding whether deletion
+is safe. Import also uses this lease across provisional artifact storage and
+metadata publication or compensation.
+
+The lease does not turn filesystem and SQLite operations into one physical
+transaction. The established removal ordering and retry-convergence rules
+remain authoritative. If removal fails after one operation has completed,
+the lease is released and the remaining state is handled by the existing
+retry path. ADR-0016 defines the shared lease lifetime, acquisition failure,
+cancellation, process-termination, and recovery-revalidation rules.
+
 ## Partial Failure
 
 A failure during artifact cleanup prevents the subsequent lifecycle steps
