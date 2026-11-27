@@ -84,6 +84,22 @@ The vault identity is derived from the canonical filesystem identity of
   comparison; and
 - fail closed when the canonical vault identity cannot be established.
 
+On Windows, Infrastructure establishes this identity by opening the configured
+root as a directory using `CreateFileW` with `FILE_FLAG_BACKUP_SEMANTICS`, then
+retrieving its final normalized path using `GetFinalPathNameByHandleW` with
+`FILE_NAME_NORMALIZED` and `VOLUME_NAME_DOS`. The directory handle follows
+reparse points rather than opening the reparse point itself, so a configured
+junction or symbolic-link alias resolves to the target directory identity.
+The extended-length path prefix and trailing directory separator are
+normalized before the path is used as the vault identity. Path identity
+comparisons use `StringComparison.OrdinalIgnoreCase`.
+
+Canonical resolution requires the vault root to exist and identify a
+directory. It does not create the vault root. Failure to open the directory,
+read its attributes, or obtain its final path fails closed. The directory
+handle used to establish identity is disposed after resolution; it is not the
+active document-artifact lease.
+
 The canonical root identity is stable across DeskVault processes using the
 same vault. A separately located vault has a different identity, even when
 its database and document identifiers happen to match.
@@ -121,17 +137,17 @@ workspace lock.
 Infrastructure will implement a disposable document-artifact lease using an
 operating-system-held exclusive file handle.
 
-The coordination artifact is stored under a dedicated vault coordination
+The coordination artifact is stored under the dedicated vault coordination
 directory, separate from the canonical `Documents` directory and from
-enumerated `.dvault` artifacts. Its identity is derived from the canonical
-vault root and document ID, for example:
+enumerated `.dvault` artifacts. The implemented path is:
 
 ```text
 <VaultRoot>\Security\Coordination\DocumentArtifacts\<document-id>.lock
 ```
 
-The exact private directory layout may be refined by the implementation,
-but the following constraints are architectural requirements:
+The filename uses the document ID in the standard GUID `D` representation
+followed by `.lock`. Its parent directory is resolved from the canonical vault
+root. The following constraints are architectural requirements:
 
 - the coordination artifact is outside the canonical document-artifact
   enumeration boundary;
@@ -141,11 +157,23 @@ but the following constraints are architectural requirements:
 - the coordination file's existence is never treated as proof of ownership
   or proof that a process is still running.
 
+Infrastructure creates the `Security`, `Coordination`, and
+`DocumentArtifacts` directory levels sequentially. After creating each level,
+it resolves that directory's physical path using a directory handle and checks
+that the resolved path equals the expected normalized path and is a strict
+descendant of the canonical vault root. A redirected coordination-directory
+reparse point is rejected; Infrastructure does not continue through a child
+directory whose physical location differs from its expected location. This
+keeps the coordination namespace at the specified location inside the vault.
+
 The lease is owned only while the process holds the exclusive operating
-system file handle. The implementation uses exclusive sharing (`FileShare.None`)
-as the cross-process exclusion boundary. A persistent lock file may remain
-after release; the handle, not the file's presence, determines whether the
-lease is held.
+system file handle. The implementation opens the coordination file using
+`FileMode.OpenOrCreate`, `FileAccess.ReadWrite`, and exclusive sharing
+(`FileShare.None`) as the cross-process exclusion boundary. It does not write
+document content, key material, or ownership metadata to the file. A persistent
+empty lock file may remain after release; the handle, not the file's presence,
+determines whether the lease is held. The lock file is not deleted during
+normal lease release.
 
 The lease is an explicit disposable lifetime. Acquisition is asynchronous
 and cancellation-aware. The owning operation must release the handle on every
@@ -158,16 +186,21 @@ manual lock-file deletion.
 
 A process that encounters the expected exclusive-sharing contention waits
 for the current owner to release the lease. Waiting must observe the
-operation's cancellation token and must not block the UI thread.
+operation's cancellation token and must not block the UI thread. The current
+implementation retries the Windows `ERROR_SHARING_VIOLATION` (32) condition
+using a 100-millisecond cancellation-aware asynchronous delay.
 
 An expected sharing violation is contention, not permission to bypass
 coordination. Cancellation while waiting ends the operation before it
-performs a protected side effect.
+performs a protected side effect. If cancellation is observed after the
+exclusive handle is opened but before the lease is returned, Infrastructure
+releases the handle and reports cancellation rather than granting ownership.
 
 An I/O or access failure that is not the expected sharing violation is an
 acquisition failure. The operation must fail closed and must not continue
-without the lease. The implementation must distinguish expected contention
-from unexpected coordination failures.
+without the lease. The implementation retries only the expected Windows
+sharing-violation error; unexpected filesystem, path, and access failures
+propagate as acquisition failures and are not treated as contention.
 
 The operating-system handle is the only authoritative owner marker. The
 implementation must not infer that a lock is abandoned from file age,
@@ -670,6 +703,13 @@ The implementation and end-to-end validation must demonstrate at least:
 20. Existing duplicate-import, failed-import compensation,
     processing-generation, initialization, encryption, and safe-diagnostic
     regression coverage continues to pass.
+21. Canonical vault resolution maps equivalent configured paths, including a
+    directory-junction alias, to the same physical vault identity.
+22. A coordination-directory reparse point that redirects a child directory
+    away from its expected physical location is rejected before descendant
+    coordination directories are created.
+23. The persistent coordination file contains no application data, remains
+    outside `Documents`, and does not become a canonical `.dvault` artifact.
 
 ## Related Decisions
 
