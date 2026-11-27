@@ -7,6 +7,7 @@ using DeskVault.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using System.Reflection;
 
 namespace DeskVault.Infrastructure.Tests;
 
@@ -26,6 +27,54 @@ public sealed class InfrastructureDependencyInjectionTests
 
         Assert.NotNull(
             serviceProvider.GetRequiredService<IDocumentReader>());
+    }
+
+    /// <summary>
+    /// Verifies that the document-artifact coordination contract resolves
+    /// to the Infrastructure implementation and its dependencies are
+    /// registered as shared singleton services.
+    /// </summary>
+    [Fact]
+    public void AddInfrastructure_RegistersDocumentArtifactCoordinatorAsSingleton()
+    {
+        // Arrange
+        using ServiceProvider serviceProvider =
+            CreateServiceProvider();
+
+        // Act
+        IDocumentArtifactCoordinator firstCoordinator =
+            serviceProvider.GetRequiredService<IDocumentArtifactCoordinator>();
+
+        IDocumentArtifactCoordinator secondCoordinator =
+            serviceProvider.GetRequiredService<IDocumentArtifactCoordinator>();
+
+        CanonicalVaultDirectoryResolver firstDirectoryResolver =
+            serviceProvider.GetRequiredService<CanonicalVaultDirectoryResolver>();
+
+        CanonicalVaultDirectoryResolver secondDirectoryResolver =
+            serviceProvider.GetRequiredService<CanonicalVaultDirectoryResolver>();
+
+        DocumentArtifactLeasePathResolver firstLeasePathResolver =
+            serviceProvider.GetRequiredService<DocumentArtifactLeasePathResolver>();
+
+        DocumentArtifactLeasePathResolver secondLeasePathResolver =
+            serviceProvider.GetRequiredService<DocumentArtifactLeasePathResolver>();
+
+        // Assert
+        Assert.IsType<DocumentArtifactCoordinator>(
+            firstCoordinator);
+
+        Assert.Same(
+            firstCoordinator,
+            secondCoordinator);
+
+        Assert.Same(
+            firstDirectoryResolver,
+            secondDirectoryResolver);
+
+        Assert.Same(
+            firstLeasePathResolver,
+            secondLeasePathResolver);
     }
 
     [Fact]
@@ -248,33 +297,39 @@ public sealed class InfrastructureDependencyInjectionTests
     [Fact]
     public void KeyContracts_ExposeRetrievalAndProvisioningAsSeparateCapabilities()
     {
-        Assert.Collection(
-            typeof(IEncryptionKeyService).GetMethods(),
-            method =>
-                Assert.Equal(
-                    nameof(IEncryptionKeyService.GetKeyAsync),
-                    method.Name));
+        // Arrange
+        MethodInfo documentKeyRetrievalMethod =
+            Assert.Single(
+                typeof(IEncryptionKeyService).GetMethods());
 
-        Assert.Collection(
-            typeof(IDatabaseEncryptionKeyService).GetMethods(),
-            method =>
-                Assert.Equal(
-                    nameof(IDatabaseEncryptionKeyService.GetKeyAsync),
-                    method.Name));
+        MethodInfo databaseKeyRetrievalMethod =
+            Assert.Single(
+                typeof(IDatabaseEncryptionKeyService).GetMethods());
 
-        Assert.Collection(
-            typeof(IEncryptionKeyProvisioningService).GetMethods(),
-            method =>
-                Assert.Equal(
-                    nameof(IEncryptionKeyProvisioningService.GetOrCreateKeyAsync),
-                    method.Name));
+        MethodInfo documentKeyProvisioningMethod =
+            Assert.Single(
+                typeof(IEncryptionKeyProvisioningService).GetMethods());
 
-        Assert.Collection(
-            typeof(IDatabaseEncryptionKeyProvisioningService).GetMethods(),
-            method =>
-                Assert.Equal(
-                    nameof(IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync),
-                    method.Name));
+        MethodInfo databaseKeyProvisioningMethod =
+            Assert.Single(
+                typeof(IDatabaseEncryptionKeyProvisioningService).GetMethods());
+
+        // Assert
+        Assert.Equal(
+            nameof(IEncryptionKeyService.GetKeyAsync),
+            documentKeyRetrievalMethod.Name);
+
+        Assert.Equal(
+            nameof(IDatabaseEncryptionKeyService.GetKeyAsync),
+            databaseKeyRetrievalMethod.Name);
+
+        Assert.Equal(
+            nameof(IEncryptionKeyProvisioningService.GetOrCreateKeyAsync),
+            documentKeyProvisioningMethod.Name);
+
+        Assert.Equal(
+            nameof(IDatabaseEncryptionKeyProvisioningService.GetOrCreateKeyAsync),
+            databaseKeyProvisioningMethod.Name);
 
         Assert.Empty(
             typeof(IEncryptionKeyProvisioningService).GetInterfaces());
