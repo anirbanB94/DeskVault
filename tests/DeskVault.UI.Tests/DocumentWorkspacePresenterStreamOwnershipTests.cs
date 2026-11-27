@@ -856,6 +856,203 @@ public sealed partial class DocumentWorkspacePresenterTests
     }
 
     /// <summary>
+    /// Verifies that presenter disposal waits for both the renderer and
+    /// external viewer to release their borrows of the same source stream.
+    /// </summary>
+    [Fact]
+    public async Task Dispose_WhenRendererAndExternalViewerBothBorrowSameStream_DefersDisposalUntilBothComplete()
+    {
+        // Arrange
+        CancellationToken cancellationToken =
+            TestContext.Current.CancellationToken;
+
+        Guid documentId = Guid.NewGuid();
+
+        Document document =
+            CreateDocument(
+                documentId,
+                "document.csv");
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(document);
+
+        var renderingStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var renderingCompletion =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var externalOpenStarted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var externalOpenCompletion =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var stream =
+            new TrackingDocumentStream();
+
+        CancellationToken renderingToken = default;
+        CancellationToken externalOpenToken = default;
+
+        var view =
+            new Mock<IDocumentView>();
+
+        view
+            .Setup(x => x.ShowDocumentAsync(
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                Stream documentStream,
+                string fileName,
+                CancellationToken token) =>
+            {
+                Assert.Same(stream, documentStream);
+                Assert.Equal(document.FileName, fileName);
+
+                renderingToken = token;
+                renderingStarted.TrySetResult();
+
+                // Keep the renderer borrow pending independently.
+                return renderingCompletion.Task;
+            });
+
+        var documentViewer =
+            new Mock<IDocumentViewer>();
+
+        documentViewer
+            .Setup(x => x.OpenAsync(
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((
+                Stream documentStream,
+                string fileName,
+                CancellationToken token) =>
+            {
+                Assert.Same(stream, documentStream);
+                Assert.Equal(document.FileName, fileName);
+
+                externalOpenToken = token;
+                externalOpenStarted.TrySetResult();
+
+                // Keep the external-open borrow pending independently.
+                return externalOpenCompletion.Task;
+            });
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        DocumentWorkspacePresenter presenter =
+            CreatePresenter(
+                view,
+                documentViewer,
+                repository,
+                storageService);
+
+        Task? openTask = null;
+
+        try
+        {
+            // Start rendering and wait until the stream has been promoted.
+            openTask =
+                presenter.OpenAsync(
+                    documentId,
+                    stream,
+                    document.FileName,
+                    cancellationToken);
+
+            await renderingStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                cancellationToken);
+
+            Assert.Equal(documentId, presenter.CurrentDocumentId);
+            Assert.True(stream.CanRead);
+            Assert.Equal(0, stream.DisposeCount);
+
+            // Start external opening while rendering still borrows the same stream.
+            view.Raise(
+                x => x.OpenExternallyRequested += null,
+                EventArgs.Empty);
+
+            await externalOpenStarted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                cancellationToken);
+
+            Assert.True(renderingToken.CanBeCanceled);
+            Assert.True(externalOpenToken.CanBeCanceled);
+            Assert.True(stream.CanRead);
+            Assert.Equal(0, stream.DisposeCount);
+
+            // Dispose while both independent operations still borrow the stream.
+            presenter.Dispose();
+
+            Assert.True(renderingToken.IsCancellationRequested);
+            Assert.True(externalOpenToken.IsCancellationRequested);
+            Assert.True(stream.CanRead);
+            Assert.Equal(0, stream.DisposeCount);
+
+            // Complete rendering first. External opening still holds a borrow.
+            renderingCompletion.TrySetResult();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => openTask!);
+
+            Assert.True(stream.CanRead);
+            Assert.Equal(0, stream.DisposeCount);
+
+            // Complete external opening. This is the final outstanding borrow.
+            externalOpenCompletion.TrySetCanceled(externalOpenToken);
+
+            await stream.Disposed.WaitAsync(
+                TimeSpan.FromSeconds(5),
+                cancellationToken);
+
+            Assert.False(stream.CanRead);
+            Assert.Equal(1, stream.DisposeCount);
+
+            presenter.Dispose();
+            Assert.Equal(1, stream.DisposeCount);
+        }
+        finally
+        {
+            // Release both controlled operations if an earlier assertion fails.
+            presenter.Dispose();
+            renderingCompletion.TrySetResult();
+
+            externalOpenCompletion.TrySetCanceled(
+                externalOpenToken.CanBeCanceled
+                    ? externalOpenToken
+                    : cancellationToken);
+
+            if (openTask is not null)
+            {
+                try
+                {
+                    await openTask;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected after presenter disposal.
+                }
+
+                await stream.Disposed.WaitAsync(
+                    TimeSpan.FromSeconds(5),
+                    cancellationToken);
+            }
+        }
+    }
+    /// <summary>
     /// Provides a document source stream that records disposal calls
     /// and exposes a completion signal for deterministic lifecycle assertions.
     /// </summary>

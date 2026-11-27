@@ -747,7 +747,9 @@ public sealed partial class DocumentWorkspacePresenterTests
             TestContext.Current.CancellationToken);
 
         Assert.True(firstRenderingToken.IsCancellationRequested);
-        Assert.False(firstStream.CanRead);
+
+        // The renderer still holds its borrow until its pending task completes.
+        Assert.True(firstStream.CanRead);
         Assert.True(secondStream.CanRead);
 
         // Simulate a renderer that ignores cancellation and fails late.
@@ -757,6 +759,9 @@ public sealed partial class DocumentWorkspacePresenterTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => firstOpenTask);
+
+        // The open operation has now released its renderer borrow.
+        Assert.False(firstStream.CanRead);
 
         view.Verify(
             x => x.ShowUnsupportedPreview(
@@ -2073,7 +2078,12 @@ public sealed partial class DocumentWorkspacePresenterTests
         presenter.Dispose();
 
         Assert.True(renderingToken.IsCancellationRequested);
-        Assert.False(stream.CanRead);
+
+        // The presenter still owns the source stream while the
+        // asynchronous rendering operation is outstanding.
+        Assert.True(
+            stream.CanRead,
+            "The source stream must remain available until the rendering operation releases its borrow.");
 
         renderingCompletion.SetException(
             new DocumentContentRendererNotFoundException(
@@ -2081,6 +2091,10 @@ public sealed partial class DocumentWorkspacePresenterTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => openTask);
+
+        // The renderer has completed. The disposed presenter can now
+        // release its source stream.
+        Assert.False(stream.CanRead);
 
         Assert.Null(presenter.CurrentDocumentId);
         Assert.Null(presenter.CurrentDocumentDisplayName);
@@ -2324,7 +2338,10 @@ public sealed partial class DocumentWorkspacePresenterTests
             currentSnapshot);
 
         Assert.True(renderingToken.IsCancellationRequested);
-        Assert.False(stream.CanRead);
+
+        // Session revocation requests release, but the pending renderer
+        // retains its borrow until the rendering operation completes.
+        Assert.True(stream.CanRead);
 
         // Simulate a resolver miss arriving after session invalidation.
         renderingCompletion.SetException(
@@ -2333,6 +2350,9 @@ public sealed partial class DocumentWorkspacePresenterTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => openTask);
+
+        // The open operation has now released its renderer borrow.
+        Assert.False(stream.CanRead);
 
         view.Verify(
             x => x.ShowUnsupportedPreview(
@@ -3246,7 +3266,8 @@ public sealed partial class DocumentWorkspacePresenterTests
             // Cancellation callback failures are logged and must not escape disposal.
             presenter.Dispose();
 
-            Assert.False(stream.CanRead);
+            // The pending renderer still owns an active stream borrow.
+            Assert.True(stream.CanRead);
 
             view.Verify(
                 x => x.ClearPresentation(),
@@ -3260,6 +3281,9 @@ public sealed partial class DocumentWorkspacePresenterTests
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () => openTask);
+
+            // The renderer borrow is released when the open operation completes.
+            Assert.False(stream.CanRead);
 
             presenter.Dispose();
         }
