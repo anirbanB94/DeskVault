@@ -26,7 +26,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="11.0.0" />
 
-    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4370.26" />
 
     <PackageVersion Include="SQLite3MC.PCLRaw.bundle" Version="2.7.1" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
