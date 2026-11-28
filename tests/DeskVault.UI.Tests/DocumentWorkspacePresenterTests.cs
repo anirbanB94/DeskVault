@@ -3311,6 +3311,7 @@ public sealed partial class DocumentWorkspacePresenterTests
                 repository.Object,
                 new Mock<IWorkspaceRepository>().Object,
                 storageService.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<RemoveDocumentHandler>.Instance),
             NullLogger<DocumentWorkspacePresenter>.Instance,
             applicationSecuritySession);
@@ -3394,6 +3395,7 @@ public sealed partial class DocumentWorkspacePresenterTests
                 repository.Object,
                 new Mock<IWorkspaceRepository>().Object,
                 storageService.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<RemoveDocumentHandler>.Instance),
             (ILogger<DocumentWorkspacePresenter>?)logger ?? NullLogger<DocumentWorkspacePresenter>.Instance,
             applicationSecuritySession.Object);

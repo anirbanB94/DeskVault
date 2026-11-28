@@ -12,6 +12,7 @@ public sealed class ImportDocumentHandler
     private readonly IHashService _hashService;
     private readonly IStorageService _storageService;
     private readonly IDocumentRepository _repository;
+    private readonly IDocumentArtifactCoordinator _artifactCoordinator;
     private readonly ILogger<ImportDocumentHandler> _logger;
 
     public ImportDocumentHandler(
@@ -19,12 +20,14 @@ public sealed class ImportDocumentHandler
         IHashService hashService,
         IStorageService storageService,
         IDocumentRepository repository,
+        IDocumentArtifactCoordinator artifactCoordinator,
         ILogger<ImportDocumentHandler> logger)
     {
         _validator = validator;
         _hashService = hashService;
         _storageService = storageService;
         _repository = repository;
+        _artifactCoordinator = artifactCoordinator;
         _logger = logger;
     }
 
@@ -81,88 +84,122 @@ public sealed class ImportDocumentHandler
                     command.FilePath)
                 : command.DisplayName;
 
-        string? storedFilePath = null;
-
-        bool importCompleted = false;
+        IAsyncDisposable documentArtifactLease;
 
         try
         {
-            storedFilePath =
-                await _storageService.StoreAsync(
-                    command.FilePath,
+            // Acquire before creating the canonical encrypted artifact.
+            documentArtifactLease =
+                await _artifactCoordinator.AcquireAsync(
                     documentId,
-                    cancellationToken,
-                    expectedSha256Hash: sha256Hash);
-
-            var document =
-                Document.Create(
-                    documentId,
-                    fileName,
-                    displayName,
-                    sha256Hash,
-                    storedFilePath);
-
-            await _repository.AddAsync(
-                document,
-                cancellationToken);
-
-            importCompleted = true;
-
-            _logger.LogInformation(
-                LogMessages.DocumentImportCompleted);
-
-            return new ImportDocumentResult(
-                ImportDocumentResultStatus.Success,
-                document.Id,
-                "Document imported successfully.");
+                    cancellationToken);
         }
-        catch (DocumentHashConflictException ex)
+        catch (OperationCanceledException)
         {
-            _logger.LogSafeFailure(
-                LogLevel.Warning,
-                DiagnosticOperationCodes.DocumentImportDuplicate,
-                LogMessages.DocumentImportDuplicate,
-                ex,
-                failureCategory: DiagnosticFailureCategory.DuplicateConflict);
-
-            return new ImportDocumentResult(
-                ImportDocumentResultStatus.Duplicate,
-                null,
-                "The document has already been imported.");
+            // Cancellation while waiting must prevent the protected operation.
+            throw;
         }
-        catch (IOException ex)
+        catch (Exception ex)
         {
+            // Never continue an import without its required coordination lease.
             _logger.LogSafeFailure(
                 LogLevel.Error,
-                DiagnosticOperationCodes.DocumentImportStorageFailure,
-                LogMessages.DocumentImportStorageFailed,
+                DiagnosticOperationCodes.DocumentArtifactCoordinationFailure,
+                LogMessages.DocumentArtifactCoordinationFailed,
                 ex);
 
             return new ImportDocumentResult(
-                ImportDocumentResultStatus.StorageFailed,
+                ImportDocumentResultStatus.UnexpectedError,
                 null,
-                "The document could not be imported because storage failed.");
+                "The document could not be imported because the required document-artifact operation could not be coordinated.");
         }
-        catch (UnauthorizedAccessException ex)
-        {
-            _logger.LogSafeFailure(
-                LogLevel.Error,
-                DiagnosticOperationCodes.DocumentImportStorageFailure,
-                LogMessages.DocumentImportStorageFailed,
-                ex);
 
-            return new ImportDocumentResult(
-                ImportDocumentResultStatus.StorageFailed,
-                null,
-                "The document could not be imported because storage failed.");
-        }
-        finally
+        await using (documentArtifactLease)
         {
-            if (!importCompleted &&
-                storedFilePath is not null)
+            string? storedFilePath = null;
+
+            bool importCompleted = false;
+
+            try
             {
-                await TryCleanupStoredArtifactAsync(
-                    documentId);
+                storedFilePath =
+                    await _storageService.StoreAsync(
+                        command.FilePath,
+                        documentId,
+                        cancellationToken,
+                        expectedSha256Hash: sha256Hash);
+
+                var document =
+                    Document.Create(
+                        documentId,
+                        fileName,
+                        displayName,
+                        sha256Hash,
+                        storedFilePath);
+
+                await _repository.AddAsync(
+                    document,
+                    cancellationToken);
+
+                importCompleted = true;
+
+                _logger.LogInformation(
+                    LogMessages.DocumentImportCompleted);
+
+                return new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    document.Id,
+                    "Document imported successfully.");
+            }
+            catch (DocumentHashConflictException ex)
+            {
+                _logger.LogSafeFailure(
+                    LogLevel.Warning,
+                    DiagnosticOperationCodes.DocumentImportDuplicate,
+                    LogMessages.DocumentImportDuplicate,
+                    ex,
+                    failureCategory: DiagnosticFailureCategory.DuplicateConflict);
+
+                return new ImportDocumentResult(
+                    ImportDocumentResultStatus.Duplicate,
+                    null,
+                    "The document has already been imported.");
+            }
+            catch (IOException ex)
+            {
+                _logger.LogSafeFailure(
+                    LogLevel.Error,
+                    DiagnosticOperationCodes.DocumentImportStorageFailure,
+                    LogMessages.DocumentImportStorageFailed,
+                    ex);
+
+                return new ImportDocumentResult(
+                    ImportDocumentResultStatus.StorageFailed,
+                    null,
+                    "The document could not be imported because storage failed.");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogSafeFailure(
+                    LogLevel.Error,
+                    DiagnosticOperationCodes.DocumentImportStorageFailure,
+                    LogMessages.DocumentImportStorageFailed,
+                    ex);
+
+                return new ImportDocumentResult(
+                    ImportDocumentResultStatus.StorageFailed,
+                    null,
+                    "The document could not be imported because storage failed.");
+            }
+            finally
+            {
+                // Compensation must finish before the lease is released.
+                if (!importCompleted &&
+                    storedFilePath is not null)
+                {
+                    await TryCleanupStoredArtifactAsync(
+                        documentId);
+                }
             }
         }
     }

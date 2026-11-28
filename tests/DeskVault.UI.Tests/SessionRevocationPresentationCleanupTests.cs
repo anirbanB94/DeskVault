@@ -16,6 +16,7 @@ using DeskVault.Domain.Workspaces;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
+using DeskVault.UI.Tests.TestDoubles;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -88,6 +89,7 @@ public sealed class SessionRevocationPresentationCleanupTests
                 repository.Object,
                 workspaceRepository.Object,
                 storageService.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<RemoveDocumentHandler>.Instance),
             NullLogger<DocumentWorkspacePresenter>.Instance,
             securitySession.Object,

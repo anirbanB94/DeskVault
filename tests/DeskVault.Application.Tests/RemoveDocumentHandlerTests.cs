@@ -12,6 +12,17 @@ namespace DeskVault.Application.Tests;
 
 public sealed class RemoveDocumentHandlerTests
 {
+
+    private static readonly string[] SuccessfulRemovalLeaseLifecycle =
+    [
+        "LeaseAcquired",
+        "MetadataRead",
+        "ArtifactDeleted",
+        "WorkspaceMembershipsRemoved",
+        "MetadataDeleted",
+        "LeaseReleased"
+    ];
+
     [Fact]
     public async Task HandleAsync_WhenDocumentDoesNotExist_ReturnsNotFound()
     {
@@ -149,15 +160,17 @@ public sealed class RemoveDocumentHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_WhenDeletionSucceeds_ReturnsSuccess()
+    public async Task HandleAsync_WhenDeletionSucceeds_HoldsLeaseAcrossRemovalLifecycle()
     {
         // Arrange
         Document document =
             CreateDocument();
 
+        List<string> lifecycle =
+            [];
+
         var repository =
-            CreateRepository(
-                document);
+            new Mock<IDocumentRepository>();
 
         var workspaceRepository =
             new Mock<IWorkspaceRepository>();
@@ -165,16 +178,69 @@ public sealed class RemoveDocumentHandlerTests
         var storageService =
             new Mock<IStorageService>();
 
+        var lease =
+            new Mock<IAsyncDisposable>();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        repository
+            .Setup(x => x.GetByIdAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("MetadataRead"))
+            .ReturnsAsync(document);
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("LeaseAcquired"))
+            .ReturnsAsync(lease.Object);
+
+        lease
+            .Setup(x => x.DisposeAsync())
+            .Callback(() => lifecycle.Add("LeaseReleased"))
+            .Returns(ValueTask.CompletedTask);
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("ArtifactDeleted"))
+            .Returns(Task.CompletedTask);
+
+        workspaceRepository
+            .Setup(x => x.RemoveDocumentFromAllWorkspacesAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("WorkspaceMembershipsRemoved"))
+            .Returns(Task.CompletedTask);
+
+        repository
+            .Setup(x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("MetadataDeleted"))
+            .Returns(Task.CompletedTask);
+
         var handler =
             CreateHandler(
                 repository,
                 workspaceRepository,
-                storageService);
+                storageService,
+                artifactCoordinator: coordinator);
 
         // Act
         RemoveDocumentResult result =
-            await handler.HandleAsync(new RemoveDocumentCommand(
-                    document.Id), TestContext.Current.CancellationToken);
+            await handler.HandleAsync(
+                new RemoveDocumentCommand(document.Id),
+                TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -185,8 +251,24 @@ public sealed class RemoveDocumentHandlerTests
             "Document removed successfully.",
             result.Message);
 
+        Assert.Equal(
+            SuccessfulRemovalLeaseLifecycle,
+            lifecycle);
+
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
         storageService.Verify(
             x => x.DeleteAsync(
+                document.Id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
                 document.Id,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -197,10 +279,8 @@ public sealed class RemoveDocumentHandlerTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
-        workspaceRepository.Verify(
-            x => x.RemoveDocumentFromAllWorkspacesAsync(
-                document.Id,
-                It.IsAny<CancellationToken>()),
+        lease.Verify(
+            x => x.DisposeAsync(),
             Times.Once);
     }
 
@@ -650,6 +730,160 @@ public sealed class RemoveDocumentHandlerTests
             Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task HandleAsync_WhenCoordinationAcquisitionFails_DoesNotReadOrMutateDocument()
+    {
+        // Arrange
+        Guid documentId =
+            Guid.NewGuid();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        var logger =
+            new RecordingLogger<RemoveDocumentHandler>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new IOException(
+                    CreateSensitiveDetails()));
+
+        var handler =
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService,
+                logger,
+                coordinator);
+
+        // Act
+        await Assert.ThrowsAsync<IOException>(
+            () => handler.HandleAsync(
+                new RemoveDocumentCommand(documentId),
+                TestContext.Current.CancellationToken));
+
+        // Assert
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentArtifactCoordinationFailure,
+            LogMessages.DocumentArtifactCoordinationFailed,
+            nameof(IOException));
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCoordinationAcquisitionIsCancelled_DoesNotReadOrMutateDocument()
+    {
+        // Arrange
+        Guid documentId =
+            Guid.NewGuid();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var workspaceRepository =
+            new Mock<IWorkspaceRepository>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new OperationCanceledException());
+
+        var handler =
+            CreateHandler(
+                repository,
+                workspaceRepository,
+                storageService,
+                artifactCoordinator: coordinator);
+
+        // Act
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => handler.HandleAsync(
+                new RemoveDocumentCommand(documentId),
+                TestContext.Current.CancellationToken));
+
+        // Assert
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        workspaceRepository.Verify(
+            x => x.RemoveDocumentFromAllWorkspacesAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static Mock<IDocumentRepository> CreateRepository(
         Document document)
     {
@@ -669,13 +903,41 @@ public sealed class RemoveDocumentHandlerTests
         Mock<IDocumentRepository> repository,
         Mock<IWorkspaceRepository> workspaceRepository,
         Mock<IStorageService> storageService,
-        ILogger<RemoveDocumentHandler>? logger = null)
+        ILogger<RemoveDocumentHandler>? logger = null,
+        Mock<IDocumentArtifactCoordinator>? artifactCoordinator = null)
     {
+        Mock<IDocumentArtifactCoordinator> coordinator =
+            artifactCoordinator ?? CreateCoordinator();
+
         return new RemoveDocumentHandler(
             repository.Object,
             workspaceRepository.Object,
             storageService.Object,
+            coordinator.Object,
             logger ?? NullLogger<RemoveDocumentHandler>.Instance);
+    }
+
+    private static Mock<IDocumentArtifactCoordinator> CreateCoordinator()
+    {
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new TestDocumentArtifactLease());
+
+        return coordinator;
+    }
+
+    private sealed class TestDocumentArtifactLease : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static Document CreateDocument()

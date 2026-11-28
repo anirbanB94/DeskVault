@@ -14,6 +14,7 @@ using DeskVault.UI.Forms;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
+using DeskVault.UI.Tests.TestDoubles;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -225,6 +226,7 @@ public sealed class MainFormDialogTests
                 hashService.Object,
                 storageService.Object,
                 documentRepository.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<ImportDocumentHandler>.Instance);
 
         var removeDocumentHandler =
@@ -232,6 +234,7 @@ public sealed class MainFormDialogTests
                 documentRepository.Object,
                 workspaceRepository.Object,
                 storageService.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
         var listDocumentsHandler =

@@ -70,7 +70,10 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         Func<IDocumentRepository, IDocumentRepository>? importRepositoryDecorator = null,
         IDocumentTextChunker? chunker = null,
         DocumentProcessingOptions? processingOptions = null,
-        Func<IDocumentRepository, IDocumentRepository>? removeRepositoryDecorator = null)
+        Func<IDocumentRepository, IDocumentRepository>? removeRepositoryDecorator = null,
+        Func<IDocumentArtifactCoordinator, IDocumentArtifactCoordinator>? artifactCoordinatorDecorator = null,
+        Func<IStorageService, IStorageService>? removeStorageDecorator = null,
+        Func<IDocumentRepository, IDocumentRepository>? reconciliationRepositoryDecorator = null)
     {
         ArgumentNullException.ThrowIfNull(encryptionKey);
 
@@ -123,6 +126,21 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 artifactPathResolver,
                 NullLogger<FileSystemStorageService>.Instance);
 
+        var artifactEnumerator =
+            new DocumentArtifactEnumerator(DataPaths);
+
+        var artifactCoordinator =
+            new DocumentArtifactCoordinator(
+                new DocumentArtifactLeasePathResolver(
+                    new CanonicalVaultDirectoryResolver(DataPaths)));
+
+        // Keep filesystem coordination as the default; the decorator only provides
+        // deterministic observation for integration tests.
+        IDocumentArtifactCoordinator effectiveArtifactCoordinator =
+            artifactCoordinatorDecorator is null
+                ? artifactCoordinator
+                : artifactCoordinatorDecorator(artifactCoordinator);
+
         DocumentReader =
             new EncryptedDocumentReader(
                 encryptionService,
@@ -173,6 +191,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 importHashService,
                 importStorageService,
                 importRepository,
+                effectiveArtifactCoordinator,
                 NullLogger<ImportDocumentHandler>.Instance);
 
         var searchRetriever =
@@ -195,18 +214,28 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 : removeRepositoryDecorator(
                     repository);
 
+        IStorageService removeStorageService =
+            removeStorageDecorator is null
+                ? _storageService
+                : removeStorageDecorator(_storageService);
+
         RemoveHandler =
             new RemoveDocumentHandler(
                 removeRepository,
                 workspaceRepository,
-                _storageService,
+                removeStorageService,
+                effectiveArtifactCoordinator,
                 NullLogger<RemoveDocumentHandler>.Instance);
+
+        IDocumentRepository reconciliationRepository =
+            reconciliationRepositoryDecorator is null
+                ? repository
+                : reconciliationRepositoryDecorator(repository);
 
         ReconciliationHandler =
             new ReconcileDocumentArtifactsHandler(
-                repository,
-                new DocumentArtifactEnumerator(
-                    DataPaths),
+                reconciliationRepository,
+                artifactEnumerator,
                 DocumentReader,
                 _storageService,
                 processingOptions ?? new DocumentProcessingOptions(),
@@ -217,6 +246,8 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
                 repository,
                 ReconciliationHandler,
                 _storageService,
+                artifactEnumerator,
+                effectiveArtifactCoordinator,
                 NullLogger<RecoverDocumentArtifactsHandler>.Instance);
     }
 
@@ -353,7 +384,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
             NullLogger<SqliteDocumentSearchStore>.Instance);
     }
 
-    private static IDbContextFactory<DeskVaultDbContext> CreateFactory(
+    private static TestDbContextFactory CreateFactory(
         SqliteConnection connection)
     {
         return new TestDbContextFactory(
@@ -468,7 +499,7 @@ internal sealed class DocumentPipelineTestHarness : IAsyncDisposable
         private EncryptionKeyMaterial CreateMaterial()
         {
             return new EncryptionKeyMaterial(
-                _key.ToArray(),
+                [.. _key],
                 _keyId,
                 keyVersion: 1);
         }
