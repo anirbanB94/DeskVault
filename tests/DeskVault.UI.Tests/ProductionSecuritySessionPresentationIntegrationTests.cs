@@ -19,6 +19,7 @@ using DeskVault.UI.Hosting;
 using DeskVault.UI.Presenters;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
+using DeskVault.UI.Tests.TestDoubles;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -605,6 +606,7 @@ public sealed class ProductionSecuritySessionPresentationIntegrationTests
                 documentRepository.Object,
                 workspaceRepository.Object,
                 storageService.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
         return new DocumentWorkspacePresenter(

@@ -2728,6 +2728,7 @@ public sealed class MainFormPresenterTests
                 repository.Object,
                 workspaceRepository.Object,
                 new Mock<IStorageService>().Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
         var workspaceId =
@@ -6076,6 +6077,7 @@ public sealed class MainFormPresenterTests
                     documentRepository.Object,
                     new Mock<IWorkspaceRepository>().Object,
                     new Mock<IStorageService>().Object,
+                    NoOpDocumentArtifactCoordinator.Instance,
                     NullLogger<RemoveDocumentHandler>.Instance);
 
             var documentPresenter =
@@ -6719,6 +6721,7 @@ public sealed class MainFormPresenterTests
                 hashService.Object,
                 storageService.Object,
                 repository.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<ImportDocumentHandler>.Instance);
 
         var removeDocumentHandler =
@@ -6726,6 +6729,7 @@ public sealed class MainFormPresenterTests
                 repository.Object,
                 workspaceRepository.Object,
                 storageService.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
         var listDocumentsHandler =

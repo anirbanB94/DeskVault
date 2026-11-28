@@ -13,6 +13,23 @@ namespace DeskVault.Application.Tests;
 
 public sealed class ImportDocumentHandlerTests
 {
+    private static readonly string[] SuccessfulImportLeaseLifecycle =
+    [
+        "LeaseAcquired",
+        "ArtifactStored",
+        "MetadataPublished",
+        "LeaseReleased"
+    ];
+
+    private static readonly string[] FailedImportCompensationLeaseLifecycle =
+    [
+        "LeaseAcquired",
+        "ArtifactStored",
+        "MetadataPublicationFailed",
+        "CompensationCompleted",
+        "LeaseReleased"
+    ];
+
     [Fact]
     public async Task HandleAsync_WhenValidationFails_ReturnsValidationResult()
     {
@@ -102,6 +119,9 @@ public sealed class ImportDocumentHandlerTests
         var repository =
             new Mock<IDocumentRepository>();
 
+        var artifactCoordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
         validator
             .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
             .Returns(
@@ -127,7 +147,8 @@ public sealed class ImportDocumentHandlerTests
                 validator.Object,
                 hashService.Object,
                 storageService.Object,
-                repository);
+                repository,
+                artifactCoordinator: artifactCoordinator);
 
         var command =
             new ImportDocumentCommand(
@@ -145,6 +166,12 @@ public sealed class ImportDocumentHandlerTests
 
         Assert.Null(
             result.DocumentId);
+
+        artifactCoordinator.Verify(
+            x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
 
         storageService.Verify(
             x => x.StoreAsync(
@@ -1080,18 +1107,502 @@ public sealed class ImportDocumentHandlerTests
             nameof(UnauthorizedAccessException));
     }
 
+    [Fact]
+    public async Task HandleAsync_WhenImportSucceeds_HoldsLeaseUntilMetadataPublicationCompletes()
+    {
+        // Arrange
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var lease =
+            new Mock<IAsyncDisposable>();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        List<string> lifecycle =
+            [];
+
+        validator
+            .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-hash");
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                "test-hash",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("LeaseAcquired"))
+            .ReturnsAsync(lease.Object);
+
+        lease
+            .Setup(x => x.DisposeAsync())
+            .Callback(() => lifecycle.Add("LeaseReleased"))
+            .Returns(ValueTask.CompletedTask);
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                "test-hash"))
+            .Callback<string, Guid, CancellationToken, string?>(
+                (_, _, _, _) => lifecycle.Add("ArtifactStored"))
+            .ReturnsAsync("stored/test.txt");
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (_, _) => lifecycle.Add("MetadataPublished"))
+            .Returns(Task.CompletedTask);
+
+        var handler =
+            CreateHandler(
+                validator.Object,
+                hashService.Object,
+                storageService.Object,
+                repository,
+                artifactCoordinator: coordinator);
+
+        // Act
+        ImportDocumentResult result =
+            await handler.HandleAsync(
+                new ImportDocumentCommand(
+                    "C:\\Documents\\test.txt",
+                    "Test Document"),
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            ImportDocumentResultStatus.Success,
+            result.Status);
+
+        Assert.Equal(
+            SuccessfulImportLeaseLifecycle,
+            lifecycle);
+
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                It.Is<Guid>(id => id != Guid.Empty),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        lease.Verify(
+            x => x.DisposeAsync(),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenMetadataPersistenceFails_CompletesCompensationBeforeLeaseRelease()
+    {
+        // Arrange
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var lease =
+            new Mock<IAsyncDisposable>();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        List<string> lifecycle =
+            [];
+
+        var compensationStarted =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var allowCompensationToComplete =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        validator
+            .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-hash");
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                "test-hash",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("LeaseAcquired"))
+            .ReturnsAsync(lease.Object);
+
+        lease
+            .Setup(x => x.DisposeAsync())
+            .Callback(() => lifecycle.Add("LeaseReleased"))
+            .Returns(ValueTask.CompletedTask);
+
+        storageService
+            .Setup(x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                "test-hash"))
+            .Callback<string, Guid, CancellationToken, string?>(
+                (_, _, _, _) => lifecycle.Add("ArtifactStored"))
+            .ReturnsAsync("stored/test.txt");
+
+        repository
+            .Setup(x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Document, CancellationToken>(
+                (_, _) => lifecycle.Add("MetadataPublicationFailed"))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    "Metadata persistence failed."));
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                CancellationToken.None))
+            .Returns(
+                (Guid _, CancellationToken _) =>
+                    CompleteCompensationAsync());
+
+        async Task CompleteCompensationAsync()
+        {
+            compensationStarted.TrySetResult(true);
+
+            await allowCompensationToComplete.Task;
+
+            lifecycle.Add("CompensationCompleted");
+        }
+
+        var handler =
+            CreateHandler(
+                validator.Object,
+                hashService.Object,
+                storageService.Object,
+                repository,
+                artifactCoordinator: coordinator);
+
+        // Act
+        Task<ImportDocumentResult> importTask =
+            handler.HandleAsync(
+                new ImportDocumentCommand(
+                    "C:\\Documents\\test.txt",
+                    "Test Document"),
+                TestContext.Current.CancellationToken);
+
+        await compensationStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        // Compensation is still pending, so the lease must remain held.
+        Assert.DoesNotContain(
+            "LeaseReleased",
+            lifecycle);
+
+        Assert.False(importTask.IsCompleted);
+
+        allowCompensationToComplete.SetResult(true);
+
+        InvalidOperationException exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => importTask);
+
+        // Assert
+        Assert.Equal(
+            "Metadata persistence failed.",
+            exception.Message);
+
+        Assert.Equal(
+            FailedImportCompensationLeaseLifecycle,
+            lifecycle);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                CancellationToken.None),
+            Times.Once);
+
+        lease.Verify(
+            x => x.DisposeAsync(),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCoordinationAcquisitionFails_DoesNotCreateArtifact()
+    {
+        // Arrange
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        var logger =
+            new RecordingLogger<ImportDocumentHandler>();
+
+        validator
+            .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-hash");
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                "test-hash",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new IOException(
+                    "Sensitive coordination failure details."));
+
+        var handler =
+            CreateHandler(
+                validator.Object,
+                hashService.Object,
+                storageService.Object,
+                repository,
+                logger,
+                coordinator);
+
+        // Act
+        ImportDocumentResult result =
+            await handler.HandleAsync(
+                new ImportDocumentCommand(
+                    "C:\\Documents\\test.txt",
+                    "Test Document"),
+                TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            ImportDocumentResultStatus.UnexpectedError,
+            result.Status);
+
+        Assert.Null(result.DocumentId);
+
+        storageService.Verify(
+            x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
+            Times.Never);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentArtifactCoordinationFailure,
+            LogMessages.DocumentArtifactCoordinationFailed,
+            nameof(IOException));
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCoordinationAcquisitionIsCancelled_DoesNotCreateArtifact()
+    {
+        // Arrange
+        var validator =
+            new Mock<IImportDocumentValidator>();
+
+        var hashService =
+            new Mock<IHashService>();
+
+        var storageService =
+            new Mock<IStorageService>();
+
+        var repository =
+            new Mock<IDocumentRepository>();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        validator
+            .Setup(x => x.Validate(It.IsAny<ImportDocumentCommand>()))
+            .Returns(
+                new ImportDocumentResult(
+                    ImportDocumentResultStatus.Success,
+                    null,
+                    "Validation successful."));
+
+        hashService
+            .Setup(x => x.ComputeSha256Async(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-hash");
+
+        repository
+            .Setup(x => x.ExistsByHashAsync(
+                "test-hash",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new OperationCanceledException());
+
+        var handler =
+            CreateHandler(
+                validator.Object,
+                hashService.Object,
+                storageService.Object,
+                repository,
+                artifactCoordinator: coordinator);
+
+        // Act
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => handler.HandleAsync(
+                new ImportDocumentCommand(
+                    "C:\\Documents\\test.txt",
+                    "Test Document"),
+                TestContext.Current.CancellationToken));
+
+        // Assert
+        storageService.Verify(
+            x => x.StoreAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<string?>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.AddAsync(
+                It.IsAny<Document>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+
     private static ImportDocumentHandler CreateHandler(
         IImportDocumentValidator validator,
         IHashService hashService,
         IStorageService storageService,
         Mock<IDocumentRepository> repository,
-        ILogger<ImportDocumentHandler>? logger = null)
+        ILogger<ImportDocumentHandler>? logger = null,
+        Mock<IDocumentArtifactCoordinator>? artifactCoordinator = null)
     {
+        Mock<IDocumentArtifactCoordinator> coordinator =
+            artifactCoordinator ?? CreateCoordinator();
+
         return new ImportDocumentHandler(
             validator,
             hashService,
             storageService,
             repository.Object,
+            coordinator.Object,
             logger ?? NullLogger<ImportDocumentHandler>.Instance);
     }
+
+    private static Mock<IDocumentArtifactCoordinator> CreateCoordinator()
+    {
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new TestDocumentArtifactLease());
+
+        return coordinator;
+    }
+
+    private sealed class TestDocumentArtifactLease : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
 }

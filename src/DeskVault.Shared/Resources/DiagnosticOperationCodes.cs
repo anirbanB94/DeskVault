@@ -60,6 +60,9 @@ public static class DiagnosticOperationCodes
     public const string DocumentImportArtifactCleanupFailure =
         "document-import.cleanup";
 
+    public const string DocumentArtifactCoordinationFailure =
+        "document-artifact.coordination-failure";
+
     public const string DocumentRemovalUnexpectedFailure =
         "document-removal.unexpected-failure";
 

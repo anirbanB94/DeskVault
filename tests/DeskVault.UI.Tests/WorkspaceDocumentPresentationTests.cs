@@ -9,6 +9,7 @@ using DeskVault.UI.Presenters;
 using DeskVault.UI.Rendering;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
+using DeskVault.UI.Tests.TestDoubles;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -352,7 +353,7 @@ public sealed class WorkspaceDocumentPresentationTests
             remove { }
         }
 
-        public event EventHandler CloseWorkspaceRequested
+        public static event EventHandler CloseWorkspaceRequested
         {
             add { }
             remove { }
@@ -442,6 +443,7 @@ public sealed class WorkspaceDocumentPresentationTests
             documentRepository.Object,
             workspaceRepository.Object,
             storageService.Object,
+            NoOpDocumentArtifactCoordinator.Instance,
             NullLogger<RemoveDocumentHandler>.Instance);
 
         return new DocumentWorkspacePresenter(
@@ -495,6 +497,7 @@ public sealed class WorkspaceDocumentPresentationTests
             documentRepository.Object,
             workspaceRepository.Object,
             storageService.Object,
+            NoOpDocumentArtifactCoordinator.Instance,
             NullLogger<RemoveDocumentHandler>.Instance);
 
         return new DocumentWorkspacePresenter(

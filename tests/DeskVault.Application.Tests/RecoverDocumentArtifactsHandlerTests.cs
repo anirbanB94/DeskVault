@@ -3,18 +3,34 @@ using DeskVault.Application.Documents.Commands.RecoverDocumentArtifacts;
 using DeskVault.Application.Documents.Processing;
 using DeskVault.Application.Documents.Queries.ReconcileDocumentArtifacts;
 using DeskVault.Application.Interfaces;
+using DeskVault.Application.Tests.TestDoubles;
 using DeskVault.Domain.Documents;
+using DeskVault.Shared.Resources;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
+using static DeskVault.Application.Tests.TestDoubles.SafeDiagnosticLogAssertions;
 
 namespace DeskVault.Application.Tests;
 
 public sealed class RecoverDocumentArtifactsHandlerTests
 {
+
+    private static readonly string[] SuccessfulRecoveryLeaseLifecycle =
+    [
+        "ReconciliationMetadataRead",
+        "LeaseAcquired",
+        "MetadataRevalidated",
+        "OwnershipRevalidated",
+        "ArtifactExistenceRevalidated",
+        "ArtifactDeleted",
+        "LeaseReleased"
+    ];
+
     [Fact]
-    public async Task HandleAsync_WhenCanonicalOrphanExists_DeletesArtifactAndReturnsRecovered()
+    public async Task HandleAsync_WhenCanonicalOrphanExists_DeletesArtifactWhileHoldingLease()
     {
         // Arrange
         Guid orphanId =
@@ -26,12 +42,38 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                     "Documents",
                     $"{orphanId}.dvault"));
 
+        List<string> lifecycle =
+            [];
+
+        int metadataReadCount = 0;
+
         var repository =
             CreateRepository([]);
 
+        repository
+            .Setup(x => x.GetByIdAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()))
+            .Returns(
+                (Guid _, CancellationToken _) =>
+                {
+                    metadataReadCount++;
+
+                    lifecycle.Add(
+                        metadataReadCount == 1
+                            ? "ReconciliationMetadataRead"
+                            : "MetadataRevalidated");
+
+                    return Task.FromResult<Document?>(null);
+                });
+
         var artifactEnumerator =
-            CreateArtifactEnumerator(
-                [orphanPath]);
+            CreateArtifactEnumerator([orphanPath]);
+
+        artifactEnumerator
+            .Setup(x => x.ExistsForDocument(orphanId))
+            .Callback(() => lifecycle.Add("ArtifactExistenceRevalidated"))
+            .Returns(true);
 
         var reader =
             new Mock<IDocumentReader>();
@@ -39,12 +81,48 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
+        storageService
+            .Setup(x => x.IsOwnedArtifactPath(
+                orphanId,
+                Path.GetFullPath(orphanPath)))
+            .Callback<Guid, string>(
+                (_, _) => lifecycle.Add("OwnershipRevalidated"))
+            .Returns(true);
+
+        storageService
+            .Setup(x => x.DeleteAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("ArtifactDeleted"))
+            .Returns(Task.CompletedTask);
+
+        var lease =
+            new Mock<IAsyncDisposable>();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, CancellationToken>(
+                (_, _) => lifecycle.Add("LeaseAcquired"))
+            .ReturnsAsync(lease.Object);
+
+        lease
+            .Setup(x => x.DisposeAsync())
+            .Callback(() => lifecycle.Add("LeaseReleased"))
+            .Returns(ValueTask.CompletedTask);
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService);
+                storageService,
+                artifactCoordinator: coordinator);
 
         // Act
         RecoverDocumentArtifactsResult result =
@@ -69,13 +147,28 @@ public sealed class RecoverDocumentArtifactsHandlerTests
             finding.DocumentId);
 
         Assert.Equal(
-            Path.GetFullPath(
-                orphanPath),
+            Path.GetFullPath(orphanPath),
             finding.ArtifactPath);
 
         Assert.Equal(
             DocumentArtifactReconciliationRecoveryAction.CleanupOrphanedArtifact,
             finding.RecoveryAction);
+
+        Assert.Equal(
+            SuccessfulRecoveryLeaseLifecycle,
+            lifecycle);
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
 
         storageService.Verify(
             x => x.IsOwnedArtifactPath(
@@ -83,10 +176,18 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                 Path.GetFullPath(orphanPath)),
             Times.Once);
 
+        artifactEnumerator.Verify(
+            x => x.ExistsForDocument(orphanId),
+            Times.Once);
+
         storageService.Verify(
             x => x.DeleteAsync(
                 orphanId,
                 It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        lease.Verify(
+            x => x.DisposeAsync(),
             Times.Once);
 
         reader.Verify(
@@ -99,7 +200,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_WhenOrphanArtifactIsAlreadyMissing_DeleteRemainsRetrySafe()
+    public async Task HandleAsync_WhenOrphanArtifactDisappearsBeforeRevalidation_DoesNotDeleteMissingArtifact()
     {
         // Arrange
         Guid orphanId =
@@ -118,8 +219,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
             new Mock<IDocumentArtifactEnumerator>();
 
         artifactEnumerator
-            .Setup(x => x.ExistsForDocument(
-                It.IsAny<Guid>()))
+            .Setup(x => x.ExistsForDocument(orphanId))
             .Returns(false);
 
         artifactEnumerator
@@ -131,7 +231,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                     TestContext.Current.CancellationToken))
             .Returns(
                 EnumerateArtifactPathsAsync(
-                    Array.Empty<string>(),
+                    [],
                     TestContext.Current.CancellationToken));
 
         var reader =
@@ -160,18 +260,37 @@ public sealed class RecoverDocumentArtifactsHandlerTests
 
         // Assert
         Assert.Equal(
-            RecoverDocumentArtifactsResultStatus.Recovered,
+            RecoverDocumentArtifactsResultStatus.NoActionRequired,
             firstResult.Status);
+
+        var finding =
+            Assert.Single(firstResult.Findings);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationStatus.OrphanedArtifact,
+            finding.Status);
+
+        Assert.Equal(
+            DocumentArtifactReconciliationRecoveryAction.None,
+            finding.RecoveryAction);
+
+        Assert.Equal(
+            "The orphaned artifact was no longer present when recovery revalidated it; no cleanup was required.",
+            finding.Description);
 
         Assert.Equal(
             RecoverDocumentArtifactsResultStatus.NoActionRequired,
             retryResult.Status);
 
+        artifactEnumerator.Verify(
+            x => x.ExistsForDocument(orphanId),
+            Times.Once);
+
         storageService.Verify(
             x => x.DeleteAsync(
-                orphanId,
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Never);
     }
 
     [Fact]
@@ -196,7 +315,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         artifactEnumerator
             .Setup(x => x.ExistsForDocument(
                 It.IsAny<Guid>()))
-            .Returns(false);
+            .Returns(true);
 
         artifactEnumerator
             .SetupSequence(x => x.EnumerateIncrementallyAsync(
@@ -692,11 +811,16 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                 reader,
                 storageService);
 
+        var coordinator =
+            CreateCoordinator();
+
         var handler =
             new RecoverDocumentArtifactsHandler(
                 repository.Object,
                 reconciliationHandler,
                 storageService.Object,
+                artifactEnumerator.Object,
+                coordinator.Object,
                 NullLogger<RecoverDocumentArtifactsHandler>.Instance);
 
         using var cancellationTokenSource =
@@ -740,6 +864,12 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                 It.IsAny<Guid>()),
             Times.Never);
 
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
         storageService.Verify(
             x => x.DeleteAsync(
                 It.IsAny<Guid>(),
@@ -777,7 +907,7 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(
-                Array.Empty<Document>());
+                []);
 
         repository
             .SetupSequence(x => x.GetByIdAsync(
@@ -795,12 +925,25 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         var storageService =
             CreateStorageServiceMock();
 
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        var lease =
+            new Mock<IAsyncDisposable>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                documentId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(lease.Object);
+
         var handler =
             CreateHandler(
                 repository,
                 artifactEnumerator,
                 reader,
-                storageService);
+                storageService,
+                artifactCoordinator: coordinator);
 
         // Act
         RecoverDocumentArtifactsResult result =
@@ -835,9 +978,202 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2));
 
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                It.IsAny<Guid>(),
+                It.IsAny<string>()),
+            Times.Never);
+
+        artifactEnumerator.Verify(
+            x => x.ExistsForDocument(
+                It.IsAny<Guid>()),
+            Times.Never);
+
+        lease.Verify(
+            x => x.DisposeAsync(),
+            Times.Once);
+
         storageService.Verify(
             x => x.DeleteAsync(
                 documentId,
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCoordinationAcquisitionFails_DoesNotRevalidateOrDeleteArtifact()
+    {
+        // Arrange
+        Guid orphanId =
+            Guid.NewGuid();
+
+        string orphanPath =
+            Path.GetFullPath(
+                Path.Combine(
+                    "Documents",
+                    $"{orphanId}.dvault"));
+
+        var repository =
+            CreateRepository([]);
+
+        var artifactEnumerator =
+            CreateArtifactEnumerator([orphanPath]);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        var logger =
+            new RecordingLogger<RecoverDocumentArtifactsHandler>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new IOException(CreateSensitiveDetails()));
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService,
+                artifactCoordinator: coordinator,
+                logger: logger);
+
+        // Act
+        await Assert.ThrowsAsync<IOException>(
+            () => handler.HandleAsync(
+                new RecoverDocumentArtifactsCommand(),
+                TestContext.Current.CancellationToken));
+
+        // Assert
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // The only metadata read is the initial reconciliation read.
+        repository.Verify(
+            x => x.GetByIdAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                It.IsAny<Guid>(),
+                It.IsAny<string>()),
+            Times.Never);
+
+        artifactEnumerator.Verify(
+            x => x.ExistsForDocument(
+                It.IsAny<Guid>()),
+            Times.Never);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        AssertSafeFailureLog(
+            logger.Entries,
+            LogLevel.Error,
+            DiagnosticOperationCodes.DocumentArtifactCoordinationFailure,
+            LogMessages.DocumentArtifactCoordinationFailed,
+            nameof(IOException));
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCoordinationAcquisitionIsCancelled_DoesNotRevalidateOrDeleteArtifact()
+    {
+        // Arrange
+        Guid orphanId =
+            Guid.NewGuid();
+
+        string orphanPath =
+            Path.GetFullPath(
+                Path.Combine(
+                    "Documents",
+                    $"{orphanId}.dvault"));
+
+        var repository =
+            CreateRepository([]);
+
+        var artifactEnumerator =
+            CreateArtifactEnumerator([orphanPath]);
+
+        var reader =
+            new Mock<IDocumentReader>();
+
+        var storageService =
+            CreateStorageServiceMock();
+
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(
+                new OperationCanceledException());
+
+        var handler =
+            CreateHandler(
+                repository,
+                artifactEnumerator,
+                reader,
+                storageService,
+                artifactCoordinator: coordinator);
+
+        // Act
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => handler.HandleAsync(
+                new RecoverDocumentArtifactsCommand(),
+                TestContext.Current.CancellationToken));
+
+        // Assert
+        coordinator.Verify(
+            x => x.AcquireAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        repository.Verify(
+            x => x.GetByIdAsync(
+                orphanId,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        storageService.Verify(
+            x => x.IsOwnedArtifactPath(
+                It.IsAny<Guid>(),
+                It.IsAny<string>()),
+            Times.Never);
+
+        artifactEnumerator.Verify(
+            x => x.ExistsForDocument(
+                It.IsAny<Guid>()),
+            Times.Never);
+
+        storageService.Verify(
+            x => x.DeleteAsync(
+                It.IsAny<Guid>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -846,7 +1182,9 @@ public sealed class RecoverDocumentArtifactsHandlerTests
         Mock<IDocumentRepository> repository,
         Mock<IDocumentArtifactEnumerator> artifactEnumerator,
         Mock<IDocumentReader> reader,
-        Mock<IStorageService> storageService)
+        Mock<IStorageService> storageService,
+        Mock<IDocumentArtifactCoordinator>? artifactCoordinator = null,
+        ILogger<RecoverDocumentArtifactsHandler>? logger = null)
     {
         ReconcileDocumentArtifactsHandler reconciliationHandler =
             CreateReconciliationHandler(
@@ -855,11 +1193,39 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                 reader,
                 storageService);
 
+        Mock<IDocumentArtifactCoordinator> coordinator =
+            artifactCoordinator ?? CreateCoordinator();
+
         return new RecoverDocumentArtifactsHandler(
             repository.Object,
             reconciliationHandler,
             storageService.Object,
-            NullLogger<RecoverDocumentArtifactsHandler>.Instance);
+            artifactEnumerator.Object,
+            coordinator.Object,
+            logger ?? NullLogger<RecoverDocumentArtifactsHandler>.Instance);
+    }
+
+    private static Mock<IDocumentArtifactCoordinator> CreateCoordinator()
+    {
+        var coordinator =
+            new Mock<IDocumentArtifactCoordinator>();
+
+        coordinator
+            .Setup(x => x.AcquireAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new TestDocumentArtifactLease());
+
+        return coordinator;
+    }
+
+    private sealed class TestDocumentArtifactLease : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static ReconcileDocumentArtifactsHandler CreateReconciliationHandler(
@@ -908,14 +1274,13 @@ public sealed class RecoverDocumentArtifactsHandlerTests
                                  cursorDocumentId) > 0));
                     }
 
-                    IReadOnlyList<Document> page = query
+                    IReadOnlyList<Document> page = [.. query
                         .OrderByDescending(
                             document => document.ImportedAt)
                         .ThenBy(
                             document => document.Id.ToString(),
                             StringComparer.Ordinal)
-                        .Take(pageSize)
-                        .ToArray();
+                        .Take(pageSize)];
 
                     return Task.FromResult(page);
                 });

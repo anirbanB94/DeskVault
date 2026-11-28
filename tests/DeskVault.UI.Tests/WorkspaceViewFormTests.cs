@@ -9,6 +9,7 @@ using DeskVault.UI.Presenters;
 using DeskVault.UI.Resources;
 using DeskVault.UI.Services.Interfaces;
 using DeskVault.UI.Services.Workspace;
+using DeskVault.UI.Tests.TestDoubles;
 using DeskVault.UI.Views;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -809,6 +810,7 @@ public sealed class WorkspaceViewFormTests
                 documentRepository.Object,
                 workspaceRepository.Object,
                 storageService.Object,
+                NoOpDocumentArtifactCoordinator.Instance,
                 NullLogger<RemoveDocumentHandler>.Instance);
 
         var securitySession =
