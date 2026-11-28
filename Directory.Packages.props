@@ -7,8 +7,8 @@
   <ItemGroup>
 
     <!-- Production packages -->
-    <PackageVersion Include="AngleSharp" Version="1.10.5" />
-    <PackageVersion Include="AngleSharp.Css" Version="1.5.0" />
+    <PackageVersion Include="AngleSharp" Version="1.11.0" />
+    <PackageVersion Include="AngleSharp.Css" Version="1.6.0" />
     <PackageVersion Include="CsvHelper" Version="34.1.0" />
     <PackageVersion Include="Markdig" Version="1.6.0" />
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
